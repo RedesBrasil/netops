@@ -96,9 +96,9 @@ export function CopyButton({ text, label = "Copiar" }) {
   }}>${done ? "copiado ✓" : label}</button>`;
 }
 
-export function Modal({ title, children, onClose }) {
+export function Modal({ title, children, onClose, wide }) {
   return html`<div class="modal-bg" onClick=${(e) => { if (e.target.classList.contains("modal-bg")) onClose?.(); }}>
-    <div class="modal">
+    <div class="modal ${wide ? "wide" : ""}">
       <h2>${title}</h2>
       ${children}
     </div>
@@ -125,9 +125,10 @@ export function ConflictDialog({ onReload, onClose }) {
   <//>`;
 }
 
-export function Tabs({ tabs, active, onChange }) {
+export function Tabs({ tabs, active, onChange, actions }) {
   return html`<div class="tabs">
     ${tabs.map((t) => html`<button key=${t.key} class=${active === t.key ? "active" : ""}
       onClick=${() => onChange(t.key)}>${t.label}</button>`)}
+    ${actions && html`<div class="tabs-actions">${actions}</div>`}
   </div>`;
 }

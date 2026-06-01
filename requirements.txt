@@ -18,7 +18,8 @@ ruamel.yaml>=0.18,<1    # Round-trip YAML PRESERVANDO comentários (escrita pela
 # --- UI web (opcional — só para scripts/ui/server.py, o console CRUD local) ---
 # Pode pular numa instalação headless. pydantic já vem como transitivo.
 fastapi>=0.115,<1       # API + validação Pydantic + OpenAPI; serve o SPA Preact (sem build)
-uvicorn>=0.30,<1        # Servidor ASGI; bind SEMPRE em 127.0.0.1 (ver scripts/ui/SKILL.md)
+uvicorn>=0.30,<1        # Servidor ASGI; bind loopback por padrão (ver scripts/ui/SKILL.md)
+websockets>=12,<14      # WebSocket no uvicorn — necessário p/ o terminal web (--enable-terminal)
 
 # Binário fora do pip (instalar pelo SO):  sudo apt install nmap
 # nmap é usado por scripts/diagnostics/portscan.py e scripts/analysis/security_assessment.py

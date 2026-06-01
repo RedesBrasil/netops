@@ -4,18 +4,19 @@ import { ResourceTable, Field, Modal, MarkdownEditor, CodeTextEditor, MarkdownVi
 
 export function KnowledgePage() {
   const [tab, setTab] = useState("best-practices");
+  const [creating, setCreating] = useState(false);
   return html`<div>
     <div class="page-title"><h1>Conhecimento</h1></div>
     <${Tabs} tabs=${[{ key: "best-practices", label: "Boas práticas" }, { key: "config-examples", label: "Exemplos de config" }]}
-      active=${tab} onChange=${setTab} />
-    <${KnowledgeKind} kind=${tab} key=${tab} />
+      active=${tab} onChange=${(k) => { setCreating(false); setTab(k); }}
+      actions=${html`<button class="primary sm" onClick=${() => setCreating(true)}>+ Novo arquivo</button>`} />
+    <${KnowledgeKind} kind=${tab} key=${tab} creating=${creating} setCreating=${setCreating} />
   </div>`;
 }
 
-function KnowledgeKind({ kind }) {
+function KnowledgeKind({ kind, creating, setCreating }) {
   const res = useResource(`/knowledge/${kind}`, [kind]);
   const [open, setOpen] = useState(null);   // {vendor, name}
-  const [creating, setCreating] = useState(false);
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
   const { index, files } = res.data;
@@ -31,7 +32,6 @@ function KnowledgeKind({ kind }) {
        { key: "descricao", label: "Descrição", render: (r) => r.descricao }];
   function openFile(rel) { const [vendor, ...rest] = rel.split("/"); setOpen({ vendor, name: rest.join("/") }); }
   return html`<div>
-    <div class="page-title"><span class="spacer"></span><button class="primary" onClick=${() => setCreating(true)}>+ Novo arquivo</button></div>
     <${ResourceTable} columns=${cols} rows=${rows} onRowClick=${(r) => openFile(r.file)} empty="Catálogo vazio." />
     ${files?.length ? html`<div class="help" style="margin-top:8px">Arquivos em disco: ${files.join(", ")}</div>` : ""}
     ${open && html`<${FileEditor} kind=${kind} target=${open} onClose=${() => setOpen(null)} onSaved=${() => res.reload()} />`}
@@ -52,7 +52,7 @@ function FileEditor({ kind, target, onClose, onSaved }) {
     try { await api.put(`/knowledge/${kind}/file`, { vendor: target.vendor, name: target.name, text }, data.rev); toast.ok("Salvo"); onSaved(); }
     catch (e) { handleError(e); }
   }
-  return html`<${Modal} title=${`${target.vendor}/${target.name}`} onClose=${onClose}>
+  return html`<${Modal} title=${`${target.vendor}/${target.name}`} onClose=${onClose} wide=${true}>
     ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`<${CodeTextEditor} value=${text} onChange=${setText} />`}
     <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary" onClick=${save}>Salvar</button></div>
   <//>`;
@@ -67,7 +67,7 @@ function NewFile({ kind, onClose, onSaved }) {
     catch (e) { handleError(e); }
   }
   const vendors = enums?.vendors_knowledge || ["general"];
-  return html`<${Modal} title=${`Novo arquivo (${kind})`} onClose=${onClose}>
+  return html`<${Modal} title=${`Novo arquivo (${kind})`} onClose=${onClose} wide=${true}>
     <div class="row">
       <${Field} label="Vendor"><${EnumSelect} value=${f.vendor} options=${vendors} onChange=${(v) => set("vendor", v)} /><//>
       <${Field} label="Nome do arquivo" hint=${kind === "best-practices" ? "ex.: firewall.md" : "ex.: vlan-trunk.rsc"}>

@@ -10,6 +10,7 @@ import { MemoryPage } from "./pages/memory.js";
 import { KnowledgePage } from "./pages/knowledge.js";
 import { CatalogPage } from "./pages/catalog.js";
 import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
+import { TerminalPage } from "./pages/terminal.js";
 
 const ROUTES = {
   hosts: { label: "Hosts", comp: HostsPage, group: "Inventário" },
@@ -21,6 +22,7 @@ const ROUTES = {
   catalog: { label: "Workflows & Agentes", comp: CatalogPage, group: "Conhecimento" },
   reports: { label: "Relatórios", comp: ReportsPage, group: "Saída" },
   runs: { label: "Execuções", comp: RunsPage, group: "Saída" },
+  terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled" },
   settings: { label: "Configuração", comp: SettingsPage, group: "Sistema" },
 };
 const ORDER = ["Inventário", "Conhecimento", "Saída", "Sistema"];
@@ -34,11 +36,12 @@ function useHash() {
   return hash;
 }
 
-function Sidebar({ current }) {
+function Sidebar({ current, meta }) {
+  const visible = ([, r]) => !r.flag || meta[r.flag];
   return html`<nav class="sidebar">
     ${ORDER.map((g) => html`<div key=${g}>
       <div class="group-label">${g}</div>
-      ${Object.entries(ROUTES).filter(([, r]) => r.group === g).map(([key, r]) => html`
+      ${Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
         <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${r.label}</a>`)}
     </div>`)}
   </nav>`;
@@ -46,21 +49,21 @@ function Sidebar({ current }) {
 
 function App() {
   const route = useHash();
-  const [net, setNet] = useState("NetOps");
+  const [meta, setMeta] = useState({ network_name: "NetOps" });
   const [theme, setTheme] = useState(localStorage.getItem("netops_theme") || "light");
-  useEffect(() => { startVaultPolling(); api.get("/config/meta").then((m) => setNet(m.network_name)).catch(() => {}); }, []);
+  useEffect(() => { startVaultPolling(); api.get("/config/meta").then(setMeta).catch(() => {}); }, []);
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("netops_theme", theme); }, [theme]);
 
   const Page = (ROUTES[route] || ROUTES.hosts).comp;
   return html`<div class="shell">
     <div class="topbar">
       <span class="brand">NetOps Console</span>
-      <span class="net">· ${net}</span>
+      <span class="net">· ${meta.network_name}</span>
       <span class="spacer"></span>
       <button class="sm" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}>
         ${theme === "light" ? "🌙 escuro" : "☀ claro"}</button>
     </div>
-    <${Sidebar} current=${route} />
+    <${Sidebar} current=${route} meta=${meta} />
     <main class="content">
       <${VaultBanner} />
       <${Page} />

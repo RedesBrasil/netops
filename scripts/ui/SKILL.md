@@ -19,6 +19,7 @@ cd /home/francisco/netops
 .venv/bin/python3 scripts/ui/server.py --port 8765 --no-browser
 .venv/bin/python3 scripts/ui/server.py --read-only            # desliga toda escrita
 .venv/bin/python3 scripts/ui/server.py --no-vault-unlock      # cofre só destranca pelo terminal
+.venv/bin/python3 scripts/ui/server.py --enable-terminal      # ⚠ liga o terminal web (shell)
 .venv/bin/python3 scripts/ui/server.py --host 192.0.2.10    # acesso pela rede (ver AVISO)
 ```
 
@@ -30,9 +31,12 @@ Sem o token, a API responde **401**.
 As dependências do frontend são **vendadas localmente** (offline/air-gap-safe):
 
 ```bash
-bash scripts/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml p/ static/vendor/
-.venv/bin/pip install -r requirements.txt   # fastapi + uvicorn + ruamel.yaml
+bash scripts/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xterm p/ static/vendor/
+.venv/bin/pip install -r requirements.txt   # fastapi + uvicorn + ruamel.yaml + websockets
 ```
+
+> `websockets` é necessário para o terminal web (uvicorn faz o upgrade WS); sem ele o
+> `/api/term` responde 404.
 
 ## Segurança (resumo)
 
@@ -51,12 +55,23 @@ bash scripts/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml p/ static/v
 - **Integridade:** escrita atômica (tmp + replace), `credentials.yaml` em modo `0600`,
   comentários preservados (ruamel round-trip), concorrência otimista por hash (`409` em conflito),
   validação de schema antes de gravar host/grupo.
+- **Terminal web (`--enable-terminal`):** ⚠ é um **shell real** (PTY) na máquina = execução de
+  comando arbitrário como o usuário do servidor. **DESLIGADO por padrão**, nunca liga em
+  `--read-only`. O handshake do WebSocket (`/api/term`) é autenticado **à mão** (token + Host +
+  Origin) porque o middleware http do app **não** cobre WebSocket. Sobre HTTP não-loopback, o
+  token (na URL) trafega em texto puro e dá shell completo — prefira túnel SSH/VPN.
 
 ## Fronteira (o que a UI NÃO faz)
 
-Pelo modelo de segurança (§IV/§V), a UI **não conecta em equipamentos** nem dispara workflows/
-mudanças. Coletar, aplicar config, baseline/rollback continuam sendo do agente `executor` via
-IDE de IA. A UI é só CRUD de arquivos + visualização.
+Pelo modelo de segurança (§IV/§V), a UI — **por funcionalidade de UI** (botões/formulários) —
+**não conecta em equipamentos** nem dispara workflows/mudanças. Coletar, aplicar config,
+baseline/rollback continuam sendo do agente `executor` via IDE de IA. A parte CRUD é só
+arquivos + visualização.
+
+**Exceção: o terminal web** (`--enable-terminal`, opt-in) é um *passthrough* para um shell do
+**humano** — equivalente a um SSH. Não é o framework operando sozinho; é a pessoa no teclado, e o
+que ela digita é responsabilidade dela (constituição §VII). Serve, p.ex., para rodar `claude` ou
+os `scripts/access/*.py` e acompanhar a execução pelo navegador.
 
 ## Estrutura
 
@@ -66,10 +81,10 @@ scripts/ui/
   app.py               FastAPI (middleware de segurança + handlers + StaticFiles)
   deps.py              caminhos canônicos + estado + exceções de domínio
   models.py            modelos Pydantic (validação de entrada)
-  routers/             um router por recurso (hosts, credentials, topology, memory, ...)
+  routers/             um router por recurso (hosts, credentials, ..., terminal=WS PTY)
   services/            lógica de I/O: yaml_io (round-trip/atomic/concorrência), *_svc
-  static/              SPA Preact (sem build): index.html + js/ + vendor/ (ESM vendado)
-  tests/               pytest E2E (cofre, concorrência, mascaramento, append-only, ...)
+  static/              SPA Preact (sem build): index.html + js/ (+ pages/terminal.js) + vendor/ (xterm.js, ...)
+  tests/               pytest E2E (cofre, concorrência, mascaramento, append-only, terminal WS, ...)
 ```
 
 ## Testes

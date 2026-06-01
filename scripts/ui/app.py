@@ -24,6 +24,7 @@ from routers import (
     meta,
     reports,
     runs,
+    terminal,
     topology,
 )
 
@@ -81,7 +82,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (meta, hosts, credentials, topology, config, memory, knowledge, catalog, reports, runs):
+    for mod in (meta, hosts, credentials, topology, config, memory, knowledge, catalog, reports, runs, terminal):
         app.include_router(mod.router, prefix="/api")
 
     # SPA: serve scripts/ui/static/ na raiz (index.html cobre o fallback de rotas hash).

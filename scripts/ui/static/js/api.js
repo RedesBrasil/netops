@@ -15,6 +15,9 @@ let TOKEN = "";
   }
 })();
 
+// Token da sessão atual (p/ quem não usa o wrapper `req`, ex.: o WebSocket do terminal).
+export function sessionToken() { return TOKEN; }
+
 export class ApiError extends Error {
   constructor(status, payload) { super(payload?.detail || payload?.error || `HTTP ${status}`); this.status = status; this.payload = payload; }
 }

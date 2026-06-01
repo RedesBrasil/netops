@@ -63,6 +63,16 @@ export function ResourceTable({ columns, rows, onRowClick, actions, empty }) {
   </table>`;
 }
 
+/* ------------------------------- Toggle --------------------------------- */
+// Interruptor liga/desliga controlado.
+export function Toggle({ checked, onChange, label }) {
+  return html`<label class="toggle">
+    <input type="checkbox" checked=${checked} onChange=${(e) => onChange(e.target.checked)} />
+    <span class="track"><span class="thumb"></span></span>
+    ${label && html`<span class="toggle-label">${label}</span>`}
+  </label>`;
+}
+
 /* ------------------------------ Markdown -------------------------------- */
 function sanitize(htmlStr) {
   // Minimalista (ferramenta localhost): remove <script>/<style> e atributos on*.
@@ -77,16 +87,27 @@ export function MarkdownView({ text }) {
   return html`<div class="md" dangerouslySetInnerHTML=${{ __html: out }}></div>`;
 }
 
+// Visualização read-only de markdown: formatado por padrão; toggle revela o código-fonte.
+export function MarkdownPanel({ text }) {
+  const [source, setSource] = useState(false);
+  return html`<div>
+    <div class="md-toolbar"><${Toggle} checked=${source} onChange=${setSource} label="Código-fonte" /></div>
+    ${source ? html`<pre class="raw">${text}</pre>` : html`<${MarkdownView} text=${text} />`}
+  </div>`;
+}
+
+// Por padrão mostra só o Markdown FORMATADO (leitura). Ligar "Editar" revela o texto puro.
 export function MarkdownEditor({ value, onChange, tokenBudget }) {
+  const [editing, setEditing] = useState(false);
   const tokens = Math.max(1, Math.round((value || "").length / 4));
   const pct = tokenBudget ? Math.min(100, Math.round((tokens / tokenBudget) * 100)) : 0;
   const meterKind = pct > 100 ? "danger" : pct > 85 ? "warn" : "";
   return html`<div>
-    <div class="split">
-      <textarea class="codearea" value=${value} onInput=${(e) => onChange(e.target.value)}></textarea>
-      <div class="card" style="margin:0;overflow:auto;max-height:420px"><${MarkdownView} text=${value} /></div>
-    </div>
-    ${tokenBudget && html`<div>
+    <div class="md-toolbar"><${Toggle} checked=${editing} onChange=${setEditing} label="Editar (texto puro)" /></div>
+    ${editing
+      ? html`<textarea class="codearea" value=${value} onInput=${(e) => onChange(e.target.value)}></textarea>`
+      : html`<div class="card md-readbox"><${MarkdownView} text=${value} /></div>`}
+    ${tokenBudget && editing && html`<div>
       <div class="help">~${tokens} tokens / orçamento ~${tokenBudget}</div>
       <div class="meter ${meterKind}"><div style=${`width:${Math.min(100, pct)}%`}></div></div>
     </div>`}
