@@ -58,7 +58,12 @@ def _ws_authorized(ws: WebSocket) -> bool:
                 return False
         except ValueError:
             return False
-    return deps.token_matches(ws.query_params.get("token"))
+    if not deps.token_matches(ws.query_params.get("token")):
+        return False
+    # Mesmo gate de login do /api (o middleware http não cobre WebSocket): exige a sessão.
+    if deps.auth_required() and not deps.auth_session_valid(ws.query_params.get("auth")):
+        return False
+    return True
 
 
 @router.websocket("/term")

@@ -76,6 +76,11 @@ def main() -> int:
     # O Host header precisa bater com o IP de bind (anti DNS-rebinding). Mantém loopback + o IP escolhido.
     deps.STATE.allowed_hosts = tuple({"127.0.0.1", "localhost", "::1", args.host})
 
+    if deps.vault_initialized():
+        print("\n  🔒 LOGIN EXIGIDO: o console pede a senha-mestra do cofre antes de liberar o acesso.")
+        if not deps.STATE.allow_vault_unlock:
+            print("    (--no-vault-unlock: o login autentica o console mas NÃO destranca o cofre.)")
+
     if deps.STATE.enable_terminal:
         print("\n  ⚠ TERMINAL WEB LIGADO (--enable-terminal): qualquer um com o token tem um SHELL")
         print("    completo nesta máquina (execução de comando arbitrário, como este usuário).")

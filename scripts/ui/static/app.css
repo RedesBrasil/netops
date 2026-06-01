@@ -17,6 +17,14 @@ html, body { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 .boot { padding: 40px; color: var(--muted); }
 a { color: var(--accent); text-decoration: none; }
+
+/* tela de login (gate do console) */
+.login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.login-card { width: 100%; max-width: 340px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+.login-brand { font-size: 18px; font-weight: 700; letter-spacing: .3px; margin-bottom: 4px; }
+.login-card .help { margin: 0 0 16px; }
+.login-card button.primary { width: 100%; }
 code, .mono { font-family: var(--mono); }
 
 /* layout */

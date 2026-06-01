@@ -37,6 +37,73 @@ def test_read_only_blocks_writes(env):
 
 
 # --------------------------------------------------------------------------- #
+# Gate de login: senha-mestra do cofre trava o console inteiro
+# --------------------------------------------------------------------------- #
+def _bare_client():
+    """Cliente só com o token de transporte (SEM sessão de login)."""
+    from app import create_app
+    return TestClient(create_app(), base_url="http://127.0.0.1", headers={"Authorization": "Bearer T"})
+
+
+def test_no_login_required_without_vault(env):
+    """Sem cofre inicializado: console abre só com o token (comportamento atual)."""
+    c = _bare_client()
+    assert c.get("/api/auth/status").json()["auth_required"] is False
+    assert c.get("/api/hosts").status_code == 200
+
+
+def test_console_requires_login_when_vault_initialized(env):
+    """Com cofre: /api exige a sessão de login; sem ela => 401 auth_required."""
+    _init_vault(env)
+    c = _bare_client()
+    s = c.get("/api/auth/status").json()
+    assert s["auth_required"] is True and s["authenticated"] is False
+    r = c.get("/api/hosts")
+    assert r.status_code == 401 and r.json()["error"] == "auth_required"
+
+
+def test_login_wrong_password_401_no_leak(env):
+    _init_vault(env, master="correta")
+    c = _bare_client()
+    r = c.post("/api/auth/login", json={"master_password": "errada"})
+    assert r.status_code == 401 and r.json()["error"] == "bad_password"
+    assert "errada" not in r.text                              # nunca ecoa a senha
+
+
+def test_login_correct_password_grants_session(env):
+    _init_vault(env, master="senha-mestra-teste")
+    c = _bare_client()
+    assert c.get("/api/hosts").status_code == 401              # antes do login
+    r = c.post("/api/auth/login", json={"master_password": "senha-mestra-teste"})
+    assert r.status_code == 200, r.text
+    sid = r.json()["auth_token"]
+    assert sid and "senha-mestra-teste" not in r.text          # devolve sid, não a senha
+    hdr = {"X-Netops-Session": sid}
+    assert c.get("/api/auth/status", headers=hdr).json()["authenticated"] is True
+    assert c.get("/api/hosts", headers=hdr).status_code == 200 # com a sessão, passa
+
+
+def test_login_also_unlocks_vault(env):
+    """A mesma ação de login destranca o cofre (mesma sessão da CLI)."""
+    from lib import vault_session
+    _init_vault(env, master="m")
+    vault_session.clear_session()                              # começa trancado
+    c = _bare_client()
+    sid = c.post("/api/auth/login", json={"master_password": "m"}).json()["auth_token"]
+    assert c.get("/api/vault/status", headers={"X-Netops-Session": sid}).json()["state"] == "cache"
+
+
+def test_logout_drops_session(env):
+    _init_vault(env, master="m")
+    c = _bare_client()
+    sid = c.post("/api/auth/login", json={"master_password": "m"}).json()["auth_token"]
+    hdr = {"X-Netops-Session": sid}
+    assert c.get("/api/hosts", headers=hdr).status_code == 200
+    assert c.post("/api/auth/logout", headers=hdr).status_code == 200
+    assert c.get("/api/hosts", headers=hdr).status_code == 401  # sessão encerrada
+
+
+# --------------------------------------------------------------------------- #
 # Inventário: validação, herança, concorrência
 # --------------------------------------------------------------------------- #
 def test_enums_from_schema(client):
@@ -289,6 +356,17 @@ def test_terminal_rejects_unlisted_host(client, env):
     deps.STATE.enable_terminal = True                          # Host 'testserver' NÃO liberado
     with pytest.raises(WebSocketDisconnect) as ei:
         with client.websocket_connect("/api/term?token=T"):
+            pass
+    assert ei.value.code == 4403
+
+
+def test_terminal_requires_auth_session_when_vault_initialized(client, env):
+    """Com cofre inicializado, o WS do terminal exige &auth (mesmo gate do /api)."""
+    import deps
+    _allow_testserver(); deps.STATE.enable_terminal = True
+    _init_vault(env, master="m")
+    with pytest.raises(WebSocketDisconnect) as ei:
+        with client.websocket_connect("/api/term?token=T"):       # token ok, sem &auth
             pass
     assert ei.value.code == 4403
 
