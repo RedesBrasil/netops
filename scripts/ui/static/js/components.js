@@ -201,7 +201,7 @@ export function VaultBanner() {
     🔒 Cofre <b>TRANCADO</b> — edições de senha desabilitadas.
     ${unlockBtn}
     <span class="spacer"></span>
-    ${canUnlock && html`<span class="help">ou no terminal:</span>`}
+    ${canUnlock && html`<span class="help">ou rode no shell abaixo:</span>`}
     <code>${cmd}</code><${CopyButton} text=${cmd} />
     <button class="sm" onClick=${refreshVault}>Re-verificar</button>
     ${modal}

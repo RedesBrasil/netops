@@ -15,19 +15,21 @@ groups:
   mikrotik-core:
     vendor: mikrotik
     role: core
-    access: { method: api, port: 8728 }   # API RouterOS (8729 = API-SSL)
+    access: {method: api, port: 8728}     # API RouterOS (8729 = API-SSL)
     credential: cred_mikrotik_admin
 
   mikrotik-dist:
     vendor: mikrotik
-    role: distribution
-    access: { method: ssh, port: 64777 }
+    role: other
+    access:
+      method: ssh
+      port: 64777
     credential: cred_mikrotik_admin
 
   linux-servers:
     vendor: linux
     role: server
-    access: { method: ssh, port: 22 }
+    access: {method: ssh, port: 22}
     credential: cred_linux_root
 
 # --- Hosts ---
@@ -36,9 +38,9 @@ hosts:
     hostname: RT-EDGE-01
     mgmt_ip: 10.0.0.1
     group: mikrotik-dist
-    model: 
     site: matriz
-    notes: 
+    vendor: mikrotik
+    role: distribution
 
   rt-dist-02:
     hostname: RT-DIST-03
@@ -52,9 +54,10 @@ hosts:
   rt-dist-03:
     hostname: SW-DESK-01
     mgmt_ip: 10.0.0.4
-    group: mikrotik-dist
-    model: 
     site: matriz
-    notes: 
-
-
+    vendor: mikrotik
+    credential: cred_mikrotik_admin
+    access:
+      method: ssh
+      port: 64777
+    role: other

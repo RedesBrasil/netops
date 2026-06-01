@@ -32,7 +32,7 @@ export function CredentialsPage() {
       rode no terminal: <code>python scripts/vault/cli.py init</code> e depois <code>encrypt</code>.</div>`}
     <${ResourceTable} columns=${cols} rows=${credentials.map((c) => ({ ...c, _key: c.name }))}
       actions=${(r) => html`
-        <button class="sm" disabled=${!writable} title=${writable ? "" : "Destranque o cofre"}
+        <button class="sm" disabled=${!writable} title=${writable ? "" : "Destranque o cofre na aba Terminal"}
           onClick=${() => setRotating({ name: r.name, field: "password" })}>Senha…</button>
         <button class="sm" disabled=${!writable}
           onClick=${() => setRotating({ name: r.name, field: "secret" })}>Secret…</button>
@@ -87,7 +87,7 @@ function RotateModal({ target, writable, onClose, onSaved }) {
   }
   return html`<${Modal} title=${`Definir ${target.field} — ${target.name}`} onClose=${onClose}>
     ${!writable
-      ? html`<div class="vault-banner locked">🔒 Cofre trancado. Destranque no terminal e clique em "Re-verificar status" no topo.</div>`
+      ? html`<div class="vault-banner locked">🔒 Cofre trancado. Destranque na aba Terminal para definir a senha.</div>`
       : html`<div>
           <${Field} label="Novo valor"><input type="password" autocomplete="new-password" value=${v1} onInput=${(e) => setV1(e.target.value)} /><//>
           <${Field} label="Confirme" error=${mismatch ? "Os valores não conferem" : null}>

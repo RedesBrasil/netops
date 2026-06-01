@@ -13,18 +13,22 @@ quando o operador precisa e ser encerrada depois. O framework funciona 100% com 
 
 ## Como subir
 
+**SEMPRE** pelo script (nunca `python scripts/ui/server.py` direto). Ele fixa o token (a URL não
+muda entre reinícios), liga o terminal web e faz bind no IP da máquina, com instância única:
+
 ```bash
-cd /home/francisco/netops
-.venv/bin/python3 scripts/ui/server.py            # 127.0.0.1, porta livre, abre o navegador
-.venv/bin/python3 scripts/ui/server.py --port 8765 --no-browser
-.venv/bin/python3 scripts/ui/server.py --read-only            # desliga toda escrita
-.venv/bin/python3 scripts/ui/server.py --no-vault-unlock      # cofre só destranca pelo terminal
-.venv/bin/python3 scripts/ui/server.py --enable-terminal      # ⚠ liga o terminal web (shell)
-.venv/bin/python3 scripts/ui/server.py --host 192.0.2.10    # acesso pela rede (ver AVISO)
+scripts/ui/start.sh                          # IP da máquina, porta 8765, terminal ON
+NETOPS_UI_HOST=127.0.0.1 scripts/ui/start.sh # força loopback (só local)
+NETOPS_UI_PORT=9000      scripts/ui/start.sh # outra porta
+NETOPS_UI_TERMINAL=0     scripts/ui/start.sh # sobe SEM o terminal web
+scripts/ui/start.sh --read-only --no-vault-unlock   # flags extras viram passthrough
 ```
 
-O servidor imprime (e abre) a URL **já com o token de sessão**: `http://127.0.0.1:<porta>/?token=<...>`.
-Sem o token, a API responde **401**.
+O script imprime a URL **já com o token de sessão** (`http://<ip>:<porta>/?token=<...>`); sem o
+token a API responde **401**. O token persiste em `scripts/ui/.ui-token` (0600, git-ignorado).
+
+> Por baixo o script chama `scripts/ui/server.py` (flags: `--host/--port/--token/--read-only/`
+> `--no-vault-unlock/--enable-terminal/--no-browser`). Use o server.py direto só para depurar.
 
 ## Setup inicial (uma vez, com internet)
 

@@ -1,6 +1,7 @@
 // Terminal web (xterm.js) ligado a um PTY no backend via WebSocket (/api/term).
 // Quadros: teclas -> binário; saída do PTY -> binário; resize -> texto JSON {resize:[cols,rows]}.
 import { html, useRef, useEffect, useState } from "../ui.js";
+import { VaultBanner } from "../components.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { sessionToken } from "../api.js";
@@ -69,6 +70,7 @@ export function TerminalPage() {
       ${(status === "desconectado" || status === "erro") &&
         html`<button class="sm" onClick=${() => setGen((g) => g + 1)}>Reconectar</button>`}
     </div>
+    <${VaultBanner} />
     <div class="term-host" ref=${hostRef}></div>
   </div>`;
 }

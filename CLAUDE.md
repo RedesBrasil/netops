@@ -55,6 +55,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Boas práticas (texto) | `best-practices/<vendor>/` ou `best-practices/general/` |
 | Exemplos de configuração reais | `config-examples/<vendor>/` |
 | Scripts de acesso e diagnóstico | `scripts/` |
+| Subir o console web (SEMPRE por aqui) | `scripts/ui/start.sh` |
 | Modelos de planejamento | `planning-examples/` |
 | O que o framework já aprendeu | `memory/` |
 | Saída bruta de execuções | `runs/` |
@@ -73,3 +74,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   **destrancado** antes de qualquer acesso — o humano roda `python scripts/vault/cli.py unlock`
   (a IA não digita a senha-mestra). Se trancado, os scripts falham com instrução clara.
 - **Setup:** as deps Python estão em `requirements.txt` (use um venv). `nmap` via `apt`.
+- **Console web:** para subir a interface web, rode **SEMPRE** `scripts/ui/start.sh` — **nunca**
+  `python scripts/ui/server.py` direto. O script fixa o token (a URL/aba não muda entre reinícios),
+  liga o **terminal web** (senão a aba "Terminal" some) e faz bind no IP da máquina, garantindo uma
+  instância só. Variáveis: `NETOPS_UI_HOST`, `NETOPS_UI_PORT`, `NETOPS_UI_TERMINAL=0`. Ver `scripts/ui/SKILL.md`.
