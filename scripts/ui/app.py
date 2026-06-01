@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 import deps
 from routers import (
+    auth,
     catalog,
     config,
     credentials,
@@ -29,6 +30,8 @@ from routers import (
 )
 
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
+# Endpoints alcançáveis só com o token (sem sessão de login) — bootstrap do gate.
+AUTH_OPEN_PATHS = {"/api/auth/login", "/api/auth/status", "/api/auth/logout", "/api/config/meta"}
 
 
 def _host_ok(host_header: str | None) -> bool:
@@ -70,6 +73,11 @@ def create_app() -> FastAPI:
             # Token obrigatório em toda a API (docs/openapi inclusos).
             if not deps.token_matches(_supplied_token(request)):
                 return JSONResponse({"error": "unauthorized"}, status_code=401)
+            # Gate de login: com cofre inicializado, todo /api exige sessão (senha-mestra),
+            # exceto a allow-list de bootstrap (login/status/logout/meta).
+            if (deps.auth_required() and path not in AUTH_OPEN_PATHS
+                    and not deps.auth_session_valid(request.headers.get("x-netops-session"))):
+                return JSONResponse({"error": "auth_required"}, status_code=401)
             if request.method in MUTATING:
                 if not _origin_ok(request.headers.get("origin")):
                     return JSONResponse({"error": "forbidden_origin"}, status_code=403)
@@ -82,7 +90,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (meta, hosts, credentials, topology, config, memory, knowledge, catalog, reports, runs, terminal):
+    for mod in (auth, meta, hosts, credentials, topology, config, memory, knowledge, catalog, reports, runs, terminal):
         app.include_router(mod.router, prefix="/api")
 
     # SPA: serve scripts/ui/static/ na raiz (index.html cobre o fallback de rotas hash).

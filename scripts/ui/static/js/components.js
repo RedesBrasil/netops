@@ -4,6 +4,7 @@ import {
   html, useState, useEffect, api, Badge, CopyButton, Spinner, Modal,
   vaultStore, useStore, refreshVault, toast,
 } from "./ui.js";
+import { setAuthToken } from "./api.js";
 // Re-export dos diálogos base p/ as páginas poderem importar tudo de components.js.
 export { Modal, ConfirmDialog, ConflictDialog, Tabs } from "./ui.js";
 
@@ -116,6 +117,45 @@ export function MarkdownEditor({ value, onChange, tokenBudget }) {
 
 export function CodeTextEditor({ value, onChange }) {
   return html`<textarea class="codearea" value=${value} onInput=${(e) => onChange(e.target.value)}></textarea>`;
+}
+
+/* ---------------------------- LoginScreen ------------------------------- */
+// Gate de acesso ao console: a senha-mestra do cofre autentica a sessão de login (e
+// destranca o cofre na mesma ação). Mesmo caminho de verificação do UnlockModal.
+export function LoginScreen({ onAuthed }) {
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function submit(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!pw || busy) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await api.post("/auth/login", { master_password: pw });
+      setPw("");
+      setAuthToken(r.auth_token);
+      await refreshVault();
+      onAuthed && onAuthed();
+    } catch (e2) {
+      if (e2.status === 401) setErr("Senha mestra incorreta.");
+      else setErr(e2.payload?.detail || e2.message || "Falha ao entrar.");
+    } finally { setBusy(false); }
+  }
+
+  return html`<div class="login-screen">
+    <form class="login-card" onSubmit=${submit}>
+      <div class="login-brand">🔒 NetOps Console</div>
+      <p class="help">Acesso protegido. Entre com a senha-mestra do cofre.</p>
+      <div class="field">
+        <label>Senha mestra</label>
+        <input type="password" autocomplete="current-password" autofocus value=${pw}
+          onInput=${(e) => setPw(e.target.value)} disabled=${busy} />
+        ${err && html`<div class="err">${err}</div>`}
+      </div>
+      <button type="submit" class="primary" disabled=${busy || !pw}>${busy ? "Entrando…" : "Entrar"}</button>
+    </form>
+  </div>`;
 }
 
 /* ---------------------------- UnlockModal ------------------------------- */

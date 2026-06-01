@@ -51,12 +51,18 @@ def env(tmp_path, monkeypatch):
     deps.STATE.allow_vault_unlock = True
     deps.STATE.enable_terminal = False
     deps.STATE.allowed_hosts = ("127.0.0.1", "localhost")
+    deps.STATE.auth_sessions = {}
+    deps._vault_init_cache.clear()
     return tmp_path
 
 
 @pytest.fixture()
 def client(env):
+    """Cliente já "logado": token + uma sessão de login válida. (O gate de login só morde
+    quando há cofre inicializado; o header de sessão é inócuo quando não é exigido.)"""
     from fastapi.testclient import TestClient
+    import deps
     from app import create_app
+    sid = deps.create_auth_session(3600)
     return TestClient(create_app(), base_url="http://127.0.0.1",
-                      headers={"Authorization": "Bearer T"})
+                      headers={"Authorization": "Bearer T", "X-Netops-Session": sid})

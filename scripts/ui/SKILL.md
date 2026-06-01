@@ -47,6 +47,14 @@ bash scripts/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xterm p/ st
 - **Bind em loopback por padrão.** `--host <ip-privado>` expõe na rede e imprime um AVISO;
   use só em rede confiável e via token. `0.0.0.0` é recusado.
 - **Token de sessão** obrigatório em toda a `/api` (header `Authorization: Bearer` ou `?token=`).
+- **Login com a senha-mestra:** quando o cofre está **inicializado**, o console inteiro fica atrás de
+  uma tela de login. A senha-mestra (mesmo `derive_key`+`verify_key` do cofre) emite uma **sessão de
+  login** própria (sid em memória do processo, header `X-Netops-Session`, TTL deslizante); todo `/api`
+  passa a exigi-la, exceto a allow-list de bootstrap (`/api/auth/{login,status,logout}`,
+  `/api/config/meta`). O mesmo login **também destranca o cofre** (a não ser com `--no-vault-unlock`).
+  Endpoints: `GET /api/auth/status`, `POST /api/auth/login`, `POST /api/auth/logout` (botão "Sair").
+  Sem cofre inicializado, cai no comportamento antigo (só token). O WS do terminal usa o mesmo gate
+  (`&auth=<sid>`). Sessão em memória ⇒ vale só com o servidor no ar (uvicorn single-process).
 - **Anti DNS-rebinding:** o header `Host` precisa bater com o IP de bind (senão 403).
 - **Cofre:** a UI **lê o status** (`session_status()` — não renova o TTL) e **cifra na escrita**
   (`encrypt_value` com a chave da sessão) e **nunca** devolve senha em texto puro ao navegador.
