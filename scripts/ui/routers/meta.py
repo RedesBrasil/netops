@@ -95,4 +95,8 @@ def config_meta() -> dict:
             network_name = ((cfg.get("project") or {}).get("network_name")) or network_name
         except Exception:
             pass
-    return {"network_name": network_name, "read_only": deps.STATE.read_only}
+    return {
+        "network_name": network_name,
+        "read_only": deps.STATE.read_only,
+        "terminal_enabled": deps.STATE.enable_terminal,
+    }

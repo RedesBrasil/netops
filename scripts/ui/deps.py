@@ -66,6 +66,7 @@ class ServerState:
     token: str = ""
     read_only: bool = False
     allow_vault_unlock: bool = True
+    enable_terminal: bool = False
     allowed_hosts: tuple[str, ...] = field(default_factory=lambda: ("127.0.0.1", "localhost"))
 
 

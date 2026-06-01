@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()
 from access.ssh import _save, run_commands  # noqa: E402
 
 

@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()
 from lib.inventory import NETOPS_ROOT, load_inventory, resolve_host  # noqa: E402
 from lib.transport import open_routeros_api  # noqa: E402
 

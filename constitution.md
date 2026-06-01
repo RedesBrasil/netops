@@ -1,6 +1,6 @@
 # Constituição do NetOps
 
-> **Versão:** 1.0.1 | **Ratificada:** 2026-05-18 | **Revisado:** 2026-06-01 (§VII: ferramenta de operador)
+> **Versão:** 1.0.2 | **Ratificada:** 2026-05-18 | **Revisado:** 2026-06-01 (§VII: terminal web opt-in)
 
 Este documento define os princípios inegociáveis do NetOps. Todos os agentes, workflows e
 scripts DEVEM respeitá-los. Adaptado da `constitution.md` do AIOX para o domínio de redes e
@@ -85,9 +85,16 @@ scripts Python. Sem banco de dados, sem Docker, sem servidor (princípio do Open
   por padrão (`127.0.0.1`); (c) o framework funcione 100% com ela desligada (as IDEs de IA
   seguem sendo a interface primária). Ela é uma *ferramenta sobre os arquivos*, no mesmo
   espírito de `scripts/docs/topology_render.py` — **não** é um runtime do framework.
-- **NÃO DEVE:** A ferramenta de operador manter conexão a dispositivo aberta, disparar
-  workflows/mudanças que contornem o modelo de `baseline → rollback → veto` (§V), nem
-  devolver segredos em texto puro ao navegador.
+- **NÃO DEVE:** A ferramenta de operador, **por funcionalidade própria de UI** (botões,
+  formulários, automações), manter conexão a dispositivo aberta, disparar workflows/mudanças
+  que contornem o modelo de `baseline → rollback → veto` (§V), nem devolver segredos em texto
+  puro ao navegador.
+- **PODE:** Oferecer um **terminal web** (`--enable-terminal`, **DESLIGADO por padrão**) que
+  é apenas um *passthrough* para um shell do **humano operador** — equivalente a uma sessão
+  SSH na máquina. Isso **não** é o framework/UI operando equipamentos de forma autônoma: é a
+  pessoa no teclado. Exigências: opt-in explícito, token de sessão, nunca em `--read-only`, e
+  o framework segue funcionando 100% com ele desligado. O que se digita ali é responsabilidade
+  do humano (como em qualquer SSH), fora do automatismo dos agentes.
 
 ---
 

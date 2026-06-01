@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NetOps Console</title>
+  <link rel="stylesheet" href="/vendor/xterm.css" />
   <link rel="stylesheet" href="/app.css" />
   <!-- importmap só com URLs locais (offline / air-gap safe). Ver scripts/ui/vendor_deps.sh -->
   <script type="importmap">
@@ -14,7 +15,9 @@
       "htm": "/vendor/htm.module.js",
       "htm/preact": "/vendor/htm-preact.module.js",
       "marked": "/vendor/marked.esm.js",
-      "js-yaml": "/vendor/js-yaml.mjs"
+      "js-yaml": "/vendor/js-yaml.mjs",
+      "@xterm/xterm": "/vendor/xterm.mjs",
+      "@xterm/addon-fit": "/vendor/xterm-addon-fit.mjs"
     }
   }
   </script>

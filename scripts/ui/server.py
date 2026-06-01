@@ -54,6 +54,8 @@ def main() -> int:
     parser.add_argument("--read-only", action="store_true", help="Desliga toda escrita (só CRUD de leitura)")
     parser.add_argument("--no-vault-unlock", action="store_true",
                         help="Desabilita destrancar o cofre pela web (a senha-mestra só pelo terminal)")
+    parser.add_argument("--enable-terminal", action="store_true",
+                        help="Liga o terminal web (PTY). ⚠ EXECUÇÃO DE COMANDO ARBITRÁRIO. Default: desligado")
     parser.add_argument("--token", default=os.environ.get("NETOPS_UI_TOKEN", ""),
                         help="Token fixo (default: aleatório por sessão)")
     args = parser.parse_args()
@@ -70,8 +72,13 @@ def main() -> int:
     deps.STATE.token = args.token or os.urandom(16).hex()
     deps.STATE.read_only = args.read_only
     deps.STATE.allow_vault_unlock = not args.no_vault_unlock
+    deps.STATE.enable_terminal = args.enable_terminal and not args.read_only
     # O Host header precisa bater com o IP de bind (anti DNS-rebinding). Mantém loopback + o IP escolhido.
     deps.STATE.allowed_hosts = tuple({"127.0.0.1", "localhost", "::1", args.host})
+
+    if deps.STATE.enable_terminal:
+        print("\n  ⚠ TERMINAL WEB LIGADO (--enable-terminal): qualquer um com o token tem um SHELL")
+        print("    completo nesta máquina (execução de comando arbitrário, como este usuário).")
 
     if not is_loopback:
         print("\n  AVISO DE SEGURANÇA: bind em endereço NÃO-loopback — o console fica acessível na rede.")
@@ -80,6 +87,9 @@ def main() -> int:
         if deps.STATE.allow_vault_unlock:
             print("  ATENÇÃO: destrancar o cofre pela web envia a SENHA-MESTRA em TEXTO PURO por HTTP nesta rede.")
             print("  Use só atrás de túnel SSH/VPN, ou suba com --no-vault-unlock e destranque pelo terminal.")
+        if deps.STATE.enable_terminal:
+            print("  ATENÇÃO: com o terminal ligado nesta rede, o token (na URL) trafega em TEXTO PURO por HTTP")
+            print("  e dá um shell completo. Prefira túnel SSH/VPN. O terminal NÃO liga em --read-only.")
         print()
 
     from app import create_app  # noqa: PLC0415  (importa depois de setar STATE)

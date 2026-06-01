@@ -4,17 +4,25 @@ import { ResourceTable, Field, MarkdownEditor, Modal, EnumSelect } from "../comp
 
 export function MemoryPage() {
   const [tab, setTab] = useState("user");
+  const [creatingPattern, setCreatingPattern] = useState(false);
+  const [creatingLesson, setCreatingLesson] = useState(false);
   const tabs = [
     { key: "user", label: "USER.md" }, { key: "notes", label: "MEMORY.md" },
     { key: "patterns", label: "Padrões" }, { key: "lessons", label: "Lições" },
   ];
+  const actions = tab === "patterns"
+    ? html`<button class="primary sm" onClick=${() => setCreatingPattern(true)}>+ Padrão</button>`
+    : tab === "lessons"
+    ? html`<button class="primary sm" onClick=${() => setCreatingLesson(true)}>+ Nova lição</button>`
+    : null;
+  function changeTab(k) { setCreatingPattern(false); setCreatingLesson(false); setTab(k); }
   return html`<div>
     <div class="page-title"><h1>Memória</h1></div>
-    <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
+    <${Tabs} tabs=${tabs} active=${tab} onChange=${changeTab} actions=${actions} />
     ${tab === "user" && html`<${MdFile} which="user" />`}
     ${tab === "notes" && html`<${MdFile} which="notes" />`}
-    ${tab === "patterns" && html`<${Patterns} />`}
-    ${tab === "lessons" && html`<${Lessons} />`}
+    ${tab === "patterns" && html`<${Patterns} creating=${creatingPattern} onCreateClose=${() => setCreatingPattern(false)} />`}
+    ${tab === "lessons" && html`<${Lessons} creating=${creatingLesson} onCreateClose=${() => setCreatingLesson(false)} />`}
   </div>`;
 }
 
@@ -34,7 +42,7 @@ function MdFile({ which }) {
   </div>`;
 }
 
-function Patterns() {
+function Patterns({ creating, onCreateClose }) {
   const res = useResource("/memory/patterns");
   const [editing, setEditing] = useState(null);
   if (res.loading) return html`<${Spinner} />`;
@@ -47,13 +55,14 @@ function Patterns() {
     { key: "padrao", label: "Padrão", render: (r) => r.padrao },
   ];
   return html`<div>
-    <div class="page-title"><span class="spacer"></span><button class="primary" onClick=${() => setEditing({ __new: true })}>+ Padrão</button></div>
     <${ResourceTable} columns=${cols} rows=${patterns.map((p) => ({ ...p, _key: p.id }))}
       onRowClick=${(r) => setEditing(r)}
       actions=${(r) => html`<button class="sm danger" onClick=${async () => { try { await api.del(`/memory/patterns/${r.id}`, rev); toast.ok("Removido"); res.reload(); } catch (e) { handleError(e); } }}>Excluir</button>`}
       empty="Nenhum padrão consolidado." />
     ${editing && html`<${PatternForm} pattern=${editing} rev=${rev}
         onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
+    ${creating && html`<${PatternForm} pattern=${{ __new: true }} rev=${rev}
+        onClose=${onCreateClose} onSaved=${() => { onCreateClose(); res.reload(); }} />`}
   </div>`;
 }
 
@@ -81,9 +90,8 @@ function PatternForm({ pattern, rev, onClose, onSaved }) {
   <//>`;
 }
 
-function Lessons() {
+function Lessons({ creating, onCreateClose }) {
   const res = useResource("/memory/lessons");
-  const [creating, setCreating] = useState(false);
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
   const estadoBadge = (e) => e === "ativo" ? html`<${Badge} kind="ok">ativo<//>`
@@ -103,14 +111,13 @@ function Lessons() {
   ];
   return html`<div>
     <div class="help" style="margin-bottom:8px">Lições são <b>append-only</b> (constituição §II): nunca apagadas, só mudam de estado.</div>
-    <div class="page-title"><span class="spacer"></span><button class="primary" onClick=${() => setCreating(true)}>+ Nova lição</button></div>
     <${ResourceTable} columns=${cols} rows=${res.data.lessons.map((l) => ({ ...l, _key: l.file }))}
       actions=${(r) => html`
         <button class="sm" onClick=${() => transition(r.file, "ativo")}>ativo</button>
         <button class="sm" onClick=${() => transition(r.file, "stale")}>stale</button>
         <button class="sm" onClick=${() => transition(r.file, "archived")}>arquivar</button>`}
       empty="Nenhuma lição registrada." />
-    ${creating && html`<${LessonForm} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); res.reload(); }} />`}
+    ${creating && html`<${LessonForm} onClose=${onCreateClose} onSaved=${() => { onCreateClose(); res.reload(); }} />`}
   </div>`;
 }
 

@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 
 # --------------------------------------------------------------------------- #
@@ -244,6 +247,64 @@ def test_lessons_append_only(client):
     rev = client.get(f"/api/memory/lessons/{f}").json()["rev"]
     r2 = client.patch(f"/api/memory/lessons/{f}/estado", json={"estado": "archived"}, headers={"If-Match": rev})
     assert r2.status_code == 200 and r2.json()["estado"] == "archived"
+
+
+# --------------------------------------------------------------------------- #
+# Terminal web (PTY via WebSocket) — gating de segurança + echo
+# (o TestClient manda Host: 'testserver' no handshake WS; liberar quando a conexão
+#  precisa passar pelo anti-DNS-rebind.)
+# --------------------------------------------------------------------------- #
+def _allow_testserver():
+    import deps
+    deps.STATE.allowed_hosts = ("testserver", "127.0.0.1", "localhost")
+
+
+def test_terminal_off_by_default(client, env):
+    _allow_testserver()                                        # sem --enable-terminal
+    with pytest.raises(WebSocketDisconnect) as ei:
+        with client.websocket_connect("/api/term?token=T"):
+            pass
+    assert ei.value.code == 4403
+
+
+def test_terminal_requires_token(client, env):
+    import deps
+    _allow_testserver(); deps.STATE.enable_terminal = True
+    with pytest.raises(WebSocketDisconnect) as ei:
+        with client.websocket_connect("/api/term"):           # sem token
+            pass
+    assert ei.value.code == 4403
+
+
+def test_terminal_blocked_in_read_only(client, env):
+    import deps
+    _allow_testserver(); deps.STATE.enable_terminal = True; deps.STATE.read_only = True
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/api/term?token=T"):    # terminal nunca em read-only
+            pass
+
+
+def test_terminal_rejects_unlisted_host(client, env):
+    import deps
+    deps.STATE.enable_terminal = True                          # Host 'testserver' NÃO liberado
+    with pytest.raises(WebSocketDisconnect) as ei:
+        with client.websocket_connect("/api/term?token=T"):
+            pass
+    assert ei.value.code == 4403
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="bash ausente")
+def test_terminal_echo_roundtrip(client, env):
+    import deps
+    _allow_testserver(); deps.STATE.enable_terminal = True
+    with client.websocket_connect("/api/term?token=T") as ws:
+        ws.send_bytes(b"echo NETOPS_TERM_OK\n")                # teclas (binário)
+        buf = b""
+        for _ in range(80):
+            buf += ws.receive_bytes()                          # saída do PTY (binário)
+            if b"NETOPS_TERM_OK" in buf:
+                break
+        assert b"NETOPS_TERM_OK" in buf
 
 
 # --------------------------------------------------------------------------- #

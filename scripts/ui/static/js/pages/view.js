@@ -1,6 +1,6 @@
 // Reports (read-only), Runs (read-only) e Settings (project-config.yaml).
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
-import { ResourceTable, Field, Modal, MarkdownView, CodeTextEditor } from "../components.js";
+import { ResourceTable, Field, Modal, MarkdownPanel, CodeTextEditor } from "../components.js";
 
 export function ReportsPage() {
   const res = useResource("/reports");
@@ -21,8 +21,8 @@ export function ReportsPage() {
 function ReportView({ file, onClose }) {
   const [md, setMd] = useState(null);
   useEffect(() => { api.get(`/reports/${file}`).then((d) => setMd(d.markdown)).catch(handleError); }, []);
-  return html`<${Modal} title=${file} onClose=${onClose}>
-    ${md === null ? html`<${Spinner} />` : html`<${MarkdownView} text=${md} />`}
+  return html`<${Modal} title=${file} onClose=${onClose} wide=${true}>
+    ${md === null ? html`<${Spinner} />` : html`<${MarkdownPanel} text=${md} />`}
     <div class="modal-actions"><button onClick=${onClose}>Fechar</button></div>
   <//>`;
 }
@@ -48,7 +48,7 @@ function RunView({ id, onClose }) {
   const [data, setData] = useState(null);
   const [artifact, setArtifact] = useState(null);
   useEffect(() => { api.get(`/runs/${id}`).then(setData).catch(handleError); }, []);
-  return html`<${Modal} title=${`Execução ${id}`} onClose=${onClose}>
+  return html`<${Modal} title=${`Execução ${id}`} onClose=${onClose} wide=${true}>
     ${!data ? html`<${Spinner} />` : html`<div>
       <h3>state.json</h3>
       <pre class="md">${JSON.stringify(data.state, null, 2)}</pre>
