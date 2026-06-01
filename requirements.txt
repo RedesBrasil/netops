@@ -1,0 +1,24 @@
+# NetOps — dependências Python da camada de acesso e diagnóstico.
+# Instale num virtualenv:  python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+
+# --- Acesso a dispositivos ---
+netmiko>=4.5,<5         # SSH/Telnet multi-fabricante (camada principal). Usa Paramiko por baixo.
+napalm>=5.0,<6          # Coleta estruturada + compare_config/diff (cisco ios/xe/nxos, junos, eos)
+librouteros>=3.4,<4     # API nativa do MikroTik RouterOS
+paramiko>=3.4           # SSH de baixo nível, para casos sob medida (ex.: Linux puro)
+ntc-templates>=7.0      # Parsing TextFSM da saída do Netmiko (use_textfsm=True)
+
+# --- Utilitários ---
+pyyaml>=6.0             # Leitura de hosts.yaml / topology.yaml / credentials.yaml
+jsonschema>=4.0         # Validação do inventário contra core/schemas/
+rich>=13                # Saída legível no terminal
+cryptography>=42        # Cofre de credenciais (scripts/lib/vault.py — Argon2id + Fernet). Já vem via paramiko.
+ruamel.yaml>=0.18,<1    # Round-trip YAML PRESERVANDO comentários (escrita pela UI). Já vem via netmiko.
+
+# --- UI web (opcional — só para scripts/ui/server.py, o console CRUD local) ---
+# Pode pular numa instalação headless. pydantic já vem como transitivo.
+fastapi>=0.115,<1       # API + validação Pydantic + OpenAPI; serve o SPA Preact (sem build)
+uvicorn>=0.30,<1        # Servidor ASGI; bind SEMPRE em 127.0.0.1 (ver scripts/ui/SKILL.md)
+
+# Binário fora do pip (instalar pelo SO):  sudo apt install nmap
+# nmap é usado por scripts/diagnostics/portscan.py e scripts/analysis/security_assessment.py

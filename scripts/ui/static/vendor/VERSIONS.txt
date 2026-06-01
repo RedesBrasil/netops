@@ -1,0 +1,8 @@
+# Dependências do frontend — pinadas em 2026-06-01T16:14Z
+preact 10.27.2 | htm 3.1.1 | marked 12.0.2 | js-yaml 4.1.0
+b3f51db71c12eabba61819feb74ace7cadc2744af41866c3fcad2ab960415746  ./htm-preact.module.js
+ab33dd3f38059b9be4d5f5350128eefb2356639c4e0bbe9d9e8b3ba75847e9e4  ./htm.module.js
+288515814e901ea6535521d9fb35a1329455d3d3973de8723db998536f979cf2  ./marked.esm.js
+9295b344df14b5395a612fed63350619d029e91cc2e80e9a2a5f920e38b88972  ./preact-hooks.module.js
+a1cefabf06ec626adcb92731537e1e04fd09a7908e22551bab50540106dc950d  ./preact.module.js
+16f210b939b359b6ec8dde581eb62c157185711dc7b719b33779c43db5c31a91  ./js-yaml.mjs

@@ -1,0 +1,30 @@
+# NetOps — arquivos que NUNCA devem ser versionados.
+
+# >>> SEGREDOS — credenciais (cofre 'enc.v1:' ou texto puro). NUNCA commitar. <<<
+network/credentials.yaml
+network/*.tmp            # temporário de escrita atômica do cofre (scripts/vault/cli.py + scripts/ui)
+network/*.bak.*          # backups da UI (credentials.yaml.bak.* pode conter segredos) — nunca commitar
+
+# Saídas brutas de execução (podem conter dados sensíveis dos dispositivos)
+runs/
+
+# Ambiente Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Sessões/artefatos locais
+*.session
+*.log
+
+# Config local da IDE de IA (específico da máquina, não compartilhar)
+.claude/settings.local.json
+
+# Cache de testes
+.pytest_cache/
+
+# Sistema operacional / editor
+.DS_Store
+Thumbs.db
+*.swp

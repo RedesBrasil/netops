@@ -1,0 +1,226 @@
+// Hosts e Grupos (network/hosts.yaml) — formulário ciente de herança de grupo.
+import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
+import { ResourceTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog } from "../components.js";
+import { Modal, ConflictDialog } from "../ui.js";
+
+const INHERIT = ["vendor", "role", "credential"];
+
+export function HostsPage() {
+  const res = useResource("/hosts");
+  const [editing, setEditing] = useState(null); // host object or {__new:true}
+  const [confirm, setConfirm] = useState(null);
+  if (res.loading) return html`<${Spinner} />`;
+  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  const { hosts, rev, groups } = res.data;
+
+  const cols = [
+    { key: "id", label: "ID", render: (r) => html`<b>${r.id}</b>` },
+    { key: "hostname", label: "Hostname", render: (r) => r.explicit.hostname },
+    { key: "mgmt_ip", label: "IP", render: (r) => html`<span class="mono">${r.explicit.mgmt_ip}</span>` },
+    { key: "vendor", label: "Vendor", render: (r) => html`<${Badge} kind="accent">${r.effective.vendor || "?"}<//>` },
+    { key: "role", label: "Role", render: (r) => r.effective.role || "—" },
+    { key: "group", label: "Grupo", render: (r) => r.explicit.group || "—" },
+    { key: "access", label: "Acesso", render: (r) => {
+        const a = r.effective.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
+  ];
+
+  return html`<div>
+    <div class="page-title"><h1>Hosts</h1><span class="spacer"></span>
+      <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Novo host</button></div>
+    <${ResourceTable} columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
+      onRowClick=${(r) => setEditing(r)}
+      actions=${(r) => html`<button class="sm danger" onClick=${() => setConfirm(r.id)}>Excluir</button>`}
+      empty="Nenhum host. Clique em + Novo host." />
+
+    ${editing && html`<${HostForm} host=${editing} groups=${groups} rev=${rev}
+        onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
+    ${confirm && html`<${ConfirmDialog} title="Excluir host" danger=true
+        message=${`Remover o host '${confirm}' do inventário?`}
+        onClose=${() => setConfirm(null)}
+        onConfirm=${async () => {
+          try { await api.del(`/hosts/${confirm}`, rev); toast.ok("Host removido"); res.reload(); }
+          catch (e) { handleError(e); } }} />`}
+  </div>`;
+}
+
+function HostForm({ host, groups, rev, onClose, onSaved }) {
+  const isNew = !!host.__new;
+  const enums = useEnums();
+  const [groupDetails, setGroupDetails] = useState({});
+  const [creds, setCreds] = useState([]);
+  const [conflict, setConflict] = useState(false);
+  const [errors, setErrors] = useState({});
+  const explicit = isNew ? {} : host.explicit;
+  const [form, setForm] = useState({
+    id: isNew ? "" : host.id,
+    hostname: explicit.hostname || "", mgmt_ip: explicit.mgmt_ip || "",
+    group: explicit.group || "", vendor: explicit.vendor ?? null, role: explicit.role ?? null,
+    model: explicit.model || "", site: explicit.site || "", notes: explicit.notes || "",
+    credential: explicit.credential ?? null,
+    method: (explicit.access || {}).method ?? null, port: (explicit.access || {}).port ?? "",
+  });
+
+  useEffect(() => {
+    api.get("/groups").then((g) => setGroupDetails(Object.fromEntries(g.groups.map((x) => [x.name, x.fields]))));
+    api.get("/credentials").then((c) => setCreds(c.credentials.map((x) => x.name)));
+  }, []);
+
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const gfields = groupDetails[form.group] || {};
+  const inh = (k) => gfields[k];                                  // valor herdado do grupo
+  const inhAccess = (k) => (gfields.access || {})[k];
+
+  function tag(k, accessKey) {
+    const explicitVal = accessKey ? form[k] : form[k];
+    const isSet = explicitVal !== null && explicitVal !== "" && explicitVal !== undefined;
+    if (isSet) return html`<span class="tag-explicit">explícito</span>`;
+    const v = accessKey ? inhAccess(accessKey) : inh(k);
+    return v ? html`<span class="tag-inherit">herdado de ${form.group}: ${v}</span>` : null;
+  }
+
+  async function save() {
+    setErrors({});
+    const payload = {};
+    if (isNew) { payload.id = form.id; }
+    // obrigatórios
+    payload.hostname = form.hostname; payload.mgmt_ip = form.mgmt_ip;
+    if (form.group) payload.group = form.group; else if (!isNew) payload.group = null;
+    for (const k of ["vendor", "role", "credential"]) payload[k] = form[k] || null;
+    for (const k of ["model", "site", "notes"]) payload[k] = form[k] || null;
+    const acc = {};
+    if (form.method) acc.method = form.method;
+    if (form.port !== "" && form.port != null) acc.port = Number(form.port);
+    payload.access = Object.keys(acc).length ? acc : null;
+    try {
+      if (isNew) await api.post("/hosts", payload, rev);
+      else await api.patch(`/hosts/${host.id}`, payload, rev);
+      toast.ok(isNew ? "Host criado" : "Host atualizado");
+      onSaved();
+    } catch (e) {
+      if (e.name === "ConflictError" || e.constructor?.name === "ConflictError") return setConflict(true);
+      const fe = handleError(e);
+      const map = {}; fe.forEach((x) => { map[x.loc] = x.msg; });
+      setErrors(map);
+    }
+  }
+  const errFor = (suffix) => Object.entries(errors).find(([k]) => k.endsWith(suffix))?.[1];
+
+  return html`<${Modal} title=${isNew ? "Novo host" : `Editar ${host.id}`} onClose=${onClose}>
+    ${isNew && html`<${Field} label="ID (identificador único)" error=${errFor("/id") || errors.id}>
+      <input value=${form.id} placeholder="ex.: rt-core-01" onInput=${(e) => set("id", e.target.value)} /><//>`}
+    <div class="row">
+      <${Field} label="Hostname" error=${errFor("/hostname")}>
+        <input value=${form.hostname} onInput=${(e) => set("hostname", e.target.value)} /><//>
+      <${Field} label="IP de gerência" error=${errFor("/mgmt_ip")}>
+        <input value=${form.mgmt_ip} onInput=${(e) => set("mgmt_ip", e.target.value)} /><//>
+    </div>
+    <${Field} label="Grupo (herança de defaults)">
+      <${RefSelect} value=${form.group} options=${groups} placeholder="(sem grupo)" onChange=${(v) => set("group", v)} /><//>
+    <div class="row">
+      <${Field} label=${html`Vendor ${tag("vendor")}`} error=${errFor("/vendor")}>
+        <${EnumSelect} value=${form.vendor} options=${enums?.vendor} allowInherit=${!!form.group}
+          inheritLabel=${`herdar: ${inh("vendor") || "—"}`} onChange=${(v) => set("vendor", v)} /><//>
+      <${Field} label=${html`Role ${tag("role")}`}>
+        <${EnumSelect} value=${form.role} options=${enums?.role} allowInherit=${!!form.group}
+          inheritLabel=${`herdar: ${inh("role") || "—"}`} onChange=${(v) => set("role", v)} /><//>
+    </div>
+    <div class="row">
+      <${Field} label=${html`Método de acesso ${tag("method", "method")}`} error=${errFor("access/method")}>
+        <${EnumSelect} value=${form.method} options=${enums?.method} allowInherit=${!!form.group}
+          inheritLabel=${`herdar: ${inhAccess("method") || "—"}`} onChange=${(v) => set("method", v)} /><//>
+      <${Field} label=${html`Porta ${tag("port", "port")}`} error=${errFor("access/port")}>
+        <input type="number" value=${form.port} placeholder=${inhAccess("port") || ""}
+          onInput=${(e) => set("port", e.target.value)} /><//>
+    </div>
+    <${Field} label=${html`Credencial ${tag("credential")}`} error=${errFor("/credential")}>
+      <${RefSelect} value=${form.credential} options=${creds}
+        placeholder=${form.group && inh("credential") ? `herdar: ${inh("credential")}` : "(nenhuma)"}
+        onChange=${(v) => set("credential", v)} /><//>
+    <div class="row">
+      <${Field} label="Modelo"><input value=${form.model} onInput=${(e) => set("model", e.target.value)} /><//>
+      <${Field} label="Site"><input value=${form.site} onInput=${(e) => set("site", e.target.value)} /><//>
+    </div>
+    <${Field} label="Notas"><textarea value=${form.notes} onInput=${(e) => set("notes", e.target.value)}></textarea><//>
+    <div class="modal-actions">
+      <button onClick=${onClose}>Cancelar</button>
+      <button class="primary" onClick=${save}>${isNew ? "Criar" : "Salvar"}</button>
+    </div>
+    ${conflict && html`<${ConflictDialog} onReload=${onSaved} onClose=${() => setConflict(false)} />`}
+  <//>`;
+}
+
+/* ------------------------------- Grupos --------------------------------- */
+export function GroupsPage() {
+  const res = useResource("/groups");
+  const [editing, setEditing] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  if (res.loading) return html`<${Spinner} />`;
+  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  const { groups, rev } = res.data;
+  const cols = [
+    { key: "name", label: "Grupo", render: (r) => html`<b>${r.name}</b>` },
+    { key: "vendor", label: "Vendor", render: (r) => r.fields.vendor || "—" },
+    { key: "role", label: "Role", render: (r) => r.fields.role || "—" },
+    { key: "access", label: "Acesso", render: (r) => { const a = r.fields.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
+    { key: "credential", label: "Credencial", render: (r) => r.fields.credential || "—" },
+    { key: "used_by", label: "Hosts", render: (r) => html`<${Badge}>${r.used_by}<//>` },
+  ];
+  return html`<div>
+    <div class="page-title"><h1>Grupos</h1><span class="spacer"></span>
+      <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Novo grupo</button></div>
+    <${ResourceTable} columns=${cols} rows=${groups.map((g) => ({ ...g, _key: g.name }))}
+      onRowClick=${(r) => setEditing(r)}
+      actions=${(r) => html`<button class="sm danger" onClick=${() => setConfirm(r)}>Excluir</button>`}
+      empty="Nenhum grupo." />
+    ${editing && html`<${GroupForm} group=${editing} rev=${rev}
+        onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
+    ${confirm && html`<${ConfirmDialog} title="Excluir grupo" danger=true
+        message=${confirm.used_by ? `Grupo em uso por ${confirm.used_by} host(s). Excluir mesmo assim?` : `Excluir o grupo '${confirm.name}'?`}
+        onClose=${() => setConfirm(null)}
+        onConfirm=${async () => {
+          try { await api.del(`/groups/${confirm.name}?force=${confirm.used_by > 0}`, rev); toast.ok("Grupo removido"); res.reload(); }
+          catch (e) { handleError(e); } }} />`}
+  </div>`;
+}
+
+function GroupForm({ group, rev, onClose, onSaved }) {
+  const isNew = !!group.__new;
+  const enums = useEnums();
+  const [creds, setCreds] = useState([]);
+  const f0 = isNew ? {} : group.fields;
+  const a0 = f0.access || {};
+  const [form, setForm] = useState({
+    name: isNew ? "" : group.name, vendor: f0.vendor ?? null, role: f0.role ?? null,
+    credential: f0.credential ?? null, method: a0.method ?? null, port: a0.port ?? "",
+  });
+  useEffect(() => { api.get("/credentials").then((c) => setCreds(c.credentials.map((x) => x.name))); }, []);
+  const set = (k, v) => setForm((x) => ({ ...x, [k]: v }));
+  async function save() {
+    const acc = {}; if (form.method) acc.method = form.method;
+    if (form.port !== "" && form.port != null) acc.port = Number(form.port);
+    const payload = { vendor: form.vendor || null, role: form.role || null,
+      credential: form.credential || null, access: Object.keys(acc).length ? acc : null };
+    try {
+      if (isNew) await api.post("/groups", { name: form.name, ...payload }, rev);
+      else await api.patch(`/groups/${group.name}`, payload, rev);
+      toast.ok(isNew ? "Grupo criado" : "Grupo atualizado"); onSaved();
+    } catch (e) { handleError(e); }
+  }
+  return html`<${Modal} title=${isNew ? "Novo grupo" : `Editar ${group.name}`} onClose=${onClose}>
+    ${isNew && html`<${Field} label="Nome do grupo">
+      <input value=${form.name} placeholder="ex.: mikrotik-core" onInput=${(e) => set("name", e.target.value)} /><//>`}
+    <div class="row">
+      <${Field} label="Vendor"><${EnumSelect} value=${form.vendor} options=${enums?.vendor} onChange=${(v) => set("vendor", v)} /><//>
+      <${Field} label="Role"><${EnumSelect} value=${form.role} options=${enums?.role} onChange=${(v) => set("role", v)} /><//>
+    </div>
+    <div class="row">
+      <${Field} label="Método"><${EnumSelect} value=${form.method} options=${enums?.method} onChange=${(v) => set("method", v)} /><//>
+      <${Field} label="Porta"><input type="number" value=${form.port} onInput=${(e) => set("port", e.target.value)} /><//>
+    </div>
+    <${Field} label="Credencial"><${RefSelect} value=${form.credential} options=${creds} onChange=${(v) => set("credential", v)} /><//>
+    <div class="modal-actions">
+      <button onClick=${onClose}>Cancelar</button>
+      <button class="primary" onClick=${save}>${isNew ? "Criar" : "Salvar"}</button>
+    </div>
+  <//>`;
+}

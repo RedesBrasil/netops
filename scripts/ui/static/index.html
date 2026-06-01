@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NetOps Console</title>
+  <link rel="stylesheet" href="/app.css" />
+  <!-- importmap só com URLs locais (offline / air-gap safe). Ver scripts/ui/vendor_deps.sh -->
+  <script type="importmap">
+  {
+    "imports": {
+      "preact": "/vendor/preact.module.js",
+      "preact/hooks": "/vendor/preact-hooks.module.js",
+      "htm": "/vendor/htm.module.js",
+      "htm/preact": "/vendor/htm-preact.module.js",
+      "marked": "/vendor/marked.esm.js",
+      "js-yaml": "/vendor/js-yaml.mjs"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"><div class="boot">Carregando NetOps Console…</div></div>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

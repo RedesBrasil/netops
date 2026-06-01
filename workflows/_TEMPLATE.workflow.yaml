@@ -1,0 +1,39 @@
+# Modelo de workflow — copie ao criar um workflow novo. Ver workflows/PADRAO.md.
+workflow:
+  id: identificador-do-workflow
+  name: Nome Legível do Workflow
+  description: >-
+    O que este workflow resolve, em uma ou duas frases.
+  triggers:
+    - "frase típica do usuário que dispara este workflow"
+    - "*comando-explicito"
+
+  steps:
+    - id: "01"
+      name: Nome do primeiro passo
+      type: inline
+      agent: coordinator
+      inputFiles: [network/hosts.yaml]
+      outputFiles: [runs/${run}/state.json]
+      instructions: >-
+        O que o agente deve fazer neste passo.
+      qualityCriteria: Como saber se o passo ficou bom.
+      vetoConditions: []
+
+    - id: "02"
+      name: Passo de exemplo (subagente)
+      type: subagent
+      agent: planner
+      inputFiles: []
+      outputFiles: []
+      instructions: >-
+        ...
+
+    # ... mais passos ...
+
+    - id: "99"
+      name: Reflexão pós-execução
+      type: subagent
+      agent: documenter
+      instructions: >-
+        Registrar lições em memory/lessons/ conforme core/rules/memory-protocol.md.

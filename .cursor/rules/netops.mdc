@@ -1,0 +1,18 @@
+---
+description: NetOps — framework multi-agente para redes e infraestrutura
+alwaysApply: true
+---
+
+# NetOps
+
+Este projeto é o **NetOps**, um framework multi-agente para operações de redes e
+infraestrutura. O ponto de entrada e as instruções completas estão em **`CLAUDE.md`** na
+raiz — leia esse arquivo primeiro; ele vale para qualquer IDE, inclusive o Cursor.
+
+Resumo: o usuário pede tarefas de rede em português; você orquestra os agentes de
+`agents/`, lê o inventário em `network/`, consulta `best-practices/` e `config-examples/`,
+executa via `scripts/` e documenta em `reports/` e `memory/`.
+
+Leia também `constitution.md` (princípios inegociáveis) e `PADRAO.md` (padrão de
+organização). Nunca conecte em host fora de `network/hosts.yaml`. Toda mudança de config
+exige baseline + rollback. Toda execução termina registrando lições em `memory/`.

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "netops/inventory.schema.json",
+  "title": "NetOps Inventory (network/hosts.yaml)",
+  "description": "Valida a estrutura do inventario de hosts. Campos herdaveis (vendor, role, access, credential) podem vir do host OU do seu grupo; por isso sao opcionais aqui e a checagem de presenca apos a heranca e feita em scripts/lib/inventory.py.",
+  "type": "object",
+  "required": ["version", "hosts"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "enum": [1] },
+    "groups": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/nodeFields" }
+    },
+    "hosts": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "allOf": [
+          { "$ref": "#/$defs/nodeFields" },
+          {
+            "type": "object",
+            "required": ["hostname", "mgmt_ip"],
+            "properties": {
+              "hostname": { "type": "string", "minLength": 1 },
+              "mgmt_ip": { "type": "string", "minLength": 1 },
+              "group": { "type": "string" }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "nodeFields": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "vendor": {
+          "type": "string",
+          "enum": ["mikrotik", "unifi", "ubiquiti", "cisco", "huawei", "proxmox", "vmware", "datacom", "linux", "fiberhome", "intelbras", "other"]
+        },
+        "role": {
+          "type": "string",
+          "enum": ["core", "distribution", "access", "firewall", "wireless", "server", "other"]
+        },
+        "model": { "type": "string" },
+        "site": { "type": "string" },
+        "notes": { "type": "string" },
+        "credential": { "type": "string" },
+        "access": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": { "type": "string", "enum": ["ssh", "telnet", "api", "winbox"] },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        }
+      }
+    }
+  }
+}

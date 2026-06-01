@@ -1,0 +1,87 @@
+workflow:
+  id: security-audit
+  name: Auditoria de Segurança da Rede
+  description: >-
+    Coleta a configuração de hosts do inventário e avalia a postura de segurança contra as
+    boas práticas. Produz um relatório priorizado por severidade.
+  triggers:
+    - "faça uma avaliação de segurança da minha rede"
+    - "audite a segurança"
+    - "*security-audit"
+
+  steps:
+    - id: "01"
+      name: Definir escopo e carregar contexto
+      type: inline
+      agent: coordinator
+      inputFiles: [network/hosts.yaml, network/topology.yaml, memory/MEMORY.md, memory/learned-patterns.yaml]
+      outputFiles: ["runs/${run}/state.json"]
+      instructions: >-
+        Validar o inventário (python scripts/lib/inventory.py --validate). Definir o escopo
+        (todos os hosts ou um subconjunto). Injetar a memória relevante conforme
+        core/rules/memory-protocol.md. Criar runs/${run}/ a partir de core/templates/run-state.tmpl.json.
+      qualityCriteria: Inventário válido; escopo definido; runs/${run}/state.json criado.
+      vetoConditions: ["Inventário inválido contra o schema"]
+
+    - id: "02"
+      name: Planejar a coleta
+      type: subagent
+      agent: planner
+      inputFiles: [best-practices/general/network-security-audit.md, best-practices/_catalog.yaml]
+      outputFiles: ["runs/${run}/plan.yaml"]
+      instructions: >-
+        Para cada host do escopo, listar os comandos read-only de auditoria por fabricante
+        (firewall, serviços, usuários, snmp, versão de firmware). Consultar best-practices/<vendor>/.
+      qualityCriteria: Todo host tem comandos; nenhum comando de escrita no plano.
+
+    - id: "03"
+      name: Coletar dos dispositivos
+      type: subagent
+      agent: executor
+      inputFiles: ["runs/${run}/plan.yaml", network/credentials.yaml]
+      outputFiles: ["runs/${run}/collected/*.txt"]
+      instructions: >-
+        Pré-requisito: se as credenciais estiverem criptografadas, o cofre precisa estar
+        destrancado (o operador roda 'python scripts/vault/cli.py unlock'). Conectar em cada host
+        com o script de acesso adequado (scripts/access/). Modo read-only. Em falha de conexão:
+        registrar o erro e seguir para o próximo host.
+      vetoConditions: ["Host fora de network/hosts.yaml", "Plano contém comando de escrita", "Cofre de credenciais trancado"]
+
+    - id: "04"
+      name: Avaliar segurança
+      type: subagent
+      agent: tester
+      inputFiles: ["runs/${run}/collected/", best-practices/general/network-security-audit.md]
+      outputFiles: ["runs/${run}/findings.yaml"]
+      instructions: >-
+        Rodar scripts/analysis/security_assessment.py (com --config-file das coletas).
+        Confrontar cada achado com best-practices/. Classificar por severidade
+        CRÍTICO/ALTO/MÉDIO/BAIXO, com evidência e referência.
+      qualityCriteria: Todo host tem veredito; todo achado tem evidência + referência.
+
+    - id: "05"
+      name: Revisar achados com o usuário
+      type: checkpoint
+      agent: coordinator
+      instructions: >-
+        Apresentar o resumo dos achados por severidade. Opções: 1) gerar o relatório
+        completo; 2) aprofundar um host; 3) encerrar.
+
+    - id: "06"
+      name: Gerar relatório
+      type: subagent
+      agent: documenter
+      inputFiles: ["runs/${run}/findings.yaml", core/templates/security-report.tmpl.md]
+      outputFiles: ["reports/${date}-security-audit.md"]
+      instructions: >-
+        Gerar o relatório a partir do template, com sumário executivo e achados priorizados.
+      qualityCriteria: Relatório existe em reports/ com sumário + detalhe + recomendações.
+
+    - id: "99"
+      name: Reflexão pós-execução
+      type: subagent
+      agent: documenter
+      outputFiles: ["memory/lessons/*.yaml"]
+      instructions: >-
+        Registrar lições (erros de conexão, quirks de fabricante, descobertas) em
+        memory/lessons/ conforme core/rules/memory-protocol.md. Marcar state.json como concluído.
