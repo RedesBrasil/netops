@@ -2,7 +2,6 @@
 import { render } from "preact";
 import { html, useState, useEffect, api } from "./ui.js";
 import { ToastHost, startVaultPolling } from "./ui.js";
-import { VaultBanner } from "./components.js";
 import { HostsPage, GroupsPage } from "./pages/hosts.js";
 import { CredentialsPage } from "./pages/credentials.js";
 import { TopologyPage } from "./pages/topology.js";
@@ -65,7 +64,6 @@ function App() {
     </div>
     <${Sidebar} current=${route} meta=${meta} />
     <main class="content">
-      <${VaultBanner} />
       <${Page} />
     </main>
     <${ToastHost} />

@@ -1,9 +1,12 @@
 # NetOps — arquivos que NUNCA devem ser versionados.
 
 # >>> SEGREDOS — credenciais (cofre 'enc.v1:' ou texto puro). NUNCA commitar. <<<
+# (atenção: o .gitignore NÃO aceita comentário na mesma linha do padrão — sempre em linha própria)
 network/credentials.yaml
-network/*.tmp            # temporário de escrita atômica do cofre (scripts/vault/cli.py + scripts/ui)
-network/*.bak.*          # backups da UI (credentials.yaml.bak.* pode conter segredos) — nunca commitar
+# temporário de escrita atômica do cofre (scripts/vault/cli.py + scripts/ui)
+network/*.tmp
+# backups da UI (credentials.yaml.bak.* pode conter segredos) — nunca commitar
+network/*.bak.*
 
 # Saídas brutas de execução (podem conter dados sensíveis dos dispositivos)
 runs/
@@ -17,6 +20,8 @@ __pycache__/
 # Sessões/artefatos locais
 *.session
 *.log
+# token de sessão do console web (scripts/ui/start.sh) — nunca commitar
+scripts/ui/.ui-token
 
 # Config local da IDE de IA (específico da máquina, não compartilhar)
 .claude/settings.local.json
