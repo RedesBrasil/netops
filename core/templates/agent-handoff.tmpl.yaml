@@ -1,0 +1,40 @@
+# Template de Handoff entre Agentes
+# ============================================================================
+# Adaptado de aiox-core/.aiox-core/development/templates/agent-handoff-tmpl.yaml
+# Quando um agente termina seu passo, ele preenche este artefato. O próximo
+# agente recebe: seu próprio perfil completo (.agent.md) + este artefato.
+# RESTRIÇÃO: o artefato preenchido DEVE ter menos de 500 tokens (~375 palavras).
+# ============================================================================
+
+handoff:
+  version: "1.0"
+  timestamp: ""            # ISO 8601, ex.: 2026-05-18T14:30:00Z
+  from_agent: ""           # id do agente que está saindo (coordinator|planner|executor|tester|documenter)
+  to_agent: ""             # id do agente que está entrando
+
+  # Contexto da execução
+  run_context:
+    run_id: ""             # ex.: 2026-05-18-1430-security-audit
+    run_dir: ""            # ex.: runs/2026-05-18-1430-security-audit/
+    workflow: ""           # ex.: security-audit
+    current_step: ""       # ex.: "03 - coletar dos dispositivos"
+    target_hosts: []       # hosts envolvidos neste passo
+
+  # Decisões-chave tomadas pelo agente que sai (máx. 5)
+  decisions:
+    - ""
+
+  # Arquivos criados/modificados pelo agente que sai (máx. 10)
+  files_modified:
+    - ""
+
+  # Bloqueios ou problemas em aberto (máx. 3)
+  blockers:
+    - ""
+
+  # O que o agente que entra deve fazer agora (máx. 2 frases)
+  next_action: ""
+
+# --- Limites de compactação ---
+# Tamanho máx.: 500 tokens | Decisões: 5 | Arquivos: 10 | Bloqueios: 3
+# Resumos retidos: 3 (o mais antigo é descartado na 4ª troca de agente).

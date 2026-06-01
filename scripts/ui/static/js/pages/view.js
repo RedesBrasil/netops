@@ -1,0 +1,97 @@
+// Reports (read-only), Runs (read-only) e Settings (project-config.yaml).
+import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
+import { ResourceTable, Field, Modal, MarkdownView, CodeTextEditor } from "../components.js";
+
+export function ReportsPage() {
+  const res = useResource("/reports");
+  const [open, setOpen] = useState(null);
+  if (res.loading) return html`<${Spinner} />`;
+  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  const cols = [
+    { key: "file", label: "Relatório", render: (r) => html`<b>${r.file}</b>` },
+    { key: "size", label: "Tamanho", render: (r) => `${r.size} B` },
+  ];
+  return html`<div>
+    <div class="page-title"><h1>Relatórios</h1></div>
+    <${ResourceTable} columns=${cols} rows=${res.data.reports.map((r) => ({ ...r, _key: r.file }))}
+      onRowClick=${(r) => setOpen(r.file)} empty="Nenhum relatório em reports/." />
+    ${open && html`<${ReportView} file=${open} onClose=${() => setOpen(null)} />`}
+  </div>`;
+}
+function ReportView({ file, onClose }) {
+  const [md, setMd] = useState(null);
+  useEffect(() => { api.get(`/reports/${file}`).then((d) => setMd(d.markdown)).catch(handleError); }, []);
+  return html`<${Modal} title=${file} onClose=${onClose}>
+    ${md === null ? html`<${Spinner} />` : html`<${MarkdownView} text=${md} />`}
+    <div class="modal-actions"><button onClick=${onClose}>Fechar</button></div>
+  <//>`;
+}
+
+export function RunsPage() {
+  const res = useResource("/runs");
+  const [open, setOpen] = useState(null);
+  if (res.loading) return html`<${Spinner} />`;
+  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  const dot = (s) => ({ completed: "var(--ok)", failed: "var(--danger)", in_progress: "var(--warn)" }[s] || "var(--muted)");
+  const cols = [
+    { key: "id", label: "Execução", render: (r) => html`<b>${r.id}</b>` },
+    { key: "status", label: "Status", render: (r) => html`<span class="statedot" style=${`background:${dot(r.status)}`}></span>${r.status || "—"}` },
+  ];
+  return html`<div>
+    <div class="page-title"><h1>Execuções</h1></div>
+    <${ResourceTable} columns=${cols} rows=${res.data.runs.map((r) => ({ ...r, _key: r.id }))}
+      onRowClick=${(r) => setOpen(r.id)} empty="Nenhuma execução em runs/ (criadas durante workflows)." />
+    ${open && html`<${RunView} id=${open} onClose=${() => setOpen(null)} />`}
+  </div>`;
+}
+function RunView({ id, onClose }) {
+  const [data, setData] = useState(null);
+  const [artifact, setArtifact] = useState(null);
+  useEffect(() => { api.get(`/runs/${id}`).then(setData).catch(handleError); }, []);
+  return html`<${Modal} title=${`Execução ${id}`} onClose=${onClose}>
+    ${!data ? html`<${Spinner} />` : html`<div>
+      <h3>state.json</h3>
+      <pre class="md">${JSON.stringify(data.state, null, 2)}</pre>
+      <h3>Artefatos</h3>
+      ${data.artifacts.length ? html`<ul>${data.artifacts.map((a) => html`<li key=${a}>
+        <button class="ghost" onClick=${async () => { try { setArtifact(await api.get(`/runs/${id}/artifact?path=${encodeURIComponent(a)}`)); } catch (e) { handleError(e); } }}>${a}</button></li>`)}</ul>`
+        : html`<div class="help">sem artefatos</div>`}
+      ${artifact && html`<div class="card"><b>${artifact.path}</b><pre class="md">${artifact.text}</pre></div>`}
+    </div>`}
+    <div class="modal-actions"><button onClick=${onClose}>Fechar</button></div>
+  <//>`;
+}
+
+export function SettingsPage() {
+  const res = useResource("/config");
+  const [data, setData] = useState(null);
+  const [rev, setRev] = useState(null);
+  useEffect(() => { if (res.data) { setData(res.data.data); setRev(res.data.rev); } }, [res.data]);
+  if (res.loading || !data) return html`<${Spinner} />`;
+  const proj = data.project || {}, ops = data.operations || {}, vault = data.vault || {};
+  const upd = (sec, k, v) => setData((d) => ({ ...d, [sec]: { ...(d[sec] || {}), [k]: v } }));
+  async function save() {
+    try {
+      const body = {
+        project: { network_name: proj.network_name, description: proj.description },
+        operations: { maintenance_window: ops.maintenance_window, escalation_contact: ops.escalation_contact },
+        vault: { session_ttl_seconds: vault.session_ttl_seconds ? Number(vault.session_ttl_seconds) : undefined },
+      };
+      const r = await api.put("/config", body, rev); setRev(r.rev); toast.ok("Configuração salva");
+    } catch (e) { handleError(e); }
+  }
+  return html`<div>
+    <div class="page-title"><h1>Configuração do projeto</h1></div>
+    <div class="card">
+      <${Field} label="Nome da rede"><input value=${proj.network_name || ""} onInput=${(e) => upd("project", "network_name", e.target.value)} /><//>
+      <${Field} label="Descrição"><input value=${proj.description || ""} onInput=${(e) => upd("project", "description", e.target.value)} /><//>
+      <div class="row">
+        <${Field} label="Janela de manutenção"><input value=${ops.maintenance_window || ""} onInput=${(e) => upd("operations", "maintenance_window", e.target.value)} /><//>
+        <${Field} label="Contato de escalação"><input value=${ops.escalation_contact || ""} onInput=${(e) => upd("operations", "escalation_contact", e.target.value)} /><//>
+      </div>
+      <${Field} label="TTL da sessão do cofre (segundos)" hint="Tempo de inatividade até re-trancar (default 900)">
+        <input type="number" value=${vault.session_ttl_seconds || ""} onInput=${(e) => upd("vault", "session_ttl_seconds", e.target.value)} /><//>
+      <button class="primary" onClick=${save}>Salvar</button>
+    </div>
+  </div>`;
+}

@@ -1,0 +1,59 @@
+# Catálogo de Boas Práticas
+# O agente lê este índice primeiro e só abre o guia relevante para a tarefa.
+# Adaptado do _catalog.yaml do OpenSquad.
+
+version: 1
+
+# --- Guias disponíveis ---
+guides:
+  - id: network-security-audit
+    titulo: "Auditoria de segurança de rede"
+    vendor: general
+    file: general/network-security-audit.md
+    quando_usar: "Avaliar a postura de segurança de qualquer equipamento de rede."
+
+  - id: ssh-hardening
+    titulo: "Hardening de acesso SSH"
+    vendor: general
+    file: general/ssh-hardening.md
+    quando_usar: "Revisar/endurecer o acesso administrativo via SSH."
+
+  - id: mikrotik-security-hardening
+    titulo: "Hardening de segurança no MikroTik RouterOS"
+    vendor: mikrotik
+    file: mikrotik/security-hardening.md
+    quando_usar: "Endurecer um roteador/switch MikroTik."
+
+  - id: mikrotik-firewall
+    titulo: "Boas práticas de firewall no MikroTik"
+    vendor: mikrotik
+    file: mikrotik/firewall.md
+    quando_usar: "Planejar/revisar regras de firewall em MikroTik."
+
+  - id: linux-server-hardening
+    titulo: "Hardening de servidor Linux"
+    vendor: linux
+    file: linux/server-hardening.md
+    quando_usar: "Endurecer um servidor Linux."
+
+  - id: linux-services-hardening
+    titulo: "Hardening de serviços Linux (Apache, Docker, FTP)"
+    vendor: linux
+    file: linux/services-hardening.md
+    quando_usar: "Revisar serviços expostos num servidor Linux."
+
+# --- Status dos vendors ---
+# seed = conteúdo completo já existe | pendente = só estrutura, preencher conforme evolui
+vendors:
+  general:   { status: seed }
+  mikrotik:  { status: seed }
+  linux:     { status: seed }
+  cisco:     { status: pendente }
+  huawei:    { status: pendente }
+  unifi:     { status: pendente }
+  ubiquiti:  { status: pendente }
+  proxmox:   { status: pendente }
+  vmware:    { status: pendente }
+  datacom:   { status: pendente }
+  fiberhome: { status: pendente }
+  intelbras: { status: pendente }

@@ -1,0 +1,60 @@
+# NetOps — Inventário de hosts
+# ============================================================================
+# Esta é a FONTE DA VERDADE da rede. O agente só conhece equipamentos listados aqui.
+# Os hosts abaixo são EXEMPLOS — substitua pelos seus equipamentos reais.
+#
+# Cada host referencia uma credencial NOMEADA (definida em credentials.yaml).
+# Campos definidos num 'group' são herdados; o host pode sobrescrever qualquer um.
+# Schema validável em: core/schemas/inventory.schema.json
+# ============================================================================
+
+version: 1
+
+# --- Grupos: defaults herdados pelos hosts ---
+groups:
+  mikrotik-core:
+    vendor: mikrotik
+    role: core
+    access: { method: api, port: 8728 }   # API RouterOS (8729 = API-SSL)
+    credential: cred_mikrotik_admin
+
+  mikrotik-dist:
+    vendor: mikrotik
+    role: distribution
+    access: { method: ssh, port: 64777 }
+    credential: cred_mikrotik_admin
+
+  linux-servers:
+    vendor: linux
+    role: server
+    access: { method: ssh, port: 22 }
+    credential: cred_linux_root
+
+# --- Hosts ---
+hosts:
+  rt-dist-01:
+    hostname: RT-EDGE-01
+    mgmt_ip: 10.0.0.1
+    group: mikrotik-dist
+    model: 
+    site: matriz
+    notes: 
+
+  rt-dist-02:
+    hostname: RT-DIST-03
+    mgmt_ip: 10.0.0.3
+    group: mikrotik-dist
+    model:
+    site: matriz
+    notes:
+
+
+  rt-dist-03:
+    hostname: SW-DESK-01
+    mgmt_ip: 10.0.0.4
+    group: mikrotik-dist
+    model: 
+    site: matriz
+    notes: 
+
+

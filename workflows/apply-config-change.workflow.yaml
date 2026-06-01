@@ -1,0 +1,97 @@
+workflow:
+  id: apply-config-change
+  name: Aplicar Mudança de Configuração
+  description: >-
+    Planeja, revisa, aplica e verifica uma mudança de configuração em um ou mais
+    equipamentos. Sempre com baseline + rollback (ver core/rules/connection-safety.md).
+  triggers:
+    - "configure OSPF no MikroTik"
+    - "altere a configuração de"
+    - "*apply-change"
+
+  steps:
+    - id: "01"
+      name: Entender a mudança e carregar contexto
+      type: inline
+      agent: coordinator
+      inputFiles: [network/hosts.yaml, network/topology.yaml, memory/learned-patterns.yaml]
+      outputFiles: ["runs/${run}/state.json"]
+      instructions: >-
+        Capturar a intenção, os hosts-alvo e o fabricante. Injetar memória relevante.
+        Confirmar a janela de manutenção em memory/USER.md. Criar runs/${run}/.
+      qualityCriteria: Hosts-alvo e tipo de mudança identificados.
+
+    - id: "02"
+      name: Capturar estado atual (baseline)
+      type: subagent
+      agent: executor
+      outputFiles: ["runs/${run}/collected/<host>.before.txt"]
+      instructions: >-
+        Pré-requisito: se as credenciais estiverem criptografadas, o cofre precisa estar
+        destrancado (o operador roda 'python scripts/vault/cli.py unlock'). Conexão read-only.
+        Capturar a configuração atual da área que será alterada — necessário para o diff e o rollback.
+      vetoConditions: ["Host fora de network/hosts.yaml", "Cofre de credenciais trancado"]
+
+    - id: "03"
+      name: Desenhar a config proposta e o rollback
+      type: subagent
+      agent: planner
+      inputFiles: [config-examples/, best-practices/, memory/learned-patterns.yaml]
+      outputFiles: ["runs/${run}/proposals/<host>.change.txt", "runs/${run}/proposals/<host>.rollback.txt"]
+      instructions: >-
+        Reusar os exemplos de config-examples/<vendor>/ (REUSE > ADAPT > CREATE). Produzir os
+        comandos de aplicação E os de rollback. Avaliar risco de lockout (gerência/firewall).
+      qualityCriteria: Existe change.txt e rollback.txt para cada host; rollback testável.
+      vetoConditions: ["Proposta sem rollback correspondente"]
+
+    - id: "04"
+      name: Revisão técnica
+      type: subagent
+      agent: tester
+      inputFiles: ["runs/${run}/proposals/", config-examples/, best-practices/]
+      outputFiles: ["runs/${run}/findings.yaml"]
+      instructions: >-
+        Validar a sintaxe contra o fabricante (config-examples/<vendor>/). Conferir impacto
+        na topologia. Rodar scripts/analysis/config_diff.py (before x proposta). Veredito
+        APROVADO / RESSALVAS / REPROVADO.
+      vetoConditions: ["Sintaxe inválida para o fabricante", "Risco de perda de gerência sem proteção"]
+
+    - id: "05"
+      name: Aplicar a mudança
+      type: subagent
+      agent: executor
+      inputFiles: ["runs/${run}/proposals/<host>.change.txt"]
+      outputFiles: ["runs/${run}/collected/<host>.after.txt"]
+      instructions: >-
+        Aplicar a config. Capturar o estado pós-mudança. Se qualquer comando falhar ou a
+        conectividade de gerência cair, executar <host>.rollback.txt automaticamente e parar.
+      vetoConditions: ["Veredito do tester == REPROVADO"]
+
+    - id: "06"
+      name: Verificação pós-mudança
+      type: subagent
+      agent: tester
+      inputFiles: ["runs/${run}/collected/<host>.before.txt", "runs/${run}/collected/<host>.after.txt"]
+      instructions: >-
+        Confirmar que a mudança teve o efeito esperado e não quebrou conectividade
+        (scripts/diagnostics/). Se falhou: recomendar/acionar rollback.
+      qualityCriteria: Efeito da mudança confirmado; conectividade preservada.
+
+    - id: "07"
+      name: Registrar a mudança
+      type: subagent
+      agent: documenter
+      inputFiles: [core/templates/change-record.tmpl.md]
+      outputFiles: ["reports/${date}-change-<host>.md"]
+      instructions: >-
+        Gerar o registro de mudança (antes/depois, diff, quem/quando, resultado).
+
+    - id: "99"
+      name: Reflexão pós-execução
+      type: subagent
+      agent: documenter
+      outputFiles: ["memory/lessons/*.yaml"]
+      instructions: >-
+        Registrar lições conforme core/rules/memory-protocol.md. Se descobriu um quirk do
+        fabricante, considerar promovê-lo para best-practices/ ou config-examples/.
+        Marcar state.json como concluído.

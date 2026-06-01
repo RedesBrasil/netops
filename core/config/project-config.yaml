@@ -1,0 +1,19 @@
+# NetOps — Configuração do projeto/rede
+# Personalize com os dados da SUA rede. Diferente de core-config.yaml (que é do framework).
+
+project:
+  network_name: "Minha Rede"          # nome da rede/empresa
+  description: ""
+
+operations:
+  # Janela de manutenção em que mudanças de config podem ser aplicadas.
+  maintenance_window: ""              # ex.: "seg-sex 22:00-05:00"
+  # Email/contato para escalonamento.
+  escalation_contact: ""
+
+# Cofre de credenciais (scripts/vault/). Opcional — defaults seguros se ausente.
+vault:
+  session_ttl_seconds: 900            # re-bloqueio por inatividade (default: 900 = 15 min)
+
+# Sobrepõe defaults de core-config.yaml, se necessário.
+overrides: {}

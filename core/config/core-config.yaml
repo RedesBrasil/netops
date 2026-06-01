@@ -1,0 +1,38 @@
+# NetOps — Configuração central do framework
+# Define versão e localização dos recursos. Raramente muda.
+
+metadata:
+  name: "NetOps"
+  version: "1.0.0"
+  description: "Framework multi-agente para operações de redes e infraestrutura."
+  created: "2026-05-18"
+
+# Localização dos recursos — onde cada coisa vive (ver PADRAO.md).
+resource_locations:
+  agents: "agents"
+  best_practices: "best-practices"
+  config_examples: "config-examples"
+  scripts: "scripts"
+  planning_examples: "planning-examples"
+  network: "network"
+  workflows: "workflows"
+  memory: "memory"
+  runs: "runs"
+  reports: "reports"
+  templates: "core/templates"
+  rules: "core/rules"
+  schemas: "core/schemas"
+
+# Agentes do framework e sua função principal.
+agents:
+  coordinator: { function: orquestrar }
+  planner:     { function: planejar }
+  executor:    { function: executar }
+  tester:      { function: testar }
+  documenter:  { function: documentar }
+
+# Defaults operacionais.
+defaults:
+  language: pt-BR
+  connection_timeout_seconds: 20
+  reflection_on_every_workflow: true   # projeto vivo — ver core/rules/memory-protocol.md

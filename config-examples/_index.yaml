@@ -1,0 +1,45 @@
+# Índice de Exemplos de Configuração
+# O agente lê este índice para achar o exemplo certo por vendor + tópico.
+
+version: 1
+
+examples:
+  # --- MikroTik ---
+  - vendor: mikrotik
+    topico: security-hardening
+    file: mikrotik/security-hardening.rsc
+    descricao: "Endurecimento de serviços, usuários, descoberta e SNMP."
+  - vendor: mikrotik
+    topico: firewall
+    file: mikrotik/firewall-baseline.rsc
+    descricao: "Chain input segura (default drop) com anti-brute-force."
+  - vendor: mikrotik
+    topico: ospf
+    file: mikrotik/ospf-basic.rsc
+    descricao: "Instância OSPF com área backbone e redistribuição mínima."
+  - vendor: mikrotik
+    topico: vlan
+    file: mikrotik/vlan-trunk.rsc
+    descricao: "VLANs sobre bridge com porta trunk e portas de acesso."
+
+  # --- Linux ---
+  - vendor: linux
+    topico: ssh
+    file: linux/sshd_config
+    descricao: "sshd_config endurecido — chave, sem root, ciphers modernos."
+  # Mais exemplos Linux (firewall de host, Apache, Docker) entram aqui conforme
+  # o projeto vivo evolui — ver config-examples/PADRAO.md e best-practices/linux/.
+
+# Status dos vendors — seed = preenchido | pendente = só estrutura
+vendors:
+  mikrotik:  { status: seed }
+  linux:     { status: seed }
+  cisco:     { status: pendente }
+  huawei:    { status: pendente }
+  unifi:     { status: pendente }
+  ubiquiti:  { status: pendente }
+  proxmox:   { status: pendente }
+  vmware:    { status: pendente }
+  datacom:   { status: pendente }
+  fiberhome: { status: pendente }
+  intelbras: { status: pendente }

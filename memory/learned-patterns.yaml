@@ -1,0 +1,33 @@
+# NetOps — Padrões aprendidos (consolidados)
+# ============================================================================
+# Padrões que já se repetiram (3+ ocorrências em memory/lessons/) e por isso são
+# injetados em TODA execução futura. Adaptado do learned-patterns.yaml do AIOX.
+# O `documenter` mantém este arquivo na consolidação (ver core/rules/memory-protocol.md).
+# ============================================================================
+
+version: 1
+last_updated: "2026-05-18"
+
+# Padrões seed — conhecimento inicial do framework. Crescem com o uso.
+patterns:
+  - id: mikrotik-api-port
+    vendor: mikrotik
+    tipo: connection-quirk
+    padrao: "A API do MikroTik RouterOS escuta na porta 8728 (8729 para API-SSL).
+             A porta 8291 é do Winbox, não da API."
+    aplicar: "Ao cadastrar host MikroTik com method:api, usar port 8728 (ou 8729 com TLS)."
+
+  - id: routeros-v6-v7-syntax
+    vendor: mikrotik
+    tipo: vendor-quirk
+    padrao: "A sintaxe de roteamento mudou entre RouterOS 6 e 7 (ex.: OSPF). Comandos de
+             /routing do v6 não funcionam no v7 e vice-versa."
+    aplicar: "Antes de planejar config de roteamento, conferir a versão com
+              /system/resource/print e usar o exemplo correspondente."
+
+  - id: mikrotik-safe-mode
+    vendor: mikrotik
+    tipo: operational
+    padrao: "Mudanças em /ip service, firewall ou endereço de gerência podem trancar a
+             própria sessão remota."
+    aplicar: "Aplicar mudanças sensíveis em MikroTik sempre dentro de safe-mode."

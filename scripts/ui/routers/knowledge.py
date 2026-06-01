@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""CRUD de conhecimento: best-practices/ e config-examples/ (+ seus índices).
+
+Cria/edita/remove arquivos por vendor e mantém o índice (_catalog.yaml/_index.yaml)
+em sincronia. Nomes em kebab-case; vendor precisa estar na lista do PADRAO."""
+from __future__ import annotations
+
+from fastapi import APIRouter, Request
+
+import deps
+from services import docs_svc, yaml_io
+
+router = APIRouter(tags=["knowledge"])
+
+# kind -> (base_dir, index_file, list_key)
+KINDS = {
+    "best-practices": (deps.BEST_PRACTICES_DIR, deps.BP_CATALOG, "guides"),
+    "config-examples": (deps.CONFIG_EXAMPLES_DIR, deps.CE_INDEX, "examples"),
+}
+
+
+def _rev(request: Request) -> str | None:
+    return request.headers.get("if-match") or request.query_params.get("rev")
+
+
+def _kind(kind: str):
+    if kind not in KINDS:
+        raise KeyError(f"tipo de conhecimento '{kind}' inválido")
+    return KINDS[kind]
+
+
+def _entry(kind: str, vendor: str, name: str, body: dict) -> dict:
+    rel = f"{vendor}/{name}"
+    if kind == "best-practices":
+        return {
+            "id": body.get("id") or name.rsplit(".", 1)[0],
+            "titulo": body.get("titulo", name),
+            "vendor": vendor,
+            "file": rel,
+            "quando_usar": body.get("quando_usar", ""),
+        }
+    return {
+        "vendor": vendor,
+        "topico": body.get("topico") or name.rsplit(".", 1)[0],
+        "file": rel,
+        "descricao": body.get("descricao", ""),
+    }
+
+
+@router.get("/knowledge/{kind}")
+def get_index(kind: str):
+    import yaml  # noqa: PLC0415
+    base, index_file, key = _kind(kind)
+    text, rev, _ = yaml_io.read_text_meta(index_file)
+    data = (yaml.safe_load(text) if text.strip() else {}) or {}
+    # arquivos reais em disco (pode haver itens não indexados)
+    on_disk = []
+    if base.exists():
+        for f in sorted(base.rglob("*")):
+            if f.is_file() and not f.name.startswith("_") and f.parent != base:
+                on_disk.append(str(f.relative_to(base)))
+    return {"index": data.get(key) or [], "vendors": data.get("vendors") or {},
+            "files": on_disk, "rev": rev}
+
+
+@router.get("/knowledge/{kind}/file")
+def get_file(kind: str, vendor: str, name: str):
+    base, _, _ = _kind(kind)
+    path = docs_svc.safe_child(base, vendor, name)
+    if not path.exists():
+        raise KeyError(f"{vendor}/{name} não existe")
+    info = docs_svc.read_text_file(path)
+    fm, _body = docs_svc.split_frontmatter(info["text"])
+    info["frontmatter"] = fm
+    return info
+
+
+@router.post("/knowledge/{kind}", status_code=201)
+def create_file(kind: str, body: dict, request: Request):
+    base, index_file, key = _kind(kind)
+    vendor = (body.get("vendor") or "").strip()
+    name = (body.get("name") or body.get("file") or "").strip()
+    docs_svc.assert_vendor(vendor)
+    if not name or "/" in name or name.startswith("_"):
+        raise deps.ValidationFailed([{"loc": "name", "msg": "nome de arquivo inválido"}])
+    path = docs_svc.safe_child(base, vendor, name)
+    if path.exists():
+        raise deps.ValidationFailed([{"loc": "name", "msg": f"{vendor}/{name} já existe"}])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    yaml_io.atomic_write(path, body.get("text", ""))
+    # adiciona entrada ao índice (ruamel preserva comentários)
+    data, _, y = yaml_io.load_rt(index_file)
+    if data is None:
+        data = {"version": 1, key: []}
+    data.setdefault(key, []).append(_entry(kind, vendor, name, body))
+    yaml_io.write_rt(index_file, y, data, expected=None, backup=True)
+    return {"file": f"{vendor}/{name}", "rev": yaml_io.file_rev(path)}
+
+
+@router.put("/knowledge/{kind}/file")
+def update_file(kind: str, body: dict, request: Request):
+    base, _, _ = _kind(kind)
+    vendor, name = body.get("vendor", ""), body.get("name", "")
+    path = docs_svc.safe_child(base, vendor, name)
+    if not path.exists():
+        raise KeyError(f"{vendor}/{name} não existe")
+    new_rev = yaml_io.write_text(path, body.get("text", ""), expected=_rev(request), backup=True)
+    return {"file": f"{vendor}/{name}", "rev": new_rev}
+
+
+@router.delete("/knowledge/{kind}/file")
+def delete_file(kind: str, vendor: str, name: str):
+    base, index_file, key = _kind(kind)
+    path = docs_svc.safe_child(base, vendor, name)
+    if not path.exists():
+        raise KeyError(f"{vendor}/{name} não existe")
+    path.unlink()
+    rel = f"{vendor}/{name}"
+    data, _, y = yaml_io.load_rt(index_file)
+    if data and data.get(key):
+        data[key] = [e for e in data[key] if e.get("file") != rel]
+        yaml_io.write_rt(index_file, y, data, expected=None, backup=True)
+    return {"deleted": rel}

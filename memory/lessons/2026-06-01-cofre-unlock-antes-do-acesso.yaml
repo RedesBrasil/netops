@@ -1,0 +1,10 @@
+id: cofre-unlock-antes-do-acesso
+tipo: operational
+vendor: general
+gatilho: "Script de acesso falhou ao resolver uma credencial 'enc.v1:' com o cofre trancado."
+licao: "Credenciais podem estar criptografadas (cofre 'enc.v1:'); são descriptografadas só em memória, durante a sessão, e exigem o cofre destrancado. A chave da sessão vive em RAM (tmpfs, 0600) e re-bloqueia por inatividade (15 min), no logout, ou com 'lock'."
+correcao: "No início do trabalho, o operador roda 'python scripts/vault/cli.py unlock' (a IA não digita a senha-mestra). Checar o estado com 'status'. Ver scripts/vault/SKILL.md."
+ocorrencias: 1
+estado: ativo
+data: "2026-06-01"
+run_id: ""

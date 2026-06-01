@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Editores de workflows/*.workflow.yaml e agents/*.agent.md (texto cru + validação).
+
+Avançado: edição como texto. Workflows validam parse YAML + presença de workflow.steps;
+agents validam o frontmatter (id/name/function)."""
+from __future__ import annotations
+
+from fastapi import APIRouter, Request
+
+import deps
+from services import docs_svc, yaml_io
+
+router = APIRouter(tags=["catalog"])
+
+
+def _rev(request: Request) -> str | None:
+    return request.headers.get("if-match") or request.query_params.get("rev")
+
+
+def _safe(base, name: str):
+    if not name.startswith("_") and ("/" in name or name.startswith(".")):
+        raise deps.ValidationFailed([{"loc": "file", "msg": "nome de arquivo inválido"}])
+    return docs_svc.safe_child(base, name)
+
+
+# --------------------------------------------------------------------------- #
+# Workflows
+# --------------------------------------------------------------------------- #
+@router.get("/workflows")
+def list_workflows():
+    import yaml  # noqa: PLC0415
+    out = []
+    for f in sorted(deps.WORKFLOWS_DIR.glob("*.workflow.yaml")):
+        if f.name.startswith("_"):
+            continue
+        try:
+            wf = (yaml.safe_load(f.read_text(encoding="utf-8")) or {}).get("workflow") or {}
+        except Exception:
+            wf = {}
+        out.append({"file": f.name, "id": wf.get("id"), "name": wf.get("name"),
+                    "steps": len(wf.get("steps") or [])})
+    return {"workflows": out}
+
+
+@router.get("/workflows/{file}")
+def get_workflow(file: str):
+    path = _safe(deps.WORKFLOWS_DIR, file)
+    if not path.exists():
+        raise KeyError(f"workflow '{file}' não existe")
+    return docs_svc.read_text_file(path)
+
+
+@router.put("/workflows/{file}")
+def put_workflow(file: str, body: dict, request: Request):
+    path = _safe(deps.WORKFLOWS_DIR, file)
+    text = body.get("text", "")
+    _validate_workflow(text)
+    new_rev = yaml_io.write_text(path, text, expected=_rev(request), backup=True)
+    return {"file": file, "rev": new_rev}
+
+
+@router.post("/workflows", status_code=201)
+def create_workflow(body: dict):
+    name = body.get("file", "")
+    if not name.endswith(".workflow.yaml"):
+        raise deps.ValidationFailed([{"loc": "file", "msg": "nome deve terminar em .workflow.yaml"}])
+    path = _safe(deps.WORKFLOWS_DIR, name)
+    if path.exists():
+        raise deps.ValidationFailed([{"loc": "file", "msg": f"'{name}' já existe"}])
+    text = body.get("text", "")
+    _validate_workflow(text)
+    yaml_io.atomic_write(path, text)
+    return {"file": name, "rev": yaml_io.file_rev(path)}
+
+
+def _validate_workflow(text: str) -> None:
+    import yaml  # noqa: PLC0415
+    try:
+        data = yaml.safe_load(text) or {}
+    except Exception as exc:
+        raise deps.ValidationFailed([{"loc": "text", "msg": f"YAML inválido: {exc}"}]) from exc
+    wf = data.get("workflow")
+    if not isinstance(wf, dict) or not wf.get("steps"):
+        raise deps.ValidationFailed([{"loc": "workflow", "msg": "falta 'workflow:' com 'steps:'"}])
+
+
+# --------------------------------------------------------------------------- #
+# Agents
+# --------------------------------------------------------------------------- #
+@router.get("/agents")
+def list_agents():
+    out = []
+    for f in sorted(deps.AGENTS_DIR.glob("*.agent.md")):
+        if f.name.startswith("_"):
+            continue
+        fm, _ = docs_svc.split_frontmatter(f.read_text(encoding="utf-8"))
+        fm = fm or {}
+        out.append({"file": f.name, "id": fm.get("id"), "name": fm.get("name"),
+                    "icon": fm.get("icon"), "function": fm.get("function")})
+    return {"agents": out}
+
+
+@router.get("/agents/{file}")
+def get_agent(file: str):
+    path = _safe(deps.AGENTS_DIR, file)
+    if not path.exists():
+        raise KeyError(f"agente '{file}' não existe")
+    info = docs_svc.read_text_file(path)
+    info["frontmatter"], _ = docs_svc.split_frontmatter(info["text"])
+    return info
+
+
+@router.put("/agents/{file}")
+def put_agent(file: str, body: dict, request: Request):
+    path = _safe(deps.AGENTS_DIR, file)
+    text = body.get("text", "")
+    _validate_agent(text)
+    new_rev = yaml_io.write_text(path, text, expected=_rev(request), backup=True)
+    return {"file": file, "rev": new_rev}
+
+
+@router.post("/agents", status_code=201)
+def create_agent(body: dict):
+    name = body.get("file", "")
+    if not name.endswith(".agent.md"):
+        raise deps.ValidationFailed([{"loc": "file", "msg": "nome deve terminar em .agent.md"}])
+    path = _safe(deps.AGENTS_DIR, name)
+    if path.exists():
+        raise deps.ValidationFailed([{"loc": "file", "msg": f"'{name}' já existe"}])
+    text = body.get("text", "")
+    _validate_agent(text)
+    yaml_io.atomic_write(path, text)
+    return {"file": name, "rev": yaml_io.file_rev(path)}
+
+
+def _validate_agent(text: str) -> None:
+    fm, _ = docs_svc.split_frontmatter(text)
+    if not isinstance(fm, dict):
+        raise deps.ValidationFailed([{"loc": "text", "msg": "frontmatter YAML (---) ausente ou inválido"}])
+    missing = [k for k in ("id", "name", "function") if not fm.get(k)]
+    if missing:
+        raise deps.ValidationFailed([{"loc": "frontmatter", "msg": f"campos faltando: {', '.join(missing)}"}])
