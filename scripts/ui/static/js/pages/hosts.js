@@ -1,6 +1,6 @@
 // Hosts e Grupos (network/hosts.yaml) — formulário ciente de herança de grupo.
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
-import { ResourceTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog } from "../components.js";
+import { ResourceTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog, RenameCascadeHint } from "../components.js";
 import { Modal, ConflictDialog } from "../ui.js";
 
 const INHERIT = ["vendor", "role", "credential"];
@@ -92,8 +92,15 @@ function HostForm({ host, groups, rev, onClose, onSaved }) {
     if (form.port !== "" && form.port != null) acc.port = Number(form.port);
     payload.access = Object.keys(acc).length ? acc : null;
     try {
-      if (isNew) await api.post("/hosts", payload, rev);
-      else await api.patch(`/hosts/${host.id}`, payload, rev);
+      if (isNew) {
+        await api.post("/hosts", payload, rev);
+      } else {
+        let curRev = rev;
+        if (form.id !== host.id) {                          // renomeia primeiro (cascade)
+          curRev = (await api.post(`/hosts/${host.id}/rename`, { to: form.id }, curRev)).rev;
+        }
+        await api.patch(`/hosts/${form.id}`, payload, curRev);
+      }
       toast.ok(isNew ? "Host criado" : "Host atualizado");
       onSaved();
     } catch (e) {
@@ -106,8 +113,10 @@ function HostForm({ host, groups, rev, onClose, onSaved }) {
   const errFor = (suffix) => Object.entries(errors).find(([k]) => k.endsWith(suffix))?.[1];
 
   return html`<${Modal} title=${isNew ? "Novo host" : `Editar ${host.id}`} onClose=${onClose}>
-    ${isNew && html`<${Field} label="ID (identificador único)" error=${errFor("/id") || errors.id}>
-      <input value=${form.id} placeholder="ex.: rt-core-01" onInput=${(e) => set("id", e.target.value)} /><//>`}
+    <${Field} label=${isNew ? "ID (identificador único)" : "ID (alterar = renomear, atualiza referências)"}
+        error=${errFor("/id") || errors.id || errors.to}>
+      <input value=${form.id} placeholder="ex.: rt-core-01" onInput=${(e) => set("id", e.target.value)} /><//>
+    ${!isNew && html`<${RenameCascadeHint} refsPath=${`/hosts/${host.id}/references`} changed=${form.id !== host.id} />`}
     <div class="row">
       <${Field} label="Hostname" error=${errFor("/hostname")}>
         <input value=${form.hostname} onInput=${(e) => set("hostname", e.target.value)} /><//>
@@ -201,14 +210,22 @@ function GroupForm({ group, rev, onClose, onSaved }) {
     const payload = { vendor: form.vendor || null, role: form.role || null,
       credential: form.credential || null, access: Object.keys(acc).length ? acc : null };
     try {
-      if (isNew) await api.post("/groups", { name: form.name, ...payload }, rev);
-      else await api.patch(`/groups/${group.name}`, payload, rev);
+      if (isNew) {
+        await api.post("/groups", { name: form.name, ...payload }, rev);
+      } else {
+        let curRev = rev;
+        if (form.name !== group.name) {                     // renomeia primeiro (cascade nos hosts)
+          curRev = (await api.post(`/groups/${group.name}/rename`, { to: form.name }, curRev)).rev;
+        }
+        await api.patch(`/groups/${form.name}`, payload, curRev);
+      }
       toast.ok(isNew ? "Grupo criado" : "Grupo atualizado"); onSaved();
     } catch (e) { handleError(e); }
   }
   return html`<${Modal} title=${isNew ? "Novo grupo" : `Editar ${group.name}`} onClose=${onClose}>
-    ${isNew && html`<${Field} label="Nome do grupo">
-      <input value=${form.name} placeholder="ex.: mikrotik-core" onInput=${(e) => set("name", e.target.value)} /><//>`}
+    <${Field} label=${isNew ? "Nome do grupo" : "Nome (alterar = renomear, atualiza os hosts)"}>
+      <input value=${form.name} placeholder="ex.: mikrotik-core" onInput=${(e) => set("name", e.target.value)} /><//>
+    ${!isNew && html`<${RenameCascadeHint} refsPath=${`/groups/${group.name}/references`} changed=${form.name !== group.name} />`}
     <div class="row">
       <${Field} label="Vendor"><${EnumSelect} value=${form.vendor} options=${enums?.vendor} onChange=${(v) => set("vendor", v)} /><//>
       <${Field} label="Role"><${EnumSelect} value=${form.role} options=${enums?.role} onChange=${(v) => set("role", v)} /><//>

@@ -30,11 +30,11 @@ function KnowledgeKind({ kind, creating, setCreating }) {
        { key: "vendor", label: "Vendor", render: (r) => html`<${Badge}>${r.vendor}<//>` },
        { key: "file", label: "Arquivo", render: (r) => html`<span class="mono">${r.file}</span>` },
        { key: "descricao", label: "Descrição", render: (r) => r.descricao }];
-  function openFile(rel) { const [vendor, ...rest] = rel.split("/"); setOpen({ vendor, name: rest.join("/") }); }
+  function split(rel) { const [vendor, ...rest] = rel.split("/"); return { vendor, name: rest.join("/") }; }
   return html`<div>
-    <${ResourceTable} columns=${cols} rows=${rows} onRowClick=${(r) => openFile(r.file)} empty="Catálogo vazio." />
+    <${ResourceTable} columns=${cols} rows=${rows} onRowClick=${(r) => setOpen(split(r.file))} empty="Catálogo vazio." />
     ${files?.length ? html`<div class="help" style="margin-top:8px">Arquivos em disco: ${files.join(", ")}</div>` : ""}
-    ${open && html`<${FileEditor} kind=${kind} target=${open} onClose=${() => setOpen(null)} onSaved=${() => res.reload()} />`}
+    ${open && html`<${FileEditor} kind=${kind} target=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}
     ${creating && html`<${NewFile} kind=${kind} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); res.reload(); }} />`}
   </div>`;
 }
@@ -42,6 +42,7 @@ function KnowledgeKind({ kind, creating, setCreating }) {
 function FileEditor({ kind, target, onClose, onSaved }) {
   const [data, setData] = useState(null);
   const [text, setText] = useState("");
+  const [name, setName] = useState(target.name);
   useEffect(() => {
     api.get(`/knowledge/${kind}/file?vendor=${encodeURIComponent(target.vendor)}&name=${encodeURIComponent(target.name)}`)
       .then((d) => { setData(d); setText(d.text); }).catch(handleError);
@@ -49,10 +50,20 @@ function FileEditor({ kind, target, onClose, onSaved }) {
   if (!data) return html`<${Modal} title="Carregando…" onClose=${onClose}><${Spinner} /><//>`;
   const isMd = target.name.endsWith(".md");
   async function save() {
-    try { await api.put(`/knowledge/${kind}/file`, { vendor: target.vendor, name: target.name, text }, data.rev); toast.ok("Salvo"); onSaved(); }
-    catch (e) { handleError(e); }
+    try {
+      let path = { vendor: target.vendor, name: target.name }, rev = data.rev;
+      if (name !== target.name) {                           // renomeia o arquivo + atualiza o índice
+        rev = (await api.post(`/knowledge/${kind}/rename`,
+          { vendor: target.vendor, name: target.name, to_name: name })).rev;
+        path = { vendor: target.vendor, name };
+      }
+      await api.put(`/knowledge/${kind}/file`, { ...path, text }, rev);
+      toast.ok("Salvo"); onSaved();
+    } catch (e) { handleError(e); }
   }
   return html`<${Modal} title=${`${target.vendor}/${target.name}`} onClose=${onClose} wide=${true}>
+    <${Field} label="Nome do arquivo (alterar = renomear, atualiza o índice)">
+      <input value=${name} onInput=${(e) => setName(e.target.value)} /><//>
     ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`<${CodeTextEditor} value=${text} onChange=${setText} />`}
     <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary" onClick=${save}>Salvar</button></div>
   <//>`;

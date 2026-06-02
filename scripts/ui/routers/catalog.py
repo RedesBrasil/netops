@@ -23,6 +23,24 @@ def _safe(base, name: str):
     return docs_svc.safe_child(base, name)
 
 
+def _rename_doc(base, file: str, to: str, suffix: str) -> dict:
+    """Renomeia o arquivo no disco (workflow/agent). O conteúdo não muda; o 'id' interno
+    é independente do nome do arquivo, então não há cascade."""
+    import os  # noqa: PLC0415
+    if not to.endswith(suffix):
+        raise deps.ValidationFailed([{"loc": "to", "msg": f"nome deve terminar em {suffix}"}])
+    src = _safe(base, file)
+    if not src.exists():
+        raise KeyError(f"'{file}' não existe")
+    dst = _safe(base, to)
+    if dst == src:
+        raise deps.ValidationFailed([{"loc": "to", "msg": "destino igual à origem"}])
+    if dst.exists():
+        raise deps.ValidationFailed([{"loc": "to", "msg": f"'{to}' já existe"}])
+    os.replace(src, dst)
+    return {"renamed": {"from": file, "to": to}, "updated": []}
+
+
 # --------------------------------------------------------------------------- #
 # Workflows
 # --------------------------------------------------------------------------- #
@@ -71,6 +89,11 @@ def create_workflow(body: dict):
     _validate_workflow(text)
     yaml_io.atomic_write(path, text)
     return {"file": name, "rev": yaml_io.file_rev(path)}
+
+
+@router.post("/workflows/{file}/rename")
+def rename_workflow(file: str, body: dict):
+    return _rename_doc(deps.WORKFLOWS_DIR, file, (body.get("to") or "").strip(), ".workflow.yaml")
 
 
 def _validate_workflow(text: str) -> None:
@@ -131,6 +154,11 @@ def create_agent(body: dict):
     _validate_agent(text)
     yaml_io.atomic_write(path, text)
     return {"file": name, "rev": yaml_io.file_rev(path)}
+
+
+@router.post("/agents/{file}/rename")
+def rename_agent(file: str, body: dict):
+    return _rename_doc(deps.AGENTS_DIR, file, (body.get("to") or "").strip(), ".agent.md")
 
 
 def _validate_agent(text: str) -> None:

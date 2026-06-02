@@ -1,12 +1,12 @@
 // Credenciais (network/credentials.yaml). Senhas sempre mascaradas; encrypt-on-write.
 import { html, useState, api, useResource, Spinner, Badge, toast, handleError, useStore, vaultStore } from "../ui.js";
-import { ResourceTable, Field, Modal, ConfirmDialog } from "../components.js";
+import { ResourceTable, Field, Modal, ConfirmDialog, RenameCascadeHint } from "../components.js";
 import { vaultWritable } from "../components.js";
 
 export function CredentialsPage() {
   const res = useResource("/credentials");
   const v = useStore(vaultStore);
-  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(null); // row (edit) or {__new:true}
   const [rotating, setRotating] = useState(null); // {name, field}
   const [confirm, setConfirm] = useState(null);
   if (res.loading) return html`<${Spinner} />`;
@@ -27,10 +27,11 @@ export function CredentialsPage() {
 
   return html`<div>
     <div class="page-title"><h1>Credenciais</h1><span class="spacer"></span>
-      <button class="primary" onClick=${() => setCreating(true)}>+ Nova credencial</button></div>
+      <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Nova credencial</button></div>
     ${!vault_initialized && html`<div class="card"><b>Cofre não inicializado.</b> Para guardar senhas cifradas,
       rode no terminal: <code>python scripts/vault/cli.py init</code> e depois <code>encrypt</code>.</div>`}
     <${ResourceTable} columns=${cols} rows=${credentials.map((c) => ({ ...c, _key: c.name }))}
+      onRowClick=${(r) => setEditing(r)}
       actions=${(r) => html`
         <button class="sm" disabled=${!writable} title=${writable ? "" : "Destranque o cofre na aba Terminal"}
           onClick=${() => setRotating({ name: r.name, field: "password" })}>Senha…</button>
@@ -39,8 +40,8 @@ export function CredentialsPage() {
         <button class="sm danger" onClick=${() => setConfirm(r.name)}>Excluir</button>`}
       empty="Nenhuma credencial. Crie uma e depois defina a senha." />
 
-    ${creating && html`<${CredentialForm} rev=${rev} onClose=${() => setCreating(false)}
-        onSaved=${() => { setCreating(false); res.reload(); }} />`}
+    ${editing && html`<${CredentialForm} cred=${editing} rev=${rev} onClose=${() => setEditing(null)}
+        onSaved=${() => { setEditing(null); res.reload(); }} />`}
     ${rotating && html`<${RotateModal} target=${rotating} writable=${writable}
         onClose=${() => setRotating(null)} onSaved=${() => { setRotating(null); res.reload(); }} />`}
     ${confirm && html`<${ConfirmDialog} title="Excluir credencial" danger=true
@@ -51,27 +52,46 @@ export function CredentialsPage() {
   </div>`;
 }
 
-function CredentialForm({ rev, onClose, onSaved }) {
-  const [form, setForm] = useState({ name: "", username: "", key_file: "", api_ssl: false });
+function CredentialForm({ cred, rev, onClose, onSaved }) {
+  const isNew = !!cred.__new;
+  const [form, setForm] = useState({
+    name: isNew ? "" : cred.name, username: cred.username || "",
+    key_file: cred.key_file || "", api_ssl: !!cred.api_ssl,
+  });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   async function save() {
     try {
-      const body = { name: form.name, username: form.username || null };
-      if (form.key_file) body.key_file = form.key_file;
-      if (form.api_ssl) body.api_ssl = true;
-      await api.post("/credentials", body, rev);
-      toast.ok("Credencial criada. Agora defina a senha (cofre destrancado).");
+      if (isNew) {
+        const body = { name: form.name, username: form.username || null };
+        if (form.key_file) body.key_file = form.key_file;
+        if (form.api_ssl) body.api_ssl = true;
+        await api.post("/credentials", body, rev);
+        toast.ok("Credencial criada. Agora defina a senha (cofre destrancado).");
+      } else {
+        let curRev = rev;
+        if (form.name !== cred.name) {                      // renomeia primeiro (cascade em hosts/grupos)
+          curRev = (await api.post(`/credentials/${cred.name}/rename`, { to: form.name }, curRev)).rev;
+        }
+        await api.patch(`/credentials/${form.name}`, {
+          username: form.username || null, key_file: form.key_file || null,
+          api_ssl: form.api_ssl ? true : null,
+        }, curRev);
+        toast.ok("Credencial atualizada");
+      }
       onSaved();
     } catch (e) { handleError(e); }
   }
-  return html`<${Modal} title="Nova credencial" onClose=${onClose}>
-    <${Field} label="Nome (ex.: cred_mikrotik_admin)"><input value=${form.name} onInput=${(e) => set("name", e.target.value)} /><//>
+  return html`<${Modal} title=${isNew ? "Nova credencial" : `Editar ${cred.name}`} onClose=${onClose}>
+    <${Field} label=${isNew ? "Nome (ex.: cred_mikrotik_admin)" : "Nome (alterar = renomear, atualiza hosts/grupos)"}>
+      <input value=${form.name} onInput=${(e) => set("name", e.target.value)} /><//>
+    ${!isNew && html`<${RenameCascadeHint} refsPath=${`/credentials/${cred.name}/references`} changed=${form.name !== cred.name} />`}
     <${Field} label="Usuário"><input value=${form.username} onInput=${(e) => set("username", e.target.value)} /><//>
     <${Field} label="Arquivo de chave SSH (opcional)" hint="ex.: ~/.ssh/id_ed25519">
       <input value=${form.key_file} onInput=${(e) => set("key_file", e.target.value)} /><//>
     <${Field}><label><input type="checkbox" checked=${form.api_ssl} onChange=${(e) => set("api_ssl", e.target.checked)} /> API com TLS (api_ssl)</label><//>
-    <div class="help">A senha é definida depois, no botão "Senha…" (é cifrada no servidor; nunca trafega em texto puro de volta).</div>
-    <div class="modal-actions"><button onClick=${onClose}>Cancelar</button><button class="primary" onClick=${save}>Criar</button></div>
+    ${isNew && html`<div class="help">A senha é definida depois, no botão "Senha…" (é cifrada no servidor; nunca trafega em texto puro de volta).</div>`}
+    <div class="modal-actions"><button onClick=${onClose}>Cancelar</button>
+      <button class="primary" onClick=${save}>${isNew ? "Criar" : "Salvar"}</button></div>
   <//>`;
 }
 

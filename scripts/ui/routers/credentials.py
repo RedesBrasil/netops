@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from models import CredentialCreate, CredentialUpdate, PasswordSet
+from models import CredentialCreate, CredentialUpdate, PasswordSet, RenameBody
 from services import credentials_svc
 
 router = APIRouter(tags=["credentials"])
@@ -51,3 +51,15 @@ def delete_credential(name: str, request: Request, force: bool = False):
 def set_password(name: str, body: PasswordSet, request: Request):
     """Define/rotaciona password|secret. Cofre trancado => 423; não iniciado => 409."""
     return credentials_svc.set_secret(name, body.field, body.value, _rev(request))
+
+
+@router.get("/credentials/{name}/references")
+def credential_references(name: str):
+    """Hosts/grupos que usam esta credencial (preview do cascade do rename)."""
+    return credentials_svc.credential_references(name)
+
+
+@router.post("/credentials/{name}/rename")
+def rename_credential(name: str, body: RenameBody, request: Request):
+    """Renomeia a credencial e atualiza 'credential' em hosts/grupos (atômico)."""
+    return credentials_svc.rename_credential(name, body.to, _rev(request))

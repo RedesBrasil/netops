@@ -7,6 +7,15 @@ arquivos do NetOps: hosts, grupos, credenciais, topologia, memória, boas práti
 de config, workflows, agentes e a configuração do projeto. Também **visualiza** (read-only)
 relatórios e execuções.
 
+Dá pra **renomear o ID/nome** de hosts, grupos, credenciais e padrões da memória, além de
+arquivos de conhecimento/workflows/agentes. O campo de ID/nome é **editável no próprio
+formulário de edição** do item (não há botão "Renomear" à parte): ao **Salvar**, se o ID mudou,
+o servidor renomeia **com cascade** — renomear um grupo atualiza o campo `group` dos hosts que o
+usam; uma credencial atualiza `credential` em hosts/grupos; um host atualiza as pontas de enlace
+em `topology.yaml`. Enquanto o campo está alterado, o form mostra **quantas referências** serão
+atualizadas. Segmentos da topologia já têm o nome editável no formulário; lições **não** se
+renomeiam (append-only, constituição §II).
+
 É uma **ferramenta de operador efêmera** (constituição §VII): *stateless* (cada request lê/
 escreve só os arquivos canônicos — sem banco, sem cache, sem segundo cofre), feita para rodar
 quando o operador precisa e ser encerrada depois. O framework funciona 100% com ela desligada.
@@ -66,7 +75,9 @@ bash scripts/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xterm p/ st
   atrás de túnel SSH/VPN. Para exigir o terminal e desabilitar o unlock web: `--no-vault-unlock`.
 - **Integridade:** escrita atômica (tmp + replace), `credentials.yaml` em modo `0600`,
   comentários preservados (ruamel round-trip), concorrência otimista por hash (`409` em conflito),
-  validação de schema antes de gravar host/grupo.
+  validação de schema antes de gravar host/grupo. Renames que tocam **dois arquivos**
+  (credencial→hosts.yaml, host→topology.yaml) gravam numa **transação** (`yaml_io.write_many`):
+  valida as revs dos dois antes de escrever e faz **rollback** se a segunda escrita falhar.
 - **Terminal web (`--enable-terminal`):** ⚠ é um **shell real** (PTY) na máquina = execução de
   comando arbitrário como o usuário do servidor. **DESLIGADO por padrão**, nunca liga em
   `--read-only`. O handshake do WebSocket (`/api/term`) é autenticado **à mão** (token + Host +

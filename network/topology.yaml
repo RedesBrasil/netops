@@ -9,20 +9,20 @@ version: 1
 
 # --- Enlaces entre hosts ---
 links:
-  - a: { host: rt-core-01,   port: "sfp-sfpplus1" }
-    b: { host: rt-dist-01,   port: "sfp-sfpplus1" }
+  - a: {host: rt-core-01, port: "sfp-sfpplus1"}
+    b: {host: rt-edge-01, port: "sfp-sfpplus1"}
     media: fiber
     speed: 10G
     desc: "Uplink core <-> distribuição"
 
-  - a: { host: rt-dist-01,   port: "ether2" }
-    b: { host: sw-access-01, port: "GigabitEthernet0/1" }
+  - a: {host: rt-edge-01, port: "ether2"}
+    b: {host: sw-access-01, port: "GigabitEthernet0/1"}
     media: copper
     speed: 1G
     desc: "Distribuição <-> switch de acesso"
 
-  - a: { host: sw-access-01, port: "GigabitEthernet0/10" }
-    b: { host: srv-web-01,   port: "eth0" }
+  - a: {host: sw-access-01, port: "GigabitEthernet0/10"}
+    b: {host: srv-web-01, port: "eth0"}
     media: copper
     speed: 1G
     desc: "Switch de acesso <-> servidor web"

@@ -86,6 +86,25 @@ def delete_pattern(pid: str, request: Request):
     return {"deleted": pid, "rev": new_rev}
 
 
+@router.post("/memory/patterns/{pid}/rename")
+def rename_pattern(pid: str, body: dict, request: Request):
+    """Renomeia o 'id' do padrão. Padrões não são referenciados por chave => sem cascade."""
+    new = (body.get("to") or "").strip()
+    docs_svc.assert_slug(new, "to")
+    data, y = _load_patterns_doc()
+    target = next((p for p in data["patterns"] if p.get("id") == pid), None)
+    if target is None:
+        raise KeyError(f"padrão '{pid}' não existe")
+    if new == pid:
+        raise deps.ValidationFailed([{"loc": "to", "msg": "o novo ID é igual ao atual"}])
+    if any(p.get("id") == new for p in data["patterns"]):
+        raise deps.ValidationFailed([{"loc": "to", "msg": f"padrão '{new}' já existe"}])
+    target["id"] = new
+    data["last_updated"] = _today()
+    new_rev = yaml_io.write_rt(deps.PATTERNS_FILE, y, data, expected=_rev(request), backup=True)
+    return {"renamed": {"from": pid, "to": new}, "updated": [], "rev": new_rev}
+
+
 # --------------------------------------------------------------------------- #
 # Lições (append-only)
 # --------------------------------------------------------------------------- #

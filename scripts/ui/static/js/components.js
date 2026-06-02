@@ -252,3 +252,15 @@ export function vaultWritable() {
   const v = vaultStore.get();
   return v.state === "cache" || v.state === "env";
 }
+
+/* -------------------------- RenameCascadeHint --------------------------- */
+// Dentro do formulário de edição: quando o ID/nome muda, mostra quantas
+// referências serão atualizadas em cascade ao salvar. `refsPath` é o endpoint
+// GET .../references; `changed` liga o aviso só quando o campo difere do original.
+export function RenameCascadeHint({ refsPath, changed }) {
+  const [refs, setRefs] = useState(null);
+  useEffect(() => { api.get(refsPath).then((d) => setRefs(d.references || [])).catch(() => setRefs([])); }, [refsPath]);
+  if (!changed || !refs || !refs.length) return null;
+  return html`<div class="card rename-refs">⚠ Ao salvar, <b>${refs.length} referência(s)</b> serão atualizadas:
+    <ul>${refs.map((r, i) => html`<li key=${i}>${r.label || r.id}</li>`)}</ul></div>`;
+}

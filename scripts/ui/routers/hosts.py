@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
-from models import GroupCreate, HostCreate, HostUpsert, NodeUpsert
+from models import GroupCreate, HostCreate, HostUpsert, NodeUpsert, RenameBody
 from services import inventory_svc
 
 router = APIRouter(tags=["inventory"])
@@ -57,6 +57,18 @@ def delete_host(host_id: str, request: Request):
     return inventory_svc.delete_host(host_id, _rev(request))
 
 
+@router.get("/hosts/{host_id}/references")
+def host_references(host_id: str):
+    """Onde o host é referenciado (preview do cascade do rename)."""
+    return inventory_svc.host_references(host_id)
+
+
+@router.post("/hosts/{host_id}/rename")
+def rename_host(host_id: str, body: RenameBody, request: Request):
+    """Renomeia o ID do host e atualiza as referências em topology.yaml (atômico)."""
+    return inventory_svc.rename_host(host_id, body.to, _rev(request))
+
+
 # --------------------------------------------------------------------------- #
 # Grupos
 # --------------------------------------------------------------------------- #
@@ -86,3 +98,14 @@ def patch_group(name: str, body: NodeUpsert, request: Request):
 @router.delete("/groups/{name}")
 def delete_group(name: str, request: Request, force: bool = False):
     return inventory_svc.delete_group(name, _rev(request), force=force)
+
+
+@router.get("/groups/{name}/references")
+def group_references(name: str):
+    return inventory_svc.group_references(name)
+
+
+@router.post("/groups/{name}/rename")
+def rename_group(name: str, body: RenameBody, request: Request):
+    """Renomeia o grupo e atualiza o campo 'group' dos hosts que o usam (atômico)."""
+    return inventory_svc.rename_group(name, body.to, _rev(request))

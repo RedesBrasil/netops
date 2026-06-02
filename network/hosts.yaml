@@ -34,7 +34,7 @@ groups:
 
 # --- Hosts ---
 hosts:
-  rt-dist-01:
+  rt-edge-01:
     hostname: RT-EDGE-01
     mgmt_ip: 10.0.0.1
     group: mikrotik-dist

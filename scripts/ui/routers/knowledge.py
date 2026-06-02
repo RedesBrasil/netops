@@ -108,6 +108,43 @@ def update_file(kind: str, body: dict, request: Request):
     return {"file": f"{vendor}/{name}", "rev": new_rev}
 
 
+@router.post("/knowledge/{kind}/rename")
+def rename_file(kind: str, body: dict):
+    """Move o arquivo (renomeia e/ou troca de vendor) e atualiza a entrada do índice."""
+    import os  # noqa: PLC0415
+    base, index_file, key = _kind(kind)
+    vendor = (body.get("vendor") or "").strip()
+    name = (body.get("name") or "").strip()
+    to_vendor = (body.get("to_vendor") or vendor).strip()
+    to_name = (body.get("to_name") or "").strip()
+    docs_svc.assert_vendor(to_vendor)
+    if not to_name or "/" in to_name or to_name.startswith("_"):
+        raise deps.ValidationFailed([{"loc": "to_name", "msg": "nome de arquivo inválido"}])
+    src = docs_svc.safe_child(base, vendor, name)
+    if not src.exists():
+        raise KeyError(f"{vendor}/{name} não existe")
+    dst = docs_svc.safe_child(base, to_vendor, to_name)
+    if dst == src:
+        raise deps.ValidationFailed([{"loc": "to_name", "msg": "destino igual à origem"}])
+    if dst.exists():
+        raise deps.ValidationFailed([{"loc": "to_name", "msg": f"{to_vendor}/{to_name} já existe"}])
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(src, dst)
+    old_rel, new_rel = f"{vendor}/{name}", f"{to_vendor}/{to_name}"
+    data, _, y = yaml_io.load_rt(index_file)
+    indexed = False
+    if data and data.get(key):
+        for e in data[key]:
+            if e.get("file") == old_rel:
+                e["file"] = new_rel
+                e["vendor"] = to_vendor
+                indexed = True
+        if indexed:
+            yaml_io.write_rt(index_file, y, data, expected=None, backup=True)
+    return {"renamed": {"from": old_rel, "to": new_rel}, "indexed": indexed,
+            "rev": yaml_io.file_rev(dst)}
+
+
 @router.delete("/knowledge/{kind}/file")
 def delete_file(kind: str, vendor: str, name: str):
     base, index_file, key = _kind(kind)

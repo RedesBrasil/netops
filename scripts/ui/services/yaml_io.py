@@ -121,6 +121,67 @@ def write_text(path: Path, text: str, *, expected: str | None, mode: int = 0o644
     return atomic_write(path, text, mode=mode, backup=backup)
 
 
+def write_many(writes: list[tuple[Path, str, int]], *,
+               checks: list[tuple[Path, str | None]]) -> dict[Path, str]:
+    """Grava VÁRIOS arquivos como uma transação (usado por renames com cascade cross-file).
+
+    1) valida TODAS as revs em `checks` (concorrência otimista) — qualquer divergência
+       levanta ConflictError ANTES de tocar em disco;
+    2) grava cada (path, texto, modo) atomicamente, com backup;
+    3) se uma escrita falhar no meio, desfaz (rollback) as já gravadas, restaurando o
+       conteúdo original (ou removendo o que não existia), e re-levanta a exceção.
+
+    Retorna {path: novo_rev} dos arquivos gravados. A janela entre a validação e a
+    escrita é a mesma do write_rt de arquivo único — aceitável p/ a ferramenta de
+    operador (single-process); o rollback cobre falha de I/O no meio da sequência.
+    """
+    for path, expected in checks:
+        check_rev(path, expected)
+    done: list[tuple[Path, bytes | None, int]] = []
+    revs: dict[Path, str] = {}
+    try:
+        for path, text, mode in writes:
+            original = path.read_bytes() if path.exists() else None
+            done.append((path, original, mode))
+            revs[path] = atomic_write(path, text, mode=mode, backup=True)
+    except Exception:
+        for path, original, mode in reversed(done):
+            try:
+                if original is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    atomic_write(path, original.decode("utf-8"), mode=mode)
+            except OSError:
+                pass
+        raise
+    return revs
+
+
+def rename_key(cmap, old: str, new: str) -> None:
+    """Renomeia a chave `old`->`new` num CommentedMap preservando posição, valor e
+    (best-effort) o comentário associado à chave. O objeto-valor é reaproveitado, então
+    os comentários internos do bloco (ruamel round-trip) sobrevivem intactos."""
+    if old not in cmap:
+        return
+    idx = list(cmap.keys()).index(old)
+    value = cmap[old]
+    comment = None
+    try:
+        comment = cmap.ca.items.pop(old, None)
+    except (AttributeError, KeyError):
+        comment = None
+    del cmap[old]
+    try:
+        cmap.insert(idx, new, value)          # CommentedMap preserva a ordem
+    except AttributeError:                    # dict simples (arquivo sem comentários)
+        cmap[new] = value
+    if comment is not None:
+        try:
+            cmap.ca.items[new] = comment
+        except AttributeError:
+            pass
+
+
 def _make_backup(path: Path, mode: int) -> None:
     ts = time.strftime("%Y%m%d-%H%M%S")
     bak = path.with_name(f"{path.name}.bak.{ts}")
