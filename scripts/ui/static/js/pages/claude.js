@@ -2,8 +2,8 @@
 // Protocolo JSON nos dois sentidos (ver scripts/ui/services/claude_svc.py).
 // Streaming de texto/pensamento, cards de ferramenta, aprovação na tela, troca de modo,
 // menu de slash, anexar arquivos, interromper e nova sessão.
-import { html, useState, useEffect, useRef, useCallback, toast } from "../ui.js";
-import { MarkdownView, VaultBanner } from "../components.js";
+import { html, useState, useEffect, useRef, useCallback, toast, api } from "../ui.js";
+import { MarkdownView, VaultBanner, Modal } from "../components.js";
 import { sessionToken, authToken } from "../api.js";
 
 // Modos de operação expostos (todos, incl. bypass — decisão do projeto).
@@ -33,7 +33,9 @@ export function ClaudeCodePage() {
   const [sessionId, setSessionId] = useState("");
   const [slash, setSlash] = useState([]);             // nomes de slash commands (do init)
   const [input, setInput] = useState("");
-  const [gen, setGen] = useState(0);                  // bump => reconecta (nova sessão)
+  const [gen, setGen] = useState(0);                  // bump => reconecta
+  const [resumeId, setResumeId] = useState("");       // se setado, retoma a sessão ao reconectar
+  const [showSessions, setShowSessions] = useState(false);
   const wsRef = useRef(null);
   const scrollRef = useRef(null);
   const fileRef = useRef(null);
@@ -62,11 +64,14 @@ export function ClaudeCodePage() {
 
   // ---- ciclo de vida do WebSocket (reabre quando `gen` muda) ----
   useEffect(() => {
-    setItems([]); setWorking(false); setSessionId("");
+    setItems([]); setWorking(false); setSessionId(resumeId || "");
     setStatus("conectando");
+    // retomando: carrega o histórico da sessão na transcrição.
+    if (resumeId) api.get(`/claude/sessions/${resumeId}/messages`).then((h) => setItems(h.items || [])).catch(() => {});
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/api/claude`
-      + `?token=${encodeURIComponent(sessionToken())}&auth=${encodeURIComponent(authToken())}`);
+      + `?token=${encodeURIComponent(sessionToken())}&auth=${encodeURIComponent(authToken())}`
+      + (resumeId ? `&resume=${encodeURIComponent(resumeId)}` : ""));
     wsRef.current = ws;
 
     ws.onopen = () => setStatus("pronto");
@@ -140,17 +145,28 @@ export function ClaudeCodePage() {
 
   function submit() {
     const text = input.trim();
-    if (!text || status !== "pronto") return;
+    if (!text || status !== "pronto" || working) return;
     if (!send({ type: "prompt", text })) { toast.err("Sem conexão"); return; }
     setItems((prev) => [...prev, { type: "user", text }]);
     setInput("");
     setWorking(true);
   }
 
-  function answerPermission(id, decision) {
-    send({ type: "permission", id, decision });
+  function stop() {
+    if (send({ type: "interrupt" })) toast.info("Interrompendo…");
+  }
+
+  function newSession() { setResumeId(""); setGen((g) => g + 1); }
+  function resumeSession(id) { setResumeId(id); setShowSessions(false); setGen((g) => g + 1); }
+
+  function answerPermission(id, decision, updatedInput) {
+    const msg = { type: "permission", id, decision };
+    if (updatedInput) msg.updated_input = updatedInput;
+    send(msg);
     setItems((prev) => prev.map((it) =>
-      it.type === "permission" && it.id === id ? { ...it, resolved: true, decision } : it));
+      it.type === "permission" && it.id === id
+        ? { ...it, resolved: true, decision, answers: updatedInput && updatedInput.answers }
+        : it));
   }
 
   function changeMode(m) {
@@ -173,6 +189,7 @@ export function ClaudeCodePage() {
   }
 
   function onKeyDown(e) {
+    if (e.key === "Escape" && working) { e.preventDefault(); stop(); return; }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
   }
 
@@ -191,7 +208,8 @@ export function ClaudeCodePage() {
       <span class="badge ${badge}">${status}</span>
       <span class="spacer"></span>
       ${working && html`<button class="sm danger" onClick=${() => send({ type: "interrupt" })}>Interromper</button>`}
-      <button class="sm" onClick=${() => setGen((g) => g + 1)} title="Encerra esta sessão e abre uma nova">Nova sessão</button>
+      <button class="sm" onClick=${() => setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
+      <button class="sm" onClick=${newSession} title="Encerra esta sessão e abre uma nova">Nova sessão</button>
     </div>
     <${VaultBanner} />
 
@@ -231,10 +249,54 @@ export function ClaudeCodePage() {
           onChange=${(e) => { uploadFile(e.target.files[0]); e.target.value = ""; }} />
         <button class="sm" disabled=${disabled} onClick=${() => fileRef.current && fileRef.current.click()}
           title="Anexa um arquivo (vira @caminho na mensagem)">📎 Anexar</button>
-        <button class="primary" disabled=${disabled || !input.trim()} onClick=${submit}>Enviar</button>
+        ${working
+          ? html`<button class="danger" onClick=${stop} title="Interrompe o agente (Esc)">⏹ Parar</button>`
+          : html`<button class="primary" disabled=${disabled || !input.trim()} onClick=${submit}>Enviar</button>`}
       </div>
     </div>
+
+    ${showSessions && html`<${SessionsModal} currentId=${sessionId}
+      onClose=${() => setShowSessions(false)} onResume=${resumeSession} />`}
   </div>`;
+}
+
+// Lista de sessões passadas (retomar / excluir).
+function SessionsModal({ currentId, onClose, onResume }) {
+  const [list, setList] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => { setList(null); api.get("/claude/sessions").then((d) => setList(d.sessions || [])).catch(() => setList([])); };
+  useEffect(() => { load(); }, []);
+
+  async function del(id, e) {
+    e.stopPropagation();
+    setBusy(true);
+    try { await api.del(`/claude/sessions/${id}`); load(); }
+    catch (_) { toast.err("Falha ao excluir"); }
+    finally { setBusy(false); }
+  }
+
+  return html`<${Modal} title="Sessões anteriores" onClose=${onClose} wide=${true}>
+    ${list == null
+      ? html`<div class="help">Carregando…</div>`
+      : list.length === 0
+      ? html`<div class="help">Nenhuma sessão neste projeto ainda.</div>`
+      : html`<div class="cc-sess-list">
+        ${list.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "")}
+            onClick=${() => onResume(s.id)} title="Retomar esta sessão">
+          <div class="cc-sess-main">
+            <div class="cc-sess-title">${s.title}${s.id === currentId ? html` <span class="badge ok">atual</span>` : ""}</div>
+            ${s.preview && html`<div class="cc-sess-prev help">${s.preview}</div>`}
+            <div class="cc-sess-meta help mono">${fmtTime(s.mtime)} · ${(s.id || "").slice(0, 8)}${s.branch ? " · " + s.branch : ""}</div>
+          </div>
+          <button class="sm danger" disabled=${busy} title="Excluir sessão" onClick=${(e) => del(s.id, e)}>🗑</button>
+        </div>`)}
+      </div>`}
+  <//>`;
+}
+
+function fmtTime(ms) {
+  if (!ms) return "";
+  try { return new Date(ms).toLocaleString(); } catch (_) { return ""; }
 }
 
 function Item({ it, onPermission }) {
@@ -247,20 +309,14 @@ function Item({ it, onPermission }) {
   if (it.type === "thinking")
     return html`<details class="cc-thinking"><summary>pensando…</summary><pre>${it.text}</pre></details>`;
 
-  if (it.type === "tool") {
-    const icon = { running: "⏳", done: "✓", error: "✗" }[it.tstatus] || "•";
-    return html`<div class="cc-tool ${it.tstatus}">
-      <div class="cc-tool-head">${icon} <b>${it.name}</b></div>
-      <pre class="cc-tool-input">${fmt(it.input)}</pre>
-      ${it.result != null && html`<pre class="cc-tool-result ${it.isError ? "err" : ""}">${it.result}</pre>`}
-    </div>`;
-  }
+  if (it.type === "tool") return html`<${ToolCard} it=${it} />`;
 
   if (it.type === "permission") {
+    if (it.tool === "AskUserQuestion") return html`<${AskQuestion} it=${it} onPermission=${onPermission} />`;
     const ctx = it.context || {};
     return html`<div class="cc-perm ${it.resolved ? "resolved" : ""}">
       <div class="cc-perm-head">🔑 permissão: <b>${it.tool}</b>${ctx.title ? " — " + ctx.title : ""}</div>
-      <pre class="cc-tool-input">${fmt(it.input)}</pre>
+      <${Collapsible} text=${fmt(it.input)} max=${4} />
       ${ctx.blocked_path && html`<div class="help">caminho: ${ctx.blocked_path}</div>`}
       ${it.resolved
         ? html`<div class="cc-perm-done ${it.decision}">${it.decision === "allow" ? "✓ aprovado" : "✗ negado"}</div>`
@@ -284,4 +340,121 @@ function Item({ it, onPermission }) {
 
 function fmt(obj) {
   try { return JSON.stringify(obj, null, 2); } catch (_) { return String(obj); }
+}
+
+// Ferramenta AskUserQuestion: pergunta de múltipla escolha (estilo Claude Code). Renderiza as
+// opções clicáveis + "Outro" e devolve a escolha em updated_input.answers (pergunta -> rótulo).
+function AskQuestion({ it, onPermission }) {
+  const questions = (it.input && it.input.questions) || [];
+  const [sel, setSel] = useState({});      // qi -> rótulo | rótulo[] | "__other__"
+  const [other, setOther] = useState({});  // qi -> texto custom
+
+  if (it.resolved) {
+    return html`<div class="cc-ask resolved">
+      <div class="cc-perm-head">🔑 <b>${it.tool}</b></div>
+      ${questions.map((q, qi) => html`<div key=${qi} class="cc-ask-q">
+        <div class="cc-ask-title">${q.question}</div>
+        <div class="cc-perm-done ${it.decision === "allow" ? "allow" : "deny"}">
+          ${it.decision === "allow" ? "✓ " + ((it.answers && it.answers[q.question]) || "respondido") : "✗ pulado"}</div>
+      </div>`)}
+    </div>`;
+  }
+
+  function pick(qi, label, multi) {
+    setSel((s) => {
+      if (!multi) return { ...s, [qi]: label };
+      const cur = Array.isArray(s[qi]) ? s[qi] : [];
+      return { ...s, [qi]: cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label] };
+    });
+  }
+  const isPicked = (qi, label, multi) => {
+    const v = sel[qi];
+    return multi ? Array.isArray(v) && v.includes(label) : v === label;
+  };
+  const answered = questions.every((q, qi) => {
+    const v = sel[qi];
+    if (v === "__other__") return (other[qi] || "").trim().length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    return v != null && v !== "";
+  });
+
+  function submit() {
+    const answers = {};
+    questions.forEach((q, qi) => {
+      let v = sel[qi];
+      if (v === "__other__") v = (other[qi] || "").trim();
+      else if (Array.isArray(v)) v = v.join(", ");
+      answers[q.question] = v || "";
+    });
+    onPermission(it.id, "allow", { ...it.input, answers });
+  }
+
+  return html`<div class="cc-ask">
+    <div class="cc-perm-head">🔑 <b>${it.tool}</b></div>
+    ${questions.map((q, qi) => html`<div key=${qi} class="cc-ask-q">
+      <div class="cc-ask-title">${q.question}${q.multiSelect ? html` <span class="help">(várias)</span>` : ""}</div>
+      <div class="cc-ask-opts">
+        ${(q.options || []).map((o) => html`<button key=${o.label}
+            class=${"cc-opt" + (isPicked(qi, o.label, q.multiSelect) ? " sel" : "")}
+            onClick=${() => pick(qi, o.label, q.multiSelect)}>
+          <b>${o.label}</b>${o.description ? html`<span class="cc-opt-desc">${o.description}</span>` : ""}
+        </button>`)}
+        <button class=${"cc-opt" + (sel[qi] === "__other__" ? " sel" : "")}
+          onClick=${() => pick(qi, "__other__", false)}>Outro…</button>
+      </div>
+      ${sel[qi] === "__other__" && html`<input class="cc-ask-other" placeholder="Sua resposta"
+        value=${other[qi] || ""} onInput=${(e) => setOther((s) => ({ ...s, [qi]: e.target.value }))} />`}
+    </div>`)}
+    <div class="cc-perm-actions">
+      <button class="sm" onClick=${() => onPermission(it.id, "deny")}>Pular</button>
+      <button class="sm primary" disabled=${!answered} onClick=${submit}>Responder</button>
+    </div>
+  </div>`;
+}
+
+// Texto longo recolhido (prévia de `max` linhas) + botão de expandir — estilo Claude Code.
+function Collapsible({ text, max = 2, kind }) {
+  const [open, setOpen] = useState(false);
+  const t = text == null ? "" : String(text);
+  const lines = t.split("\n");
+  const big = lines.length > max || t.length > 400;
+  if (!big) return html`<pre class="cc-pre ${kind || ""}">${t}</pre>`;
+  let preview = lines.slice(0, max).join("\n");
+  if (preview.length > 400) preview = preview.slice(0, 400) + " …";
+  return html`<div>
+    <pre class="cc-pre ${kind || ""}">${open ? t : preview}</pre>
+    <button class="cc-expand" onClick=${() => setOpen((o) => !o)}>
+      ${open ? "▾ recolher" : `▸ mostrar tudo (${lines.length} linhas)`}
+    </button>
+  </div>`;
+}
+
+// Valor "principal" legível de uma chamada de ferramenta (caminho, comando, padrão…).
+function primaryString(input) {
+  const i = input || {};
+  for (const k of ["command", "file_path", "path", "pattern", "query", "url", "prompt", "notebook_path"]) {
+    if (typeof i[k] === "string" && i[k]) {
+      if (k === "pattern" && typeof i.path === "string" && i.path) return `${i[k]}  (em ${i.path})`;
+      return i[k];
+    }
+  }
+  return null;
+}
+
+// Card de ferramenta compacto: cabeçalho com resumo (1 linha) + entrada/saída recolhidas.
+function ToolCard({ it }) {
+  const icon = { running: "⏳", done: "✓", error: "✗" }[it.tstatus] || "•";
+  const prim = primaryString(it.input);
+  const hasBigExtra = ["content", "new_string", "old_string"].some(
+    (k) => typeof (it.input || {})[k] === "string" && it.input[k].length > 120);
+  const headLine = (prim != null ? prim : fmt(it.input)).split("\n")[0] || "";
+  const headShort = headLine.length > 120 ? headLine.slice(0, 120) + "…" : headLine;
+  const detail = (prim != null && !hasBigExtra) ? prim : fmt(it.input);
+  const detailBig = detail.split("\n").length > 2 || detail.length > 120 || hasBigExtra;
+  return html`<div class="cc-tool ${it.tstatus}">
+    <div class="cc-tool-head"><span>${icon}</span> <b>${it.name}</b>
+      ${headShort && html`<span class="cc-tool-desc mono">${headShort}</span>`}</div>
+    ${detailBig && html`<${Collapsible} text=${detail} max=${2} />`}
+    ${it.result != null && html`<${Collapsible} text=${it.result} max=${2} kind=${it.isError ? "err" : ""} />`}
+  </div>`;
 }

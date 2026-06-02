@@ -50,6 +50,7 @@ try:  # noqa: SIM105
         AssistantMessage,
         ClaudeAgentOptions,
         ClaudeSDKClient,
+        HookMatcher,
         PermissionResultAllow,
         PermissionResultDeny,
         ResultMessage,
@@ -107,6 +108,7 @@ class ClaudeWebSession:
         self.client: ClaudeSDKClient | None = None
         self._pending: dict[str, asyncio.Future] = {}  # id de permissão -> Future
         self._counter = 0
+        self._ask_tool_ids: set[str] = set()           # tool_use_ids de AskUserQuestion (suprimir card)
 
     # ------------------------------------------------------------------ envio
     async def _send(self, obj: dict) -> None:
@@ -117,20 +119,26 @@ class ClaudeWebSession:
             pass
 
     def _options(self) -> "ClaudeAgentOptions":
+        resume = self.ws.query_params.get("resume") or None  # retomar sessão passada (?resume=<sid>)
         return ClaudeAgentOptions(
             cwd=str(deps.NETOPS_ROOT),
+            resume=resume,
             setting_sources=["user", "project", "local"],  # herda CLAUDE.md/skills/agentes
             permission_mode="default",                       # seguro-mas-usável; UI troca p/ qualquer um
             include_partial_messages=True,                   # streaming de texto/pensamento
             can_use_tool=self._can_use_tool,                 # aprovação na tela
+            # AskUserQuestion é o modelo PERGUNTANDO ao usuário — não deve obedecer ao modo de
+            # permissão. Um hook PreToolUse a intercepta em QUALQUER modo (até dontAsk/bypass),
+            # abre o seletor na UI e devolve a escolha em updatedInput.answers.
+            hooks={"PreToolUse": [HookMatcher(matcher="AskUserQuestion", hooks=[self._hook_ask_question])]},
             cli_path=_claude_path(),
             stderr=lambda _s: None,
         )
 
     # -------------------------------------------------------- ponte de permissão
-    async def _can_use_tool(self, tool_name: str, input_data: dict, context):
-        """Chamado pelo SDK quando uma ferramenta precisa de aprovação. Pergunta à UI
-        e bloqueia até a resposta (resolvida pelo _ws_pump). Default-deny se o WS cair."""
+    async def _ask_ui(self, tool_name: str, input_data: dict, context: dict | None = None):
+        """Envia uma requisição à UI e bloqueia até a resposta (resolvida pelo _ws_pump).
+        Devolve o dict da resposta {decision, updated_input?, message?} ou None se o WS cair."""
         loop = asyncio.get_event_loop()
         fut: asyncio.Future = loop.create_future()
         self._counter += 1
@@ -141,24 +149,51 @@ class ClaudeWebSession:
             "id": rid,
             "tool": tool_name,
             "input": input_data,
-            "context": {
-                "title": getattr(context, "title", None),
-                "description": getattr(context, "description", None),
-                "blocked_path": getattr(context, "blocked_path", None),
-                "decision_reason": getattr(context, "decision_reason", None),
-            },
+            "context": context or {},
         })
         try:
-            decision = await fut
+            return await fut
         except asyncio.CancelledError:
-            return PermissionResultDeny(message="sessão encerrada")
+            return None
         finally:
             self._pending.pop(rid, None)
-        if isinstance(decision, dict) and decision.get("decision") == "allow":
+
+    async def _can_use_tool(self, tool_name: str, input_data: dict, context):
+        """Chamado pelo SDK quando uma ferramenta precisa de aprovação (modos default/plan/
+        acceptEdits). AskUserQuestion NÃO chega aqui — é tratada pelo hook PreToolUse."""
+        decision = await self._ask_ui(tool_name, input_data, {
+            "title": getattr(context, "title", None),
+            "description": getattr(context, "description", None),
+            "blocked_path": getattr(context, "blocked_path", None),
+            "decision_reason": getattr(context, "decision_reason", None),
+        })
+        if decision is None:
+            return PermissionResultDeny(message="sessão encerrada")
+        if decision.get("decision") == "allow":
             ui = decision.get("updated_input")
             return PermissionResultAllow(updated_input=ui if isinstance(ui, dict) else input_data)
-        msg = (decision or {}).get("message") if isinstance(decision, dict) else None
-        return PermissionResultDeny(message=msg or "negado pelo usuário")
+        return PermissionResultDeny(message=decision.get("message") or "negado pelo usuário")
+
+    async def _hook_ask_question(self, input_data: dict, tool_use_id, context):
+        """Hook PreToolUse p/ AskUserQuestion — roda em QUALQUER modo de permissão. Abre o
+        seletor na UI e devolve a escolha em updatedInput.answers (curto-circuita a permissão)."""
+        tool_input = input_data.get("tool_input") or {}
+        if tool_use_id:
+            self._ask_tool_ids.add(tool_use_id)  # suprime o card de ferramenta duplicado
+        answer = await self._ask_ui("AskUserQuestion", tool_input)
+        if answer is not None and answer.get("decision") == "allow":
+            ui = answer.get("updated_input")
+            return {"hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "updatedInput": ui if isinstance(ui, dict) else tool_input,
+            }}
+        reason = (answer or {}).get("message") if answer else None
+        return {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason or "Usuário pulou a pergunta.",
+        }}
 
     # ------------------------------------------------------------- ciclo de vida
     async def run(self) -> None:
@@ -249,6 +284,9 @@ class ClaudeWebSession:
             # tool_use finalizados (não dá p/ montar bem o JSON parcial) e fechamos a msg.
             for b in msg.content:
                 if isinstance(b, ToolUseBlock):
+                    if b.name == "AskUserQuestion":  # já vira o seletor (hook); não dup. card
+                        self._ask_tool_ids.add(b.id)
+                        continue
                     await self._send({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
             await self._send({"type": "assistant_end"})
 
@@ -258,6 +296,8 @@ class ClaudeWebSession:
             if isinstance(content, list):
                 for b in content:
                     if isinstance(b, ToolResultBlock):
+                        if b.tool_use_id in self._ask_tool_ids:  # resultado do AskUserQuestion: já mostrado no seletor
+                            continue
                         await self._send({
                             "type": "tool_result",
                             "tool_use_id": b.tool_use_id,
@@ -274,3 +314,93 @@ class ClaudeWebSession:
                 "is_error": msg.is_error,
                 "result": msg.result,
             })
+
+
+# --------------------------------------------------------------------------- #
+# Sessões passadas (retomar) — lê os transcripts em ~/.claude/projects/<projeto>.
+# --------------------------------------------------------------------------- #
+def list_project_sessions(limit: int = 60) -> list[dict]:
+    """Sessões Claude Code deste projeto (cwd=NETOPS_ROOT), mais recentes primeiro."""
+    if not _SDK_OK:
+        return []
+    try:
+        from claude_agent_sdk import list_sessions  # noqa: PLC0415
+        sess = list_sessions(directory=str(deps.NETOPS_ROOT), limit=limit)
+    except Exception:
+        return []
+    out = []
+    for x in sess:
+        title = (x.custom_title or x.summary or x.first_prompt or "").strip()
+        out.append({
+            "id": x.session_id,
+            "title": (title or "(sem título)")[:80],
+            "preview": (x.first_prompt or "").strip()[:140],
+            "mtime": x.last_modified,
+            "created": x.created_at,
+            "tag": x.tag,
+            "branch": x.git_branch,
+        })
+    return out
+
+
+def session_items(sid: str) -> list[dict]:
+    """Traduz o histórico de uma sessão para os mesmos itens da transcrição da UI."""
+    if not _SDK_OK:
+        return []
+    try:
+        from claude_agent_sdk import get_session_messages  # noqa: PLC0415
+        msgs = get_session_messages(sid, directory=str(deps.NETOPS_ROOT))
+    except Exception:
+        return []
+    items: list[dict] = []
+    tool_index: dict[str, dict] = {}
+    ask_ids: set[str] = set()
+    for sm in msgs:
+        role_item = "user" if sm.type == "user" else "assistant"
+        content = (sm.message or {}).get("content")
+        if isinstance(content, str):
+            if content.strip():
+                items.append({"type": role_item, "text": content.strip()})
+            continue
+        if not isinstance(content, list):
+            continue
+        for b in content:
+            if not isinstance(b, dict):
+                continue
+            bt = b.get("type")
+            if bt == "text":
+                t = (b.get("text") or "").strip()
+                if t:
+                    items.append({"type": role_item, "text": t})
+            elif bt == "thinking":
+                t = (b.get("thinking") or "").strip()
+                if t:
+                    items.append({"type": "thinking", "text": t})
+            elif bt == "tool_use":
+                if b.get("name") == "AskUserQuestion":
+                    ask_ids.add(b.get("id"))
+                    continue
+                it = {"type": "tool", "id": b.get("id"), "name": b.get("name"),
+                      "input": b.get("input"), "tstatus": "done"}
+                items.append(it)
+                tool_index[b.get("id")] = it
+            elif bt == "tool_result":
+                tid = b.get("tool_use_id")
+                if tid in ask_ids:
+                    continue
+                it = tool_index.get(tid)
+                if it is not None:
+                    it["result"] = _stringify(b.get("content"))
+                    it["isError"] = bool(b.get("is_error"))
+                    it["tstatus"] = "error" if b.get("is_error") else "done"
+    return items
+
+
+def delete_project_session(sid: str) -> None:
+    if not _SDK_OK:
+        return
+    try:
+        from claude_agent_sdk import delete_session  # noqa: PLC0415
+        delete_session(sid, directory=str(deps.NETOPS_ROOT))
+    except Exception:
+        pass

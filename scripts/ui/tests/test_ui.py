@@ -433,6 +433,15 @@ def test_claude_upload_disabled_returns_403(client, env):
     assert r.status_code == 403 and r.json()["error"] == "claude_disabled"
 
 
+def test_claude_sessions_gated_by_flag(client, env):
+    """Listar/retomar sessões só responde com a página ligada."""
+    import deps
+    assert client.get("/api/claude/sessions").status_code == 403
+    deps.STATE.enable_claude = True
+    r = client.get("/api/claude/sessions")
+    assert r.status_code == 200 and "sessions" in r.json()
+
+
 # --------------------------------------------------------------------------- #
 # Topologia
 # --------------------------------------------------------------------------- #
