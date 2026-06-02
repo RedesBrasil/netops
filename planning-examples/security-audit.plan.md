@@ -9,7 +9,7 @@ relatório priorizado com recomendações.
 
 Ler antes: `network/hosts.yaml`, `network/topology.yaml`,
 `best-practices/general/network-security-audit.md`, `best-practices/general/ssh-hardening.md`,
-os guias `best-practices/<vendor>/` dos fabricantes presentes, e `memory/learned-patterns.yaml`.
+os guias `best-practices/<vendor>/` dos fabricantes presentes, e `memory/MEMORY.md`.
 
 ## Escopo
 
@@ -42,4 +42,4 @@ Não aplicável — tarefa somente leitura.
 
 - Todos os hosts do escopo foram coletados ou marcados como "não avaliados".
 - Relatório gerado em `reports/`, com achados priorizados e referências.
-- Pelo menos uma lição registrada em `memory/lessons/`.
+- Pelo menos uma lição registrada em `memory/MEMORY.md`.

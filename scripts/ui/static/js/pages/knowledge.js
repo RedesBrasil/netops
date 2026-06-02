@@ -1,17 +1,23 @@
 // Conhecimento: best-practices/ e config-examples/ (catálogo + editores de arquivo).
-import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError, Tabs } from "../ui.js";
+import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
 import { ResourceTable, Field, Modal, MarkdownEditor, CodeTextEditor, MarkdownView, EnumSelect, useEnums } from "../components.js";
 
-export function KnowledgePage() {
-  const [tab, setTab] = useState("best-practices");
+// Página de uma única seção (boas práticas OU exemplos de config), sem abas.
+function KnowledgeSection({ kind, title }) {
   const [creating, setCreating] = useState(false);
   return html`<div>
-    <div class="page-title"><h1>Conhecimento</h1></div>
-    <${Tabs} tabs=${[{ key: "best-practices", label: "Boas práticas" }, { key: "config-examples", label: "Exemplos de config" }]}
-      active=${tab} onChange=${(k) => { setCreating(false); setTab(k); }}
-      actions=${html`<button class="primary sm" onClick=${() => setCreating(true)}>+ Novo arquivo</button>`} />
-    <${KnowledgeKind} kind=${tab} key=${tab} creating=${creating} setCreating=${setCreating} />
+    <div class="page-title"><h1>${title}</h1><span class="spacer"></span>
+      <button class="primary" onClick=${() => setCreating(true)}>+ Novo arquivo</button></div>
+    <${KnowledgeKind} kind=${kind} creating=${creating} setCreating=${setCreating} />
   </div>`;
+}
+
+export function BestPracticesPage() {
+  return html`<${KnowledgeSection} kind="best-practices" title="Boas práticas" />`;
+}
+
+export function ConfigsPage() {
+  return html`<${KnowledgeSection} kind="config-examples" title="Configurações" />`;
 }
 
 function KnowledgeKind({ kind, creating, setCreating }) {

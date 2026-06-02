@@ -14,11 +14,11 @@ workflow:
       name: Entender a mudança e carregar contexto
       type: inline
       agent: coordinator
-      inputFiles: [network/hosts.yaml, network/topology.yaml, memory/learned-patterns.yaml]
+      inputFiles: [network/hosts.yaml, network/topology.yaml, memory/MEMORY.md]
       outputFiles: ["runs/${run}/state.json"]
       instructions: >-
         Capturar a intenção, os hosts-alvo e o fabricante. Injetar memória relevante.
-        Confirmar a janela de manutenção em memory/USER.md. Criar runs/${run}/.
+        Confirmar a janela de manutenção em memory/MEMORY.md. Criar runs/${run}/.
       qualityCriteria: Hosts-alvo e tipo de mudança identificados.
 
     - id: "02"
@@ -36,7 +36,7 @@ workflow:
       name: Desenhar a config proposta e o rollback
       type: subagent
       agent: planner
-      inputFiles: [config-examples/, best-practices/, memory/learned-patterns.yaml]
+      inputFiles: [config-examples/, best-practices/, memory/MEMORY.md]
       outputFiles: ["runs/${run}/proposals/<host>.change.txt", "runs/${run}/proposals/<host>.rollback.txt"]
       instructions: >-
         Reusar os exemplos de config-examples/<vendor>/ (REUSE > ADAPT > CREATE). Produzir os
@@ -90,8 +90,8 @@ workflow:
       name: Reflexão pós-execução
       type: subagent
       agent: documenter
-      outputFiles: ["memory/lessons/*.yaml"]
+      outputFiles: ["memory/MEMORY.md"]
       instructions: >-
-        Registrar lições conforme core/rules/memory-protocol.md. Se descobriu um quirk do
-        fabricante, considerar promovê-lo para best-practices/ ou config-examples/.
-        Marcar state.json como concluído.
+        Anexar as lições como bullets datados em memory/MEMORY.md, conforme
+        core/rules/memory-protocol.md. Se descobriu um quirk do fabricante, considerar
+        promovê-lo para best-practices/ ou config-examples/. Marcar state.json como concluído.

@@ -29,7 +29,7 @@
 
 ## Lições
 
-<o que foi aprendido — também registrado em memory/lessons/.>
+<o que foi aprendido — também registrado em memory/MEMORY.md.>
 
 ---
 _Gerado pelo NetOps — agente `documenter`._
