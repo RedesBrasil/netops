@@ -75,6 +75,13 @@ class PasswordSet(BaseModel):
     field: Literal["password", "secret"] = "password"
 
 
+class RenameBody(BaseModel):
+    """Novo ID/nome de um recurso de mapa (host/grupo/credencial). O mesmo padrão de
+    slug de HostCreate/GroupCreate/CredentialCreate; a unicidade é checada no serviço."""
+    model_config = {"extra": "forbid"}
+    to: str = Field(min_length=1, pattern=r"^[a-zA-Z0-9._-]+$")
+
+
 # --------------------------------------------------------------------------- #
 # Cofre (destrancar pela web)
 # --------------------------------------------------------------------------- #

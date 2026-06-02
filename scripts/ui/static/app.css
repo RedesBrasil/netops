@@ -134,6 +134,9 @@ pre.raw { font-family: var(--mono); font-size: 13px; background: var(--surface-2
 .inline-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .dangling { color: var(--danger); font-size: 12px; }
 .statedot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+.rename-refs { margin: 8px 0; font-size: 13px; }
+.rename-refs ul { margin: 6px 0 0; padding-left: 18px; }
+.rename-refs li { margin: 2px 0; }
 
 /* terminal web (xterm.js) */
 .term-page { display: flex; flex-direction: column; flex: 1; min-height: 0; }

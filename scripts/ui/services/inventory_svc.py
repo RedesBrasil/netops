@@ -12,9 +12,13 @@ são omitidos, deixando o nó válido.
 from __future__ import annotations
 
 import json
+import re
 
 import deps
 from services import yaml_io
+
+# Padrão de ID válido (espelha models.HostCreate/GroupCreate).
+ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 # Ordem de chaves p/ hosts/grupos novos (legibilidade do YAML).
 HOST_KEY_ORDER = ["hostname", "mgmt_ip", "group", "vendor", "role", "model", "site", "access", "credential", "notes"]
@@ -212,6 +216,69 @@ def delete_host(host_id: str, rev: str | None) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Renomear host (cascade: topology.yaml links)
+# --------------------------------------------------------------------------- #
+def _topology_host_refs(host_id: str) -> list[dict]:
+    """Enlaces em topology.yaml que apontam para `host_id` (preview do cascade)."""
+    import yaml  # noqa: PLC0415
+    if not deps.TOPOLOGY_FILE.exists():
+        return []
+    data = yaml.safe_load(deps.TOPOLOGY_FILE.read_text(encoding="utf-8")) or {}
+    out = []
+    for i, lk in enumerate(data.get("links") or []):
+        for end in ("a", "b"):
+            e = (lk or {}).get(end) or {}
+            if e.get("host") == host_id:
+                other = ((lk or {}).get("b" if end == "a" else "a") or {}).get("host", "?")
+                out.append({"kind": "topology-link", "index": i, "field": f"{end}.host",
+                            "label": f"enlace {host_id}:{e.get('port', '?')} ↔ {other}"})
+    return out
+
+
+def host_references(host_id: str) -> dict:
+    data, _ = load_hosts()
+    if host_id not in (data.get("hosts") or {}):
+        raise KeyError(f"host '{host_id}' não existe")
+    refs = _topology_host_refs(host_id)
+    return {"id": host_id, "references": refs, "count": len(refs)}
+
+
+def rename_host(old: str, new: str, rev: str | None) -> dict:
+    """Renomeia a chave do host e atualiza as pontas de enlace em topology.yaml,
+    numa transação atômica (write_many)."""
+    if not ID_RE.match(new):
+        raise deps.ValidationFailed([{"loc": "to", "msg": "use a-z, 0-9, ponto, hífen ou underline"}])
+    data, _, y = _load_doc()
+    hosts = data.get("hosts") or {}
+    if old not in hosts:
+        raise KeyError(f"host '{old}' não existe")
+    if new == old:
+        raise deps.ValidationFailed([{"loc": "to", "msg": "o novo ID é igual ao atual"}])
+    if new in hosts:
+        raise deps.ValidationFailed([{"loc": "to", "msg": f"host '{new}' já existe"}])
+
+    yaml_io.rename_key(hosts, old, new)
+    writes = [(deps.HOSTS_FILE, yaml_io.dump_rt(y, data), 0o644)]
+    checks: list[tuple] = [(deps.HOSTS_FILE, rev)]
+
+    topo, topo_rev, ty = yaml_io.load_rt(deps.TOPOLOGY_FILE)
+    updated: list[dict] = []
+    if topo is not None:
+        for i, lk in enumerate(topo.get("links") or []):
+            for end in ("a", "b"):
+                e = (lk or {}).get(end)
+                if e and e.get("host") == old:
+                    e["host"] = new
+                    updated.append({"kind": "topology-link", "index": i, "field": f"{end}.host"})
+        if updated:
+            writes.append((deps.TOPOLOGY_FILE, yaml_io.dump_rt(ty, topo), 0o644))
+            checks.append((deps.TOPOLOGY_FILE, topo_rev))
+
+    revs = yaml_io.write_many(writes, checks=checks)
+    return {"renamed": {"from": old, "to": new}, "updated": updated, "rev": revs[deps.HOSTS_FILE]}
+
+
+# --------------------------------------------------------------------------- #
 # CRUD de grupos
 # --------------------------------------------------------------------------- #
 def create_group(name: str, fields: dict, rev: str | None) -> dict:
@@ -250,6 +317,40 @@ def delete_group(name: str, rev: str | None, *, force: bool) -> dict:
     del groups[name]
     new_rev = yaml_io.write_rt(deps.HOSTS_FILE, y, data, expected=rev, backup=True)
     return {"deleted": name, "rev": new_rev}
+
+
+# --------------------------------------------------------------------------- #
+# Renomear grupo (cascade: campo 'group' dos hosts no mesmo arquivo)
+# --------------------------------------------------------------------------- #
+def group_references(name: str) -> dict:
+    data, _ = load_hosts()
+    if name not in (data.get("groups") or {}):
+        raise KeyError(f"grupo '{name}' não existe")
+    refs = [{"kind": "host", "id": h, "field": "group", "label": f"host {h}"}
+            for h, v in (data.get("hosts") or {}).items() if (v or {}).get("group") == name]
+    return {"name": name, "references": refs, "count": len(refs)}
+
+
+def rename_group(old: str, new: str, rev: str | None) -> dict:
+    if not ID_RE.match(new):
+        raise deps.ValidationFailed([{"loc": "to", "msg": "use a-z, 0-9, ponto, hífen ou underline"}])
+    data, _, y = _load_doc()
+    groups = data.get("groups") or {}
+    if old not in groups:
+        raise KeyError(f"grupo '{old}' não existe")
+    if new == old:
+        raise deps.ValidationFailed([{"loc": "to", "msg": "o novo nome é igual ao atual"}])
+    if new in groups:
+        raise deps.ValidationFailed([{"loc": "to", "msg": f"grupo '{new}' já existe"}])
+
+    yaml_io.rename_key(groups, old, new)
+    updated = []
+    for hid, h in (data.get("hosts") or {}).items():
+        if h and h.get("group") == old:
+            h["group"] = new
+            updated.append({"kind": "host", "id": hid, "field": "group"})
+    new_rev = yaml_io.write_rt(deps.HOSTS_FILE, y, data, expected=rev, backup=True)
+    return {"renamed": {"from": old, "to": new}, "updated": updated, "rev": new_rev}
 
 
 # --------------------------------------------------------------------------- #

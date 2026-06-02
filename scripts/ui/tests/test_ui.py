@@ -146,8 +146,9 @@ def test_optimistic_concurrency_conflict(client):
 
 
 def test_comments_preserved_on_edit(client, env):
-    rev = client.get("/api/hosts").json()["rev"]
-    client.patch("/api/hosts/rt-dist-01", json={"site": "datacenter"}, headers={"If-Match": rev})
+    data = client.get("/api/hosts").json()         # 1º host do inventário (seja qual for o nome)
+    hid = data["hosts"][0]["id"]
+    client.patch(f"/api/hosts/{hid}", json={"site": "datacenter"}, headers={"If-Match": data["rev"]})
     text = (env / "network" / "hosts.yaml").read_text()
     assert text.startswith("# NetOps")            # cabeçalho preservado
     assert "API RouterOS" in text                 # comentário inline preservado
@@ -411,3 +412,175 @@ def test_workflow_validation_rejects_garbage(client, env):
     deps.WORKFLOWS_DIR = env / "workflows"
     r = client.post("/api/workflows", json={"file": "x.workflow.yaml", "text": "nope: 1"})
     assert r.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Renomear ID/nome com cascade nas referências
+# --------------------------------------------------------------------------- #
+def _hosts_yaml(env):
+    import yaml
+    return yaml.safe_load((env / "network" / "hosts.yaml").read_text())
+
+
+def _seed_host(client, hid, **fields):
+    """Cria um host válido e AUTOSSUFICIENTE (não depende dos nomes do seed real, que o
+    operador pode renomear pela própria UI). `fields` sobrescreve os defaults."""
+    rev = client.get("/api/hosts").json()["rev"]
+    body = {"id": hid, "hostname": hid.upper().replace("-", "_"), "mgmt_ip": "10.99.0.9",
+            "vendor": "linux", "credential": "cred_seed", "access": {"method": "ssh", "port": 22}}
+    body.update(fields)
+    r = client.post("/api/hosts", json=body, headers={"If-Match": rev})
+    assert r.status_code == 201, r.text
+
+
+def _seed_link(client, ah, bh="t-peer", ap="e1", bp="e2"):
+    rev = client.get("/api/topology").json()["rev"]
+    r = client.post("/api/topology/links",
+                    json={"a": {"host": ah, "port": ap}, "b": {"host": bh, "port": bp}},
+                    headers={"If-Match": rev})
+    assert r.status_code == 200, r.text
+
+
+def test_host_references_lists_topology(client):
+    _seed_host(client, "t-ref")
+    _seed_link(client, "t-ref")
+    refs = client.get("/api/hosts/t-ref/references").json()
+    assert refs["count"] >= 1
+    assert all(x["kind"] == "topology-link" for x in refs["references"])
+
+
+def test_rename_host_cascades_topology(client, env):
+    import yaml
+    _seed_host(client, "t-old")
+    _seed_link(client, "t-old")
+    rev = client.get("/api/hosts").json()["rev"]
+    r = client.post("/api/hosts/t-old/rename", json={"to": "t-new"}, headers={"If-Match": rev})
+    assert r.status_code == 200, r.text
+    assert r.json()["renamed"] == {"from": "t-old", "to": "t-new"}
+    assert r.json()["updated"], "deveria ter atualizado ao menos um enlace"
+    hosts = _hosts_yaml(env)["hosts"]
+    assert "t-new" in hosts and "t-old" not in hosts
+    topo = yaml.safe_load((env / "network" / "topology.yaml").read_text())
+    ends = [e.get("host") for lk in topo["links"] for e in (lk.get("a"), lk.get("b")) if e]
+    assert "t-old" not in ends and "t-new" in ends
+
+
+def test_rename_host_preserves_comments(client, env):
+    _seed_host(client, "t-cmt")
+    rev = client.get("/api/hosts").json()["rev"]
+    client.post("/api/hosts/t-cmt/rename", json={"to": "t-cmt2"}, headers={"If-Match": rev})
+    text = (env / "network" / "hosts.yaml").read_text()
+    assert text.startswith("# NetOps")          # cabeçalho preservado
+    assert "API RouterOS" in text               # comentário inline (em outro bloco) intacto
+
+
+def test_rename_host_collision_422(client):
+    _seed_host(client, "t-a")
+    _seed_host(client, "t-b", mgmt_ip="10.99.0.10")
+    rev = client.get("/api/hosts").json()["rev"]
+    r = client.post("/api/hosts/t-a/rename", json={"to": "t-b"}, headers={"If-Match": rev})
+    assert r.status_code == 422
+
+
+def test_rename_host_conflict_409(client):
+    _seed_host(client, "t-c")
+    r = client.post("/api/hosts/t-c/rename", json={"to": "t-c2"}, headers={"If-Match": "stale"})
+    assert r.status_code == 409
+
+
+def test_rename_host_bad_slug_422(client):
+    _seed_host(client, "t-slug")
+    rev = client.get("/api/hosts").json()["rev"]
+    r = client.post("/api/hosts/t-slug/rename", json={"to": "nome com espaço"}, headers={"If-Match": rev})
+    assert r.status_code == 422
+
+
+def test_rename_group_cascades_hosts(client, env):
+    grev = client.get("/api/hosts").json()["rev"]
+    assert client.post("/api/groups", json={"name": "grp-x", "vendor": "linux", "role": "server",
+                                            "credential": "cred_seed", "access": {"method": "ssh", "port": 22}},
+                       headers={"If-Match": grev}).status_code == 201
+    _seed_host(client, "t-g1", group="grp-x")
+    _seed_host(client, "t-g2", group="grp-x", mgmt_ip="10.99.0.10")
+    rev = client.get("/api/hosts").json()["rev"]
+    r = client.post("/api/groups/grp-x/rename", json={"to": "grp-y"}, headers={"If-Match": rev})
+    assert r.status_code == 200, r.text
+    data = _hosts_yaml(env)
+    assert "grp-y" in data["groups"] and "grp-x" not in data["groups"]
+    assert data["hosts"]["t-g1"]["group"] == "grp-y"
+    assert data["hosts"]["t-g2"]["group"] == "grp-y"
+
+
+def test_rename_credential_cascades_and_keeps_mode(client, env):
+    import yaml
+    client.post("/api/credentials", json={"name": "cred_t", "username": "admin"})
+    _seed_host(client, "t-cred", credential="cred_t")
+    refs = client.get("/api/credentials/cred_t/references").json()
+    assert refs["count"] >= 1
+    rev = client.get("/api/credentials").json()["rev"]
+    r = client.post("/api/credentials/cred_t/rename", json={"to": "cred_t2"}, headers={"If-Match": rev})
+    assert r.status_code == 200, r.text
+    creds = yaml.safe_load((env / "network" / "credentials.yaml").read_text())["credentials"]
+    assert "cred_t2" in creds and "cred_t" not in creds
+    assert _hosts_yaml(env)["hosts"]["t-cred"]["credential"] == "cred_t2"
+    mode = stat.S_IMODE(os.stat(env / "network" / "credentials.yaml").st_mode)
+    assert mode == 0o600
+
+
+def test_rename_credential_preserves_encrypted_secret(client, env):
+    _init_vault(env)
+    client.post("/api/credentials", json={"name": "cred_x", "username": "admin"})
+    client.put("/api/credentials/cred_x/password", json={"value": "super-secreto", "field": "password"})
+    rev = client.get("/api/credentials").json()["rev"]
+    r = client.post("/api/credentials/cred_x/rename", json={"to": "cred_y"}, headers={"If-Match": rev})
+    assert r.status_code == 200, r.text
+    import yaml
+    from lib.inventory import resolve_secret
+    creds = yaml.safe_load((env / "network" / "credentials.yaml").read_text())["credentials"]
+    token = creds["cred_y"]["password"]
+    assert token.startswith("enc.v1:")
+    assert resolve_secret(token) == "super-secreto"     # round-trip intacto sob o novo nome
+
+
+def test_rename_pattern(client, env):
+    rev = client.get("/api/memory/patterns").json()["rev"]
+    client.post("/api/memory/patterns", json={"id": "t-pat", "padrao": "x"}, headers={"If-Match": rev})
+    rev = client.get("/api/memory/patterns").json()["rev"]
+    r = client.post("/api/memory/patterns/t-pat/rename", json={"to": "t-pat-novo"}, headers={"If-Match": rev})
+    assert r.status_code == 200, r.text
+    ids = [p["id"] for p in client.get("/api/memory/patterns").json()["patterns"]]
+    assert "t-pat-novo" in ids and "t-pat" not in ids
+
+
+def test_rename_workflow_file(client, env):
+    import deps
+    (env / "workflows").mkdir(exist_ok=True)
+    deps.WORKFLOWS_DIR = env / "workflows"
+    wf = "workflow:\n  id: w\n  name: W\n  steps:\n    - id: '01'\n      agent: coordinator\n"
+    assert client.post("/api/workflows", json={"file": "a.workflow.yaml", "text": wf}).status_code == 201
+    r = client.post("/api/workflows/a.workflow.yaml/rename", json={"to": "b.workflow.yaml"})
+    assert r.status_code == 200, r.text
+    assert (env / "workflows" / "b.workflow.yaml").exists()
+    assert not (env / "workflows" / "a.workflow.yaml").exists()
+
+
+def test_rename_knowledge_updates_index(client, env, monkeypatch):
+    # knowledge.KINDS captura os caminhos de deps no import => monkeypatch direto na KINDS
+    # (e via fixture monkeypatch p/ restaurar depois — nunca toca nos dirs reais).
+    from routers import knowledge
+    bp = env / "best-practices"
+    bp.mkdir(exist_ok=True)
+    monkeypatch.setattr(knowledge, "KINDS", {
+        "best-practices": (bp, bp / "_catalog.yaml", "guides"),
+        "config-examples": (bp / "ce", bp / "ce" / "_index.yaml", "examples"),
+    })
+    client.post("/api/knowledge/best-practices",
+                json={"vendor": "mikrotik", "name": "fw.md", "titulo": "Firewall", "text": "# fw"})
+    r = client.post("/api/knowledge/best-practices/rename",
+                    json={"vendor": "mikrotik", "name": "fw.md", "to_name": "firewall.md"})
+    assert r.status_code == 200, r.text
+    assert (bp / "mikrotik" / "firewall.md").exists()
+    assert not (bp / "mikrotik" / "fw.md").exists()
+    import yaml
+    idx = yaml.safe_load((bp / "_catalog.yaml").read_text())["guides"]
+    assert any(e["file"] == "mikrotik/firewall.md" for e in idx)

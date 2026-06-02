@@ -73,13 +73,21 @@ function PatternForm({ pattern, rev, onClose, onSaved }) {
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   async function save() {
     try {
-      if (isNew) await api.post("/memory/patterns", f, rev);
-      else await api.put(`/memory/patterns/${pattern.id}`, f, rev);
+      if (isNew) {
+        await api.post("/memory/patterns", f, rev);
+      } else {
+        let curRev = rev;
+        if (f.id !== pattern.id) {                          // renomeia o id primeiro
+          curRev = (await api.post(`/memory/patterns/${pattern.id}/rename`, { to: f.id }, curRev)).rev;
+        }
+        await api.put(`/memory/patterns/${f.id}`, f, curRev);
+      }
       toast.ok("Padrão salvo"); onSaved();
     } catch (e) { handleError(e); }
   }
   return html`<${Modal} title=${isNew ? "Novo padrão" : `Editar ${pattern.id}`} onClose=${onClose}>
-    ${isNew && html`<${Field} label="ID (kebab-case)"><input value=${f.id} onInput=${(e) => set("id", e.target.value)} /><//>`}
+    <${Field} label=${isNew ? "ID (kebab-case)" : "ID (alterar = renomear)"}>
+      <input value=${f.id} onInput=${(e) => set("id", e.target.value)} /><//>
     <div class="row">
       <${Field} label="Vendor"><input value=${f.vendor} onInput=${(e) => set("vendor", e.target.value)} /><//>
       <${Field} label="Tipo"><${EnumSelect} value=${f.tipo} options=${["connection-quirk", "vendor-quirk", "operational", "error"]} onChange=${(v) => set("tipo", v)} /><//>

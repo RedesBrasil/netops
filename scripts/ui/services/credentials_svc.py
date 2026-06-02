@@ -12,12 +12,15 @@ NUNCA devolve segredo em texto puro: password/secret saem mascarados {set, encry
 """
 from __future__ import annotations
 
+import re
+
 import deps
 from services import yaml_io
 
 CRED_KEY_ORDER = ["username", "password", "secret", "key_file", "api_ssl"]
 SECRET_FIELDS = ("password", "secret")
 MODE_600 = 0o600
+ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")  # espelha models.CredentialCreate
 
 
 # --------------------------------------------------------------------------- #
@@ -118,6 +121,11 @@ def delete_credential(name: str, rev: str | None, *, force: bool) -> dict:
 
 
 def _referencing_hosts(cred_name: str) -> list[str]:
+    return [f"{r['kind']}:{r['id']}" for r in _credential_refs(cred_name)]
+
+
+def _credential_refs(cred_name: str) -> list[dict]:
+    """Hosts e grupos (em hosts.yaml) que apontam para `cred_name`."""
     import yaml  # noqa: PLC0415
     if not deps.HOSTS_FILE.exists():
         return []
@@ -125,11 +133,57 @@ def _referencing_hosts(cred_name: str) -> list[str]:
     refs = []
     for n, h in (data.get("hosts") or {}).items():
         if (h or {}).get("credential") == cred_name:
-            refs.append(f"host:{n}")
+            refs.append({"kind": "host", "id": n, "field": "credential", "label": f"host {n}"})
     for n, g in (data.get("groups") or {}).items():
         if (g or {}).get("credential") == cred_name:
-            refs.append(f"group:{n}")
+            refs.append({"kind": "group", "id": n, "field": "credential", "label": f"grupo {n}"})
     return refs
+
+
+# --------------------------------------------------------------------------- #
+# Renomear credencial (cascade: campo 'credential' de hosts/grupos em hosts.yaml)
+# --------------------------------------------------------------------------- #
+def credential_references(name: str) -> dict:
+    data, _ = load_creds()
+    if name not in (data.get("credentials") or {}):
+        raise KeyError(f"credencial '{name}' não existe")
+    refs = _credential_refs(name)
+    return {"name": name, "references": refs, "count": len(refs)}
+
+
+def rename_credential(old: str, new: str, rev: str | None) -> dict:
+    """Renomeia a chave da credencial e atualiza 'credential' em hosts/grupos, numa
+    transação atômica. credentials.yaml mantém modo 0600 e o bloco vault: intacto
+    (ruamel round-trip); os tokens enc.v1: viajam junto com o valor."""
+    if not ID_RE.match(new):
+        raise deps.ValidationFailed([{"loc": "to", "msg": "use a-z, 0-9, ponto, hífen ou underline"}])
+    data, y = _load_doc()
+    creds = data.get("credentials") or {}
+    if old not in creds:
+        raise KeyError(f"credencial '{old}' não existe")
+    if new == old:
+        raise deps.ValidationFailed([{"loc": "to", "msg": "o novo nome é igual ao atual"}])
+    if new in creds:
+        raise deps.ValidationFailed([{"loc": "to", "msg": f"credencial '{new}' já existe"}])
+
+    yaml_io.rename_key(creds, old, new)
+    writes = [(deps.CREDS_FILE, yaml_io.dump_rt(y, data), MODE_600)]
+    checks: list[tuple] = [(deps.CREDS_FILE, rev)]
+
+    hosts_data, hosts_rev, hy = yaml_io.load_rt(deps.HOSTS_FILE)
+    updated: list[dict] = []
+    if hosts_data is not None:
+        for section, kind in (("hosts", "host"), ("groups", "group")):
+            for node_id, node in (hosts_data.get(section) or {}).items():
+                if node and node.get("credential") == old:
+                    node["credential"] = new
+                    updated.append({"kind": kind, "id": node_id, "field": "credential"})
+        if updated:
+            writes.append((deps.HOSTS_FILE, yaml_io.dump_rt(hy, hosts_data), 0o644))
+            checks.append((deps.HOSTS_FILE, hosts_rev))
+
+    revs = yaml_io.write_many(writes, checks=checks)
+    return {"renamed": {"from": old, "to": new}, "updated": updated, "rev": revs[deps.CREDS_FILE]}
 
 
 # --------------------------------------------------------------------------- #

@@ -30,7 +30,7 @@ function Kind({ kind, creating, setCreating }) {
   return html`<div>
     <${ResourceTable} columns=${cols} rows=${items.map((i) => ({ ...i, _key: i.file }))}
       onRowClick=${(r) => setOpen(r.file)} empty="Nada aqui." />
-    ${open && html`<${Editor} kind=${kind} file=${open} onClose=${() => setOpen(null)} onSaved=${() => res.reload()} />`}
+    ${open && html`<${Editor} kind=${kind} file=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}
     ${creating && html`<${Creator} kind=${kind} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); res.reload(); }} />`}
   </div>`;
 }
@@ -38,14 +38,24 @@ function Kind({ kind, creating, setCreating }) {
 function Editor({ kind, file, onClose, onSaved }) {
   const [data, setData] = useState(null);
   const [text, setText] = useState("");
+  const [name, setName] = useState(file);
   useEffect(() => { api.get(`/${kind}/${file}`).then((d) => { setData(d); setText(d.text); }).catch(handleError); }, []);
   if (!data) return html`<${Modal} title="Carregando…" onClose=${onClose}><${Spinner} /><//>`;
   async function save() {
-    try { await api.put(`/${kind}/${file}`, { text }, data.rev); toast.ok("Salvo"); onSaved(); onClose(); }
-    catch (e) { handleError(e); }
+    try {
+      let target = file;
+      if (name !== file) {                          // renomeia o arquivo (conteúdo igual => rev não muda)
+        await api.post(`/${kind}/${file}/rename`, { to: name });
+        target = name;
+      }
+      await api.put(`/${kind}/${target}`, { text }, data.rev);
+      toast.ok("Salvo"); onSaved();
+    } catch (e) { handleError(e); }
   }
   const isMd = file.endsWith(".md");
   return html`<${Modal} title=${file} onClose=${onClose} wide=${true}>
+    <${Field} label=${`Nome do arquivo (alterar = renomear — termina em ${kind === "workflows" ? ".workflow.yaml" : ".agent.md"})`}>
+      <input value=${name} onInput=${(e) => setName(e.target.value)} /><//>
     ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`<${CodeTextEditor} value=${text} onChange=${setText} />`}
     <div class="help">Validação no servidor: ${kind === "workflows" ? "exige workflow.steps" : "frontmatter com id/name/function"}.</div>
     <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary" onClick=${save}>Salvar</button></div>
