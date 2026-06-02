@@ -61,6 +61,29 @@ async def claude_ws(ws: WebSocket):
     await claude_svc.ClaudeWebSession(ws).run()
 
 
+@router.get("/claude/sessions")
+def claude_sessions():
+    """Lista as sessões Claude Code passadas deste projeto (p/ retomar)."""
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    return {"sessions": claude_svc.list_project_sessions()}
+
+
+@router.get("/claude/sessions/{sid}/messages")
+def claude_session_messages(sid: str):
+    """Histórico de uma sessão, já no formato da transcrição da UI."""
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    return {"items": claude_svc.session_items(sid)}
+
+
+@router.delete("/claude/sessions/{sid}", status_code=204)
+def claude_session_delete(sid: str):
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    claude_svc.delete_project_session(sid)
+
+
 @router.post("/claude/upload")
 async def claude_upload(file: UploadFile):
     """Recebe um anexo e grava em runs/claude/uploads/; devolve o caminho relativo p/ @referência.
