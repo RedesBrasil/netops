@@ -50,6 +50,7 @@ def env(tmp_path, monkeypatch):
     deps.STATE.read_only = False
     deps.STATE.allow_vault_unlock = True
     deps.STATE.enable_terminal = False
+    deps.STATE.enable_claude = False
     deps.STATE.allowed_hosts = ("127.0.0.1", "localhost")
     deps.STATE.auth_sessions = {}
     deps._vault_init_cache.clear()

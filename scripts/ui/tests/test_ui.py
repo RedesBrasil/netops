@@ -387,6 +387,53 @@ def test_terminal_echo_roundtrip(client, env):
 
 
 # --------------------------------------------------------------------------- #
+# Página Claude Code (agente via WebSocket) — gating de segurança + meta + upload
+# (mesma postura do terminal; os testes NÃO disparam o SDK — só exercitam o gate,
+#  que fecha em 4403 antes de aceitar a conexão.)
+# --------------------------------------------------------------------------- #
+def test_claude_off_by_default(client, env):
+    _allow_testserver()                                        # sem --enable-claude
+    with pytest.raises(WebSocketDisconnect) as ei:
+        with client.websocket_connect("/api/claude?token=T"):
+            pass
+    assert ei.value.code == 4403
+
+
+def test_claude_blocked_in_read_only(client, env):
+    import deps
+    _allow_testserver(); deps.STATE.enable_claude = True; deps.STATE.read_only = True
+    with pytest.raises(WebSocketDisconnect) as ei:
+        with client.websocket_connect("/api/claude?token=T"):  # nunca em read-only
+            pass
+    assert ei.value.code == 4403
+
+
+def test_claude_requires_auth_session_when_vault_initialized(client, env):
+    """Com cofre inicializado, o WS do Claude exige &auth (mesmo gate do /api e do terminal)."""
+    import deps
+    _allow_testserver(); deps.STATE.enable_claude = True
+    _init_vault(env, master="m")
+    with pytest.raises(WebSocketDisconnect) as ei:
+        with client.websocket_connect("/api/claude?token=T"):  # token ok, sem &auth
+            pass
+    assert ei.value.code == 4403
+
+
+def test_config_meta_exposes_claude_flag(client, env):
+    import deps
+    assert client.get("/api/config/meta").json()["claude_enabled"] is False
+    deps.STATE.enable_claude = True
+    assert client.get("/api/config/meta").json()["claude_enabled"] is True
+
+
+def test_claude_upload_disabled_returns_403(client, env):
+    """Com a página desligada, o canal de upload não cria escrita (403 antes de gravar)."""
+    files = {"file": ("a.txt", b"oi", "text/plain")}
+    r = client.post("/api/claude/upload", files=files)
+    assert r.status_code == 403 and r.json()["error"] == "claude_disabled"
+
+
+# --------------------------------------------------------------------------- #
 # Topologia
 # --------------------------------------------------------------------------- #
 def test_topology_dangling_and_render(client):

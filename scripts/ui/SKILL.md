@@ -26,10 +26,11 @@ quando o operador precisa e ser encerrada depois. O framework funciona 100% com 
 muda entre reinícios), liga o terminal web e faz bind no IP da máquina, com instância única:
 
 ```bash
-scripts/ui/start.sh                          # IP da máquina, porta 8765, terminal ON
+scripts/ui/start.sh                          # IP da máquina, porta 8765, terminal + Claude Code ON
 NETOPS_UI_HOST=127.0.0.1 scripts/ui/start.sh # força loopback (só local)
 NETOPS_UI_PORT=9000      scripts/ui/start.sh # outra porta
 NETOPS_UI_TERMINAL=0     scripts/ui/start.sh # sobe SEM o terminal web
+NETOPS_UI_CLAUDE=0       scripts/ui/start.sh # sobe SEM a página Claude Code
 scripts/ui/start.sh --read-only --no-vault-unlock   # flags extras viram passthrough
 ```
 
@@ -37,7 +38,7 @@ O script imprime a URL **já com o token de sessão** (`http://<ip>:<porta>/?tok
 token a API responde **401**. O token persiste em `scripts/ui/.ui-token` (0600, git-ignorado).
 
 > Por baixo o script chama `scripts/ui/server.py` (flags: `--host/--port/--token/--read-only/`
-> `--no-vault-unlock/--enable-terminal/--no-browser`). Use o server.py direto só para depurar.
+> `--no-vault-unlock/--enable-terminal/--enable-claude/--no-browser`). Use o server.py direto só para depurar.
 
 ## Setup inicial (uma vez, com internet)
 
@@ -48,8 +49,10 @@ bash scripts/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xterm p/ st
 .venv/bin/pip install -r requirements.txt   # fastapi + uvicorn + ruamel.yaml + websockets
 ```
 
-> `websockets` é necessário para o terminal web (uvicorn faz o upgrade WS); sem ele o
-> `/api/term` responde 404.
+> `websockets` é necessário para o terminal web e a página Claude Code (uvicorn faz o upgrade
+> WS); sem ele o `/api/term` e o `/api/claude` respondem 404. A página Claude Code precisa de
+> `claude-agent-sdk` (no `requirements.txt`) **e** do binário `claude` no PATH; o SDK reaproveita
+> o login de assinatura já existente (`~/.claude/.credentials.json`) — não exige `ANTHROPIC_API_KEY`.
 
 ## Segurança (resumo)
 
@@ -79,10 +82,19 @@ bash scripts/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xterm p/ st
   (credencial→hosts.yaml, host→topology.yaml) gravam numa **transação** (`yaml_io.write_many`):
   valida as revs dos dois antes de escrever e faz **rollback** se a segunda escrita falhar.
 - **Terminal web (`--enable-terminal`):** ⚠ é um **shell real** (PTY) na máquina = execução de
-  comando arbitrário como o usuário do servidor. **DESLIGADO por padrão**, nunca liga em
-  `--read-only`. O handshake do WebSocket (`/api/term`) é autenticado **à mão** (token + Host +
-  Origin) porque o middleware http do app **não** cobre WebSocket. Sobre HTTP não-loopback, o
-  token (na URL) trafega em texto puro e dá shell completo — prefira túnel SSH/VPN.
+  comando arbitrário como o usuário do servidor. **DESLIGADO por padrão** no server.py (o
+  `start.sh` liga; `NETOPS_UI_TERMINAL=0` desliga), nunca liga em `--read-only`. O handshake do
+  WebSocket (`/api/term`) é autenticado **à mão** (token + Host + Origin) porque o middleware http
+  do app **não** cobre WebSocket. Sobre HTTP não-loopback, o token (na URL) trafega em texto puro
+  e dá shell completo — prefira túnel SSH/VPN.
+- **Página Claude Code (`--enable-claude`):** ⚠ dirige um **agente de IA** (via `claude-agent-sdk`)
+  que **executa comandos e edita arquivos** como o usuário do servidor, com `cwd=NETOPS_ROOT` e
+  herdando `CLAUDE.md`/skills/agentes. Mesma postura do terminal: DESLIGADA por padrão no server.py
+  (o `start.sh` liga; `NETOPS_UI_CLAUDE=0` desliga), **nunca** liga em `--read-only`. O WebSocket
+  (`/api/claude`) e o upload (`POST /api/claude/upload`) usam a **mesma auth** (token + Host +
+  Origin + sessão). A UI expõe **todos os modos** (`plan/default/acceptEdits/dontAsk/bypassPermissions`)
+  e um prompt de aprovação na tela (`can_use_tool`); cada aba abre um subprocesso `claude` próprio,
+  encerrado no disconnect. Anexos vão para `runs/claude/uploads/`.
 
 ## Fronteira (o que a UI NÃO faz)
 
@@ -96,6 +108,11 @@ arquivos + visualização.
 que ela digita é responsabilidade dela (constituição §VII). Serve, p.ex., para rodar `claude` ou
 os `scripts/access/*.py` e acompanhar a execução pelo navegador.
 
+**Exceção 2: a página Claude Code** (`--enable-claude`, opt-in) leva esse mesmo passthrough do
+humano para uma **interface gráfica**: em vez de digitar `claude` no terminal, a pessoa conversa
+com o agente direto na web — com troca de modo, aprovação de cada ferramenta na tela, slash
+commands e anexos. Continua sendo a pessoa no comando (ela aprova/escolhe o modo), só que sem TUI.
+
 ## Estrutura
 
 ```
@@ -104,10 +121,10 @@ scripts/ui/
   app.py               FastAPI (middleware de segurança + handlers + StaticFiles)
   deps.py              caminhos canônicos + estado + exceções de domínio
   models.py            modelos Pydantic (validação de entrada)
-  routers/             um router por recurso (hosts, credentials, ..., terminal=WS PTY)
-  services/            lógica de I/O: yaml_io (round-trip/atomic/concorrência), *_svc
-  static/              SPA Preact (sem build): index.html + js/ (+ pages/terminal.js) + vendor/ (xterm.js, ...)
-  tests/               pytest E2E (cofre, concorrência, mascaramento, append-only, terminal WS, ...)
+  routers/             um router por recurso (hosts, credentials, ..., terminal=WS PTY, claude=WS agente)
+  services/            lógica de I/O: yaml_io (round-trip/atomic/concorrência), *_svc (claude_svc=sessão SDK)
+  static/              SPA Preact (sem build): index.html + js/ (+ pages/terminal.js, pages/claude.js) + vendor/ (xterm.js, ...)
+  tests/               pytest E2E (cofre, concorrência, mascaramento, append-only, terminal WS, Claude flag, ...)
 ```
 
 ## Testes

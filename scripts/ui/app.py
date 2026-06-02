@@ -17,6 +17,7 @@ import deps
 from routers import (
     auth,
     catalog,
+    claude,
     config,
     credentials,
     hosts,
@@ -129,7 +130,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (auth, meta, hosts, credentials, topology, config, memory, knowledge, catalog, reports, runs, terminal):
+    for mod in (auth, meta, hosts, credentials, topology, config, memory, knowledge, catalog, reports, runs, terminal, claude):
         app.include_router(mod.router, prefix="/api")
 
     # SPA: serve scripts/ui/static/ na raiz (index.html cobre o fallback de rotas hash).
