@@ -12,6 +12,7 @@ import { KnowledgePage } from "./pages/knowledge.js";
 import { CatalogPage } from "./pages/catalog.js";
 import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
 import { TerminalPage } from "./pages/terminal.js";
+import { ClaudeCodePage } from "./pages/claude.js";
 
 const ROUTES = {
   hosts: { label: "Hosts", comp: HostsPage, group: "Inventário" },
@@ -23,6 +24,7 @@ const ROUTES = {
   catalog: { label: "Workflows & Agentes", comp: CatalogPage, group: "Conhecimento" },
   reports: { label: "Relatórios", comp: ReportsPage, group: "Saída" },
   runs: { label: "Execuções", comp: RunsPage, group: "Saída" },
+  claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled" },
   terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled" },
   settings: { label: "Configuração", comp: SettingsPage, group: "Sistema" },
 };

@@ -99,4 +99,5 @@ def config_meta() -> dict:
         "network_name": network_name,
         "read_only": deps.STATE.read_only,
         "terminal_enabled": deps.STATE.enable_terminal,
+        "claude_enabled": deps.STATE.enable_claude,
     }

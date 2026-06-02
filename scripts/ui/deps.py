@@ -77,6 +77,7 @@ class ServerState:
     read_only: bool = False
     allow_vault_unlock: bool = True
     enable_terminal: bool = False
+    enable_claude: bool = False
     allowed_hosts: tuple[str, ...] = field(default_factory=lambda: ("127.0.0.1", "localhost"))
     # Sessões de login do console (sid -> {"exp": epoch, "ttl": int}). Em memória do processo:
     # vale só enquanto o servidor está no ar (uvicorn single-process). Ver routers/auth.py.

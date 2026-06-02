@@ -56,6 +56,9 @@ def main() -> int:
                         help="Desabilita destrancar o cofre pela web (a senha-mestra só pelo terminal)")
     parser.add_argument("--enable-terminal", action="store_true",
                         help="Liga o terminal web (PTY). ⚠ EXECUÇÃO DE COMANDO ARBITRÁRIO. Default: desligado")
+    parser.add_argument("--enable-claude", action="store_true",
+                        help="Liga a página Claude Code (agente de IA). ⚠ EXECUTA COMANDOS E EDITA "
+                             "ARQUIVOS como este usuário. Não liga em --read-only. Default: desligado")
     parser.add_argument("--token", default=os.environ.get("NETOPS_UI_TOKEN", ""),
                         help="Token fixo (default: aleatório por sessão)")
     args = parser.parse_args()
@@ -73,6 +76,7 @@ def main() -> int:
     deps.STATE.read_only = args.read_only
     deps.STATE.allow_vault_unlock = not args.no_vault_unlock
     deps.STATE.enable_terminal = args.enable_terminal and not args.read_only
+    deps.STATE.enable_claude = args.enable_claude and not args.read_only
     # O Host header precisa bater com o IP de bind (anti DNS-rebinding). Mantém loopback + o IP escolhido.
     deps.STATE.allowed_hosts = tuple({"127.0.0.1", "localhost", "::1", args.host})
 
@@ -85,6 +89,10 @@ def main() -> int:
         print("\n  ⚠ TERMINAL WEB LIGADO (--enable-terminal): qualquer um com o token tem um SHELL")
         print("    completo nesta máquina (execução de comando arbitrário, como este usuário).")
 
+    if deps.STATE.enable_claude:
+        print("\n  ⚠ PÁGINA CLAUDE CODE LIGADA (--enable-claude): qualquer um com o token dirige um")
+        print("    agente de IA que EXECUTA COMANDOS e EDITA ARQUIVOS como este usuário (no repo).")
+
     if not is_loopback:
         print("\n  AVISO DE SEGURANÇA: bind em endereço NÃO-loopback — o console fica acessível na rede.")
         print("  Protegido por token de sessão (na URL). Use apenas em rede CONFIÁVEL.")
@@ -95,6 +103,9 @@ def main() -> int:
         if deps.STATE.enable_terminal:
             print("  ATENÇÃO: com o terminal ligado nesta rede, o token (na URL) trafega em TEXTO PURO por HTTP")
             print("  e dá um shell completo. Prefira túnel SSH/VPN. O terminal NÃO liga em --read-only.")
+        if deps.STATE.enable_claude:
+            print("  ATENÇÃO: com a página Claude Code ligada nesta rede, quem tiver o token dirige um agente")
+            print("  que executa comandos e edita arquivos. Prefira túnel SSH/VPN. NÃO liga em --read-only.")
         print()
 
     from app import create_app  # noqa: PLC0415  (importa depois de setar STATE)
