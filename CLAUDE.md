@@ -32,7 +32,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 5. **Execute com segurança.** Só o agente `executor` conecta nos equipamentos, via os
    scripts em `scripts/`. Antes de qualquer mudança: capture baseline e gere rollback.
 6. **Documente e aprenda.** Grave a saída em `runs/<id>/`, o relatório final em `reports/`,
-   e registre lições em `memory/lessons/` — o framework é um **projeto vivo**.
+   e registre lições em `memory/MEMORY.md` — o framework é um **projeto vivo**.
 
 ## Os agentes (`agents/`)
 

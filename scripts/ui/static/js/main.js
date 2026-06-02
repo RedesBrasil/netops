@@ -8,8 +8,8 @@ import { HostsPage, GroupsPage } from "./pages/hosts.js";
 import { CredentialsPage } from "./pages/credentials.js";
 import { TopologyPage } from "./pages/topology.js";
 import { MemoryPage } from "./pages/memory.js";
-import { KnowledgePage } from "./pages/knowledge.js";
-import { CatalogPage } from "./pages/catalog.js";
+import { BestPracticesPage, ConfigsPage } from "./pages/knowledge.js";
+import { WorkflowsPage, AgentsPage } from "./pages/catalog.js";
 import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
 import { TerminalPage } from "./pages/terminal.js";
 import { ClaudeCodePage } from "./pages/claude.js";
@@ -20,8 +20,10 @@ const ROUTES = {
   credentials: { label: "Credenciais", comp: CredentialsPage, group: "Inventário" },
   topology: { label: "Topologia", comp: TopologyPage, group: "Inventário" },
   memory: { label: "Memória", comp: MemoryPage, group: "Conhecimento" },
-  knowledge: { label: "Boas práticas / Configs", comp: KnowledgePage, group: "Conhecimento" },
-  catalog: { label: "Workflows & Agentes", comp: CatalogPage, group: "Conhecimento" },
+  practices: { label: "Boas práticas", comp: BestPracticesPage, group: "Conhecimento" },
+  configs: { label: "Configurações", comp: ConfigsPage, group: "Conhecimento" },
+  workflows: { label: "Workflows", comp: WorkflowsPage, group: "Conhecimento" },
+  agents: { label: "Agentes", comp: AgentsPage, group: "Conhecimento" },
   reports: { label: "Relatórios", comp: ReportsPage, group: "Saída" },
   runs: { label: "Execuções", comp: RunsPage, group: "Saída" },
   claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled" },

@@ -25,17 +25,17 @@ sempre saiba onde procurar e onde gravar.
 Cada execução ensina algo. Esse aprendizado é documentado para que a próxima execução seja
 melhor — sem isso, o framework não evolui.
 
-- **DEVE:** Todo workflow termina com um passo de **reflexão** que grava lições em `memory/`.
+- **DEVE:** Todo workflow termina com um passo de **reflexão** que grava lições em `memory/MEMORY.md`.
 - **DEVE:** Erros de conexão, quirks de fabricante e descobertas viram lições registradas.
 - **DEVE:** Conhecimento consolidado é promovido para `best-practices/` e `config-examples/`.
-- **NÃO DEVE:** Apagar lições. Elas só ficam `stale`/`archived` (princípio do Hermes).
+- **DEVE:** Lições são bullets datados em `memory/MEMORY.md`, escritos como fato declarativo (não como ordem).
 
 ### III. REUSE > ADAPT > CREATE (DEVE)
 
 Antes de gerar qualquer config ou plano do zero, consultar o que já existe.
 
 - **DEVE:** Consultar `best-practices/` e `config-examples/` antes de propor solução.
-- **DEVE:** Consultar `memory/learned-patterns.yaml` para quirks já conhecidos.
+- **DEVE:** Consultar `memory/MEMORY.md` para quirks já conhecidos.
 - **DEVE:** Consultar `planning-examples/` antes de montar um plano novo.
 - **PODE:** Criar do zero somente quando nada relevante existir — e então documentar.
 

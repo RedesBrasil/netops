@@ -291,30 +291,16 @@ def test_lock_via_web(client, env):
 
 
 # --------------------------------------------------------------------------- #
-# Memória: patterns, lições append-only
+# Memória: arquivo único MEMORY.md (GET/PUT com concorrência otimista)
 # --------------------------------------------------------------------------- #
-def test_patterns_route_not_shadowed(client):
-    r = client.get("/api/memory/patterns")
-    assert r.status_code == 200
-    assert any(p["id"] == "mikrotik-api-port" for p in r.json()["patterns"])
-
-
-def test_lessons_append_only(client):
-    from app import create_app
-    # cria uma lição
-    r = client.post("/api/memory/lessons", json={"slug": "teste", "licao": "foo"})
-    assert r.status_code == 201 and r.json()["file"].endswith("-teste.yaml")
-    # NÃO existe rota DELETE de lição
-    has_delete = any(
-        getattr(route, "path", "") == "/api/memory/lessons/{file}" and "DELETE" in (route.methods or set())
-        for route in create_app().routes
-    )
-    assert has_delete is False
-    # transição de estado funciona
-    f = r.json()["file"]
-    rev = client.get(f"/api/memory/lessons/{f}").json()["rev"]
-    r2 = client.patch(f"/api/memory/lessons/{f}/estado", json={"estado": "archived"}, headers={"If-Match": rev})
-    assert r2.status_code == 200 and r2.json()["estado"] == "archived"
+def test_memory_single_file_roundtrip(client):
+    r = client.get("/api/memory")
+    assert r.status_code == 200 and "text" in r.json() and "rev" in r.json()
+    rev = r.json()["rev"]
+    novo = r.json()["text"] + "\n- nota de teste\n"
+    w = client.put("/api/memory", json={"text": novo}, headers={"If-Match": rev})
+    assert w.status_code == 200 and "rev" in w.json()
+    assert client.get("/api/memory").json()["text"] == novo
 
 
 # --------------------------------------------------------------------------- #
@@ -596,16 +582,6 @@ def test_rename_credential_preserves_encrypted_secret(client, env):
     token = creds["cred_y"]["password"]
     assert token.startswith("enc.v1:")
     assert resolve_secret(token) == "super-secreto"     # round-trip intacto sob o novo nome
-
-
-def test_rename_pattern(client, env):
-    rev = client.get("/api/memory/patterns").json()["rev"]
-    client.post("/api/memory/patterns", json={"id": "t-pat", "padrao": "x"}, headers={"If-Match": rev})
-    rev = client.get("/api/memory/patterns").json()["rev"]
-    r = client.post("/api/memory/patterns/t-pat/rename", json={"to": "t-pat-novo"}, headers={"If-Match": rev})
-    assert r.status_code == 200, r.text
-    ids = [p["id"] for p in client.get("/api/memory/patterns").json()["patterns"]]
-    assert "t-pat-novo" in ids and "t-pat" not in ids
 
 
 def test_rename_workflow_file(client, env):

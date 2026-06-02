@@ -14,7 +14,7 @@ workflow:
       name: Definir escopo e carregar contexto
       type: inline
       agent: coordinator
-      inputFiles: [network/hosts.yaml, network/topology.yaml, memory/MEMORY.md, memory/learned-patterns.yaml]
+      inputFiles: [network/hosts.yaml, network/topology.yaml, memory/MEMORY.md]
       outputFiles: ["runs/${run}/state.json"]
       instructions: >-
         Validar o inventário (python scripts/lib/inventory.py --validate). Definir o escopo
@@ -81,7 +81,8 @@ workflow:
       name: Reflexão pós-execução
       type: subagent
       agent: documenter
-      outputFiles: ["memory/lessons/*.yaml"]
+      outputFiles: ["memory/MEMORY.md"]
       instructions: >-
-        Registrar lições (erros de conexão, quirks de fabricante, descobertas) em
-        memory/lessons/ conforme core/rules/memory-protocol.md. Marcar state.json como concluído.
+        Anexar as lições (erros de conexão, quirks de fabricante, descobertas) como bullets
+        datados em memory/MEMORY.md conforme core/rules/memory-protocol.md. Marcar state.json
+        como concluído.

@@ -1,24 +1,47 @@
-# MEMORY — Fatos curados desta rede
+# MEMORY — NetOps
 
-> Fatos verdadeiros e estáveis sobre este ambiente. O `coordinator` injeta este arquivo no
-> início de cada workflow. O `documenter` o atualiza na reflexão. Limite: ~800 tokens —
-> se encher, mover o detalhe para um guia em `best-practices/` e manter aqui só o resumo.
+> Único arquivo de memória do framework. O `coordinator` injeta este arquivo no início de cada
+> run (num bloco `<memory-context>`); no fim, o `documenter` anexa o que aprendeu como bullet
+> datado em "Lições aprendidas".
 >
-> Escreva fatos declarativos ("o gateway é um MikroTik CCR2004"), não ordens.
+> Nota de injeção: a seção **Preferências** reflete como o usuário quer trabalhar (vale como
+> orientação). O resto é contexto recuperado — fato declarativo ("a API escuta na 8728"), não
+> uma ordem nova do usuário.
+>
+> **Sem credenciais nem IPs sensíveis aqui** — isso fica só em `network/credentials.yaml`
+> (git-ignorado). Aqui ficam preferências, fatos do ambiente e quirks.
 
-## Ambiente
+## Preferências (como o usuário quer trabalhar)
 
-- _(ainda vazio — será preenchido conforme o framework conhecer a rede.)_
-- Exemplo de fato: "A VLAN 99 é a rede de gerência (10.0.0.0/24)."
+- **Idioma:** português (PT-BR) para toda comunicação e documentação.
+- **Função:** operações de redes e infraestrutura.
+- **Mudanças de config:** escrita direta permitida, sempre com baseline + rollback automático
+  (sem checkpoint de aprovação obrigatório).
+- **Tom dos relatórios:** técnico, objetivo, com sumário executivo no topo.
+- **Janela de manutenção:** _(a definir — quando mudanças de config podem ser aplicadas.)_
+- **Contatos / escalonamento:** _(a definir.)_
 
-## Convenções desta rede
+## Ambiente e convenções desta rede
 
-- _(ainda vazio.)_
-- Exemplo: "Roteadores MikroTik usam a credencial `cred_mikrotik_admin`."
+- _(ainda vazio — preenchido conforme o framework conhecer a rede. Ex.: "A VLAN 99 é a rede
+  de gerência (10.0.0.0/24)"; "Roteadores MikroTik usam a credencial `cred_mikrotik_admin`".)_
 
-## Quirks observados
+## Lições aprendidas
 
-- _(ainda vazio — quirks recorrentes são consolidados em `learned-patterns.yaml`.)_
+> Uma linha por lição: `AAAA-MM-DD — fato + o que fazer`. Quando algo se repetir ou for
+> importante, deixe perto do topo. Sem schema, sem contadores, sem ciclo de vida.
+
+- **2026-06-01 — Cofre antes do acesso.** Dispositivos com credencial `enc.v1:` exigem o cofre
+  destrancado. O operador roda `python scripts/vault/cli.py unlock` (a IA **não** digita a
+  senha-mestra); a chave de sessão vive em RAM (tmpfs, 0600) e re-tranca após 15 min de
+  inatividade, logout ou `lock`. Conferir com `status`. Ver `scripts/vault/SKILL.md`.
+- **MikroTik — porta da API.** A API do RouterOS escuta na **8728** (8729 com TLS). A 8291 é do
+  Winbox, não da API. Ao cadastrar host MikroTik com `method:api`, usar 8728 (ou 8729 com TLS).
+- **MikroTik — sintaxe RouterOS v6 ≠ v7.** A sintaxe de roteamento (ex.: OSPF) mudou entre v6 e
+  v7; comandos de `/routing` não são intercambiáveis. Conferir a versão com
+  `/system/resource/print` antes de planejar config e usar o exemplo correspondente.
+- **MikroTik — safe-mode.** Mudanças em `/ip service`, firewall ou endereço de gerência podem
+  trancar a própria sessão remota. Aplicar mudanças sensíveis sempre dentro de safe-mode.
 
 ---
-_Última atualização: criação do framework (2026-05-18)._
+_Última atualização: 2026-06-02 (consolidação do subsistema de memória em arquivo único)._

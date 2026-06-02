@@ -1,17 +1,23 @@
 // Workflows (*.workflow.yaml) e Agents (*.agent.md) — editores de texto cru + validação.
-import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError, Tabs } from "../ui.js";
+import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
 import { ResourceTable, Field, Modal, CodeTextEditor, MarkdownEditor } from "../components.js";
 
-export function CatalogPage() {
-  const [tab, setTab] = useState("workflows");
+// Página de um único tipo (workflows OU agentes), sem abas.
+function CatalogSection({ kind, title }) {
   const [creating, setCreating] = useState(false);
   return html`<div>
-    <div class="page-title"><h1>Workflows & Agentes</h1></div>
-    <${Tabs} tabs=${[{ key: "workflows", label: "Workflows" }, { key: "agents", label: "Agentes" }]} active=${tab}
-      onChange=${(k) => { setCreating(false); setTab(k); }}
-      actions=${html`<button class="primary sm" onClick=${() => setCreating(true)}>+ Novo</button>`} />
-    <${Kind} kind=${tab} key=${tab} creating=${creating} setCreating=${setCreating} />
+    <div class="page-title"><h1>${title}</h1><span class="spacer"></span>
+      <button class="primary" onClick=${() => setCreating(true)}>+ Novo</button></div>
+    <${Kind} kind=${kind} creating=${creating} setCreating=${setCreating} />
   </div>`;
+}
+
+export function WorkflowsPage() {
+  return html`<${CatalogSection} kind="workflows" title="Workflows" />`;
+}
+
+export function AgentsPage() {
+  return html`<${CatalogSection} kind="agents" title="Agentes" />`;
 }
 
 function Kind({ kind, creating, setCreating }) {

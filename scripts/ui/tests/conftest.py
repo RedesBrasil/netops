@@ -24,17 +24,14 @@ def env(tmp_path, monkeypatch):
     (tmp_path / "network").mkdir()
     (tmp_path / "core" / "schemas").mkdir(parents=True)
     (tmp_path / "core" / "config").mkdir(parents=True)
-    (tmp_path / "memory" / "lessons").mkdir(parents=True)
+    (tmp_path / "memory").mkdir(parents=True)
 
     cp = lambda rel: shutil.copy(PROJECT / rel, tmp_path / rel)
     cp("network/hosts.yaml")
     cp("network/topology.yaml")
     cp("core/schemas/inventory.schema.json")
     cp("core/config/project-config.yaml")
-    cp("memory/learned-patterns.yaml")
-    cp("memory/USER.md")
     cp("memory/MEMORY.md")
-    cp("memory/lessons/_TEMPLATE.yaml")
 
     monkeypatch.setattr(deps, "HOSTS_FILE", tmp_path / "network" / "hosts.yaml")
     monkeypatch.setattr(deps, "CREDS_FILE", tmp_path / "network" / "credentials.yaml")
@@ -42,10 +39,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(deps, "TOPOLOGY_MD", tmp_path / "network" / "topology.md")
     monkeypatch.setattr(deps, "SCHEMA_FILE", tmp_path / "core" / "schemas" / "inventory.schema.json")
     monkeypatch.setattr(deps, "PROJECT_CONFIG", tmp_path / "core" / "config" / "project-config.yaml")
-    monkeypatch.setattr(deps, "PATTERNS_FILE", tmp_path / "memory" / "learned-patterns.yaml")
-    monkeypatch.setattr(deps, "USER_MD", tmp_path / "memory" / "USER.md")
     monkeypatch.setattr(deps, "MEMORY_MD", tmp_path / "memory" / "MEMORY.md")
-    monkeypatch.setattr(deps, "LESSONS_DIR", tmp_path / "memory" / "lessons")
     deps.STATE.token = "T"
     deps.STATE.read_only = False
     deps.STATE.allow_vault_unlock = True

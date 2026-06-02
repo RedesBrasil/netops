@@ -36,4 +36,4 @@ workflow:
       type: subagent
       agent: documenter
       instructions: >-
-        Registrar lições em memory/lessons/ conforme core/rules/memory-protocol.md.
+        Anexar lições como bullets datados em memory/MEMORY.md conforme core/rules/memory-protocol.md.

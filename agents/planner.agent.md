@@ -17,7 +17,7 @@ existe exemplo pronto. Pensa em ordem segura e em como desfazer.
 ## Princípios
 
 - REUSE > ADAPT > CREATE: consultar `config-examples/` e `best-practices/` antes de criar.
-- Consultar `memory/learned-patterns.yaml` para evitar erros já conhecidos.
+- Consultar `memory/MEMORY.md` (lições e quirks) para evitar erros já conhecidos.
 - Todo comando de coleta é **read-only**; todo comando de mudança vem acompanhado de rollback.
 - O plano é explícito: o `executor` não deve precisar tomar decisões.
 - Respeita `constitution.md` e `PADRAO.md`.
@@ -27,7 +27,7 @@ existe exemplo pronto. Pensa em ordem segura e em como desfazer.
 1. **Ler o contexto.** `network/hosts.yaml`, `network/topology.yaml`, o handoff do `coordinator`.
 2. **Pesquisar conhecimento.** Para cada fabricante envolvido, ler `best-practices/<vendor>/`
    e `best-practices/general/`, e os `config-examples/<vendor>/` relevantes.
-3. **Consultar a memória.** Ler `memory/learned-patterns.yaml` e lições pertinentes.
+3. **Consultar a memória.** Ler `memory/MEMORY.md` (preferências, fatos da rede e lições pertinentes).
 4. **Montar o plano.** Para cada host: comandos a rodar (na ordem), método de acesso, e —
    se houver mudança — a config proposta + o script de rollback.
 5. **Gravar o plano.** Salvar em `runs/<id>/plan.yaml`. Para mudanças, salvar a config em

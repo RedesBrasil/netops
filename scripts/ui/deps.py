@@ -36,10 +36,7 @@ SCHEMA_FILE = CORE_DIR / "schemas" / "inventory.schema.json"
 PROJECT_CONFIG = CORE_DIR / "config" / "project-config.yaml"
 
 MEMORY_DIR = NETOPS_ROOT / "memory"
-USER_MD = MEMORY_DIR / "USER.md"
-MEMORY_MD = MEMORY_DIR / "MEMORY.md"
-PATTERNS_FILE = MEMORY_DIR / "learned-patterns.yaml"
-LESSONS_DIR = MEMORY_DIR / "lessons"
+MEMORY_MD = MEMORY_DIR / "MEMORY.md"   # arquivo único de memória (ver core/rules/memory-protocol.md)
 
 BEST_PRACTICES_DIR = NETOPS_ROOT / "best-practices"
 BP_CATALOG = BEST_PRACTICES_DIR / "_catalog.yaml"

@@ -38,7 +38,7 @@ netops/
 | Boa prática | `<topico>.md` em `best-practices/<vendor-ou-general>/` | `best-practices/mikrotik/firewall.md` |
 | Exemplo de config | `<topico>.<ext-nativa>` em `config-examples/<vendor>/` | `config-examples/mikrotik/ospf.rsc` |
 | Plano modelo | `<nome>.plan.md` | `security-audit.plan.md` |
-| Lição aprendida | `YYYY-MM-DD-<slug>.yaml` em `memory/lessons/` | `2026-05-18-mikrotik-api-port.yaml` |
+| Lição aprendida | bullet datado `AAAA-MM-DD — fato` em `memory/MEMORY.md` | `2026-06-01 — Cofre antes do acesso` |
 | Pasta de execução | `runs/YYYY-MM-DD-HHMM-<tarefa>/` | `runs/2026-05-18-1430-security-audit/` |
 | Vendor (identificador) | minúsculo, sem espaço | `mikrotik`, `cisco`, `linux`, `unifi` |
 
@@ -69,7 +69,7 @@ cross-vendor (não pertence a um fabricante).
 - **planning-examples/** — `.plan.md` mostrando objetivo, escopo, passos, riscos, rollback.
 - **network/** — `hosts.yaml`, `credentials.yaml` (git-ignorado), `topology.yaml`, `topology.md`.
 - **workflows/** — `.workflow.yaml` com `steps` (tipo `subagent`/`inline`/`checkpoint`).
-- **memory/** — `MEMORY.md`, `USER.md`, `learned-patterns.yaml`, `lessons/*.yaml`.
+- **memory/** — um arquivo só: `MEMORY.md` (seções: Preferências, Ambiente e convenções, Lições aprendidas).
 
 ## 5. Como adicionar um fabricante novo
 
@@ -81,9 +81,9 @@ cross-vendor (não pertence a um fabricante).
 
 ## 6. Como adicionar um aprendizado (projeto vivo)
 
-1. Durante a reflexão pós-execução, criar `memory/lessons/YYYY-MM-DD-<slug>.yaml`.
-2. Se o padrão se repetir (3+ vezes), consolidar em `memory/learned-patterns.yaml`.
-3. Se virar conhecimento permanente, promover para `best-practices/` ou `config-examples/`.
-4. Atualizar `memory/MEMORY.md` com o fato curado, se for relevante para toda execução.
+1. Durante a reflexão pós-execução, anexar um bullet datado (`AAAA-MM-DD — fato`) em "Lições
+   aprendidas" de `memory/MEMORY.md` — fato declarativo, não ordem.
+2. Se virar conhecimento permanente de um fabricante, promover para `best-practices/` ou
+   `config-examples/`.
 
 Ver `core/rules/memory-protocol.md` para o protocolo completo.
