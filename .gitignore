@@ -8,6 +8,21 @@ network/*.tmp
 # backups da UI (credentials.yaml.bak.* pode conter segredos) — nunca commitar
 network/*.bak.*
 
+# >>> INVENTÁRIO REAL DE PRODUÇÃO — fica só nesta máquina. <<<
+# Versionamos apenas os modelos *.example.yaml; o inventário real nunca vai ao repositório.
+network/hosts.yaml
+network/topology.yaml
+# topology.md é GERADO por scripts/docs/topology_render.py a partir do inventário real
+network/topology.md
+
+# Scripts de análise específicos de produção (one-offs desta rede) — manter local.
+# (security_assessment.py e checks.yaml são genéricos do framework e SÃO versionados)
+scripts/analysis/analyze_lab_dups.py
+scripts/analysis/dedup_alunos_exec.py
+scripts/analysis/dup_users_evidence.py
+scripts/analysis/scan_lab_users.py
+scripts/analysis/scan_lab_uuids.py
+
 # Saídas brutas de execução (podem conter dados sensíveis dos dispositivos)
 runs/
 

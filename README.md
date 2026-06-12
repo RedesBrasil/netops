@@ -22,7 +22,8 @@ mudanças, testam e geram relatórios.
    pip install -r requirements.txt
    sudo apt install nmap
    ```
-2. **Cadastre seus equipamentos** em `network/hosts.yaml` (copie de `hosts.yaml` o exemplo).
+2. **Cadastre seus equipamentos** em `network/hosts.yaml` (copie de
+   `network/hosts.example.yaml`). Esse arquivo é git-ignorado.
 3. **Cadastre as credenciais** em `network/credentials.yaml` (copie de
    `network/credentials.example.yaml`). Esse arquivo é git-ignorado.
 4. **(Recomendado) Criptografe as senhas** com uma senha-mestra:
@@ -33,7 +34,8 @@ mudanças, testam e geram relatórios.
    ```
    Os valores ficam criptografados em repouso e são descriptografados só em memória, durante
    a sessão. Ver `scripts/vault/SKILL.md`.
-5. **Descreva a topologia** em `network/topology.yaml`.
+5. **Descreva a topologia** em `network/topology.yaml` (copie de
+   `network/topology.example.yaml`). Esse arquivo e o `topology.md` gerado são git-ignorados.
 6. **Abra o framework na sua IDE de IA e peça o que precisar.**
 
 ## Estrutura

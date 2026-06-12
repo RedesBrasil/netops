@@ -1,0 +1,68 @@
+# NetOps — Inventário de hosts (EXEMPLO)
+# ============================================================================
+# Copie este arquivo para `network/hosts.yaml` e substitua pelos SEUS equipamentos.
+# O `hosts.yaml` real é git-ignorado (não vai para o repositório).
+#
+# Esta é a FONTE DA VERDADE da rede. O agente só conhece equipamentos listados aqui.
+# Cada host referencia uma credencial NOMEADA (definida em credentials.yaml).
+# Campos definidos num 'group' são herdados; o host pode sobrescrever qualquer um.
+# Schema validável em: core/schemas/inventory.schema.json
+# ============================================================================
+
+version: 1
+
+# --- Grupos: defaults herdados pelos hosts ---
+groups:
+  mikrotik-core:
+    vendor: mikrotik
+    role: core
+    access: {method: api, port: 8728}     # API RouterOS (8729 = API-SSL)
+    credential: cred_mikrotik_admin
+
+  mikrotik-dist:
+    vendor: mikrotik
+    role: distribution
+    access:
+      method: ssh
+      port: 22
+    credential: cred_mikrotik_admin
+
+  linux-servers:
+    vendor: linux
+    role: server
+    access:
+      method: ssh
+      port: 22
+    credential: cred_linux_root
+
+# --- Hosts (exemplos — substitua pelos seus) ---
+hosts:
+  rt-core-01:
+    hostname: RT-CORE-01
+    mgmt_ip: 10.0.0.1
+    group: mikrotik-core
+    site: matriz
+
+  rt-dist-01:
+    hostname: RT-DIST-01
+    mgmt_ip: 10.0.0.2
+    group: mikrotik-dist
+    site: matriz
+
+  sw-access-01:
+    hostname: SW-ACCESS-01
+    mgmt_ip: 10.0.0.3
+    vendor: cisco
+    role: access
+    access:
+      method: ssh
+      port: 22
+    credential: cred_cisco_admin
+    site: matriz
+
+  srv-web-01:
+    hostname: SRV-WEB-01
+    mgmt_ip: 10.0.20.10
+    group: linux-servers
+    site: matriz
+    notes: Servidor web de exemplo

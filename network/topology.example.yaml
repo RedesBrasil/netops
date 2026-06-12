@@ -1,0 +1,43 @@
+# NetOps — Mapa de topologia (EXEMPLO)
+# ============================================================================
+# Copie este arquivo para `network/topology.yaml` e descreva a SUA rede.
+# O `topology.yaml` real é git-ignorado (não vai para o repositório).
+#
+# Descreve como os hosts (de hosts.yaml) se interligam fisicamente/logicamente.
+# A partir daqui, scripts/docs/topology_render.py gera o diagrama em topology.md.
+# Os links abaixo são EXEMPLOS — substitua pela sua rede real.
+# ============================================================================
+
+version: 1
+
+# --- Enlaces entre hosts ---
+links:
+  - a: {host: rt-core-01, port: "sfp-sfpplus1"}
+    b: {host: rt-dist-01, port: "sfp-sfpplus1"}
+    media: fiber
+    speed: 10G
+    desc: "Uplink core <-> distribuição"
+
+  - a: {host: rt-dist-01, port: "ether2"}
+    b: {host: sw-access-01, port: "GigabitEthernet0/1"}
+    media: copper
+    speed: 1G
+    desc: "Distribuição <-> switch de acesso"
+
+  - a: {host: sw-access-01, port: "GigabitEthernet0/10"}
+    b: {host: srv-web-01, port: "eth0"}
+    media: copper
+    speed: 1G
+    desc: "Switch de acesso <-> servidor web"
+
+# --- Segmentos lógicos (VLANs / sub-redes) — opcional, ajuda a documentação ---
+segments:
+  - name: "Gerência"
+    vlan: 99
+    subnet: 10.0.0.0/24
+  - name: "Acesso"
+    vlan: 10
+    subnet: 10.0.10.0/24
+  - name: "Servidores"
+    vlan: 20
+    subnet: 10.0.20.0/24
