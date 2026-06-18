@@ -22,6 +22,10 @@ scripts/analysis/dedup_alunos_exec.py
 scripts/analysis/dup_users_evidence.py
 scripts/analysis/scan_lab_users.py
 scripts/analysis/scan_lab_uuids.py
+scripts/analysis/count_imersao_users.py
+scripts/analysis/expired_buckets.py
+scripts/analysis/imersao_running.py
+scripts/analysis/remove_imersao_exec.py
 
 # Saídas brutas de execução (podem conter dados sensíveis dos dispositivos)
 runs/
