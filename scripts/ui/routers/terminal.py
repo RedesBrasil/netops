@@ -58,7 +58,10 @@ def _ws_authorized(ws: WebSocket) -> bool:
                 return False
         except ValueError:
             return False
-    if not deps.token_matches(ws.query_params.get("token")):
+    # Token via ?token= (front com token em memória) ou via cookie HttpOnly (sessão nova,
+    # sem token na URL). O middleware http não cobre WebSocket, então olhamos o cookie à mão.
+    ws_token = ws.query_params.get("token") or ws.cookies.get(deps.TOKEN_COOKIE)
+    if not deps.token_matches(ws_token):
         return False
     # Mesmo gate de login do /api (o middleware http não cobre WebSocket): exige a sessão.
     if deps.auth_required() and not deps.auth_session_valid(ws.query_params.get("auth")):

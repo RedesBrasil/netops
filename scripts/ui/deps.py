@@ -53,6 +53,14 @@ RUNS_DIR = NETOPS_ROOT / "runs"
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
+# Cookie HttpOnly que persiste o token de transporte: aberta a página uma vez com
+# ?token=<válido>, o servidor grava o token aqui; nas próximas visitas o navegador o
+# envia sozinho (acessa-se o IP "puro"). HttpOnly => o JavaScript não lê (defesa contra
+# XSS). Sem flag Secure porque o console roda sobre HTTP (com Secure o cookie nunca seria
+# enviado). É o MESMO valor de STATE.token — só muda o transporte, não o segredo.
+TOKEN_COOKIE = "netops_token"
+TOKEN_COOKIE_MAX_AGE = 604_800  # 7 dias (limita a janela de um token vazado no perfil do navegador)
+
 # Vendors válidos (espelha PADRAO.md + schema). Usado p/ validar pastas de conhecimento.
 VENDORS = (
     "mikrotik", "unifi", "ubiquiti", "cisco", "huawei", "proxmox",

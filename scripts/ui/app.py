@@ -54,10 +54,32 @@ def _origin_ok(origin: str | None) -> bool:
 
 
 def _supplied_token(request: Request) -> str | None:
+    """Token de transporte, em ordem de precedência: Authorization > ?token= > cookie.
+
+    Um Bearer VAZIO (o front manda `Authorization: Bearer ` quando não tem token em memória,
+    ex.: sessão nova após fechar a aba) é ignorado para que o cookie HttpOnly assuma —
+    é o que permite acessar o IP "puro" sem o token na URL."""
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
-        return auth[7:].strip()
-    return request.query_params.get("token")
+        tok = auth[7:].strip()
+        if tok:
+            return tok
+    qp = request.query_params.get("token")
+    if qp:
+        return qp
+    return request.cookies.get(deps.TOKEN_COOKIE)
+
+
+def _set_token_cookie(response) -> None:
+    """Grava o token de transporte num cookie HttpOnly de longa duração (ver deps.TOKEN_COOKIE)."""
+    response.set_cookie(
+        key=deps.TOKEN_COOKIE,
+        value=deps.STATE.token,
+        max_age=deps.TOKEN_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="strict",
+        path="/",
+    )
 
 
 def create_app() -> FastAPI:
@@ -86,7 +108,24 @@ def create_app() -> FastAPI:
                         {"error": "read_only", "detail": "servidor em modo somente-leitura (--read-only)"},
                         status_code=403,
                     )
-        return await call_next(request)
+
+        response = await call_next(request)
+
+        # Persistência do token: quando a página é aberta com ?token=<válido> (tipicamente
+        # "/?token=..."), grava o token num cookie HttpOnly. Nas próximas visitas o navegador
+        # o envia sozinho — acessa-se o IP "puro", sem o token na URL. Só grava se o token da
+        # query confere (comparação em tempo constante), nunca para token ausente/errado.
+        qp_token = request.query_params.get("token")
+        if qp_token and deps.token_matches(qp_token):
+            _set_token_cookie(response)
+        # O shell do SPA (index.html) NÃO pode ser cacheado: se o navegador o servir do
+        # cache sem ir à rede, o Set-Cookie do token (acima) nunca chega e o cookie nunca é
+        # gravado — o IP "puro" cai em 401/"unauthorized" sem nunca mostrar o login. no-store
+        # força a ida à rede a cada carga do documento (o HTML tem ~1 KB). Os assets estáticos
+        # (js/css/vendor) seguem cacheáveis pelo ETag — eles não carregam cookie.
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     _register_error_handlers(app)
 
