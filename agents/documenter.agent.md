@@ -28,7 +28,7 @@ que estava antes — e isso é trabalho dele.
 2. **Gerar o relatório.** Usar o template de `core/templates/` (`security-report.tmpl.md`
    para auditoria, `change-record.tmpl.md` para mudança). Salvar em `reports/<data>-<assunto>.md`.
 3. **Atualizar a documentação da rede.** Se houve discovery/mudança, atualizar `network/topology.*`
-   (via `scripts/docs/topology_render.py`) e os documentos de rede.
+   (via `scripts/tools/docs/topology_render.py`) e os documentos de rede.
 4. **Reflexão — alimentar a memória.** Este é o passo final de todo workflow:
    - Anexar cada falha/descoberta como bullet datado em "Lições aprendidas" de `memory/MEMORY.md`.
    - Atualizar as seções "Ambiente e convenções" / "Preferências" de `memory/MEMORY.md` quando

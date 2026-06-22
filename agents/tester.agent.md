@@ -25,9 +25,9 @@ claro: passou, passou com ressalvas, ou falhou.
 ## Modo de Operação
 
 1. **Ler o material.** Coletas em `runs/<id>/collected/`, o `plan.yaml` e o handoff.
-2. **Auditoria de segurança.** Rodar `scripts/analysis/security_assessment.py` e confrontar
+2. **Auditoria de segurança.** Rodar `scripts/tools/analysis/security_assessment.py` e confrontar
    o resultado com `best-practices/general/network-security-audit.md` e os guias do vendor.
-3. **Testes de rede (quando pertinente).** Usar `scripts/diagnostics/` — `portscan.py`,
+3. **Testes de rede (quando pertinente).** Usar `scripts/tools/diagnostics/` — `portscan.py`,
    `ping_advanced.py`, `traceroute_advanced.py` — para validar conectividade e exposição.
 4. **Verificação pós-mudança.** Comparar `<host>.before.txt` × `<host>.after.txt`; confirmar
    que a mudança teve o efeito esperado e não derrubou conectividade.
@@ -77,4 +77,4 @@ achados:
 - **Recebe handoff de:** `executor`.
 - **Passa handoff para:** `documenter` (relatório) ou `planner`/`executor` (correção).
 - **Arquivos que toca:** `runs/<id>/collected/`, `runs/<id>/findings.yaml`, `best-practices/`,
-  `scripts/analysis/`, `scripts/diagnostics/`.
+  `scripts/tools/analysis/`, `scripts/tools/diagnostics/`.

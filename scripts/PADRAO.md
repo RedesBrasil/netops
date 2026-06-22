@@ -18,24 +18,39 @@ prompt/paginação e fala com 100+ fabricantes via `device_type`.
 
 ## Estrutura
 
+`scripts/` separa o **motor** do NetOps (infra estática) dos **scripts operacionais**
+(o que o usuário cria/edita). Só os operacionais aparecem na página **Scripts** do console.
+
+### `engine/` — motor do NetOps (não aparece na UI)
+
 | Pasta | Conteúdo |
 |-------|----------|
-| `lib/` | Núcleo reutilizável — `inventory.py`, `vendor_map.py`, `transport.py` |
-| `access/` | Conexão com equipamentos — `ssh.py`, `telnet.py`, `api_mikrotik.py` |
-| `diagnostics/` | Diagnóstico de rede — `portscan.py`, `ping_advanced.py`, `traceroute_advanced.py` |
-| `analysis/` | Análise — `security_assessment.py`, `config_diff.py` |
-| `docs/` | Geração de documentação — `topology_render.py` |
-| `vault/` | Cofre de credenciais — CLI `init`/`encrypt`/`unlock`/`lock`/`status`/`change-password` |
+| `engine/lib/` | Núcleo reutilizável — `inventory.py`, `vendor_map.py`, `transport.py` |
+| `engine/vault/` | Cofre de credenciais — CLI `init`/`encrypt`/`unlock`/`lock`/`status`/`change-password` |
+| `engine/ui/` | Console web (FastAPI + SPA). Subir SEMPRE por `scripts/engine/ui/start.sh` |
+
+### `tools/` — scripts operacionais (CRUD pela UI)
+
+| Pasta | Conteúdo |
+|-------|----------|
+| `tools/access/` | Conexão com equipamentos — `ssh.py`, `telnet.py`, `api_mikrotik.py` |
+| `tools/diagnostics/` | Diagnóstico de rede — `portscan.py`, `ping_advanced.py`, `traceroute_advanced.py` |
+| `tools/analysis/` | Análise — `security_assessment.py`, `config_diff.py` |
+| `tools/docs/` | Geração de documentação — `topology_render.py` |
+| `tools/_TEMPLATE/` | Modelo (`SKILL.md` + `script.py`) para criar um script/família novos |
 
 ## Padrão de um script
 
-- Python 3, executável como `python scripts/<familia>/<script>.py [args]`.
+- Python 3, executável como `python scripts/tools/<familia>/<script>.py [args]`.
 - `argparse` com `--help` claro. Funciona offline (imports de rede são preguiçosos).
-- Lê o inventário sempre via `lib/inventory.py` — nunca recebe credencial por argumento.
+- Lê o inventário sempre via `from lib.inventory import …` (o motor em `engine/lib/`,
+  posto no `sys.path` pelo bootstrap do script) — nunca recebe credencial por argumento.
 - Saída em JSON ou texto; quando salva, salva em `runs/<id>/`.
-- Cada família de scripts tem um `SKILL.md` ao lado descrevendo uso (formato do OpenSquad).
+- Cada família tem um `SKILL.md` ao lado descrevendo o uso (formato do OpenSquad); ele
+  aparece como ícone 📄 ao lado dos scripts da família na UI.
 
 ## Como adicionar um script
 
-Copie `scripts/_TEMPLATE/` (tem `SKILL.md` + `script.py`), implemente, e — se for uma
-família nova — crie o `SKILL.md` da pasta.
+Copie `scripts/tools/_TEMPLATE/` (tem `SKILL.md` + `script.py`), implemente, e — se for
+uma família nova — crie o `SKILL.md` da pasta. Ou crie direto pela página **Scripts** do
+console web (botão **+ Novo**, caminho `familia/arquivo.py`).

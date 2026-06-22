@@ -18,7 +18,7 @@ netops/
 ├── config-examples/   Exemplos de configuração REAIS, por fabricante
 ├── scripts/           Scripts Python: acesso (ssh/telnet/api), diagnóstico, cofre e UI
 │   └── ui/            Console web CRUD (FastAPI + Preact sem build) — ferramenta de operador
-│                      efêmera, loopback, stateless. Ver scripts/ui/SKILL.md e constitution.md §VII.
+│                      efêmera, loopback, stateless. Ver scripts/engine/ui/SKILL.md e constitution.md §VII.
 ├── planning-examples/ Documentos modelo de planejamento de tarefas
 ├── network/           Inventário: hosts, credenciais e mapa de topologia
 ├── workflows/         Pipelines YAML que orquestram os agentes (planejar→executar→testar)
@@ -76,7 +76,7 @@ cross-vendor (não pertence a um fabricante).
 1. Criar `best-practices/<vendor>/` copiando `best-practices/_TEMPLATE.md`.
 2. Criar `config-examples/<vendor>/` copiando `config-examples/_TEMPLATE/`.
 3. Registrar o vendor em `best-practices/_catalog.yaml` e `config-examples/_index.yaml`.
-4. Adicionar o mapeamento em `scripts/lib/vendor_map.py` (`device_type` Netmiko / driver NAPALM / API).
+4. Adicionar o mapeamento em `scripts/engine/lib/vendor_map.py` (`device_type` Netmiko / driver NAPALM / API).
 5. Adicionar a seção do vendor neste arquivo (item 3).
 
 ## 6. Como adicionar um aprendizado (projeto vivo)

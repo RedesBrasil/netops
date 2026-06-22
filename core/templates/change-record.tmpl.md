@@ -15,7 +15,7 @@
 ## Diff aplicado
 
 ```
-<saída de scripts/analysis/config_diff.py — before x after>
+<saída de scripts/tools/analysis/config_diff.py — before x after>
 ```
 
 ## Verificação pós-mudança

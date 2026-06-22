@@ -1,0 +1,79 @@
+# NetOps — Catálogo de checagens de segurança
+# Usado por security_assessment.py. Para adicionar uma checagem, acrescente uma entrada.
+# tipo: port   -> detecta pela porta aberta (precisa de scan)
+# tipo: config -> detecta por regex na configuração coletada (precisa de --config-file)
+
+version: 1
+
+checks:
+  - id: telnet-exposed
+    titulo: "Telnet exposto"
+    severidade: ALTO
+    tipo: port
+    porta: 23
+    descricao: "Telnet trafega usuário e senha em texto puro. Desabilite e use SSH."
+    referencia: best-practices/general/ssh-hardening.md
+
+  - id: ftp-exposed
+    titulo: "FTP exposto"
+    severidade: MEDIO
+    tipo: port
+    porta: 21
+    descricao: "FTP não criptografa credenciais. Prefira SFTP/SCP."
+    referencia: best-practices/general/network-security-audit.md
+
+  - id: snmp-exposed
+    titulo: "SNMP exposto"
+    severidade: MEDIO
+    tipo: port
+    porta: 161
+    descricao: "SNMP exposto pode vazar topologia. Restrinja por ACL e use SNMPv3."
+    referencia: best-practices/general/network-security-audit.md
+
+  - id: http-mgmt-exposed
+    titulo: "Gerência HTTP sem TLS"
+    severidade: MEDIO
+    tipo: port
+    porta: 80
+    descricao: "Interface de gerência em HTTP puro. Use HTTPS e restrinja o acesso."
+    referencia: best-practices/general/network-security-audit.md
+
+  - id: routeros-api-no-tls
+    titulo: "API RouterOS sem TLS"
+    severidade: MEDIO
+    tipo: port
+    porta: 8728
+    descricao: "API do MikroTik na 8728 é sem TLS. Prefira a API-SSL na 8729."
+    referencia: best-practices/mikrotik/security-hardening.md
+
+  - id: rdp-exposed
+    titulo: "RDP exposto"
+    severidade: ALTO
+    tipo: port
+    porta: 3389
+    descricao: "RDP exposto é alvo comum de ataque. Restrinja por VPN/ACL."
+    referencia: best-practices/general/network-security-audit.md
+
+  - id: snmp-community-public
+    titulo: "SNMP community padrão (public/private)"
+    severidade: ALTO
+    tipo: config
+    padrao: '(?i)community[=:\s"]+(public|private)'
+    descricao: "Community SNMP padrão permite leitura por qualquer um. Troque por algo único."
+    referencia: best-practices/general/network-security-audit.md
+
+  - id: telnet-service-enabled
+    titulo: "Serviço Telnet habilitado na config"
+    severidade: ALTO
+    tipo: config
+    padrao: '(?i)\btelnet\b.*(enabled|yes|up)|service telnet'
+    descricao: "O serviço Telnet aparece habilitado na configuração. Desabilite."
+    referencia: best-practices/general/ssh-hardening.md
+
+  - id: weak-snmp-v1v2
+    titulo: "SNMP v1/v2c em uso"
+    severidade: MEDIO
+    tipo: config
+    padrao: '(?i)version\s*[=:]?\s*(1|2c)|v2c'
+    descricao: "SNMP v1/v2c não autentica nem criptografa. Migre para SNMPv3."
+    referencia: best-practices/general/network-security-audit.md

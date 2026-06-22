@@ -9,7 +9,7 @@ parte estável — raramente muda. O conhecimento de rede NÃO vive aqui (vive e
 | Pasta | Conteúdo |
 |-------|----------|
 | `config/` | Configuração do framework: `core-config.yaml`, `framework-config.yaml`, `project-config.yaml` |
-| `schemas/` | Schemas JSON de validação. Hoje: `inventory.schema.json` (usado por `scripts/lib/inventory.py`). O formato de agente e de workflow é definido pelos `_TEMPLATE` das pastas `agents/` e `workflows/`. |
+| `schemas/` | Schemas JSON de validação. Hoje: `inventory.schema.json` (usado por `scripts/engine/lib/inventory.py`). O formato de agente e de workflow é definido pelos `_TEMPLATE` das pastas `agents/` e `workflows/`. |
 | `templates/` | Modelos: `agent-handoff.tmpl.yaml`, `run-state.tmpl.json`, `security-report.tmpl.md`, `change-record.tmpl.md` |
 | `rules/` | Regras carregadas por todos os agentes: `agent-handoff.md`, `connection-safety.md`, `memory-protocol.md` |
 

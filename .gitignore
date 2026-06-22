@@ -39,8 +39,9 @@ __pycache__/
 # Sessões/artefatos locais
 *.session
 *.log
-# token de sessão do console web (scripts/ui/start.sh) — nunca commitar
+# token de sessão do console web (start.sh): nunca commitar
 scripts/ui/.ui-token
+scripts/engine/ui/.ui-token
 
 # Config local da IDE de IA (específico da máquina, não compartilhar)
 .claude/settings.local.json
