@@ -80,11 +80,11 @@ scripts Python. Sem banco de dados, sem Docker, sem servidor (princípio do Open
 - **DEVE:** Estado de execução em arquivos (`runs/<id>/state.json`).
 - **DEVE:** Memória em arquivos de texto (`memory/`).
 - **PODE:** Existir uma **ferramenta de operador efêmera** — o console web CRUD em
-  `scripts/ui/` — desde que: (a) seja *stateless* (cada request lê/escreve só os arquivos
+  `scripts/engine/ui/` — desde que: (a) seja *stateless* (cada request lê/escreve só os arquivos
   canônicos; sem cache de estado, sem banco, sem segundo cofre); (b) faça bind em loopback
   por padrão (`127.0.0.1`); (c) o framework funcione 100% com ela desligada (as IDEs de IA
   seguem sendo a interface primária). Ela é uma *ferramenta sobre os arquivos*, no mesmo
-  espírito de `scripts/docs/topology_render.py` — **não** é um runtime do framework.
+  espírito de `scripts/tools/docs/topology_render.py` — **não** é um runtime do framework.
 - **NÃO DEVE:** A ferramenta de operador, **por funcionalidade própria de UI** (botões,
   formulários, automações), manter conexão a dispositivo aberta, disparar workflows/mudanças
   que contornem o modelo de `baseline → rollback → veto` (§V), nem devolver segredos em texto

@@ -28,7 +28,7 @@ workflow:
       outputFiles: ["runs/${run}/collected/<host>.before.txt"]
       instructions: >-
         Pré-requisito: se as credenciais estiverem criptografadas, o cofre precisa estar
-        destrancado (o operador roda 'python scripts/vault/cli.py unlock'). Conexão read-only.
+        destrancado (o operador roda 'python scripts/engine/vault/cli.py unlock'). Conexão read-only.
         Capturar a configuração atual da área que será alterada — necessário para o diff e o rollback.
       vetoConditions: ["Host fora de network/hosts.yaml", "Cofre de credenciais trancado"]
 
@@ -52,7 +52,7 @@ workflow:
       outputFiles: ["runs/${run}/findings.yaml"]
       instructions: >-
         Validar a sintaxe contra o fabricante (config-examples/<vendor>/). Conferir impacto
-        na topologia. Rodar scripts/analysis/config_diff.py (before x proposta). Veredito
+        na topologia. Rodar scripts/tools/analysis/config_diff.py (before x proposta). Veredito
         APROVADO / RESSALVAS / REPROVADO.
       vetoConditions: ["Sintaxe inválida para o fabricante", "Risco de perda de gerência sem proteção"]
 
@@ -74,7 +74,7 @@ workflow:
       inputFiles: ["runs/${run}/collected/<host>.before.txt", "runs/${run}/collected/<host>.after.txt"]
       instructions: >-
         Confirmar que a mudança teve o efeito esperado e não quebrou conectividade
-        (scripts/diagnostics/). Se falhou: recomendar/acionar rollback.
+        (scripts/tools/diagnostics/). Se falhou: recomendar/acionar rollback.
       qualityCriteria: Efeito da mudança confirmado; conectividade preservada.
 
     - id: "07"

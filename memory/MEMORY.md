@@ -32,9 +32,9 @@
 > importante, deixe perto do topo. Sem schema, sem contadores, sem ciclo de vida.
 
 - **2026-06-01 — Cofre antes do acesso.** Dispositivos com credencial `enc.v1:` exigem o cofre
-  destrancado. O operador roda `python scripts/vault/cli.py unlock` (a IA **não** digita a
+  destrancado. O operador roda `python scripts/engine/vault/cli.py unlock` (a IA **não** digita a
   senha-mestra); a chave de sessão vive em RAM (tmpfs, 0600) e re-tranca após 15 min de
-  inatividade, logout ou `lock`. Conferir com `status`. Ver `scripts/vault/SKILL.md`.
+  inatividade, logout ou `lock`. Conferir com `status`. Ver `scripts/engine/vault/SKILL.md`.
 - **MikroTik — porta da API.** A API do RouterOS escuta na **8728** (8729 com TLS). A 8291 é do
   Winbox, não da API. Ao cadastrar host MikroTik com `method:api`, usar 8728 (ou 8729 com TLS).
 - **MikroTik — sintaxe RouterOS v6 ≠ v7.** A sintaxe de roteamento (ex.: OSPF) mudou entre v6 e
