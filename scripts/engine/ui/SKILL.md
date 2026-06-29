@@ -40,6 +40,23 @@ do cofre** (ver "Segurança"); não há token de transporte na URL.
 > Por baixo o script chama `scripts/engine/ui/server.py` (flags: `--host/--port/--read-only/`
 > `--no-vault-unlock/--enable-terminal/--enable-claude/--no-browser`). Use o server.py direto só para depurar.
 
+## Não aparece uma aba? (leia antes de "sumiu"/"quebrou")
+
+As páginas em **SISTEMA** seguem regras que confundem à primeira vista — **antes de achar que um deploy
+falhou**, cheque aqui:
+
+- **Abas por feature-flag (Terminal e Claude Code).** Só aparecem quando a feature está **ligada**.
+  Pelo `start.sh` ambas vêm **ligadas por padrão**; subir o `server.py` na mão **sem** `--enable-terminal`/
+  `--enable-claude` deixa as abas **invisíveis** (não é bug). Confira o estado em `GET /api/config/meta`
+  (`terminal_enabled` / `claude_enabled`). Desligar é opt-out: `NETOPS_UI_TERMINAL=0` / `NETOPS_UI_CLAUDE=0`.
+- **Aba nova não aparece após atualizar o código?** É **cache do SPA** no navegador (o `index.html` é
+  `no-store`, mas o `main.js` é cacheado por ETag). Faça **hard refresh**: `Ctrl+Shift+R` (ou `Shift+F5`).
+- **Aba "Claude Code" aparece mas não conecta?** A página exige o binário `claude` no **PATH** do processo
+  do servidor (`claude_svc.is_available()`). O `start.sh` já injeta `~/.local/bin` no PATH; se subir o
+  `server.py` na mão, garanta que `which claude` funciona no mesmo ambiente.
+- **Não vejo NADA além do login?** O cofre está inicializado e você ainda não logou — o gate de login
+  (senha-mestra) trava todo o `/api`. Não há mais token de transporte na URL (`?token=`); foi removido.
+
 ## Setup inicial (uma vez, com internet)
 
 As dependências do frontend são **vendadas localmente** (offline/air-gap-safe):
