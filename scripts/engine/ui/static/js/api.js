@@ -1,22 +1,5 @@
-// Cliente HTTP do NetOps Console. Captura o token da URL (?token=...), guarda em memória
-// e o envia em todo request. Limpa o token da barra de endereço (não fica no histórico).
-
-let TOKEN = "";
-(function captureToken() {
-  const u = new URL(location.href);
-  const t = u.searchParams.get("token");
-  if (t) {
-    TOKEN = t;
-    try { sessionStorage.setItem("netops_token", t); } catch (e) {}
-    u.searchParams.delete("token");
-    history.replaceState(null, "", u.pathname + u.hash);
-  } else {
-    try { TOKEN = sessionStorage.getItem("netops_token") || ""; } catch (e) {}
-  }
-})();
-
-// Token da sessão atual (p/ quem não usa o wrapper `req`, ex.: o WebSocket do terminal).
-export function sessionToken() { return TOKEN; }
+// Cliente HTTP do NetOps Console. O acesso é autenticado pelo LOGIN (senha-mestra do cofre):
+// o sid da sessão é enviado no header X-Netops-Session em todo request.
 
 // Sessão de login (senha-mestra): sid emitido por /auth/login, enviado no header X-Netops-Session.
 let AUTH = "";
@@ -42,7 +25,7 @@ export class ValidationError extends ApiError {
 export class VaultLockedError extends ApiError {}
 
 async function req(method, path, { body, rev } = {}) {
-  const headers = { "Authorization": "Bearer " + TOKEN };
+  const headers = {};
   if (AUTH) headers["X-Netops-Session"] = AUTH;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (rev) headers["If-Match"] = rev;

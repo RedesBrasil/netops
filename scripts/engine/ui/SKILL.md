@@ -22,8 +22,8 @@ quando o operador precisa e ser encerrada depois. O framework funciona 100% com 
 
 ## Como subir
 
-**SEMPRE** pelo script (nunca `python scripts/engine/ui/server.py` direto). Ele fixa o token (a URL não
-muda entre reinícios), liga o terminal web e faz bind no IP da máquina, com instância única:
+**SEMPRE** pelo script (nunca `python scripts/engine/ui/server.py` direto). Ele liga o terminal web
+e faz bind no IP da máquina, com instância única:
 
 ```bash
 scripts/engine/ui/start.sh                          # IP da máquina, porta 8765, terminal + Claude Code ON
@@ -34,10 +34,10 @@ NETOPS_UI_CLAUDE=0       scripts/engine/ui/start.sh # sobe SEM a página Claude 
 scripts/engine/ui/start.sh --read-only --no-vault-unlock   # flags extras viram passthrough
 ```
 
-O script imprime a URL **já com o token de sessão** (`http://<ip>:<porta>/?token=<...>`); sem o
-token a API responde **401**. O token persiste em `scripts/engine/ui/.ui-token` (0600, git-ignorado).
+O script imprime a URL (`http://<ip>:<porta>/`). O acesso é protegido pelo **login com a senha-mestra
+do cofre** (ver "Segurança"); não há token de transporte na URL.
 
-> Por baixo o script chama `scripts/engine/ui/server.py` (flags: `--host/--port/--token/--read-only/`
+> Por baixo o script chama `scripts/engine/ui/server.py` (flags: `--host/--port/--read-only/`
 > `--no-vault-unlock/--enable-terminal/--enable-claude/--no-browser`). Use o server.py direto só para depurar.
 
 ## Setup inicial (uma vez, com internet)
@@ -57,16 +57,18 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
 ## Segurança (resumo)
 
 - **Bind em loopback por padrão.** `--host <ip-privado>` expõe na rede e imprime um AVISO;
-  use só em rede confiável e via token. `0.0.0.0` é recusado.
-- **Token de sessão** obrigatório em toda a `/api` (header `Authorization: Bearer` ou `?token=`).
-- **Login com a senha-mestra:** quando o cofre está **inicializado**, o console inteiro fica atrás de
+  use só em rede confiável. `0.0.0.0` é recusado.
+- **Host/Origin checados** em toda a `/api` e nos WebSockets (anti DNS-rebinding e anti CSRF/CSWSH).
+- **Login com a senha-mestra é o gate de acesso:** quando o cofre está **inicializado**, o console inteiro fica atrás de
   uma tela de login. A senha-mestra (mesmo `derive_key`+`verify_key` do cofre) emite uma **sessão de
   login** própria (sid em memória do processo, header `X-Netops-Session`, TTL deslizante); todo `/api`
   passa a exigi-la, exceto a allow-list de bootstrap (`/api/auth/{login,status,logout}`,
   `/api/config/meta`). O mesmo login **também destranca o cofre** (a não ser com `--no-vault-unlock`).
   Endpoints: `GET /api/auth/status`, `POST /api/auth/login`, `POST /api/auth/logout` (botão "Sair").
-  Sem cofre inicializado, cai no comportamento antigo (só token). O WS do terminal usa o mesmo gate
-  (`&auth=<sid>`). Sessão em memória ⇒ vale só com o servidor no ar (uvicorn single-process).
+  ⚠ **Sem cofre inicializado não há senha-mestra — logo, não há login e o console fica aberto** a
+  quem alcançar o endereço (só Host/Origin protegem). Inicialize o cofre
+  (`scripts/engine/vault/cli.py init`) para proteger o acesso por senha. O WS do terminal/Claude usa
+  o mesmo gate (`?auth=<sid>`). Sessão em memória ⇒ vale só com o servidor no ar (uvicorn single-process).
 - **Anti DNS-rebinding:** o header `Host` precisa bater com o IP de bind (senão 403).
 - **Cofre:** a UI **lê o status** (`session_status()` — não renova o TTL) e **cifra na escrita**
   (`encrypt_value` com a chave da sessão) e **nunca** devolve senha em texto puro ao navegador.

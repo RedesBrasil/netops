@@ -40,7 +40,6 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(deps, "SCHEMA_FILE", tmp_path / "core" / "schemas" / "inventory.schema.json")
     monkeypatch.setattr(deps, "PROJECT_CONFIG", tmp_path / "core" / "config" / "project-config.yaml")
     monkeypatch.setattr(deps, "MEMORY_MD", tmp_path / "memory" / "MEMORY.md")
-    deps.STATE.token = "T"
     deps.STATE.read_only = False
     deps.STATE.allow_vault_unlock = True
     deps.STATE.enable_terminal = False
@@ -53,11 +52,11 @@ def env(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def client(env):
-    """Cliente já "logado": token + uma sessão de login válida. (O gate de login só morde
-    quando há cofre inicializado; o header de sessão é inócuo quando não é exigido.)"""
+    """Cliente já "logado": uma sessão de login válida (header X-Netops-Session). (O gate de login
+    só morde quando há cofre inicializado; o header de sessão é inócuo quando não é exigido.)"""
     from fastapi.testclient import TestClient
     import deps
     from app import create_app
     sid = deps.create_auth_session(3600)
     return TestClient(create_app(), base_url="http://127.0.0.1",
-                      headers={"Authorization": "Bearer T", "X-Netops-Session": sid})
+                      headers={"X-Netops-Session": sid})

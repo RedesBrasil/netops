@@ -6,9 +6,9 @@ Isso rompe a fronteira "a UI é só CRUD" — por isso só liga com `--enable-te
 (default DESLIGADO) e nunca em `--read-only`.
 
 A autenticação do handshake é feita À MÃO aqui porque o middleware http do app
-(token + Host + Origin) NÃO roda em conexões WebSocket no Starlette. Replicamos as
-mesmas defesas: token de sessão, Host loopback/IP-de-bind (anti DNS-rebinding) e
-Origin (anti Cross-Site WebSocket Hijacking).
+(Host + Origin + login) NÃO roda em conexões WebSocket no Starlette. Replicamos as
+mesmas defesas: sessão de login (senha-mestra), Host loopback/IP-de-bind (anti
+DNS-rebinding) e Origin (anti Cross-Site WebSocket Hijacking).
 
 Protocolo de quadros (xterm.js <-> PTY):
   cliente -> servidor: BINÁRIO = teclas (escreve no PTY); TEXTO JSON {"resize":[cols,rows]}
@@ -58,11 +58,6 @@ def _ws_authorized(ws: WebSocket) -> bool:
                 return False
         except ValueError:
             return False
-    # Token via ?token= (front com token em memória) ou via cookie HttpOnly (sessão nova,
-    # sem token na URL). O middleware http não cobre WebSocket, então olhamos o cookie à mão.
-    ws_token = ws.query_params.get("token") or ws.cookies.get(deps.TOKEN_COOKIE)
-    if not deps.token_matches(ws_token):
-        return False
     # Mesmo gate de login do /api (o middleware http não cobre WebSocket): exige a sessão.
     if deps.auth_required() and not deps.auth_session_valid(ws.query_params.get("auth")):
         return False

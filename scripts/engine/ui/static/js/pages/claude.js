@@ -4,7 +4,7 @@
 // menu de slash, anexar arquivos, interromper e nova sessão.
 import { html, useState, useEffect, useRef, useCallback, toast, api } from "../ui.js";
 import { MarkdownView, VaultBanner, Modal } from "../components.js";
-import { sessionToken, authToken } from "../api.js";
+import { authToken } from "../api.js";
 
 // Modos de operação expostos (todos, incl. bypass — decisão do projeto).
 const MODES = [
@@ -70,7 +70,7 @@ export function ClaudeCodePage() {
     if (resumeId) api.get(`/claude/sessions/${resumeId}/messages`).then((h) => setItems(h.items || [])).catch(() => {});
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/api/claude`
-      + `?token=${encodeURIComponent(sessionToken())}&auth=${encodeURIComponent(authToken())}`
+      + `?auth=${encodeURIComponent(authToken())}`
       + (resumeId ? `&resume=${encodeURIComponent(resumeId)}` : ""));
     wsRef.current = ws;
 
@@ -177,7 +177,7 @@ export function ClaudeCodePage() {
   async function uploadFile(file) {
     if (!file) return;
     const fd = new FormData(); fd.append("file", file);
-    const headers = { Authorization: "Bearer " + sessionToken() };
+    const headers = {};
     const a = authToken(); if (a) headers["X-Netops-Session"] = a;
     try {
       const res = await fetch("/api/claude/upload", { method: "POST", headers, body: fd });
