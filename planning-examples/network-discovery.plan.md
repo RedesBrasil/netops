@@ -19,11 +19,11 @@ Ler antes: `network/hosts.yaml`, `network/topology.yaml` e `memory/MEMORY.md`.
 1. **coordinator** — definir o escopo da descoberta a partir do inventário.
 2. **executor** — em cada host, coletar tabela de vizinhos (LLDP/CDP/MNDP), interfaces e
    rotas; salvar em `runs/<id>/collected/`.
-3. **tester** — opcional: `scripts/diagnostics/portscan.py` e `ping_advanced.py` para
+3. **tester** — opcional: `scripts/tools/diagnostics/portscan.py` e `ping_advanced.py` para
    confirmar quem está ativo.
 4. **planner** — comparar o descoberto com `network/topology.yaml`; apontar divergências.
 5. **documenter** — atualizar `network/topology.yaml`, rodar
-   `scripts/docs/topology_render.py` e registrar lições.
+   `scripts/tools/docs/topology_render.py` e registrar lições.
 
 ## Riscos e mitigação
 

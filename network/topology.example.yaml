@@ -4,7 +4,7 @@
 # O `topology.yaml` real é git-ignorado (não vai para o repositório).
 #
 # Descreve como os hosts (de hosts.yaml) se interligam fisicamente/logicamente.
-# A partir daqui, scripts/docs/topology_render.py gera o diagrama em topology.md.
+# A partir daqui, scripts/tools/docs/topology_render.py gera o diagrama em topology.md.
 # Os links abaixo são EXEMPLOS — substitua pela sua rede real.
 # ============================================================================
 

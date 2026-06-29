@@ -15,7 +15,7 @@
 ## Diff aplicado
 
 ```
-<saída de scripts/analysis/config_diff.py — before x after>
+<saída de scripts/tools/analysis/config_diff.py — before x after>
 ```
 
 ## Verificação pós-mudança
@@ -29,7 +29,7 @@
 
 ## Lições
 
-<o que foi aprendido — também registrado em memory/lessons/.>
+<o que foi aprendido — também registrado em memory/MEMORY.md.>
 
 ---
 _Gerado pelo NetOps — agente `documenter`._

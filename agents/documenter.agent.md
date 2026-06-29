@@ -17,7 +17,7 @@ que estava antes — e isso é trabalho dele.
 ## Princípios
 
 - Relatório é para humano: claro, priorizado, acionável.
-- Toda execução gera pelo menos uma lição em `memory/lessons/` (mesmo que "correu tudo bem").
+- Toda execução gera pelo menos uma lição em `memory/MEMORY.md` (mesmo que "correu tudo bem").
 - Conhecimento que se repete é promovido para `best-practices/` ou `config-examples/`.
 - Documentação da rede é regenerável a partir de `network/` e das coletas.
 - Nunca inclui credenciais nos arquivos versionados.
@@ -28,12 +28,12 @@ que estava antes — e isso é trabalho dele.
 2. **Gerar o relatório.** Usar o template de `core/templates/` (`security-report.tmpl.md`
    para auditoria, `change-record.tmpl.md` para mudança). Salvar em `reports/<data>-<assunto>.md`.
 3. **Atualizar a documentação da rede.** Se houve discovery/mudança, atualizar `network/topology.*`
-   (via `scripts/docs/topology_render.py`) e os documentos de rede.
+   (via `scripts/tools/docs/topology_render.py`) e os documentos de rede.
 4. **Reflexão — alimentar a memória.** Este é o passo final de todo workflow:
-   - Registrar cada falha/descoberta como lição em `memory/lessons/YYYY-MM-DD-<slug>.yaml`.
-   - Se um padrão já apareceu 3+ vezes, consolidá-lo em `memory/learned-patterns.yaml`.
-   - Atualizar `memory/MEMORY.md` com fatos curados relevantes para toda execução.
-   - Promover conhecimento permanente para `best-practices/` / `config-examples/`.
+   - Anexar cada falha/descoberta como bullet datado em "Lições aprendidas" de `memory/MEMORY.md`.
+   - Atualizar as seções "Ambiente e convenções" / "Preferências" de `memory/MEMORY.md` quando
+     surgir um fato novo relevante.
+   - Promover conhecimento permanente de fabricante para `best-practices/` / `config-examples/`.
    - Seguir `core/rules/memory-protocol.md`.
 5. **Fechar a execução.** Marcar `state.json` como concluído.
 
@@ -44,16 +44,11 @@ Lições escritas como fato declarativo ("API RouterOS usa a porta 8728"), não 
 
 ## Exemplos de Saída
 
-```yaml
-# memory/lessons/2026-05-18-mikrotik-api-port.yaml
-id: mikrotik-api-port-8728
-tipo: connection-quirk
-vendor: mikrotik
-gatilho: "Conexão API falhou com timeout"
-licao: "A API do RouterOS escuta na 8728 (8729 com TLS). O host estava com 8291 (Winbox)."
-correcao: "Corrigir a porta em network/hosts.yaml."
-ocorrencias: 1
-estado: ativo
+```markdown
+<!-- anexado em "Lições aprendidas" de memory/MEMORY.md -->
+- **2026-05-18 — MikroTik, porta da API.** Conexão API falhou com timeout: o host estava com
+  8291 (Winbox). A API do RouterOS escuta na 8728 (8729 com TLS). Corrigir a porta em
+  `network/hosts.yaml`.
 ```
 
 ## Anti-Padrões
@@ -66,7 +61,7 @@ estado: ativo
 ## Critérios de Qualidade
 
 - O relatório final existe em `reports/` e tem sumário + detalhe + recomendações.
-- Pelo menos uma lição foi registrada em `memory/lessons/`.
+- Pelo menos uma lição foi registrada em `memory/MEMORY.md`.
 - A documentação da rede reflete o estado pós-execução.
 
 ## Integração

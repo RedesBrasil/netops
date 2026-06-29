@@ -7,7 +7,7 @@
 ## Contexto
 
 <o que ler antes: network/hosts.yaml, network/topology.yaml, best-practices/<...>,
-config-examples/<...>, memory/learned-patterns.yaml.>
+config-examples/<...>, memory/MEMORY.md.>
 
 ## Escopo
 

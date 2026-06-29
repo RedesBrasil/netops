@@ -32,7 +32,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 5. **Execute com segurança.** Só o agente `executor` conecta nos equipamentos, via os
    scripts em `scripts/`. Antes de qualquer mudança: capture baseline e gere rollback.
 6. **Documente e aprenda.** Grave a saída em `runs/<id>/`, o relatório final em `reports/`,
-   e registre lições em `memory/lessons/` — o framework é um **projeto vivo**.
+   e registre lições em `memory/MEMORY.md` — o framework é um **projeto vivo**.
 
 ## Os agentes (`agents/`)
 
@@ -50,12 +50,13 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 |---------------|------------|
 | Lista de equipamentos e como acessá-los | `network/hosts.yaml` |
 | Credenciais (cofre `enc.v1:` ou texto puro, git-ignorado) | `network/credentials.yaml` |
-| Cofre de credenciais (criptografia + unlock) | `scripts/vault/` (`SKILL.md`) |
+| Cofre de credenciais (criptografia + unlock) | `scripts/engine/vault/` (`SKILL.md`) |
 | Mapa de como a rede se interliga | `network/topology.yaml` + `network/topology.md` |
 | Boas práticas (texto) | `best-practices/<vendor>/` ou `best-practices/general/` |
 | Exemplos de configuração reais | `config-examples/<vendor>/` |
-| Scripts de acesso e diagnóstico | `scripts/` |
-| Subir o console web (SEMPRE por aqui) | `scripts/ui/start.sh` |
+| Scripts operacionais (acesso, diagnóstico, análise) | `scripts/tools/<familia>/` |
+| Motor do NetOps (lib, cofre, console web) | `scripts/engine/` |
+| Subir o console web (SEMPRE por aqui) | `scripts/engine/ui/start.sh` |
 | Modelos de planejamento | `planning-examples/` |
 | O que o framework já aprendeu | `memory/` |
 | Saída bruta de execuções | `runs/` |
@@ -71,10 +72,10 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 - **Segurança:** baseline antes de mudar, rollback pronto, rollback automático em falha.
 - **Projeto vivo:** toda execução termina registrando o que aprendeu em `memory/`.
 - **Cofre:** se as credenciais estiverem criptografadas (`enc.v1:`), o cofre precisa estar
-  **destrancado** antes de qualquer acesso — o humano roda `python scripts/vault/cli.py unlock`
+  **destrancado** antes de qualquer acesso — o humano roda `python scripts/engine/vault/cli.py unlock`
   (a IA não digita a senha-mestra). Se trancado, os scripts falham com instrução clara.
 - **Setup:** as deps Python estão em `requirements.txt` (use um venv). `nmap` via `apt`.
-- **Console web:** para subir a interface web, rode **SEMPRE** `scripts/ui/start.sh` — **nunca**
-  `python scripts/ui/server.py` direto. O script fixa o token (a URL/aba não muda entre reinícios),
+- **Console web:** para subir a interface web, rode **SEMPRE** `scripts/engine/ui/start.sh` — **nunca**
+  `python scripts/engine/ui/server.py` direto. O script fixa o token (a URL/aba não muda entre reinícios),
   liga o **terminal web** (senão a aba "Terminal" some) e faz bind no IP da máquina, garantindo uma
-  instância só. Variáveis: `NETOPS_UI_HOST`, `NETOPS_UI_PORT`, `NETOPS_UI_TERMINAL=0`. Ver `scripts/ui/SKILL.md`.
+  instância só. Variáveis: `NETOPS_UI_HOST`, `NETOPS_UI_PORT`, `NETOPS_UI_TERMINAL=0`. Ver `scripts/engine/ui/SKILL.md`.

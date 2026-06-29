@@ -7,7 +7,7 @@ Regras obrigatórias para qualquer acesso a equipamentos. Vale principalmente pa
 
 - Conectar **somente** em hosts presentes em `network/hosts.yaml`. Host fora do inventário
   é proibido — registre como bloqueio e pare.
-- Resolver método de acesso e credencial sempre via `scripts/lib/inventory.py` — nunca
+- Resolver método de acesso e credencial sempre via `scripts/engine/lib/inventory.py` — nunca
   digitar credenciais soltas.
 - Usar `timeout` em toda conexão. Falha de conexão não trava a execução: registra-se o erro
   e segue-se para o próximo host.
@@ -43,6 +43,6 @@ Credenciais **nunca** entram em `runs/` (exceto `credentials.yaml`, que é git-i
 `reports/`, `memory/` ou logs. Mascare segredos em qualquer saída.
 
 Se as credenciais estiverem criptografadas (cofre `enc.v1:`), o cofre precisa estar
-**destrancado** na sessão antes de conectar — o humano roda `python scripts/vault/cli.py unlock`.
-A descriptografia acontece só em memória (em `scripts/lib/inventory.py:resolve_secret()`); a chave
+**destrancado** na sessão antes de conectar — o humano roda `python scripts/engine/vault/cli.py unlock`.
+A descriptografia acontece só em memória (em `scripts/engine/lib/inventory.py:resolve_secret()`); a chave
 da sessão vive em RAM (tmpfs, `0600`), nunca em disco versionado.

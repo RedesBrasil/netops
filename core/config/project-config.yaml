@@ -11,7 +11,7 @@ operations:
   # Email/contato para escalonamento.
   escalation_contact: ""
 
-# Cofre de credenciais (scripts/vault/). Opcional — defaults seguros se ausente.
+# Cofre de credenciais (scripts/engine/vault/). Opcional — defaults seguros se ausente.
 vault:
   session_ttl_seconds: 900            # re-bloqueio por inatividade (default: 900 = 15 min)
 

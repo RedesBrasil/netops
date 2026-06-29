@@ -42,7 +42,7 @@ criptografado).
 
 **Exposição.** Um scan de portas do IP de gerência revela o que está exposto. Portas como
 23 (Telnet), 21 (FTP), 80 (HTTP), 3389 (RDP) abertas são achados. Use
-`scripts/diagnostics/portscan.py`.
+`scripts/tools/diagnostics/portscan.py`.
 
 **Firmware.** Equipamento desatualizado acumula vulnerabilidades. Compare a versão coletada
 com a recomendada pelo fabricante.

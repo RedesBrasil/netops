@@ -9,7 +9,7 @@ relatório priorizado com recomendações.
 
 Ler antes: `network/hosts.yaml`, `network/topology.yaml`,
 `best-practices/general/network-security-audit.md`, `best-practices/general/ssh-hardening.md`,
-os guias `best-practices/<vendor>/` dos fabricantes presentes, e `memory/learned-patterns.yaml`.
+os guias `best-practices/<vendor>/` dos fabricantes presentes, e `memory/MEMORY.md`.
 
 ## Escopo
 
@@ -22,7 +22,7 @@ os guias `best-practices/<vendor>/` dos fabricantes presentes, e `memory/learned
 2. **planner** — montar, por host/fabricante, a lista de comandos read-only de auditoria
    (firewall, serviços, usuários, SNMP, versão de firmware).
 3. **executor** — conectar e coletar; salvar em `runs/<id>/collected/`.
-4. **tester** — rodar `scripts/analysis/security_assessment.py`, confrontar com as boas
+4. **tester** — rodar `scripts/tools/analysis/security_assessment.py`, confrontar com as boas
    práticas, classificar achados por severidade.
 5. **documenter** — gerar o relatório em `reports/` e registrar lições em `memory/`.
 
@@ -42,4 +42,4 @@ Não aplicável — tarefa somente leitura.
 
 - Todos os hosts do escopo foram coletados ou marcados como "não avaliados".
 - Relatório gerado em `reports/`, com achados priorizados e referências.
-- Pelo menos uma lição registrada em `memory/lessons/`.
+- Pelo menos uma lição registrada em `memory/MEMORY.md`.
