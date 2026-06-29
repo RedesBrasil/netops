@@ -39,7 +39,7 @@ __pycache__/
 # Sessões/artefatos locais
 *.session
 *.log
-# token de sessão do console web (start.sh): nunca commitar
+# token de sessão antigo do console web (removido; mantido no ignore p/ instalações legadas)
 scripts/ui/.ui-token
 scripts/engine/ui/.ui-token
 

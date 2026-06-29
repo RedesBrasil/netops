@@ -2,9 +2,9 @@
 # Único jeito suportado de subir o NetOps Console (web).
 #
 # Por que um script (e não `python scripts/engine/ui/server.py` direto):
-#   - mantém o TOKEN estável entre reinícios (sua URL/aba continua válida);
 #   - liga o TERMINAL WEB por padrão (senão a aba "Terminal" some — é opt-in);
 #   - faz bind no IP da máquina (acesso pela rede) e garante UMA instância só.
+# Acesso protegido pelo LOGIN com a senha-mestra do cofre (ver server.py).
 #
 # Uso:
 #   scripts/engine/ui/start.sh                          # IP da máquina, porta 8765, terminal ON
@@ -25,14 +25,6 @@ if [ ! -x "$PY" ]; then
   exit 1
 fi
 
-# Token estável entre reinícios (gitignorado, 0600).
-TOKEN_FILE="$ROOT/scripts/engine/ui/.ui-token"
-if [ ! -s "$TOKEN_FILE" ]; then
-  ( umask 077; "$PY" -c "import os; print(os.urandom(16).hex())" > "$TOKEN_FILE" )
-fi
-chmod 600 "$TOKEN_FILE" 2>/dev/null || true
-TOKEN="$(cat "$TOKEN_FILE")"
-
 # Host: env > IP privado auto-detectado > loopback.
 HOST="${NETOPS_UI_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 HOST="${HOST:-127.0.0.1}"
@@ -49,6 +41,6 @@ CLAUDE_FLAG="--enable-claude"
 # Instância única: encerra qualquer servidor anterior antes de subir.
 pkill -f "scripts/engine/ui/server.py" 2>/dev/null && sleep 1 || true
 
-echo "NetOps Console -> http://${HOST}:${PORT}/?token=${TOKEN}"
+echo "NetOps Console -> http://${HOST}:${PORT}/"
 exec "$PY" scripts/engine/ui/server.py \
-  --host "$HOST" --port "$PORT" --token "$TOKEN" --no-browser $TERM_FLAG $CLAUDE_FLAG "$@"
+  --host "$HOST" --port "$PORT" --no-browser $TERM_FLAG $CLAUDE_FLAG "$@"

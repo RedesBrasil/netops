@@ -6,15 +6,15 @@
   .venv/bin/python3 scripts/engine/ui/server.py --port 8765 --no-browser
   .venv/bin/python3 scripts/engine/ui/server.py --read-only
 
-Segurança: bind em loopback (127.0.0.1) por padrão; recusa 0.0.0.0. Gera um token por
-sessão e imprime/abre a URL já com ?token=... (o servidor exige o token em /api). O cofre
-pode ser destrancado pela web (senha-mestra digitada na UI -> derive_key -> sessão); use
---no-vault-unlock para exigir o terminal (`python scripts/engine/vault/cli.py unlock`).
+Segurança: bind em loopback (127.0.0.1) por padrão; recusa 0.0.0.0. O acesso é protegido
+pelo LOGIN com a senha-mestra do cofre (quando o cofre está inicializado) + checagem de
+Host/Origin (anti DNS-rebinding/CSRF). O cofre pode ser destrancado pela web (senha-mestra
+digitada na UI -> derive_key -> sessão); use --no-vault-unlock para exigir o terminal
+(`python scripts/engine/vault/cli.py unlock`).
 """
 from __future__ import annotations
 
 import argparse
-import os
 import socket
 import sys
 import threading
@@ -60,8 +60,6 @@ def main() -> int:
     parser.add_argument("--enable-claude", action="store_true",
                         help="Liga a página Claude Code (agente de IA). ⚠ EXECUTA COMANDOS E EDITA "
                              "ARQUIVOS como este usuário. Não liga em --read-only. Default: desligado")
-    parser.add_argument("--token", default=os.environ.get("NETOPS_UI_TOKEN", ""),
-                        help="Token fixo (default: aleatório por sessão)")
     args = parser.parse_args()
 
     is_loopback = args.host in LOOPBACK
@@ -73,7 +71,6 @@ def main() -> int:
     except ImportError:
         sys.exit("ERRO: dependências da UI ausentes. Rode: .venv/bin/pip install -r requirements.txt")
 
-    deps.STATE.token = args.token or os.urandom(16).hex()
     deps.STATE.read_only = args.read_only
     deps.STATE.allow_vault_unlock = not args.no_vault_unlock
     deps.STATE.enable_terminal = args.enable_terminal and not args.read_only
@@ -85,27 +82,31 @@ def main() -> int:
         print("\n  🔒 LOGIN EXIGIDO: o console pede a senha-mestra do cofre antes de liberar o acesso.")
         if not deps.STATE.allow_vault_unlock:
             print("    (--no-vault-unlock: o login autentica o console mas NÃO destranca o cofre.)")
+    else:
+        print("\n  ⚠ SEM COFRE INICIALIZADO: não há senha-mestra, então NÃO há login — o console fica")
+        print("    aberto a qualquer um que alcance este endereço. Inicialize o cofre")
+        print("    (`python scripts/engine/vault/cli.py init`) para proteger o acesso por senha.")
 
     if deps.STATE.enable_terminal:
-        print("\n  ⚠ TERMINAL WEB LIGADO (--enable-terminal): qualquer um com o token tem um SHELL")
+        print("\n  ⚠ TERMINAL WEB LIGADO (--enable-terminal): quem acessar o console tem um SHELL")
         print("    completo nesta máquina (execução de comando arbitrário, como este usuário).")
 
     if deps.STATE.enable_claude:
-        print("\n  ⚠ PÁGINA CLAUDE CODE LIGADA (--enable-claude): qualquer um com o token dirige um")
+        print("\n  ⚠ PÁGINA CLAUDE CODE LIGADA (--enable-claude): quem acessar o console dirige um")
         print("    agente de IA que EXECUTA COMANDOS e EDITA ARQUIVOS como este usuário (no repo).")
 
     if not is_loopback:
         print("\n  AVISO DE SEGURANÇA: bind em endereço NÃO-loopback — o console fica acessível na rede.")
-        print("  Protegido por token de sessão (na URL). Use apenas em rede CONFIÁVEL.")
+        print("  Acesso protegido pelo LOGIN (senha-mestra do cofre) quando inicializado. Use só em rede CONFIÁVEL.")
         print("  Este servidor pode descriptografar credenciais e editar o inventário.")
         if deps.STATE.allow_vault_unlock:
-            print("  ATENÇÃO: destrancar o cofre pela web envia a SENHA-MESTRA em TEXTO PURO por HTTP nesta rede.")
+            print("  ATENÇÃO: o login/destranque do cofre envia a SENHA-MESTRA em TEXTO PURO por HTTP nesta rede.")
             print("  Use só atrás de túnel SSH/VPN, ou suba com --no-vault-unlock e destranque pelo terminal.")
         if deps.STATE.enable_terminal:
-            print("  ATENÇÃO: com o terminal ligado nesta rede, o token (na URL) trafega em TEXTO PURO por HTTP")
-            print("  e dá um shell completo. Prefira túnel SSH/VPN. O terminal NÃO liga em --read-only.")
+            print("  ATENÇÃO: com o terminal ligado nesta rede, quem logar tem um shell completo.")
+            print("  Prefira túnel SSH/VPN. O terminal NÃO liga em --read-only.")
         if deps.STATE.enable_claude:
-            print("  ATENÇÃO: com a página Claude Code ligada nesta rede, quem tiver o token dirige um agente")
+            print("  ATENÇÃO: com a página Claude Code ligada nesta rede, quem logar dirige um agente")
             print("  que executa comandos e edita arquivos. Prefira túnel SSH/VPN. NÃO liga em --read-only.")
         print()
 
@@ -113,7 +114,7 @@ def main() -> int:
     application = create_app()
 
     port = _free_port(args.host, args.port)
-    url = f"http://{args.host}:{port}/?token={deps.STATE.token}"
+    url = f"http://{args.host}:{port}/"
 
     print("\n  NetOps Console")
     print(f"  -> {url}")

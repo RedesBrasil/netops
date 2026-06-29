@@ -92,7 +92,7 @@ scripts Python. Sem banco de dados, sem Docker, sem servidor (princípio do Open
 - **PODE:** Oferecer um **terminal web** (`--enable-terminal`, **DESLIGADO por padrão**) que
   é apenas um *passthrough* para um shell do **humano operador** — equivalente a uma sessão
   SSH na máquina. Isso **não** é o framework/UI operando equipamentos de forma autônoma: é a
-  pessoa no teclado. Exigências: opt-in explícito, token de sessão, nunca em `--read-only`, e
+  pessoa no teclado. Exigências: opt-in explícito, login com a senha-mestra, nunca em `--read-only`, e
   o framework segue funcionando 100% com ele desligado. O que se digita ali é responsabilidade
   do humano (como em qualquer SSH), fora do automatismo dos agentes.
 
