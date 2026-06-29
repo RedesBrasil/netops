@@ -2,7 +2,9 @@
 # Único jeito suportado de subir o NetOps Console (web).
 #
 # Por que um script (e não `python scripts/engine/ui/server.py` direto):
-#   - liga o TERMINAL WEB por padrão (senão a aba "Terminal" some — é opt-in);
+#   - liga o TERMINAL WEB e a página CLAUDE CODE por padrão (são opt-in — sem o script, as
+#     abas "Terminal"/"Claude Code" não aparecem). Desligue com NETOPS_UI_TERMINAL=0 / NETOPS_UI_CLAUDE=0;
+#   - garante o PATH do agente `claude` (~/.local/bin) para a página Claude funcionar de fato;
 #   - faz bind no IP da máquina (acesso pela rede) e garante UMA instância só.
 # Acesso protegido pelo LOGIN com a senha-mestra do cofre (ver server.py).
 #
@@ -17,6 +19,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
+
+# Binários do usuário (ex.: o agente `claude`, normalmente em ~/.local/bin) no PATH. Sem isto,
+# a página Claude Code sobe mas não acha o agente (claude_svc.is_available() = False) — a aba
+# aparece e não conecta. Como o console costuma subir via sudo, o PATH "enxuto" do sudo não
+# inclui ~/.local/bin; por isso o garantimos aqui.
+export PATH="$HOME/.local/bin:$PATH"
 
 PY="$ROOT/.venv/bin/python3"
 if [ ! -x "$PY" ]; then
