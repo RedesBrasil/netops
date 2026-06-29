@@ -4,7 +4,7 @@ import { html, useRef, useEffect, useState } from "../ui.js";
 import { VaultBanner } from "../components.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { sessionToken, authToken } from "../api.js";
+import { authToken } from "../api.js";
 
 const THEME = {
   background: "#11161c", foreground: "#e6ebf1", cursor: "#4aa3e0",
@@ -28,7 +28,7 @@ export function TerminalPage() {
 
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/api/term`
-      + `?token=${encodeURIComponent(sessionToken())}&auth=${encodeURIComponent(authToken())}`);
+      + `?auth=${encodeURIComponent(authToken())}`);
     ws.binaryType = "arraybuffer";
     const enc = new TextEncoder();
     const sendResize = () => { if (ws.readyState === 1) ws.send(JSON.stringify({ resize: [term.cols, term.rows] })); };
