@@ -9,7 +9,7 @@ vizinhos da rede, com baseline e rollback garantidos.
 
 Ler antes: `network/hosts.yaml` (o host-alvo), `network/topology.yaml` (vizinhos e enlaces),
 `best-practices/mikrotik/security-hardening.md`, `config-examples/mikrotik/ospf-basic.rsc`,
-`memory/learned-patterns.yaml` (quirks de OSPF no RouterOS).
+`memory/MEMORY.md` (quirks de OSPF no RouterOS).
 
 ## Escopo
 

@@ -33,7 +33,7 @@ Campos de um host:
 | `group` | opcional | Nome do grupo do qual herda |
 | `notes` | opcional | Observações livres |
 
-Validar: `python scripts/lib/inventory.py --validate` (usa `core/schemas/inventory.schema.json`).
+Validar: `python scripts/engine/lib/inventory.py --validate` (usa `core/schemas/inventory.schema.json`).
 
 ## `credentials.yaml`
 
@@ -45,14 +45,14 @@ Campos de uma credencial: `username`, `password`, e opcionais `secret` (enable d
 
 **Criptografia (cofre).** As senhas podem ser criptografadas com uma senha-mestra: cada valor
 secreto vira `enc.v1:<token>` e é descriptografado só em memória, durante a sessão. Gerencie com
-`scripts/vault/cli.py` (`init` → `encrypt` → `unlock`/`lock`); ver `scripts/vault/SKILL.md`. A
-descriptografia acontece só em `scripts/lib/inventory.py:resolve_secret()` — os hosts nunca mudam,
+`scripts/engine/vault/cli.py` (`init` → `encrypt` → `unlock`/`lock`); ver `scripts/engine/vault/SKILL.md`. A
+descriptografia acontece só em `scripts/engine/lib/inventory.py:resolve_secret()` — os hosts nunca mudam,
 e arquivos mistos (parte texto puro, parte `enc.v1:`) são válidos.
 
 ## `topology.yaml`
 
 Lista de `links` — cada link tem `a` e `b` (`{host, port}`), `media`, `speed`, `desc`.
-Opcionalmente `segments` (VLANs/sub-redes). O script `scripts/docs/topology_render.py` lê
+Opcionalmente `segments` (VLANs/sub-redes). O script `scripts/tools/docs/topology_render.py` lê
 este arquivo + `hosts.yaml` e regenera `topology.md` com um diagrama Mermaid.
 
 ## Como adicionar um equipamento
@@ -60,4 +60,4 @@ este arquivo + `hosts.yaml` e regenera `topology.md` com um diagrama Mermaid.
 1. Adicione o host em `hosts.yaml` (use um `group` existente ou crie um).
 2. Se a credencial for nova, adicione-a em `credentials.yaml`.
 3. Adicione os enlaces dele em `topology.yaml`.
-4. Rode `python scripts/docs/topology_render.py` para atualizar `topology.md`.
+4. Rode `python scripts/tools/docs/topology_render.py` para atualizar `topology.md`.

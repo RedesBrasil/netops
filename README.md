@@ -28,12 +28,12 @@ mudanças, testam e geram relatórios.
    `network/credentials.example.yaml`). Esse arquivo é git-ignorado.
 4. **(Recomendado) Criptografe as senhas** com uma senha-mestra:
    ```bash
-   python scripts/vault/cli.py init       # define a senha-mestra
-   python scripts/vault/cli.py encrypt     # senhas -> "enc.v1:..."
-   python scripts/vault/cli.py unlock      # destranca a sessão (no início do trabalho)
+   python scripts/engine/vault/cli.py init       # define a senha-mestra
+   python scripts/engine/vault/cli.py encrypt     # senhas -> "enc.v1:..."
+   python scripts/engine/vault/cli.py unlock      # destranca a sessão (no início do trabalho)
    ```
    Os valores ficam criptografados em repouso e são descriptografados só em memória, durante
-   a sessão. Ver `scripts/vault/SKILL.md`.
+   a sessão. Ver `scripts/engine/vault/SKILL.md`.
 5. **Descreva a topologia** em `network/topology.yaml` (copie de
    `network/topology.example.yaml`). Esse arquivo e o `topology.md` gerado são git-ignorados.
 6. **Abra o framework na sua IDE de IA e peça o que precisar.**

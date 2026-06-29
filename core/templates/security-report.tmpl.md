@@ -33,7 +33,7 @@
 
 ## Hosts Não Avaliados
 
-<hosts com falha de conexão e o motivo — registrados como lição em memory/lessons/.>
+<hosts com falha de conexão e o motivo — registrados como lição em memory/MEMORY.md.>
 
 ---
 _Gerado pelo NetOps — agente `documenter`._

@@ -25,17 +25,17 @@ sempre saiba onde procurar e onde gravar.
 Cada execução ensina algo. Esse aprendizado é documentado para que a próxima execução seja
 melhor — sem isso, o framework não evolui.
 
-- **DEVE:** Todo workflow termina com um passo de **reflexão** que grava lições em `memory/`.
+- **DEVE:** Todo workflow termina com um passo de **reflexão** que grava lições em `memory/MEMORY.md`.
 - **DEVE:** Erros de conexão, quirks de fabricante e descobertas viram lições registradas.
 - **DEVE:** Conhecimento consolidado é promovido para `best-practices/` e `config-examples/`.
-- **NÃO DEVE:** Apagar lições. Elas só ficam `stale`/`archived` (princípio do Hermes).
+- **DEVE:** Lições são bullets datados em `memory/MEMORY.md`, escritos como fato declarativo (não como ordem).
 
 ### III. REUSE > ADAPT > CREATE (DEVE)
 
 Antes de gerar qualquer config ou plano do zero, consultar o que já existe.
 
 - **DEVE:** Consultar `best-practices/` e `config-examples/` antes de propor solução.
-- **DEVE:** Consultar `memory/learned-patterns.yaml` para quirks já conhecidos.
+- **DEVE:** Consultar `memory/MEMORY.md` para quirks já conhecidos.
 - **DEVE:** Consultar `planning-examples/` antes de montar um plano novo.
 - **PODE:** Criar do zero somente quando nada relevante existir — e então documentar.
 
@@ -80,11 +80,11 @@ scripts Python. Sem banco de dados, sem Docker, sem servidor (princípio do Open
 - **DEVE:** Estado de execução em arquivos (`runs/<id>/state.json`).
 - **DEVE:** Memória em arquivos de texto (`memory/`).
 - **PODE:** Existir uma **ferramenta de operador efêmera** — o console web CRUD em
-  `scripts/ui/` — desde que: (a) seja *stateless* (cada request lê/escreve só os arquivos
+  `scripts/engine/ui/` — desde que: (a) seja *stateless* (cada request lê/escreve só os arquivos
   canônicos; sem cache de estado, sem banco, sem segundo cofre); (b) faça bind em loopback
   por padrão (`127.0.0.1`); (c) o framework funcione 100% com ela desligada (as IDEs de IA
   seguem sendo a interface primária). Ela é uma *ferramenta sobre os arquivos*, no mesmo
-  espírito de `scripts/docs/topology_render.py` — **não** é um runtime do framework.
+  espírito de `scripts/tools/docs/topology_render.py` — **não** é um runtime do framework.
 - **NÃO DEVE:** A ferramenta de operador, **por funcionalidade própria de UI** (botões,
   formulários, automações), manter conexão a dispositivo aberta, disparar workflows/mudanças
   que contornem o modelo de `baseline → rollback → veto` (§V), nem devolver segredos em texto
