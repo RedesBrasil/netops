@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bootstrap de caminhos, segurança (token + Origin/Host) e estado compartilhado da UI.
+"""Bootstrap de caminhos, segurança (Origin/Host + login por senha-mestra) e estado compartilhado da UI.
 
 Tudo aqui é "infra" do servidor — sem regra de negócio. Importar ANTES de qualquer
 `from lib...` para garantir que scripts/engine/ esteja no sys.path (mesmo padrão dos
@@ -7,7 +7,6 @@ outros scripts do NetOps: cli.py, inventory.py).
 """
 from __future__ import annotations
 
-import hmac
 import os
 import sys
 import time
@@ -58,14 +57,6 @@ SCRIPT_EXTS = (".py", ".sh")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-# Cookie HttpOnly que persiste o token de transporte: aberta a página uma vez com
-# ?token=<válido>, o servidor grava o token aqui; nas próximas visitas o navegador o
-# envia sozinho (acessa-se o IP "puro"). HttpOnly => o JavaScript não lê (defesa contra
-# XSS). Sem flag Secure porque o console roda sobre HTTP (com Secure o cookie nunca seria
-# enviado). É o MESMO valor de STATE.token — só muda o transporte, não o segredo.
-TOKEN_COOKIE = "netops_token"
-TOKEN_COOKIE_MAX_AGE = 604_800  # 7 dias (limita a janela de um token vazado no perfil do navegador)
-
 # Vendors válidos (espelha PADRAO.md + schema). Usado p/ validar pastas de conhecimento.
 VENDORS = (
     "mikrotik", "unifi", "ubiquiti", "cisco", "huawei", "proxmox",
@@ -74,11 +65,10 @@ VENDORS = (
 
 
 # --------------------------------------------------------------------------- #
-# Estado do servidor (token de sessão, modo read-only)
+# Estado do servidor (modo read-only, flags de features, sessões de login)
 # --------------------------------------------------------------------------- #
 @dataclass
 class ServerState:
-    token: str = ""
     read_only: bool = False
     allow_vault_unlock: bool = True
     enable_terminal: bool = False
@@ -90,14 +80,6 @@ class ServerState:
 
 
 STATE = ServerState()
-
-
-def token_matches(supplied: str | None) -> bool:
-    if not STATE.token:
-        return False
-    if not supplied:
-        return False
-    return hmac.compare_digest(supplied, STATE.token)
 
 
 # --------------------------------------------------------------------------- #

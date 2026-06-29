@@ -76,6 +76,6 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   (a IA não digita a senha-mestra). Se trancado, os scripts falham com instrução clara.
 - **Setup:** as deps Python estão em `requirements.txt` (use um venv). `nmap` via `apt`.
 - **Console web:** para subir a interface web, rode **SEMPRE** `scripts/engine/ui/start.sh` — **nunca**
-  `python scripts/engine/ui/server.py` direto. O script fixa o token (a URL/aba não muda entre reinícios),
-  liga o **terminal web** (senão a aba "Terminal" some) e faz bind no IP da máquina, garantindo uma
+  `python scripts/engine/ui/server.py` direto. O script liga o **terminal web** (senão a aba "Terminal"
+  some) e faz bind no IP da máquina, garantindo uma
   instância só. Variáveis: `NETOPS_UI_HOST`, `NETOPS_UI_PORT`, `NETOPS_UI_TERMINAL=0`. Ver `scripts/engine/ui/SKILL.md`.

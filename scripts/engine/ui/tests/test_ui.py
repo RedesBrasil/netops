@@ -11,18 +11,11 @@ from starlette.websockets import WebSocketDisconnect
 
 
 # --------------------------------------------------------------------------- #
-# Segurança / bind / token
+# Segurança / bind
 # --------------------------------------------------------------------------- #
-def test_requires_token(env):
-    from app import create_app
-    c = TestClient(create_app(), base_url="http://127.0.0.1")
-    assert c.get("/api/hosts").status_code == 401
-
-
 def test_rejects_non_loopback_host(env):
     from app import create_app
-    c = TestClient(create_app(), base_url="http://evil.example.com",
-                   headers={"Authorization": "Bearer T"})
+    c = TestClient(create_app(), base_url="http://evil.example.com")
     assert c.get("/api/hosts").status_code == 403
 
 
@@ -30,7 +23,7 @@ def test_read_only_blocks_writes(env):
     import deps
     from app import create_app
     deps.STATE.read_only = True
-    c = TestClient(create_app(), base_url="http://127.0.0.1", headers={"Authorization": "Bearer T"})
+    c = TestClient(create_app(), base_url="http://127.0.0.1")
     assert c.get("/api/hosts").status_code == 200
     r = c.post("/api/hosts", json={"id": "x", "hostname": "h", "mgmt_ip": "1.1.1.1", "group": "mikrotik-dist"})
     assert r.status_code == 403
@@ -40,13 +33,13 @@ def test_read_only_blocks_writes(env):
 # Gate de login: senha-mestra do cofre trava o console inteiro
 # --------------------------------------------------------------------------- #
 def _bare_client():
-    """Cliente só com o token de transporte (SEM sessão de login)."""
+    """Cliente SEM sessão de login (nenhum header X-Netops-Session)."""
     from app import create_app
-    return TestClient(create_app(), base_url="http://127.0.0.1", headers={"Authorization": "Bearer T"})
+    return TestClient(create_app(), base_url="http://127.0.0.1")
 
 
 def test_no_login_required_without_vault(env):
-    """Sem cofre inicializado: console abre só com o token (comportamento atual)."""
+    """Sem cofre inicializado: não há login (senha-mestra), o console abre direto."""
     c = _bare_client()
     assert c.get("/api/auth/status").json()["auth_required"] is False
     assert c.get("/api/hosts").status_code == 200
@@ -316,16 +309,7 @@ def _allow_testserver():
 def test_terminal_off_by_default(client, env):
     _allow_testserver()                                        # sem --enable-terminal
     with pytest.raises(WebSocketDisconnect) as ei:
-        with client.websocket_connect("/api/term?token=T"):
-            pass
-    assert ei.value.code == 4403
-
-
-def test_terminal_requires_token(client, env):
-    import deps
-    _allow_testserver(); deps.STATE.enable_terminal = True
-    with pytest.raises(WebSocketDisconnect) as ei:
-        with client.websocket_connect("/api/term"):           # sem token
+        with client.websocket_connect("/api/term"):
             pass
     assert ei.value.code == 4403
 
@@ -334,7 +318,7 @@ def test_terminal_blocked_in_read_only(client, env):
     import deps
     _allow_testserver(); deps.STATE.enable_terminal = True; deps.STATE.read_only = True
     with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/term?token=T"):    # terminal nunca em read-only
+        with client.websocket_connect("/api/term"):    # terminal nunca em read-only
             pass
 
 
@@ -342,7 +326,7 @@ def test_terminal_rejects_unlisted_host(client, env):
     import deps
     deps.STATE.enable_terminal = True                          # Host 'testserver' NÃO liberado
     with pytest.raises(WebSocketDisconnect) as ei:
-        with client.websocket_connect("/api/term?token=T"):
+        with client.websocket_connect("/api/term"):
             pass
     assert ei.value.code == 4403
 
@@ -353,7 +337,7 @@ def test_terminal_requires_auth_session_when_vault_initialized(client, env):
     _allow_testserver(); deps.STATE.enable_terminal = True
     _init_vault(env, master="m")
     with pytest.raises(WebSocketDisconnect) as ei:
-        with client.websocket_connect("/api/term?token=T"):       # token ok, sem &auth
+        with client.websocket_connect("/api/term"):       # sem a sessao (&auth)
             pass
     assert ei.value.code == 4403
 
@@ -362,7 +346,7 @@ def test_terminal_requires_auth_session_when_vault_initialized(client, env):
 def test_terminal_echo_roundtrip(client, env):
     import deps
     _allow_testserver(); deps.STATE.enable_terminal = True
-    with client.websocket_connect("/api/term?token=T") as ws:
+    with client.websocket_connect("/api/term") as ws:
         ws.send_bytes(b"echo NETOPS_TERM_OK\n")                # teclas (binário)
         buf = b""
         for _ in range(80):
@@ -380,7 +364,7 @@ def test_terminal_echo_roundtrip(client, env):
 def test_claude_off_by_default(client, env):
     _allow_testserver()                                        # sem --enable-claude
     with pytest.raises(WebSocketDisconnect) as ei:
-        with client.websocket_connect("/api/claude?token=T"):
+        with client.websocket_connect("/api/claude"):
             pass
     assert ei.value.code == 4403
 
@@ -389,7 +373,7 @@ def test_claude_blocked_in_read_only(client, env):
     import deps
     _allow_testserver(); deps.STATE.enable_claude = True; deps.STATE.read_only = True
     with pytest.raises(WebSocketDisconnect) as ei:
-        with client.websocket_connect("/api/claude?token=T"):  # nunca em read-only
+        with client.websocket_connect("/api/claude"):  # nunca em read-only
             pass
     assert ei.value.code == 4403
 
@@ -400,7 +384,7 @@ def test_claude_requires_auth_session_when_vault_initialized(client, env):
     _allow_testserver(); deps.STATE.enable_claude = True
     _init_vault(env, master="m")
     with pytest.raises(WebSocketDisconnect) as ei:
-        with client.websocket_connect("/api/claude?token=T"):  # token ok, sem &auth
+        with client.websocket_connect("/api/claude"):  # sem a sessao (&auth)
             pass
     assert ei.value.code == 4403
 

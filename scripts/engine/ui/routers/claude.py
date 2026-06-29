@@ -6,7 +6,7 @@ com cwd=NETOPS_ROOT. Rompe a fronteira "a UI é só CRUD" — por isso só liga 
 `--enable-claude` (default DESLIGADO) e nunca em `--read-only`, igual ao terminal web.
 
 A auth do handshake WebSocket é feita À MÃO aqui (o middleware http do app não cobre
-WebSocket no Starlette): replicamos token + Host (anti DNS-rebinding) + Origin (anti
+WebSocket no Starlette): replicamos Host (anti DNS-rebinding) + Origin (anti
 Cross-Site WebSocket Hijacking) + sessão de login. A lógica da sessão vive em
 services/claude_svc.py.
 """
@@ -45,8 +45,6 @@ def _ws_authorized(ws: WebSocket) -> bool:
                 return False
         except ValueError:
             return False
-    if not deps.token_matches(ws.query_params.get("token")):
-        return False
     if deps.auth_required() and not deps.auth_session_valid(ws.query_params.get("auth")):
         return False
     return True
@@ -88,7 +86,7 @@ def claude_session_delete(sid: str):
 async def claude_upload(file: UploadFile):
     """Recebe um anexo e grava em runs/claude/uploads/; devolve o caminho relativo p/ @referência.
 
-    Passa pelo middleware http normal (token + sessão + Origin + not read-only). Só responde
+    Passa pelo middleware http normal (sessão + Origin + not read-only). Só responde
     se a página Claude estiver ligada — não cria um canal de escrita quando a feature está off.
     """
     if not deps.STATE.enable_claude:
