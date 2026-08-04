@@ -39,6 +39,12 @@ export function ClaudeCodePage() {
   const wsRef = useRef(null);
   const scrollRef = useRef(null);
   const fileRef = useRef(null);
+  const sessionIdRef = useRef("");      // sid vigente (p/ retomar na reconexao automatica)
+  const resumeIdRef = useRef("");       // alvo de retomada explicita (Sessoes / Nova sessao)
+  const manualCloseRef = useRef(false); // fechamento deliberado (unmount/nova sessao): nao reconectar
+  const retryRef = useRef(0);           // tentativa de reconexao (backoff exponencial)
+  const reconnTimerRef = useRef(null);  // timer do proximo reconnect
+  const hbRef = useRef(null);           // intervalo de heartbeat/watchdog (detecta half-open)
 
   const send = useCallback((obj) => {
     const ws = wsRef.current;
@@ -62,79 +68,120 @@ export function ClaudeCodePage() {
     });
   }, []);
 
-  // ---- ciclo de vida do WebSocket (reabre quando `gen` muda) ----
+  // ---- ciclo de vida do WebSocket: conecta e RECONECTA sozinho (reabre em `gen`) ----
+  // Uma queda de conexao (ex.: voce troca de rede e seu IP de origem muda, quebrando a
+  // 4-tupla TCP) NAO exige mais Ctrl+F5: o cliente reconecta com backoff e RETOMA o sid
+  // vigente (?resume=<sid>), preservando a transcricao que ja esta na tela.
   useEffect(() => {
-    setItems([]); setWorking(false); setSessionId(resumeId || "");
+    manualCloseRef.current = false;
+    retryRef.current = 0;
+    const rid = resumeIdRef.current;
+    setItems([]); setWorking(false);
+    setSessionId(rid || ""); sessionIdRef.current = rid || "";
     setStatus("conectando");
-    // retomando: carrega o histórico da sessão na transcrição.
-    if (resumeId) api.get(`/claude/sessions/${resumeId}/messages`).then((h) => setItems(h.items || [])).catch(() => {});
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/api/claude`
-      + `?auth=${encodeURIComponent(authToken())}`
-      + (resumeId ? `&resume=${encodeURIComponent(resumeId)}` : ""));
-    wsRef.current = ws;
+    // retomada explicita: carrega o historico da sessao na transcricao.
+    if (rid) api.get(`/claude/sessions/${rid}/messages`).then((h) => setItems(h.items || [])).catch(() => {});
 
-    ws.onopen = () => setStatus("pronto");
-    ws.onerror = () => setStatus("erro");
-    ws.onclose = (e) => setStatus(e.code === 4403 ? "desabilitado" : "desconectado");
+    const open = (reconnect) => {
+      if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
+      // reconexao retoma o sid vigente; conexao inicial usa a retomada explicita (se houver).
+      const resume = reconnect ? sessionIdRef.current : rid;
+      setStatus(reconnect ? "reconectando" : "conectando");
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/api/claude`
+        + `?auth=${encodeURIComponent(authToken())}`
+        + (resume ? `&resume=${encodeURIComponent(resume)}` : ""));
+      wsRef.current = ws;
+      let lastRecv = Date.now();
 
-    ws.onmessage = (e) => {
-      let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
-      switch (ev.type) {
-        case "system":
-          if (ev.subtype === "init") {
-            const d = ev.data || {};
-            if (d.model) setModel(d.model);
-            if (d.permissionMode) setMode(d.permissionMode);
-            if (d.session_id) setSessionId(d.session_id);
-            if (Array.isArray(d.slash_commands)) setSlash(d.slash_commands);
-          }
-          break;
-        case "text_delta": appendDelta("assistant", ev.text); break;
-        case "thinking_delta": appendDelta("thinking", ev.text); break;
-        case "tool_use":
-          setItems((prev) => {
-            const next = closeOpen(prev);
-            next.push({ type: "tool", id: ev.id, name: ev.name, input: ev.input, tstatus: "running" });
-            return next;
-          });
-          break;
-        case "tool_result":
-          setItems((prev) => prev.map((it) =>
-            it.type === "tool" && it.id === ev.tool_use_id
-              ? { ...it, result: ev.content, isError: ev.is_error, tstatus: ev.is_error ? "error" : "done" }
-              : it));
-          break;
-        case "assistant_end":
-          setItems((prev) => closeOpen(prev));
-          break;
-        case "permission_request":
-          setItems((prev) => {
-            const next = closeOpen(prev);
-            next.push({ type: "permission", id: ev.id, tool: ev.tool, input: ev.input, context: ev.context || {}, resolved: false });
-            return next;
-          });
-          break;
-        case "mode_changed":
-          setMode(ev.mode);
-          break;
-        case "result":
-          setWorking(false);
-          if (ev.session_id) setSessionId(ev.session_id);
-          setItems((prev) => {
-            const next = closeOpen(prev);
-            next.push({ type: "result", cost: ev.cost_usd, usage: ev.usage, isError: ev.is_error });
-            return next;
-          });
-          break;
-        case "error":
-          setWorking(false);
-          setItems((prev) => [...closeOpen(prev), { type: "error", detail: ev.detail }]);
-          break;
-      }
+      ws.onopen = () => { retryRef.current = 0; lastRecv = Date.now(); setStatus("pronto"); };
+      ws.onerror = () => {};   // o onclose (sempre disparado em seguida) decide reconectar
+      ws.onclose = (e) => {
+        if (hbRef.current) { clearInterval(hbRef.current); hbRef.current = null; }
+        if (manualCloseRef.current) return;                          // fechamento deliberado: fim
+        if (e.code === 4403) { setStatus("desabilitado"); return; }  // desligada no servidor
+        // queda inesperada: agenda reconexao com backoff (1.5s, 3s, 6s, 12s, teto 15s).
+        setWorking(false);
+        setStatus("reconectando");
+        const n = Math.min(retryRef.current++, 5);
+        const delay = Math.min(1500 * 2 ** n, 15000);
+        reconnTimerRef.current = setTimeout(() => open(true), delay);
+      };
+
+      ws.onmessage = (e) => {
+        lastRecv = Date.now();                                       // qualquer msg do servidor = conexao viva
+        let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+        switch (ev.type) {
+          case "system":
+            if (ev.subtype === "init") {
+              const d = ev.data || {};
+              if (d.model) setModel(d.model);
+              if (d.permissionMode) setMode(d.permissionMode);
+              if (d.session_id) { setSessionId(d.session_id); sessionIdRef.current = d.session_id; }
+              if (Array.isArray(d.slash_commands)) setSlash(d.slash_commands);
+            }
+            break;
+          case "text_delta": appendDelta("assistant", ev.text); break;
+          case "thinking_delta": appendDelta("thinking", ev.text); break;
+          case "tool_use":
+            setItems((prev) => {
+              const next = closeOpen(prev);
+              next.push({ type: "tool", id: ev.id, name: ev.name, input: ev.input, tstatus: "running" });
+              return next;
+            });
+            break;
+          case "tool_result":
+            setItems((prev) => prev.map((it) =>
+              it.type === "tool" && it.id === ev.tool_use_id
+                ? { ...it, result: ev.content, isError: ev.is_error, tstatus: ev.is_error ? "error" : "done" }
+                : it));
+            break;
+          case "assistant_end":
+            setItems((prev) => closeOpen(prev));
+            break;
+          case "permission_request":
+            setItems((prev) => {
+              const next = closeOpen(prev);
+              next.push({ type: "permission", id: ev.id, tool: ev.tool, input: ev.input, context: ev.context || {}, resolved: false });
+              return next;
+            });
+            break;
+          case "mode_changed":
+            setMode(ev.mode);
+            break;
+          case "result":
+            setWorking(false);
+            if (ev.session_id) { setSessionId(ev.session_id); sessionIdRef.current = ev.session_id; }
+            setItems((prev) => {
+              const next = closeOpen(prev);
+              next.push({ type: "result", cost: ev.cost_usd, usage: ev.usage, isError: ev.is_error });
+              return next;
+            });
+            break;
+          case "error":
+            setWorking(false);
+            setItems((prev) => [...closeOpen(prev), { type: "error", detail: ev.detail }]);
+            break;
+        }
+      };
+
+      if (hbRef.current) clearInterval(hbRef.current);
+      hbRef.current = setInterval(() => {
+        if (!ws || ws.readyState !== 1) return;
+        if (Date.now() - lastRecv > 25000) { try { ws.close(); } catch (_) {} return; }  // watchdog: 25s sem trafego -> derruba e reconecta
+        try { ws.send(JSON.stringify({ type: "ping" })); } catch (_) {}                  // heartbeat 10s (detecta half-open no roam)
+      }, 10000);
     };
 
-    return () => { try { ws.close(); } catch (_) {} wsRef.current = null; };
+    open(false);
+
+    return () => {
+      manualCloseRef.current = true;                                 // impede reconexao ao desmontar/trocar de sessao
+      if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
+      if (hbRef.current) { clearInterval(hbRef.current); hbRef.current = null; }
+      try { wsRef.current && wsRef.current.close(); } catch (_) {}
+      wsRef.current = null;
+    };
   }, [gen]);
 
   // auto-scroll p/ o fim quando o transcript cresce.
@@ -156,8 +203,8 @@ export function ClaudeCodePage() {
     if (send({ type: "interrupt" })) toast.info("Interrompendo…");
   }
 
-  function newSession() { setResumeId(""); setGen((g) => g + 1); }
-  function resumeSession(id) { setResumeId(id); setShowSessions(false); setGen((g) => g + 1); }
+  function newSession() { resumeIdRef.current = ""; setResumeId(""); setGen((g) => g + 1); }
+  function resumeSession(id) { resumeIdRef.current = id; setResumeId(id); setShowSessions(false); setGen((g) => g + 1); }
 
   function answerPermission(id, decision, updatedInput) {
     const msg = { type: "permission", id, decision };
@@ -199,7 +246,7 @@ export function ClaudeCodePage() {
     ? slash.filter((c) => c.startsWith(slashQuery[1])).slice(0, 8)
     : [];
 
-  const badge = { pronto: "ok", conectando: "", desconectado: "warn", desabilitado: "danger", erro: "danger" }[status] || "";
+  const badge = { pronto: "ok", conectando: "", reconectando: "warn", desconectado: "warn", desabilitado: "danger", erro: "danger" }[status] || "";
   const disabled = status !== "pronto";
 
   return html`<div class="claude-page">

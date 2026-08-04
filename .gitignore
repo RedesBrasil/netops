@@ -15,17 +15,16 @@ network/topology.yaml
 # topology.md é GERADO por scripts/docs/topology_render.py a partir do inventário real
 network/topology.md
 
-# Scripts de análise específicos de produção (one-offs desta rede) — manter local.
-# (security_assessment.py e checks.yaml são genéricos do framework e SÃO versionados)
-scripts/analysis/analyze_lab_dups.py
-scripts/analysis/dedup_alunos_exec.py
-scripts/analysis/dup_users_evidence.py
-scripts/analysis/scan_lab_users.py
-scripts/analysis/scan_lab_uuids.py
-scripts/analysis/count_imersao_users.py
-scripts/analysis/expired_buckets.py
-scripts/analysis/imersao_running.py
-scripts/analysis/remove_imersao_exec.py
+# Scripts de análise específicos de produção (DADOS DO CLIENTE) — manter local.
+# Pasta INTEIRA ignorada (evita que novos one-offs escapem, como acontecia na lista
+# arquivo-a-arquivo antiga). Os genéricos do framework vivem em scripts/tools/analysis/
+# (security_assessment.py, checks.yaml) e continuam versionados.
+scripts/analysis/
+
+# Relatórios gerados a partir do inventário/execução real (DADOS DO CLIENTE) — manter
+# local. Ignora tudo em reports/, exceto o README (documentação do diretório).
+reports/*
+!reports/README.md
 
 # Saídas brutas de execução (podem conter dados sensíveis dos dispositivos)
 runs/
@@ -48,6 +47,12 @@ scripts/engine/ui/.ui-token
 
 # Cache de testes
 .pytest_cache/
+
+# Backups de trabalho (edições assistidas / segurança) — nunca versionar.
+# Cobre *.bak-sec, *.bak-l1, *.bak-l1fix, etc., além de *.orig e *.bak simples.
+*.orig
+*.bak
+*.bak-*
 
 # Sistema operacional / editor
 .DS_Store

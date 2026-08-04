@@ -74,6 +74,11 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 - **Cofre:** se as credenciais estiverem criptografadas (`enc.v1:`), o cofre precisa estar
   **destrancado** antes de qualquer acesso — o humano roda `python scripts/engine/vault/cli.py unlock`
   (a IA não digita a senha-mestra). Se trancado, os scripts falham com instrução clara.
+- **Segredos (INEGOCIÁVEL):** a IA **nunca** lê, descriptografa, imprime ou copia o valor de
+  `password`/`secret` — nem com o cofre destrancado, nem "por transparência". Para acessar um
+  equipamento, invoque os scripts de `scripts/tools/access/` com `--host <nome>` (eles resolvem a
+  credencial internamente); nunca chame `resolve_host(decrypt=True)`/`resolve_secret`/`decrypt_value`.
+  Ver `constitution.md` §V e `core/rules/connection-safety.md`.
 - **Setup:** as deps Python estão em `requirements.txt` (use um venv). `nmap` via `apt`.
 - **Console web:** para subir a interface web, rode **SEMPRE** `scripts/engine/ui/start.sh` — **nunca**
   `python scripts/engine/ui/server.py` direto. O script liga o **terminal web** e a **página Claude Code**

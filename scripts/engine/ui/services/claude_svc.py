@@ -72,6 +72,23 @@ VALID_MODES = ("plan", "default", "acceptEdits", "dontAsk", "bypassPermissions")
 _TOOL_RESULT_MAX = 8000  # trunca saída de ferramenta p/ não inundar a UI
 
 
+# Registro em memoria: session_id -> sessao web viva. Single-flight por sessao: quando uma
+# reconexao retoma um sid cuja conexao anterior ainda esta pendurada (ping-timeout), a antiga
+# e encerrada ANTES de subir o novo subprocesso `claude`, evitando dois `claude --resume
+# <mesmo sid>` escrevendo no mesmo transcript.
+_ACTIVE_BY_SID: dict[str, "ClaudeWebSession"] = {}
+_SID_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _sid_lock(sid: str) -> asyncio.Lock:
+    """Lock por sid: serializa a troca de dono da sessao (evita corrida no burst de roaming)."""
+    lk = _SID_LOCKS.get(sid)
+    if lk is None:
+        lk = asyncio.Lock()
+        _SID_LOCKS[sid] = lk
+    return lk
+
+
 def is_available() -> bool:
     """O SDK está instalado E o binário `claude` está no PATH?"""
     return _SDK_OK and bool(_claude_path())
@@ -109,6 +126,10 @@ class ClaudeWebSession:
         self._pending: dict[str, asyncio.Future] = {}  # id de permissão -> Future
         self._counter = 0
         self._ask_tool_ids: set[str] = set()           # tool_use_ids de AskUserQuestion (suprimir card)
+        self._sid: str | None = None                   # session_id (single-flight); ver _ACTIVE_BY_SID
+        self._ws_task: asyncio.Task | None = None      # tarefa do _ws_pump (cancelavel por _supersede)
+        self._done: asyncio.Event = asyncio.Event()    # sinaliza fim do run() (p/ _supersede aguardar)
+        self._superseded: bool = False                 # marcada por _supersede; impede re-registro
 
     # ------------------------------------------------------------------ envio
     async def _send(self, obj: dict) -> None:
@@ -124,6 +145,16 @@ class ClaudeWebSession:
             cwd=str(deps.NETOPS_ROOT),
             resume=resume,
             setting_sources=["user", "project", "local"],  # herda CLAUDE.md/skills/agentes
+            # O modo bypassPermissions (exposto na UI) exige DUAS condições no lançamento:
+            #  1) a sessão precisa nascer com --dangerously-skip-permissions, senão o SDK recusa a
+            #     troca em runtime ("session was not launched with --dangerously-skip-permissions").
+            #     Passamos o flag via extra_args mas MANTEMOS permission_mode="default" — a sessão
+            #     começa segura e a UI só entra em bypass quando o usuário escolhe;
+            #  2) o `claude` recusa esse flag sob root/sudo (o console sobe por sudo em container).
+            #     IS_SANDBOX=1 declara o ambiente isolado (LXC) e libera. Escopo mínimo: só o
+            #     subprocesso `claude`. Merge com os.environ p/ preservar PATH/HOME/credenciais.
+            env={**os.environ, "IS_SANDBOX": "1"},
+            extra_args={"dangerously-skip-permissions": None},
             permission_mode="default",                       # seguro-mas-usável; UI troca p/ qualquer um
             include_partial_messages=True,                   # streaming de texto/pensamento
             can_use_tool=self._can_use_tool,                 # aprovação na tela
@@ -196,27 +227,71 @@ class ClaudeWebSession:
         }}
 
     # ------------------------------------------------------------- ciclo de vida
-    async def run(self) -> None:
-        """Conecta o cliente e roda os dois pumps até o WebSocket fechar."""
+    def _register_sid(self, sid: str | None) -> None:
+        """Registra esta sessao sob seu session_id no indice de single-flight."""
+        if not sid or self._superseded:            # sessao ja substituida nao re-registra
+            return
+        self._sid = sid
+        _ACTIVE_BY_SID[sid] = self
+
+    async def _supersede(self) -> None:
+        """Encerra esta sessao porque outra conexao assumiu o mesmo sid; aguarda finalizar."""
+        self._superseded = True
+        if self._ws_task is not None:
+            self._ws_task.cancel()          # desbloqueia o _ws_pump -> run() cai no finally
+        try:
+            await asyncio.wait_for(self._done.wait(), timeout=10)
+        except asyncio.TimeoutError:
+            pass
+
+    async def _start_client(self) -> None:
         self.client = ClaudeSDKClient(options=self._options())
         await self.client.connect()  # sem prompt: modo streaming, pronto p/ query()
-        pump = asyncio.create_task(self._sdk_pump())
+        self._ws_task = asyncio.create_task(self._ws_pump())
+
+    async def run(self) -> None:
+        """Conecta o cliente e roda os dois pumps ate o WebSocket fechar.
+
+        Single-flight por sessao (ver _ACTIVE_BY_SID): um lock por sid serializa
+        supersede-prev + connect + registrar, entao um BURST de reconexoes do mesmo sid
+        (tipico de roaming) colapsa numa unica sessao viva, sem corrida.
+        """
+        self._sid = self.ws.query_params.get("resume") or None
         try:
-            await self._ws_pump()  # retorna ao desconectar
-        finally:
-            pump.cancel()
-            for fut in self._pending.values():
-                if not fut.done():
-                    fut.cancel()
-            self._pending.clear()
+            if self._sid:
+                async with _sid_lock(self._sid):
+                    prev = _ACTIVE_BY_SID.get(self._sid)
+                    if prev is not None and prev is not self:
+                        await prev._supersede()   # mata a conexao antiga e espera o subprocesso morrer
+                    await self._start_client()
+                    _ACTIVE_BY_SID[self._sid] = self
+            else:
+                await self._start_client()
+
+            pump = asyncio.create_task(self._sdk_pump())
             try:
-                await self.client.disconnect()  # mata o subprocesso `claude`
-            except Exception:
+                await self._ws_task  # retorna ao desconectar (ou e cancelado por _supersede)
+            except asyncio.CancelledError:
                 pass
+            finally:
+                pump.cancel()
+                for fut in self._pending.values():
+                    if not fut.done():
+                        fut.cancel()
+                self._pending.clear()
+                if self.client is not None:
+                    try:
+                        await self.client.disconnect()  # mata o subprocesso `claude`
+                    except Exception:
+                        pass
+        finally:
+            if self._sid and _ACTIVE_BY_SID.get(self._sid) is self:
+                _ACTIVE_BY_SID.pop(self._sid, None)
             try:
                 await self.ws.close()
             except Exception:
                 pass
+            self._done.set()
 
     async def _ws_pump(self) -> None:
         while True:
@@ -251,6 +326,8 @@ class ClaudeWebSession:
                     await self.client.interrupt()
                 except Exception as e:
                     await self._send({"type": "error", "detail": f"interrupt: {e}"})
+            elif kind == "ping":
+                await self._send({"type": "pong"})           # responde ao heartbeat do cliente (watchdog)
             elif kind == "permission":
                 fut = self._pending.get(raw.get("id"))
                 if fut and not fut.done():
@@ -268,6 +345,8 @@ class ClaudeWebSession:
     # -------------------------------------------------------------- tradução
     async def _translate(self, msg) -> None:
         if isinstance(msg, SystemMessage):
+            if msg.subtype == "init":
+                self._register_sid((msg.data or {}).get("session_id"))  # single-flight p/ sessao nova
             await self._send({"type": "system", "subtype": msg.subtype, "data": msg.data})
 
         elif isinstance(msg, StreamEvent):
@@ -306,6 +385,7 @@ class ClaudeWebSession:
                         })
 
         elif isinstance(msg, ResultMessage):
+            self._register_sid(msg.session_id)
             await self._send({
                 "type": "result",
                 "session_id": msg.session_id,
