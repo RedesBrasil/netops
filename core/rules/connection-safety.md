@@ -7,8 +7,9 @@ Regras obrigatórias para qualquer acesso a equipamentos. Vale principalmente pa
 
 - Conectar **somente** em hosts presentes em `network/hosts.yaml`. Host fora do inventário
   é proibido — registre como bloqueio e pare.
-- Resolver método de acesso e credencial sempre via `scripts/engine/lib/inventory.py` — nunca
-  digitar credenciais soltas.
+- Resolver o método de acesso e o **nome** da credencial via `scripts/engine/lib/inventory.py`
+  (`--show` mascara segredos) — ou deixar o próprio script de acesso resolver. Nunca digitar
+  credenciais soltas e **nunca** descriptografar o segredo você mesmo (ver "Manuseio de segredos").
 - Usar `timeout` em toda conexão. Falha de conexão não trava a execução: registra-se o erro
   e segue-se para o próximo host.
 
@@ -37,12 +38,26 @@ verificar se a mudança pode cortar a própria conexão de gerência. Em caso de
 `planner` deve incluir um mecanismo de segurança (ex.: `safe-mode` no MikroTik, agendamento
 de rollback automático).
 
-## Credenciais
+## Credenciais e manuseio de segredos (INEGOCIÁVEL)
 
-Credenciais **nunca** entram em `runs/` (exceto `credentials.yaml`, que é git-ignorado),
-`reports/`, `memory/` ou logs. Mascare segredos em qualquer saída.
+**A IA nunca manuseia segredo em texto puro.** Descriptografar, ler, imprimir, salvar ou copiar
+o valor de um campo `password`/`secret` e **proibido** — mesmo com o cofre destrancado, mesmo
+"para conferir" ou "por transparencia". Quem descriptografa sao **exclusivamente** os scripts de
+acesso (`scripts/tools/access/*`), no instante de conectar.
 
-Se as credenciais estiverem criptografadas (cofre `enc.v1:`), o cofre precisa estar
-**destrancado** na sessão antes de conectar — o humano roda `python scripts/engine/vault/cli.py unlock`.
-A descriptografia acontece só em memória (em `scripts/engine/lib/inventory.py:resolve_secret()`); a chave
-da sessão vive em RAM (tmpfs, `0600`), nunca em disco versionado.
+- Para conectar/coletar/mudar, **invoque o script de acesso** com `--host <nome>`. Ele resolve a
+  credencial internamente e usa o segredo sem devolvê-lo — você recebe a SAÍDA do comando, nunca
+  a senha.
+- **Nunca** escreva código que chame `resolve_host(decrypt=True)`, `resolve_secret()` ou
+  `decrypt_value()`, nem leia os campos `password`/`secret` do `credentials.yaml`.
+- **Nunca** imprima/ecoe uma senha (`print`, `echo`, `log`) nem a passe por argumento de shell
+  (fica visível em `ps`/histórico). Se um comando devolver um segredo, **mascare** antes de exibir.
+- Cofre destrancado é permissão para as **ferramentas** conectarem — **não** para a IA ler
+  segredos. Se você acha que precisa do valor da senha, você não precisa: a ferramenta precisa,
+  não você. Pare e use a ferramenta.
+
+Credenciais **nunca** entram em `runs/`, `reports/`, `memory/` ou logs (só em `credentials.yaml`,
+git-ignorado). A descriptografia acontece só em memória, **dentro do script de acesso**, via
+`scripts/engine/lib/inventory.py:resolve_secret()`; a chave da sessão vive em RAM (tmpfs, `0600`),
+nunca em disco. O cofre é destrancado pelo humano (`python scripts/engine/vault/cli.py unlock`);
+a IA não digita a senha-mestra.

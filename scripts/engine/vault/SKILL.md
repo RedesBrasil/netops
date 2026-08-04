@@ -32,6 +32,13 @@ A IA **não** roda `init`/`unlock`/`set`/`change-password` (precisam de senha di
 real). A IA pode rodar `status` e `lock`, e os scripts de acesso usam a chave da sessão
 automaticamente.
 
+> **INEGOCIÁVEL — a IA nunca lê o segredo em texto puro.** Descriptografar, ler, imprimir ou
+> copiar um valor de `password`/`secret` é proibido, mesmo com o cofre destrancado. Só os scripts
+> de acesso (`scripts/tools/access/*`) descriptografam, no instante de conectar. A IA conecta
+> invocando esses scripts com `--host <nome>`; nunca chama `resolve_host(decrypt=True)`,
+> `resolve_secret` ou `decrypt_value`, nem lê os campos de segredo. Cofre destrancado libera as
+> FERRAMENTAS a conectar — não a IA a ler senhas. Ver `constitution.md` §V.
+
 ## Como usar
 
 ```bash
