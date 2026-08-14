@@ -38,7 +38,7 @@ def vault_status() -> dict:
     st["writable_secrets"] = st.get("state") in ("cache", "env")
     st["allow_unlock"] = deps.STATE.allow_vault_unlock
     if st.get("state") in ("locked", "insecure"):
-        st["unlock_cmd"] = "cd /home/francisco/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock"
+        st["unlock_cmd"] = "cd /opt/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock"
     return st
 
 

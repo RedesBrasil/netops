@@ -1,8 +1,13 @@
 // Página Claude Code — chat com o agente (claude-agent-sdk) via WebSocket (/api/claude).
+// A SESSÃO VIVE ACIMA DO ROTEADOR: toda a lógica (WebSocket + estado) mora no
+// ClaudeProvider, montado uma única vez no App (fora do swap de rota). Trocar de página
+// NÃO mata a conversa. Há duas visões do mesmo estado vivo: a página cheia (ClaudeCodePage)
+// e um chat compacto encaixado à direita (ChatDock), que aparece quando você navega para
+// outra rota com uma conversa viva — dá p/ acompanhar o streaming, enviar e aprovar.
 // Protocolo JSON nos dois sentidos (ver scripts/engine/ui/services/claude_svc.py).
-// Streaming de texto/pensamento, cards de ferramenta, aprovação na tela, troca de modo,
-// menu de slash, anexar arquivos, interromper e nova sessão.
 import { html, useState, useEffect, useRef, useCallback, toast, api } from "../ui.js";
+import { createContext } from "preact";
+import { useContext } from "preact/hooks";
 import { MarkdownView, VaultBanner, Modal } from "../components.js";
 import { authToken } from "../api.js";
 
@@ -24,7 +29,20 @@ function closeOpen(arr) {
   return next;
 }
 
-export function ClaudeCodePage() {
+// ------------------------------------------------------------------ contexto
+// Uma única sessão viva, compartilhada por todas as visões (página cheia + dock).
+const ClaudeCtx = createContext(null);
+export function useClaude() { return useContext(ClaudeCtx); }
+
+export function ClaudeProvider({ children }) {
+  const value = useClaudeSession();
+  return html`<${ClaudeCtx.Provider} value=${value}>${children}<//>`;
+}
+
+// Hook que concentra TODO o ciclo de vida da sessão (WS + transcrição + ações). Roda uma
+// única vez, no provider. `active` liga/desliga a conexão sem depender da rota atual — por
+// isso a conversa (e um turno em andamento) sobrevive à navegação entre páginas.
+function useClaudeSession() {
   const [status, setStatus] = useState("conectando"); // conectando|pronto|desconectado|desabilitado|erro
   const [items, setItems] = useState([]);             // transcript ordenado
   const [working, setWorking] = useState(false);      // turno em andamento
@@ -36,12 +54,12 @@ export function ClaudeCodePage() {
   const [gen, setGen] = useState(0);                  // bump => reconecta
   const [resumeId, setResumeId] = useState("");       // se setado, retoma a sessão ao reconectar
   const [showSessions, setShowSessions] = useState(false);
+  const [active, setActive] = useState(false);        // há sessão ligada? (independe da rota)
   const wsRef = useRef(null);
-  const scrollRef = useRef(null);
   const fileRef = useRef(null);
   const sessionIdRef = useRef("");      // sid vigente (p/ retomar na reconexao automatica)
   const resumeIdRef = useRef("");       // alvo de retomada explicita (Sessoes / Nova sessao)
-  const manualCloseRef = useRef(false); // fechamento deliberado (unmount/nova sessao): nao reconectar
+  const manualCloseRef = useRef(false); // fechamento deliberado (encerrar/nova sessao): nao reconectar
   const retryRef = useRef(0);           // tentativa de reconexao (backoff exponencial)
   const reconnTimerRef = useRef(null);  // timer do proximo reconnect
   const hbRef = useRef(null);           // intervalo de heartbeat/watchdog (detecta half-open)
@@ -68,11 +86,16 @@ export function ClaudeCodePage() {
     });
   }, []);
 
-  // ---- ciclo de vida do WebSocket: conecta e RECONECTA sozinho (reabre em `gen`) ----
-  // Uma queda de conexao (ex.: voce troca de rede e seu IP de origem muda, quebrando a
-  // 4-tupla TCP) NAO exige mais Ctrl+F5: o cliente reconecta com backoff e RETOMA o sid
-  // vigente (?resume=<sid>), preservando a transcricao que ja esta na tela.
+  // Liga a sessão (chamado ao abrir a página do Claude). Idempotente.
+  const ensureActive = useCallback(() => setActive(true), []);
+
+  // ---- ciclo de vida do WebSocket: conecta enquanto `active` e RECONECTA sozinho ----
+  // Só desliga em troca de sessão (gen) ou ao encerrar (active=false). Trocar de ROTA não
+  // desmonta o provider, então a conexão — e o turno em andamento — sobrevive à navegação.
+  // Uma queda de conexao (ex.: troca de rede muda o IP e quebra a 4-tupla TCP) NAO exige
+  // Ctrl+F5: o cliente reconecta com backoff e RETOMA o sid vigente (?resume=<sid>).
   useEffect(() => {
+    if (!active) return;
     manualCloseRef.current = false;
     retryRef.current = 0;
     const rid = resumeIdRef.current;
@@ -84,32 +107,24 @@ export function ClaudeCodePage() {
 
     const open = (reconnect) => {
       if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
-      // reconexao retoma o sid vigente; conexao inicial usa a retomada explicita (se houver).
       const resume = reconnect ? sessionIdRef.current : rid;
-      setStatus(reconnect ? "reconectando" : "conectando");
+      setStatus("conectando");
       const proto = location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${proto}://${location.host}/api/claude`
         + `?auth=${encodeURIComponent(authToken())}`
         + (resume ? `&resume=${encodeURIComponent(resume)}` : ""));
       wsRef.current = ws;
-      let lastRecv = Date.now();
 
-      ws.onopen = () => { retryRef.current = 0; lastRecv = Date.now(); setStatus("pronto"); };
-      ws.onerror = () => {};   // o onclose (sempre disparado em seguida) decide reconectar
-      ws.onclose = (e) => {
-        if (hbRef.current) { clearInterval(hbRef.current); hbRef.current = null; }
-        if (manualCloseRef.current) return;                          // fechamento deliberado: fim
-        if (e.code === 4403) { setStatus("desabilitado"); return; }  // desligada no servidor
-        // queda inesperada: agenda reconexao com backoff (1.5s, 3s, 6s, 12s, teto 15s).
+      ws.onopen = () => setStatus("pronto");           // conectou = conectado
+      ws.onerror = () => {};
+      ws.onclose = () => {                             // caiu = desconectado, tenta de novo em 3s.
+        if (manualCloseRef.current) return;           // fechamento deliberado (encerrar / troca de sessão)
         setWorking(false);
-        setStatus("reconectando");
-        const n = Math.min(retryRef.current++, 5);
-        const delay = Math.min(1500 * 2 ** n, 15000);
-        reconnTimerRef.current = setTimeout(() => open(true), delay);
+        setStatus("desconectado");
+        reconnTimerRef.current = setTimeout(() => open(true), 3000);
       };
 
       ws.onmessage = (e) => {
-        lastRecv = Date.now();                                       // qualquer msg do servidor = conexao viva
         let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
         switch (ev.type) {
           case "system":
@@ -164,31 +179,17 @@ export function ClaudeCodePage() {
             break;
         }
       };
-
-      if (hbRef.current) clearInterval(hbRef.current);
-      hbRef.current = setInterval(() => {
-        if (!ws || ws.readyState !== 1) return;
-        if (Date.now() - lastRecv > 25000) { try { ws.close(); } catch (_) {} return; }  // watchdog: 25s sem trafego -> derruba e reconecta
-        try { ws.send(JSON.stringify({ type: "ping" })); } catch (_) {}                  // heartbeat 10s (detecta half-open no roam)
-      }, 10000);
     };
-
     open(false);
 
     return () => {
-      manualCloseRef.current = true;                                 // impede reconexao ao desmontar/trocar de sessao
+      manualCloseRef.current = true;                                 // impede reconexao ao trocar de sessao/encerrar
       if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
       if (hbRef.current) { clearInterval(hbRef.current); hbRef.current = null; }
       try { wsRef.current && wsRef.current.close(); } catch (_) {}
       wsRef.current = null;
     };
-  }, [gen]);
-
-  // auto-scroll p/ o fim quando o transcript cresce.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [items]);
+  }, [active, gen]);
 
   function submit() {
     const text = input.trim();
@@ -203,8 +204,18 @@ export function ClaudeCodePage() {
     if (send({ type: "interrupt" })) toast.info("Interrompendo…");
   }
 
-  function newSession() { resumeIdRef.current = ""; setResumeId(""); setGen((g) => g + 1); }
-  function resumeSession(id) { resumeIdRef.current = id; setResumeId(id); setShowSessions(false); setGen((g) => g + 1); }
+  function newSession() { resumeIdRef.current = ""; setResumeId(""); setActive(true); setGen((g) => g + 1); }
+  function resumeSession(id) { resumeIdRef.current = id; setResumeId(id); setShowSessions(false); setActive(true); setGen((g) => g + 1); }
+
+  // Encerra a conversa (fecha o dock): derruba o WS e limpa o estado.
+  const endSession = useCallback(() => {
+    manualCloseRef.current = true;
+    if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
+    try { wsRef.current && wsRef.current.close(); } catch (_) {}
+    wsRef.current = null;
+    resumeIdRef.current = ""; sessionIdRef.current = "";
+    setActive(false); setWorking(false); setItems([]); setSessionId(""); setStatus("conectando");
+  }, []);
 
   function answerPermission(id, decision, updatedInput) {
     const msg = { type: "permission", id, decision };
@@ -235,6 +246,48 @@ export function ClaudeCodePage() {
     } catch (_) { toast.err("Upload falhou"); }
   }
 
+  const badge = { pronto: "ok", conectando: "", reconectando: "warn", desconectado: "warn", desabilitado: "danger", erro: "danger" }[status] || "";
+  const disabled = status !== "pronto";
+  // "Conversa viva" = ligada e com algo acontecendo (turno rodando ou já há mensagens).
+  const hasSession = active && (working || items.length > 0);
+
+  return {
+    status, items, working, mode, model, sessionId, slash, input, setInput,
+    showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
+    send, submit, stop, newSession, resumeSession, answerPermission, changeMode, uploadFile,
+    ensureActive, endSession,
+  };
+}
+
+// --------------------------------------------------------------------- visões
+// Transcrição rolável (compartilhada). Cada instância faz seu próprio auto-scroll ao fim.
+function Transcript() {
+  const { items, status, answerPermission } = useClaude();
+  const scrollRef = useRef(null);
+  useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [items]);
+  return html`<div class="cc-transcript" ref=${scrollRef}>
+    ${items.length === 0 && status === "pronto" && html`<div class="cc-hint help">
+      Pronto. Peça em linguagem natural, use <code>/comandos</code> ou anexe arquivos.
+      Em <b>Plano</b> ele só lê; troque para <b>Perguntar antes</b> p/ aplicar mudanças com confirmação.
+    </div>`}
+    ${status === "desabilitado" && html`<div class="card cc-off">
+      Página Claude Code desabilitada no servidor. Suba com <code>--enable-claude</code> (e sem <code>--read-only</code>).
+    </div>`}
+    ${items.map((it, i) => html`<${Item} key=${i} it=${it} onPermission=${answerPermission} />`)}
+  </div>`;
+}
+
+// Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
+// com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
+function Composer() {
+  const { input, setInput, submit, stop, working, disabled, mode, changeMode, model, sessionId, uploadFile, slash, fileRef } = useClaude();
+  const taRef = useRef(null);
+  // textarea que cresce com o conteúdo: começa em 1 linha e sobe até o teto (CSS), aí rola.
+  useEffect(() => {
+    const el = taRef.current; if (!el) return;
+    el.style.height = "auto"; el.style.height = el.scrollHeight + "px";
+  }, [input]);
+
   function onKeyDown(e) {
     if (e.key === "Escape" && working) { e.preventDefault(); stop(); return; }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
@@ -242,103 +295,149 @@ export function ClaudeCodePage() {
 
   // sugestões de slash: só quando o texto começa com "/" e ainda não tem espaço.
   const slashQuery = /^\/(\S*)$/.exec(input);
-  const slashMatches = slashQuery
-    ? slash.filter((c) => c.startsWith(slashQuery[1])).slice(0, 8)
-    : [];
+  const slashMatches = slashQuery ? slash.filter((c) => c.startsWith(slashQuery[1])).slice(0, 8) : [];
 
-  const badge = { pronto: "ok", conectando: "", reconectando: "warn", desconectado: "warn", desabilitado: "danger", erro: "danger" }[status] || "";
-  const disabled = status !== "pronto";
-
-  return html`<div class="claude-page">
-    <div class="page-title">
-      <h1>Claude Code</h1>
-      <span class="badge ${badge}">${status}</span>
-      <span class="spacer"></span>
-      ${working && html`<button class="sm danger" onClick=${() => send({ type: "interrupt" })}>Interromper</button>`}
-      <button class="sm" onClick=${() => setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
-      <button class="sm" onClick=${newSession} title="Encerra esta sessão e abre uma nova">Nova sessão</button>
-    </div>
-    <${VaultBanner} />
-
-    <div class="cc-toolbar">
-      <label class="cc-modepick">Modo:
-        <select value=${mode} onChange=${(e) => changeMode(e.target.value)} disabled=${disabled}>
-          ${MODES.map((m) => html`<option key=${m.value} value=${m.value} selected=${m.value === mode}>${m.label}</option>`)}
-        </select>
-      </label>
-      ${model && html`<span class="cc-meta mono">modelo: ${model}</span>`}
-      ${sessionId && html`<span class="cc-meta mono">sessão: ${sessionId.slice(0, 8)}</span>`}
-      <span class="spacer"></span>
-      <span class="cc-meta help">cwd: /home/francisco/netops · executa comandos e edita arquivos</span>
-    </div>
-
-    <div class="cc-transcript" ref=${scrollRef}>
-      ${items.length === 0 && status === "pronto" && html`<div class="cc-hint help">
-        Pronto. Peça em linguagem natural, use <code>/comandos</code> ou anexe arquivos.
-        Em <b>Plano</b> ele só lê; troque para <b>Perguntar antes</b> p/ aplicar mudanças com confirmação.
-      </div>`}
-      ${status === "desabilitado" && html`<div class="card cc-off">
-        Página Claude Code desabilitada no servidor. Suba com <code>--enable-claude</code> (e sem <code>--read-only</code>).
-      </div>`}
-      ${items.map((it, i) => html`<${Item} key=${i} it=${it} onPermission=${answerPermission} />`)}
-    </div>
-
+  return html`<div class="cc-composer-wrap">
     ${slashMatches.length > 0 && html`<div class="cc-slash-menu">
       ${slashMatches.map((c) => html`<button key=${c} class="cc-slash" onClick=${() => setInput("/" + c + " ")}>/${c}</button>`)}
     </div>`}
-
     <div class="cc-composer">
-      <textarea placeholder=${disabled ? "Conectando…" : "Mensagem (Enter envia · Shift+Enter quebra linha · / para comandos)"}
+      <textarea ref=${taRef} rows="1"
+        placeholder=${disabled ? "Conectando…" : "Mensagem (Enter envia · Shift+Enter quebra linha · / para comandos)"}
         value=${input} disabled=${disabled}
         onInput=${(e) => setInput(e.target.value)} onKeyDown=${onKeyDown}></textarea>
-      <div class="cc-composer-actions">
-        <input type="file" ref=${fileRef} style="display:none"
-          onChange=${(e) => { uploadFile(e.target.files[0]); e.target.value = ""; }} />
-        <button class="sm" disabled=${disabled} onClick=${() => fileRef.current && fileRef.current.click()}
-          title="Anexa um arquivo (vira @caminho na mensagem)">📎 Anexar</button>
-        ${working
-          ? html`<button class="danger" onClick=${stop} title="Interrompe o agente (Esc)">⏹ Parar</button>`
-          : html`<button class="primary" disabled=${disabled || !input.trim()} onClick=${submit}>Enviar</button>`}
+      <div class="cc-composer-bar">
+        <div class="cc-composer-left">
+          <label class="cc-modepick" title="Modo de permissão do agente">
+            <select value=${mode} onChange=${(e) => changeMode(e.target.value)} disabled=${disabled}>
+              ${MODES.map((m) => html`<option key=${m.value} value=${m.value} selected=${m.value === mode}>${m.label}</option>`)}
+            </select>
+          </label>
+          ${(model || sessionId) && html`<span class="cc-meta mono">${
+            [model, sessionId && "sessão " + sessionId.slice(0, 8)].filter(Boolean).join(" · ")
+          }</span>`}
+        </div>
+        <div class="cc-composer-actions">
+          <input type="file" ref=${fileRef} style="display:none"
+            onChange=${(e) => { uploadFile(e.target.files[0]); e.target.value = ""; }} />
+          <button class="sm" disabled=${disabled} onClick=${() => fileRef.current && fileRef.current.click()}
+            title="Anexa um arquivo (vira @caminho na mensagem)">📎 Anexar</button>
+          ${working
+            ? html`<button class="danger" onClick=${stop} title="Interrompe o agente (Esc)">⏹ Parar</button>`
+            : html`<button class="primary" disabled=${disabled || !input.trim()} onClick=${submit}>Enviar</button>`}
+        </div>
       </div>
     </div>
-
-    ${showSessions && html`<${SessionsModal} currentId=${sessionId}
-      onClose=${() => setShowSessions(false)} onResume=${resumeSession} />`}
   </div>`;
 }
 
-// Lista de sessões passadas (retomar / excluir).
+// Página cheia (#claude). Liga a sessão ao montar.
+export function ClaudeCodePage() {
+  const s = useClaude();
+  useEffect(() => { s.ensureActive(); }, []);
+  return html`<div class="claude-page">
+    <div class="page-title">
+      <h1>Claude Code</h1>
+      <span class="badge ${s.badge}">${s.status}</span>
+      <span class="spacer"></span>
+      ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
+      <button class="sm" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
+      <button class="sm" onClick=${s.newSession} title="Encerra esta sessão e abre uma nova">Nova sessão</button>
+    </div>
+    <${VaultBanner} />
+    <${Transcript} />
+    <${Composer} />
+    ${s.showSessions && html`<${SessionsModal} currentId=${s.sessionId}
+      onClose=${() => s.setShowSessions(false)} onResume=${s.resumeSession} />`}
+  </div>`;
+}
+
+// Chat compacto encaixado à direita — aparece quando você navega p/ outra rota com uma
+// conversa viva. Mesma sessão da página cheia; dá p/ acompanhar, enviar e aprovar.
+export function ChatDock() {
+  const s = useClaude();
+  return html`<aside class="chat-dock">
+    <div class="chat-dock-head">
+      <span class="badge ${s.badge} dot" title=${s.status}></span>
+      <b>Claude Code</b>
+      ${s.working && html`<span class="chat-dock-live">● ao vivo</span>`}
+      <span class="spacer"></span>
+      <a class="sm dock-btn" href="#claude" title="Abrir em tela cheia">⤢</a>
+      <button class="sm dock-btn" onClick=${s.endSession} title="Encerrar conversa">✕</button>
+    </div>
+    <${Transcript} />
+    <${Composer} />
+  </aside>`;
+}
+
+// Lista de sessões passadas (retomar / excluir) — com busca por título e conteúdo.
 function SessionsModal({ currentId, onClose, onResume }) {
   const [list, setList] = useState(null);
   const [busy, setBusy] = useState(false);
-  const load = () => { setList(null); api.get("/claude/sessions").then((d) => setList(d.sessions || [])).catch(() => setList([])); };
-  useEffect(() => { load(); }, []);
+  const [q, setQ] = useState("");
+
+  const load = (query) => {
+    const term = (query || "").trim();
+    if (!term) {
+      setList(null);
+      api.get("/claude/sessions").then((d) => setList(d.sessions || [])).catch(() => setList([]));
+    } else {
+      api.get("/claude/sessions/search?q=" + encodeURIComponent(term))
+        .then((d) => setList(d.sessions || [])).catch(() => setList([]));
+    }
+  };
+  useEffect(() => { load(""); }, []);
+  // debounce: busca por título + conteúdo da conversa enquanto digita
+  useEffect(() => { const h = setTimeout(() => load(q), 250); return () => clearTimeout(h); }, [q]);
 
   async function del(id, e) {
     e.stopPropagation();
     setBusy(true);
-    try { await api.del(`/claude/sessions/${id}`); load(); }
+    try { await api.del(`/claude/sessions/${id}`); load(q); }
     catch (_) { toast.err("Falha ao excluir"); }
     finally { setBusy(false); }
   }
 
+  const term = q.trim();
   return html`<${Modal} title="Sessões anteriores" onClose=${onClose} wide=${true}>
+    <input class="cc-sess-search" type="search" value=${q} autoFocus
+      placeholder="Buscar por título ou conteúdo da conversa…"
+      onInput=${(e) => setQ(e.target.value)} />
     ${list == null
       ? html`<div class="help">Carregando…</div>`
       : list.length === 0
-      ? html`<div class="help">Nenhuma sessão neste projeto ainda.</div>`
+      ? html`<div class="help">${term ? "Nenhuma sessão casa com a busca." : "Nenhuma sessão neste projeto ainda."}</div>`
       : html`<div class="cc-sess-list">
         ${list.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "")}
             onClick=${() => onResume(s.id)} title="Retomar esta sessão">
           <div class="cc-sess-main">
-            <div class="cc-sess-title">${s.title}${s.id === currentId ? html` <span class="badge ok">atual</span>` : ""}</div>
-            ${s.preview && html`<div class="cc-sess-prev help">${s.preview}</div>`}
+            <div class="cc-sess-title">${hl(s.title, term)}${s.id === currentId ? html` <span class="badge ok">atual</span>` : ""}</div>
+            ${s.preview && html`<div class="cc-sess-prev help">${hl(s.preview, term)}</div>`}
+            ${s.snippet && html`<div class="cc-sess-snip help">${hl(s.snippet, term)}</div>`}
             <div class="cc-sess-meta help mono">${fmtTime(s.mtime)} · ${(s.id || "").slice(0, 8)}${s.branch ? " · " + s.branch : ""}</div>
           </div>
           <button class="sm danger" disabled=${busy} title="Excluir sessão" onClick=${(e) => del(s.id, e)}>🗑</button>
         </div>`)}
       </div>`}
   <//>`;
+}
+
+// Realça as ocorrências de `term` em `text` (case-insensitive) com <mark>.
+function hl(text, term) {
+  const s = text == null ? "" : String(text);
+  const t = (term || "").trim();
+  if (!t) return s;
+  const low = s.toLowerCase(), qq = t.toLowerCase();
+  const parts = [];
+  let i = 0, k = 0;
+  while (true) {
+    const idx = low.indexOf(qq, i);
+    if (idx === -1) { parts.push(s.slice(i)); break; }
+    if (idx > i) parts.push(s.slice(i, idx));
+    parts.push(html`<mark key=${"m" + k++}>${s.slice(idx, idx + qq.length)}</mark>`);
+    i = idx + qq.length;
+  }
+  return parts;
 }
 
 function fmtTime(ms) {
