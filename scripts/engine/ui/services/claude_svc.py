@@ -37,7 +37,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
+from pathlib import Path
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -70,23 +72,6 @@ except ImportError:  # pragma: no cover - depende da instalação
 # (classificador ainda específico do TS) — slash `/model`/`/permissions` cobre o resto.
 VALID_MODES = ("plan", "default", "acceptEdits", "dontAsk", "bypassPermissions")
 _TOOL_RESULT_MAX = 8000  # trunca saída de ferramenta p/ não inundar a UI
-
-
-# Registro em memoria: session_id -> sessao web viva. Single-flight por sessao: quando uma
-# reconexao retoma um sid cuja conexao anterior ainda esta pendurada (ping-timeout), a antiga
-# e encerrada ANTES de subir o novo subprocesso `claude`, evitando dois `claude --resume
-# <mesmo sid>` escrevendo no mesmo transcript.
-_ACTIVE_BY_SID: dict[str, "ClaudeWebSession"] = {}
-_SID_LOCKS: dict[str, asyncio.Lock] = {}
-
-
-def _sid_lock(sid: str) -> asyncio.Lock:
-    """Lock por sid: serializa a troca de dono da sessao (evita corrida no burst de roaming)."""
-    lk = _SID_LOCKS.get(sid)
-    if lk is None:
-        lk = asyncio.Lock()
-        _SID_LOCKS[sid] = lk
-    return lk
 
 
 def is_available() -> bool:
@@ -126,10 +111,6 @@ class ClaudeWebSession:
         self._pending: dict[str, asyncio.Future] = {}  # id de permissão -> Future
         self._counter = 0
         self._ask_tool_ids: set[str] = set()           # tool_use_ids de AskUserQuestion (suprimir card)
-        self._sid: str | None = None                   # session_id (single-flight); ver _ACTIVE_BY_SID
-        self._ws_task: asyncio.Task | None = None      # tarefa do _ws_pump (cancelavel por _supersede)
-        self._done: asyncio.Event = asyncio.Event()    # sinaliza fim do run() (p/ _supersede aguardar)
-        self._superseded: bool = False                 # marcada por _supersede; impede re-registro
 
     # ------------------------------------------------------------------ envio
     async def _send(self, obj: dict) -> None:
@@ -227,71 +208,27 @@ class ClaudeWebSession:
         }}
 
     # ------------------------------------------------------------- ciclo de vida
-    def _register_sid(self, sid: str | None) -> None:
-        """Registra esta sessao sob seu session_id no indice de single-flight."""
-        if not sid or self._superseded:            # sessao ja substituida nao re-registra
-            return
-        self._sid = sid
-        _ACTIVE_BY_SID[sid] = self
-
-    async def _supersede(self) -> None:
-        """Encerra esta sessao porque outra conexao assumiu o mesmo sid; aguarda finalizar."""
-        self._superseded = True
-        if self._ws_task is not None:
-            self._ws_task.cancel()          # desbloqueia o _ws_pump -> run() cai no finally
-        try:
-            await asyncio.wait_for(self._done.wait(), timeout=10)
-        except asyncio.TimeoutError:
-            pass
-
-    async def _start_client(self) -> None:
+    async def run(self) -> None:
+        """Conecta o cliente e roda os dois pumps até o WebSocket fechar."""
         self.client = ClaudeSDKClient(options=self._options())
         await self.client.connect()  # sem prompt: modo streaming, pronto p/ query()
-        self._ws_task = asyncio.create_task(self._ws_pump())
-
-    async def run(self) -> None:
-        """Conecta o cliente e roda os dois pumps ate o WebSocket fechar.
-
-        Single-flight por sessao (ver _ACTIVE_BY_SID): um lock por sid serializa
-        supersede-prev + connect + registrar, entao um BURST de reconexoes do mesmo sid
-        (tipico de roaming) colapsa numa unica sessao viva, sem corrida.
-        """
-        self._sid = self.ws.query_params.get("resume") or None
+        pump = asyncio.create_task(self._sdk_pump())
         try:
-            if self._sid:
-                async with _sid_lock(self._sid):
-                    prev = _ACTIVE_BY_SID.get(self._sid)
-                    if prev is not None and prev is not self:
-                        await prev._supersede()   # mata a conexao antiga e espera o subprocesso morrer
-                    await self._start_client()
-                    _ACTIVE_BY_SID[self._sid] = self
-            else:
-                await self._start_client()
-
-            pump = asyncio.create_task(self._sdk_pump())
-            try:
-                await self._ws_task  # retorna ao desconectar (ou e cancelado por _supersede)
-            except asyncio.CancelledError:
-                pass
-            finally:
-                pump.cancel()
-                for fut in self._pending.values():
-                    if not fut.done():
-                        fut.cancel()
-                self._pending.clear()
-                if self.client is not None:
-                    try:
-                        await self.client.disconnect()  # mata o subprocesso `claude`
-                    except Exception:
-                        pass
+            await self._ws_pump()  # retorna ao desconectar
         finally:
-            if self._sid and _ACTIVE_BY_SID.get(self._sid) is self:
-                _ACTIVE_BY_SID.pop(self._sid, None)
+            pump.cancel()
+            for fut in self._pending.values():
+                if not fut.done():
+                    fut.cancel()
+            self._pending.clear()
+            try:
+                await self.client.disconnect()  # mata o subprocesso `claude`
+            except Exception:
+                pass
             try:
                 await self.ws.close()
             except Exception:
                 pass
-            self._done.set()
 
     async def _ws_pump(self) -> None:
         while True:
@@ -326,8 +263,6 @@ class ClaudeWebSession:
                     await self.client.interrupt()
                 except Exception as e:
                     await self._send({"type": "error", "detail": f"interrupt: {e}"})
-            elif kind == "ping":
-                await self._send({"type": "pong"})           # responde ao heartbeat do cliente (watchdog)
             elif kind == "permission":
                 fut = self._pending.get(raw.get("id"))
                 if fut and not fut.done():
@@ -345,8 +280,6 @@ class ClaudeWebSession:
     # -------------------------------------------------------------- tradução
     async def _translate(self, msg) -> None:
         if isinstance(msg, SystemMessage):
-            if msg.subtype == "init":
-                self._register_sid((msg.data or {}).get("session_id"))  # single-flight p/ sessao nova
             await self._send({"type": "system", "subtype": msg.subtype, "data": msg.data})
 
         elif isinstance(msg, StreamEvent):
@@ -385,7 +318,6 @@ class ClaudeWebSession:
                         })
 
         elif isinstance(msg, ResultMessage):
-            self._register_sid(msg.session_id)
             await self._send({
                 "type": "result",
                 "session_id": msg.session_id,
@@ -420,6 +352,57 @@ def list_project_sessions(limit: int = 60) -> list[dict]:
             "tag": x.tag,
             "branch": x.git_branch,
         })
+    return out
+
+
+def _sessions_project_dir(sample_ids):
+    """Localiza a pasta ~/.claude/projects/<proj> que contem os transcripts deste projeto."""
+    base = Path(os.path.expanduser("~")) / ".claude" / "projects"
+    if not base.is_dir():
+        return None
+    ids = [s for s in sample_ids][:5]
+    try:
+        for d in base.iterdir():
+            if d.is_dir() and any((d / (sid + ".jsonl")).exists() for sid in ids):
+                return d
+    except OSError:
+        pass
+    return None
+
+
+def _content_snippet(text, idx, qlen, width=70):
+    """Trecho legivel em torno do match (limpa escapes de JSON)."""
+    start = max(0, idx - width)
+    end = min(len(text), idx + qlen + width)
+    frag = text[start:end].replace("\\n", " ").replace("\\t", " ").replace('\\"', '"')
+    frag = re.sub(r"\s+", " ", frag).strip()
+    return ("…" if start > 0 else "") + frag + ("…" if end < len(text) else "")
+
+
+def search_project_sessions(query, limit=80):
+    """Sessoes cujo titulo/preview OU conteudo do transcript casam com query (case-insensitive)."""
+    q = (query or "").strip().lower()
+    sessions = list_project_sessions(limit=limit)
+    if not q:
+        return sessions
+    pdir = _sessions_project_dir([s["id"] for s in sessions])
+    out = []
+    for s in sessions:
+        title_hay = (s.get("title", "") + " " + s.get("preview", "")).lower()
+        if q in title_hay:
+            out.append(s)
+            continue
+        if pdir is None:
+            continue
+        try:
+            text = (pdir / (s["id"] + ".jsonl")).read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        idx = text.lower().find(q)
+        if idx != -1:
+            s2 = dict(s)
+            s2["snippet"] = _content_snippet(text, idx, len(q))
+            out.append(s2)
     return out
 
 

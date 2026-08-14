@@ -67,6 +67,14 @@ def claude_sessions():
     return {"sessions": claude_svc.list_project_sessions()}
 
 
+@router.get("/claude/sessions/search")
+def claude_sessions_search(q: str = ""):
+    """Busca sessões por título/preview OU conteúdo do transcript."""
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    return {"sessions": claude_svc.search_project_sessions(q)}
+
+
 @router.get("/claude/sessions/{sid}/messages")
 def claude_session_messages(sid: str):
     """Histórico de uma sessão, já no formato da transcrição da UI."""
