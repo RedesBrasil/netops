@@ -230,7 +230,7 @@ export function VaultBanner() {
     return null;
   }
 
-  const cmd = v.unlock_cmd || "cd /home/francisco/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock";
+  const cmd = v.unlock_cmd || "cd /opt/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock";
   if (v.state === "insecure")
     return html`<div class="vault-banner insecure">⚠ Permissões inseguras no cache do cofre — ${v.detail}
       ${unlockBtn}

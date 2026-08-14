@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sobe o NetOps Console (CRUD web) — ferramenta de operador local e efêmera.
 
-  cd /home/francisco/netops
+  cd /opt/netops
   .venv/bin/python3 scripts/engine/ui/server.py            # porta livre, abre o browser
   .venv/bin/python3 scripts/engine/ui/server.py --port 8765 --no-browser
   .venv/bin/python3 scripts/engine/ui/server.py --read-only

@@ -71,6 +71,12 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 - **Inventário é a verdade:** nunca conecte em host fora de `network/hosts.yaml`.
 - **Segurança:** baseline antes de mudar, rollback pronto, rollback automático em falha.
 - **Projeto vivo:** toda execução termina registrando o que aprendeu em `memory/`.
+- **Memória é VINCULANTE (INEGOCIÁVEL):** no início de cada sessão, leia `memory/MEMORY.md` e as notas
+  relevantes; trate toda regra marcada como "nunca rode"/INEGOCIÁVEL como **bloqueio** — não é sugestão.
+  Bloqueio ativo (também reforçado por hook em `.claude/settings.json` → `.claude/hooks/guard-netops.sh`):
+  **NUNCA rode `unl_wrapper -a fixpermissions`** — ele zera o `+x` do `first_login.sh` e derruba todos os
+  nós de aluno nos 4 hosts (ver `memory/eve-ng-firstlogin-execbit.md`). Se um workflow o exigir, reaplique
+  `chmod 755 /opt/unetlab/local-scripts/first_login.sh` no lab-250 logo depois e valide.
 - **Cofre:** se as credenciais estiverem criptografadas (`enc.v1:`), o cofre precisa estar
   **destrancado** antes de qualquer acesso — o humano roda `python scripts/engine/vault/cli.py unlock`
   (a IA não digita a senha-mestra). Se trancado, os scripts falham com instrução clara.

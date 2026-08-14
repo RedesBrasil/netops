@@ -13,6 +13,16 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+
+class _NoCacheStatic(StaticFiles):
+    """Estaticos com revalidacao obrigatoria: o browser sempre checa com o servidor
+    (ETag/Last-Modified -> 304 quando nao mudou), entao nunca serve JS/CSS velho de cache."""
+
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
 import deps
 from routers import (
     auth,
@@ -94,7 +104,7 @@ def create_app() -> FastAPI:
 
     # SPA: serve scripts/engine/ui/static/ na raiz (index.html cobre o fallback de rotas hash).
     if deps.STATIC_DIR.exists():
-        app.mount("/", StaticFiles(directory=str(deps.STATIC_DIR), html=True), name="static")
+        app.mount("/", _NoCacheStatic(directory=str(deps.STATIC_DIR), html=True), name="static")
 
     return app
 
@@ -123,7 +133,7 @@ def _register_error_handlers(app: FastAPI) -> None:
             {
                 "error": "vault_locked",
                 "detail": str(exc),
-                "action": "cd /home/francisco/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock",
+                "action": "cd /opt/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock",
             },
             status_code=423,
         )
