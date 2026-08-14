@@ -67,7 +67,7 @@ export function TerminalPage() {
       <h1>Terminal</h1>
       <span class="badge ${badge}">${status}</span>
       <span class="spacer"></span>
-      <span class="help mono">shell real em /home/francisco/netops · execução de comandos</span>
+      <span class="help mono">shell real em /opt/netops · execução de comandos</span>
       ${(status === "desconectado" || status === "erro") &&
         html`<button class="sm" onClick=${() => setGen((g) => g + 1)}>Reconectar</button>`}
     </div>

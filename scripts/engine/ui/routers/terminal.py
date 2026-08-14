@@ -35,6 +35,29 @@ router = APIRouter()
 SHELL = os.environ.get("SHELL", "/bin/bash")
 SHELL_ARGV = [SHELL, "-l"]
 MAX_DIM = 1000
+TERM_USER = os.environ.get("NETOPS_TERM_USER", "netops")  # ZT: o terminal web dropa p/ este usuario
+
+
+def _drop_target():
+    """Usuario para o qual o PTY deve dropar (ZT: o terminal web nunca e um shell root).
+
+    - Servidor como root  -> DEVE dropar para TERM_USER; se nao existir, retorna False (recusar).
+    - Servidor nao-root   -> None (roda como o proprio usuario; nada a dropar)."""
+    if os.getuid() != 0:
+        return None
+    import pwd  # noqa: PLC0415
+    try:
+        pw = pwd.getpwnam(TERM_USER)
+    except KeyError:
+        return False
+    return {
+        "uid": pw.pw_uid,
+        "gid": pw.pw_gid,
+        "groups": os.getgrouplist(TERM_USER, pw.pw_gid),
+        "home": pw.pw_dir,
+        "name": TERM_USER,
+        "shell": pw.pw_shell or "/bin/bash",
+    }
 
 
 def _set_winsize(fd: int, rows: int, cols: int) -> None:
@@ -71,21 +94,47 @@ async def term(ws: WebSocket):
         return
     await ws.accept()
 
-    # Pré-monta env/argv/cwd NO PAI: assim o filho do forkpty só faz chdir+execvpe
-    # (ambos async-signal-safe), evitando alocação num fork de processo multi-thread.
+    drop = _drop_target()
+    if drop is False:
+        # Servidor roda como root mas o usuário de drop não existe: recusa (ZT — sem shell root).
+        await ws.send_bytes(
+            f"\r\n[netops] usuário '{TERM_USER}' não existe neste host — terminal recusado "
+            f"(por segurança, não abrimos um shell root).\r\n".encode()
+        )
+        await ws.close(code=4500)
+        return
+
+    # Pré-monta env/argv/cwd NO PAI: o filho do forkpty só faz drop+chdir+execvpe
+    # (async-signal-safe), evitando alocação num fork de processo multi-thread.
     child_env = dict(os.environ)
     child_env["TERM"] = "xterm-256color"
+    if drop:
+        child_env["HOME"] = drop["home"]
+        child_env["USER"] = child_env["LOGNAME"] = drop["name"]
+        child_env["SHELL"] = drop["shell"]
+        child_env.pop("XDG_RUNTIME_DIR", None)   # não herdar o runtime dir do root (0700, inacessível)
+        shell = drop["shell"]
+    else:
+        shell = SHELL
+    shell_argv = [shell, "-l"]
     cwd = str(deps.NETOPS_ROOT)
 
     pid, fd = pty.fork()
     if pid == 0:
-        # filho: vira o shell de login.
+        # filho: dropa privilégio (se o servidor for root) e vira o shell de login.
+        if drop:
+            try:
+                os.setgid(drop["gid"])
+                os.setgroups(drop["groups"])
+                os.setuid(drop["uid"])
+            except OSError:
+                os._exit(126)   # falhou o drop -> NUNCA seguir como root
         try:
             os.chdir(cwd)
         except OSError:
             pass
         try:
-            os.execvpe(SHELL, SHELL_ARGV, child_env)
+            os.execvpe(shell, shell_argv, child_env)
         except OSError:
             pass
         os._exit(127)  # só alcançado se o exec falhar
