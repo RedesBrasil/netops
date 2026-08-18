@@ -32,6 +32,9 @@ HOSTS_FILE = NETWORK_DIR / "hosts.yaml"
 CREDS_FILE = NETWORK_DIR / "credentials.yaml"
 TOPOLOGY_FILE = NETWORK_DIR / "topology.yaml"
 TOPOLOGY_MD = NETWORK_DIR / "topology.md"
+BACKUPS_FILE = NETWORK_DIR / "backups.yaml"
+BACKUPS_STORE = NETOPS_ROOT / "backups"   # configs coletados (populado pelo runner)
+BACKUPS_RUNS = NETOPS_ROOT / "runs" / "backups"   # status/log das execucoes (Run)
 
 CORE_DIR = NETOPS_ROOT / "core"
 SCHEMA_FILE = CORE_DIR / "schemas" / "inventory.schema.json"
