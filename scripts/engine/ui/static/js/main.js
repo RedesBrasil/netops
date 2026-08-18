@@ -12,6 +12,7 @@ import { BestPracticesPage, ConfigsPage } from "./pages/knowledge.js";
 import { WorkflowsPage, AgentsPage } from "./pages/catalog.js";
 import { ScriptsPage } from "./pages/scripts.js";
 import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
+import { BackupsPage } from "./pages/backups.js";
 import { TerminalPage } from "./pages/terminal.js";
 import { ClaudeCodePage, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
 
@@ -27,6 +28,7 @@ const ROUTES = {
   agents: { label: "Agentes", comp: AgentsPage, group: "Conhecimento" },
   reports: { label: "Relatórios", comp: ReportsPage, group: "Saída" },
   runs: { label: "Execuções", comp: RunsPage, group: "Saída" },
+  backups: { label: "Backups", comp: BackupsPage, group: "Saída" },
   scripts: { label: "Scripts", comp: ScriptsPage, group: "Sistema" },
   claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled" },
   terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled" },
