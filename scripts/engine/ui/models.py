@@ -116,3 +116,48 @@ class Segment(BaseModel):
     name: str = Field(min_length=1)
     vlan: Optional[int] = Field(default=None, ge=1, le=4094)
     subnet: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
+# Backups (config: quem faz backup e quando)
+# --------------------------------------------------------------------------- #
+Frequency = Literal["hourly", "daily", "weekly"]
+Weekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+class BackupSchedule(BaseModel):
+    model_config = {"extra": "forbid"}
+    frequency: Frequency = "daily"
+    time: str = Field(default="03:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    weekday: Weekday = "sun"
+
+
+class BackupTargets(BaseModel):
+    model_config = {"extra": "forbid"}
+    hosts: list[str] = Field(default_factory=list)
+    groups: list[str] = Field(default_factory=list)
+
+
+RetentionMode = Literal["days", "count"]
+
+
+class BackupRetention(BaseModel):
+    model_config = {"extra": "forbid"}
+    mode: RetentionMode = "count"
+    value: int = Field(default=7, ge=1, le=3650)
+
+
+class BackupService(BaseModel):
+    model_config = {"extra": "forbid"}
+    id: str = Field(min_length=1, pattern=r"^[a-zA-Z0-9._-]+$")
+    name: str = Field(min_length=1)
+    enabled: bool = True
+    schedule: BackupSchedule = Field(default_factory=BackupSchedule)
+    targets: BackupTargets = Field(default_factory=BackupTargets)
+    retention: BackupRetention = Field(default_factory=BackupRetention)
+
+
+class BackupsConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+    version: int = 2
+    services: list[BackupService] = Field(default_factory=list)

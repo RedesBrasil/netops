@@ -234,3 +234,73 @@ pre.raw { font-family: var(--mono); font-size: 13px; background: var(--surface-2
   background: var(--bg-input, rgba(0,0,0,.25)); color: inherit; font: inherit; }
 .cc-sess-snip { margin-top: 2px; font-style: italic; opacity: .8; }
 .cc-sess mark { background: rgba(255, 213, 74, .35); color: inherit; border-radius: 2px; padding: 0 1px; }
+
+
+/* ===== Aba Backups: agendamento + chips de grupo + tabela de hosts ===== */
+.bk-sched { display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; }
+.bk-sched label { display: flex; flex-direction: column; gap: 4px; font-size: 12px;
+  text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+.bk-sched select, .bk-sched input { padding: 7px 9px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface); color: var(--text); font-size: 14px; }
+
+.bk-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.bk-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); font-size: 13px; cursor: pointer; user-select: none;
+  transition: background .12s, border-color .12s, color .12s; }
+.bk-chip:hover { border-color: var(--accent); }
+.bk-chip input { accent-color: var(--accent); margin: 0; cursor: pointer; }
+.bk-chip .bk-count { color: var(--muted); }
+.bk-chip.on { background: var(--accent-weak); border-color: var(--accent);
+  color: var(--accent); font-weight: 600; }
+.bk-chip.on .bk-count { color: var(--accent); }
+
+.bk-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.bk-toolbar input[type="text"], .bk-toolbar select { padding: 7px 9px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+  color: var(--text); font-size: 13px; }
+.bk-toolbar .bk-selcount { margin-left: auto; }
+
+.bk-tablewrap { max-height: 360px; overflow: auto; border: 1px solid var(--border);
+  border-radius: var(--radius); }
+.bk-tablewrap table { border: 0; border-radius: 0; }
+.bk-tablewrap thead th { position: sticky; top: 0; z-index: 1; }
+.bk-tablewrap tbody tr { cursor: pointer; }
+.bk-tablewrap tbody tr.on { background: var(--accent-weak); }
+.bk-tablewrap tbody tr.on:hover { background: var(--accent-weak); }
+.bk-tablewrap input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+.bk-tablewrap td.bk-id { font-family: var(--mono); font-size: 13px; }
+.bk-col-check { width: 40px; text-align: center; }
+
+/* Backups armazenados: botao verde de download + viewer inline */
+button.btn-ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+button.btn-ok:hover { filter: brightness(1.07); }
+.bk-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.bk-empty { padding: 16px; color: var(--muted); }
+.bk-viewer { max-height: 66vh; }
+
+/* Lista de serviços de backup (cards clicáveis) */
+.bk-svc-list { display: flex; flex-direction: column; gap: 8px; }
+.bk-svc { display: flex; align-items: center; gap: 12px; cursor: pointer; margin-bottom: 0; }
+.bk-svc:hover { border-color: var(--accent); }
+.bk-svc-main { flex: 1; min-width: 0; }
+.bk-svc-name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.bk-form { display: flex; flex-direction: column; gap: 4px; }
+.bk-form h3 { margin: 14px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+.bk-name-input { width: 100%; max-width: 420px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+
+/* Run: cores por estado + grupo de botões do card de serviço */
+.bk-svc-btns { display: flex; gap: 6px; }
+.bk-run-ok { color: var(--ok); }
+.bk-run-fail { color: var(--danger); }
+.bk-run-skip { color: var(--muted); }
+.bk-run-running { color: var(--accent); }
+.bk-run-pending { color: var(--muted); }
+
+/* Diff entre backups (marca-texto) + âncora do balão de validação */
+.bk-vanchor { width: 1px; height: 1.4em; opacity: 0; border: 0; padding: 0; margin: 0; }
+.bk-diff { font-family: var(--mono); font-size: 13px; background: var(--surface-2); border-radius: 6px; padding: 8px; margin: 0; max-height: 66vh; overflow: auto; }
+.bk-d-line { white-space: pre-wrap; word-break: break-word; padding: 0 4px; }
+.bk-d-add { background: rgba(87, 210, 110, 0.30); }   /* verde (translúcido) */
+.bk-d-del { background: rgba(255, 90, 90, 0.30); }    /* vermelho (translúcido) */
+.bk-d-chg { background: rgba(255, 214, 71, 0.32); }   /* amarelo (translúcido) */

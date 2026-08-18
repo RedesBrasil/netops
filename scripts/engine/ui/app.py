@@ -26,6 +26,7 @@ class _NoCacheStatic(StaticFiles):
 import deps
 from routers import (
     auth,
+    backups,
     catalog,
     claude,
     config,
@@ -99,7 +100,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (auth, meta, hosts, credentials, topology, config, memory, knowledge, catalog, scripts, reports, runs, terminal, claude):
+    for mod in (auth, meta, hosts, credentials, topology, config, memory, knowledge, catalog, scripts, reports, runs, backups, terminal, claude):
         app.include_router(mod.router, prefix="/api")
 
     # SPA: serve scripts/engine/ui/static/ na raiz (index.html cobre o fallback de rotas hash).
