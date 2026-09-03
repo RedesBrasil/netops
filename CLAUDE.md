@@ -92,3 +92,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   máquina, garantindo uma instância só. Variáveis: `NETOPS_UI_HOST`, `NETOPS_UI_PORT`, `NETOPS_UI_TERMINAL=0`,
   `NETOPS_UI_CLAUDE=0`. O acesso é protegido pelo **login com a senha-mestra** (sem token na URL). Se uma aba
   nova não aparecer após atualizar, é cache do navegador: **hard refresh** (`Ctrl+Shift+R`). Ver `scripts/engine/ui/SKILL.md`.
+- **Login do agente na aba Claude Code:** `/login` (e `/logout`) funcionam **na própria aba** — não são do
+  SDK, a aba os resolve sozinha e abre o fluxo OAuth. Logue **por ali**, não pelo terminal web: a credencial
+  vai para o `$HOME/.claude/` do **processo do servidor**, e o terminal web roda como outro usuário (`netops`),
+  ou seja, outro cofre e outra lista de conversas. Ver `scripts/engine/ui/SKILL.md`.

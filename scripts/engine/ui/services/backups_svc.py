@@ -302,6 +302,11 @@ def list_latest_runs() -> dict:
 def list_hosts_with_backups() -> dict:
     """Só hosts que TÊM backup. Cada host: contagem, tamanho total, mais recente e a lista."""
     root = deps.BACKUPS_STORE
+    try:
+        inv, _ = inventory_svc.load_hosts()
+        hostnames = {hid: (hv or {}).get("hostname") for hid, hv in (inv.get("hosts") or {}).items()}
+    except Exception:  # noqa: BLE001
+        hostnames = {}
     by_host = {}
     if root.exists():
         for p in sorted(root.rglob("*")):
@@ -316,6 +321,7 @@ def list_hosts_with_backups() -> dict:
         backups = sorted(by_host[host], key=lambda b: b["mtime"], reverse=True)
         hosts.append({
             "host": host,
+            "hostname": hostnames.get(host),
             "count": len(backups),
             "total_size": sum(b["size"] for b in backups),
             "latest_mtime": max(b["mtime"] for b in backups),
@@ -384,3 +390,24 @@ def diff_files(a: str, b: str) -> dict:
             for k in range(common, na):
                 lines.append({"type": "removed", "text": la[i1 + k]}); counts["removed"] += 1
     return {"a": a, "b": b, "counts": counts, "lines": lines}
+
+
+def delete_stored(paths: list) -> dict:
+    """Apaga os backups indicados (cada path validado no sandbox). IRREVERSÍVEL.
+    Remove o diretório do host se ficar vazio."""
+    if not paths:
+        raise deps.ValidationFailed([{"loc": "paths", "msg": "nenhum backup selecionado"}])
+    root = deps.BACKUPS_STORE.resolve()
+    deleted = []
+    for rel in paths:
+        target = _safe_path(rel)
+        if target.is_file():
+            target.unlink()
+            deleted.append(rel)
+            parent = target.parent
+            try:
+                if parent != root and not any(parent.iterdir()):
+                    parent.rmdir()
+            except OSError:
+                pass
+    return {"deleted": deleted, "count": len(deleted)}

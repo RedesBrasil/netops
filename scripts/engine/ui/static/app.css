@@ -228,6 +228,18 @@ pre.raw { font-family: var(--mono); font-size: 13px; background: var(--surface-2
 .chat-dock .cc-meta { display: none; }               /* poupa largura no dock estreito */
 
 
+/* Conta do agente (/login): botão no título, aviso de deslogado e o passo-a-passo OAuth. */
+.cc-authbtn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-auth-banner { border-color: var(--danger); display: flex; flex-direction: column; gap: 6px; }
+.cc-auth-state { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cc-auth-store { margin-top: 4px; word-break: break-all; }
+.cc-auth-step { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.cc-auth-url { display: block; word-break: break-all; font-size: 12px; padding: 8px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
+.cc-auth-code { display: flex; gap: 8px; }
+.cc-auth-code input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface); color: var(--text); font-family: var(--mono); }
+
 /* Busca de sessões (modal) */
 .cc-sess-search { width: 100%; box-sizing: border-box; margin: 0 0 10px; padding: 8px 10px;
   border: 1px solid var(--border, #3a3a3a); border-radius: 6px;
@@ -287,7 +299,7 @@ button.btn-ok:hover { filter: brightness(1.07); }
 .bk-svc-name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .bk-form { display: flex; flex-direction: column; gap: 4px; }
 .bk-form h3 { margin: 14px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
-.bk-name-input { width: 100%; max-width: 420px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+.bk-name-input { display: block; width: 100%; max-width: 420px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
 
 /* Run: cores por estado + grupo de botões do card de serviço */
 .bk-svc-btns { display: flex; gap: 6px; }
@@ -304,3 +316,15 @@ button.btn-ok:hover { filter: brightness(1.07); }
 .bk-d-add { background: rgba(87, 210, 110, 0.30); }   /* verde (translúcido) */
 .bk-d-del { background: rgba(255, 90, 90, 0.30); }    /* vermelho (translúcido) */
 .bk-d-chg { background: rgba(255, 214, 71, 0.32); }   /* amarelo (translúcido) */
+
+/* Cabeçalho de tabela ordenável (ResourceTable) */
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--text); }
+.sort-ind { opacity: .55; font-size: 11px; }
+
+/* Editor de serviço: config em 2 colunas (Hosts continua largura cheia) */
+.bk-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 32px; align-items: stretch; }
+.bk-form-grid > .bk-col-full { grid-column: 1 / -1; }
+/* linha delimitando o fim de cada seção de config */
+.bk-form-grid > div { border-bottom: 1px solid var(--border); padding-bottom: 14px; }
+@media (max-width: 820px) { .bk-form-grid { grid-template-columns: 1fr; } }
