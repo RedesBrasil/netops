@@ -11,6 +11,13 @@ import { useContext } from "preact/hooks";
 import { MarkdownView, VaultBanner, Modal } from "../components.js";
 import { authToken } from "../api.js";
 
+// Comandos que a ABA resolve sozinha — NÃO vão para o modelo. `/login` é comando da TUI do
+// Claude Code: ele não existe no protocolo do SDK, então nunca vem na lista de slash do init
+// e, sem isto, digitar "/login" só mandaria a string pro agente. Aqui ele abre o fluxo OAuth
+// do servidor (ver services/claude_auth.py).
+const LOCAL_SLASH = ["login", "logout", "auth"];
+const LOCAL_SLASH_RE = /^\/(login|logout|auth)\b/i;
+
 // Modos de operação expostos (todos, incl. bypass — decisão do projeto).
 const MODES = [
   { value: "plan", label: "Plano (só leitura)" },
@@ -55,6 +62,8 @@ function useClaudeSession() {
   const [resumeId, setResumeId] = useState("");       // se setado, retoma a sessão ao reconectar
   const [showSessions, setShowSessions] = useState(false);
   const [active, setActive] = useState(false);        // há sessão ligada? (independe da rota)
+  const [auth, setAuth] = useState(null);             // login do `claude` {loggedIn, email, store…}
+  const [showAuth, setShowAuth] = useState(false);    // modal do fluxo de login
   const wsRef = useRef(null);
   const fileRef = useRef(null);
   const sessionIdRef = useRef("");      // sid vigente (p/ retomar na reconexao automatica)
@@ -88,6 +97,15 @@ function useClaudeSession() {
 
   // Liga a sessão (chamado ao abrir a página do Claude). Idempotente.
   const ensureActive = useCallback(() => setActive(true), []);
+
+  // Estado do login do agente. Consultado ao ligar a sessão e depois de todo erro — quando a
+  // credencial expira o SDK só devolve um erro opaco, então perguntar ao servidor é o jeito
+  // honesto de saber se o que falta é login.
+  const refreshAuth = useCallback(async () => {
+    try { const d = await api.get("/claude/auth/status"); setAuth(d); return d; }
+    catch (_) { setAuth(null); return null; }
+  }, []);
+  useEffect(() => { if (active) refreshAuth(); }, [active, gen]);
 
   // ---- ciclo de vida do WebSocket: conecta enquanto `active` e RECONECTA sozinho ----
   // Só desliga em troca de sessão (gen) ou ao encerrar (active=false). Trocar de ROTA não
@@ -176,6 +194,7 @@ function useClaudeSession() {
           case "error":
             setWorking(false);
             setItems((prev) => [...closeOpen(prev), { type: "error", detail: ev.detail }]);
+            refreshAuth();   // credencial expirada aparece como erro genérico; confirma no servidor
             break;
         }
       };
@@ -193,7 +212,11 @@ function useClaudeSession() {
 
   function submit() {
     const text = input.trim();
-    if (!text || status !== "pronto" || working) return;
+    if (!text) return;
+    // /login, /logout, /auth são resolvidos AQUI (o SDK não os conhece) e funcionam mesmo
+    // com a sessão caída — que é exatamente quando você precisa deles.
+    if (LOCAL_SLASH_RE.test(text)) { setInput(""); setShowAuth(true); return; }
+    if (status !== "pronto" || working) return;
     if (!send({ type: "prompt", text })) { toast.err("Sem conexão"); return; }
     setItems((prev) => [...prev, { type: "user", text }]);
     setInput("");
@@ -206,6 +229,15 @@ function useClaudeSession() {
 
   function newSession() { resumeIdRef.current = ""; setResumeId(""); setActive(true); setGen((g) => g + 1); }
   function resumeSession(id) { resumeIdRef.current = id; setResumeId(id); setShowSessions(false); setActive(true); setGen((g) => g + 1); }
+
+  // Pós-login: o subprocesso `claude` vivo ainda carrega a credencial velha, então é preciso
+  // relançar. RETOMA o mesmo sid — a conversa continua de onde parou (o histórico é relido do
+  // transcript). Sem sid ainda, cai numa sessão nova.
+  function relaunch() {
+    const sid = sessionIdRef.current || "";
+    resumeIdRef.current = sid; setResumeId(sid);
+    setActive(true); setGen((g) => g + 1);
+  }
 
   // Encerra a conversa (fecha o dock): derruba o WS e limpa o estado.
   const endSession = useCallback(() => {
@@ -256,17 +288,20 @@ function useClaudeSession() {
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     send, submit, stop, newSession, resumeSession, answerPermission, changeMode, uploadFile,
     ensureActive, endSession,
+    auth, showAuth, setShowAuth, refreshAuth, relaunch,
   };
 }
 
 // --------------------------------------------------------------------- visões
 // Transcrição rolável (compartilhada). Cada instância faz seu próprio auto-scroll ao fim.
 function Transcript() {
-  const { items, status, answerPermission } = useClaude();
+  const { items, status, answerPermission, auth, setShowAuth } = useClaude();
   const scrollRef = useRef(null);
   useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [items]);
+  const loggedOut = auth && auth.available && !auth.loggedIn;
   return html`<div class="cc-transcript" ref=${scrollRef}>
-    ${items.length === 0 && status === "pronto" && html`<div class="cc-hint help">
+    ${loggedOut && html`<${LoginBanner} auth=${auth} onLogin=${() => setShowAuth(true)} />`}
+    ${items.length === 0 && status === "pronto" && !loggedOut && html`<div class="cc-hint help">
       Pronto. Peça em linguagem natural, use <code>/comandos</code> ou anexe arquivos.
       Em <b>Plano</b> ele só lê; troque para <b>Perguntar antes</b> p/ aplicar mudanças com confirmação.
     </div>`}
@@ -294,8 +329,16 @@ function Composer() {
   }
 
   // sugestões de slash: só quando o texto começa com "/" e ainda não tem espaço.
+  // Os comandos locais (/login…) entram na lista mesmo desconectado — vêm da aba, não do init.
   const slashQuery = /^\/(\S*)$/.exec(input);
-  const slashMatches = slashQuery ? slash.filter((c) => c.startsWith(slashQuery[1])).slice(0, 8) : [];
+  const slashMatches = slashQuery
+    ? [...LOCAL_SLASH, ...slash.filter((c) => !LOCAL_SLASH.includes(c))]
+        .filter((c) => c.startsWith(slashQuery[1])).slice(0, 8)
+    : [];
+
+  // A caixa NUNCA trava: desconectado ainda dá p/ digitar /login (é justamente aí que se precisa).
+  const isLocal = LOCAL_SLASH_RE.test(input.trim());
+  const cantSend = (disabled && !isLocal) || !input.trim();
 
   return html`<div class="cc-composer-wrap">
     ${slashMatches.length > 0 && html`<div class="cc-slash-menu">
@@ -303,8 +346,10 @@ function Composer() {
     </div>`}
     <div class="cc-composer">
       <textarea ref=${taRef} rows="1"
-        placeholder=${disabled ? "Conectando…" : "Mensagem (Enter envia · Shift+Enter quebra linha · / para comandos)"}
-        value=${input} disabled=${disabled}
+        placeholder=${disabled
+          ? "Sem sessão — digite /login para entrar, ou aguarde a reconexão"
+          : "Mensagem (Enter envia · Shift+Enter quebra linha · / para comandos)"}
+        value=${input}
         onInput=${(e) => setInput(e.target.value)} onKeyDown=${onKeyDown}></textarea>
       <div class="cc-composer-bar">
         <div class="cc-composer-left">
@@ -324,7 +369,7 @@ function Composer() {
             title="Anexa um arquivo (vira @caminho na mensagem)">📎 Anexar</button>
           ${working
             ? html`<button class="danger" onClick=${stop} title="Interrompe o agente (Esc)">⏹ Parar</button>`
-            : html`<button class="primary" disabled=${disabled || !input.trim()} onClick=${submit}>Enviar</button>`}
+            : html`<button class="primary" disabled=${cantSend} onClick=${submit}>Enviar</button>`}
         </div>
       </div>
     </div>
@@ -339,6 +384,12 @@ export function ClaudeCodePage() {
     <div class="page-title">
       <h1>Claude Code</h1>
       <span class="badge ${s.badge}">${s.status}</span>
+      ${s.auth && s.auth.available && html`<button
+        class=${"sm cc-authbtn " + (s.auth.loggedIn ? "" : "danger")}
+        onClick=${() => s.setShowAuth(true)}
+        title=${s.auth.loggedIn ? "Conta do agente (/login)" : "O agente está deslogado — clique para entrar"}>
+        ${s.auth.loggedIn ? "👤 " + (s.auth.email || s.auth.authMethod || "conectado") : "🔓 entrar (/login)"}
+      </button>`}
       <span class="spacer"></span>
       ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
       <button class="sm" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
@@ -349,7 +400,129 @@ export function ClaudeCodePage() {
     <${Composer} />
     ${s.showSessions && html`<${SessionsModal} currentId=${s.sessionId}
       onClose=${() => s.setShowSessions(false)} onResume=${s.resumeSession} />`}
+    ${s.showAuth && html`<${LoginModal} auth=${s.auth} onClose=${() => s.setShowAuth(false)}
+      onChanged=${s.refreshAuth} onRelaunch=${s.relaunch} />`}
   </div>`;
+}
+
+// Aviso no topo da transcrição quando o agente está deslogado — é o que explica a aba morta.
+function LoginBanner({ auth, onLogin }) {
+  return html`<div class="card cc-auth-banner">
+    <b>O agente Claude está deslogado.</b>
+    <div class="help">
+      A credencial fica em <code class="mono">${(auth.store && auth.store.credentials) || "~/.claude/.credentials.json"}</code>
+      — o store do usuário <b>${(auth.store && auth.store.user) || "?"}</b>, que é quem roda o servidor.
+      Logar por outro usuário (o terminal web, por exemplo) não vale para esta aba.
+    </div>
+    <div class="cc-perm-actions">
+      <button class="sm primary" onClick=${onLogin}>Entrar</button>
+    </div>
+  </div>`;
+}
+
+// Fluxo de login OAuth conduzido pelo servidor (WS /api/claude/login): o CLI devolve a URL,
+// você abre no SEU navegador, cola o código de volta. Ver services/claude_auth.py.
+function LoginModal({ auth, onClose, onChanged, onRelaunch }) {
+  const [phase, setPhase] = useState("idle");   // idle|starting|url|done|error
+  const [url, setUrl] = useState("");
+  const [code, setCode] = useState("");
+  const [log, setLog] = useState([]);
+  const [result, setResult] = useState(null);   // status final do servidor
+  const [checking, setChecking] = useState(false);  // código enviado, aguardando veredito
+  const wsRef = useRef(null);
+  const aliveRef = useRef(true);   // fechar o modal derruba o WS; não mexer em estado depois disso
+
+  useEffect(() => () => {
+    aliveRef.current = false;
+    try { wsRef.current && wsRef.current.close(); } catch (_) {}   // fecha o WS => o servidor mata o `claude auth login`
+  }, []);
+
+  function start(mode) {
+    setPhase("starting"); setUrl(""); setCode(""); setLog([]); setResult(null); setChecking(false);
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${proto}://${location.host}/api/claude/login?auth=${encodeURIComponent(authToken())}`);
+    wsRef.current = ws;
+    ws.onopen = () => ws.send(JSON.stringify({ type: "start", mode }));
+    ws.onclose = () => { if (aliveRef.current) setPhase((p) => (p === "done" ? p : "error")); };
+    ws.onmessage = (e) => {
+      if (!aliveRef.current) return;
+      let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
+      if (ev.type === "url") { setUrl(ev.url); setPhase("url"); }
+      // O CLI re-pergunta quando o código não cola direito: volta a liberar o campo.
+      else if (ev.type === "awaiting_code") setChecking(false);
+      else if (ev.type === "log") setLog((l) => [...l, ev.text].slice(-8));
+      else if (ev.type === "error") { setLog((l) => [...l, ev.detail]); setPhase("error"); setChecking(false); }
+      else if (ev.type === "done") {
+        setResult(ev.status); setPhase("done"); setChecking(false);
+        onChanged && onChanged();
+        if (ev.ok) toast.ok("Agente autenticado"); else toast.err("Login não concluído");
+        try { ws.close(); } catch (_) {}
+      }
+    };
+  }
+
+  function sendCode() {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== 1 || !code.trim()) return;
+    ws.send(JSON.stringify({ type: "code", code: code.trim() }));
+    setCode(""); setChecking(true);
+  }
+
+  async function doLogout() {
+    try { const d = await api.post("/claude/auth/logout"); setResult(d); onChanged && onChanged(); toast.ok("Agente deslogado"); }
+    catch (_) { toast.err("Falha ao deslogar"); }
+  }
+
+  const cur = result || auth || {};
+  const busy = phase === "starting" || phase === "url";
+
+  return html`<${Modal} title="Conta do agente Claude" onClose=${onClose} wide=${true}>
+    <div class="cc-auth-state">
+      ${cur.loggedIn
+        ? html`<span class="badge ok">conectado</span> <b>${cur.email || cur.authMethod || "conta ativa"}</b>
+               ${cur.subscriptionType ? html` <span class="help">· ${cur.subscriptionType}</span>` : ""}`
+        : html`<span class="badge danger">deslogado</span> <span class="help">${cur.detail || "nenhuma credencial no store"}</span>`}
+    </div>
+    ${cur.store && html`<div class="help mono cc-auth-store">
+      store: ${cur.store.credentials} (usuário ${cur.store.user})
+    </div>`}
+
+    ${phase === "idle" && html`<div class="modal-actions">
+      ${cur.loggedIn && html`<button class="sm danger" onClick=${doLogout}>Sair da conta</button>`}
+      <button class="sm" onClick=${() => start("console")} title="Cobrança por uso da API (Anthropic Console)">Entrar com API (Console)</button>
+      <button class="primary" onClick=${() => start("claudeai")}>Entrar com assinatura Claude</button>
+    </div>`}
+
+    ${url && phase !== "done" && html`<div class="cc-auth-step">
+      <div><b>1.</b> Abra este endereço no seu navegador e autorize:</div>
+      <a class="cc-auth-url mono" href=${url} target="_blank" rel="noopener noreferrer">${url}</a>
+      <div class="cc-perm-actions">
+        <button class="sm" onClick=${() => { navigator.clipboard?.writeText(url); toast.ok("URL copiada"); }}>Copiar URL</button>
+      </div>
+      <div><b>2.</b> Cole aqui o código que a página devolver:</div>
+      <div class="cc-auth-code">
+        <input type="password" value=${code} autoFocus placeholder="código de autorização"
+          onInput=${(e) => setCode(e.target.value)}
+          onKeyDown=${(e) => { if (e.key === "Enter") sendCode(); }} />
+        <button class="primary" disabled=${!code.trim() || checking} onClick=${sendCode}>
+          ${checking ? "Verificando…" : "Concluir"}</button>
+      </div>
+    </div>`}
+
+    ${busy && !url && html`<div class="help">Iniciando o fluxo de login…</div>`}
+    ${log.length > 0 && html`<pre class="cc-pre">${log.join("\n")}</pre>`}
+
+    ${phase === "done" && html`<div class="modal-actions">
+      ${cur.loggedIn
+        ? html`<button class="primary" onClick=${() => { onRelaunch(); onClose(); }}
+            title="Relança o agente com a credencial nova, retomando esta mesma conversa">
+            Recarregar sessão</button>`
+        : html`<button onClick=${() => setPhase("idle")}>Tentar de novo</button>`}
+    </div>`}
+    ${phase === "error" && html`<div class="modal-actions">
+      <button onClick=${() => setPhase("idle")}>Tentar de novo</button>
+    </div>`}
+  <//>`;
 }
 
 // Chat compacto encaixado à direita — aparece quando você navega p/ outra rota com uma
@@ -367,6 +540,8 @@ export function ChatDock() {
     </div>
     <${Transcript} />
     <${Composer} />
+    ${s.showAuth && html`<${LoginModal} auth=${s.auth} onClose=${() => s.setShowAuth(false)}
+      onChanged=${s.refreshAuth} onRelaunch=${s.relaunch} />`}
   </aside>`;
 }
 
