@@ -19,7 +19,7 @@ from fastapi import APIRouter, UploadFile, WebSocket
 from fastapi.responses import JSONResponse
 
 import deps
-from services import claude_svc
+from services import claude_auth, claude_svc
 
 router = APIRouter(tags=["claude"])
 
@@ -28,11 +28,15 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _MAX_UPLOAD = 20 * 1024 * 1024  # 20 MiB
 
 
-def _ws_authorized(ws: WebSocket) -> bool:
-    """Mesmas defesas do middleware http (que NÃO cobre WebSocket) — ver routers/terminal.py."""
+def _ws_authorized(ws: WebSocket, *, need_sdk: bool = True) -> bool:
+    """Mesmas defesas do middleware http (que NÃO cobre WebSocket) — ver routers/terminal.py.
+
+    `need_sdk=False` no login: ali só o binário `claude` importa — e é justamente quando o
+    SDK pode estar recusando conexão por falta de credencial que o operador precisa entrar.
+    """
     if not deps.STATE.enable_claude or deps.STATE.read_only:
         return False
-    if not claude_svc.is_available():
+    if not (claude_svc.is_available() if need_sdk else claude_svc.claude_path()):
         return False
     host = ws.headers.get("host", "")
     hostname = host.rsplit(":", 1)[0].strip("[]")
@@ -57,6 +61,34 @@ async def claude_ws(ws: WebSocket):
         return
     await ws.accept()
     await claude_svc.ClaudeWebSession(ws).run()
+
+
+# ----------------------------------------------------------------- autenticação
+# O `/login` do Claude Code é comando da TUI — não existe no SDK. Estes três endpoints
+# reimplementam o fluxo pela aba, no MESMO HOME em que o agente roda (ver claude_auth).
+@router.get("/claude/auth/status")
+def claude_auth_status():
+    """Estado do login do `claude` que a aba usa (sem token, sem segredo)."""
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    return claude_auth.status()
+
+
+@router.post("/claude/auth/logout")
+def claude_auth_logout():
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    return claude_auth.logout()
+
+
+@router.websocket("/claude/login")
+async def claude_login_ws(ws: WebSocket):
+    """Conduz o `claude auth login` (OAuth com colagem de código) pela aba."""
+    if not _ws_authorized(ws, need_sdk=False):
+        await ws.close(code=4403)
+        return
+    await ws.accept()
+    await claude_auth.ClaudeLoginSession(ws).run()
 
 
 @router.get("/claude/sessions")

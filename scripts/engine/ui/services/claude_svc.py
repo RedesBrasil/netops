@@ -76,10 +76,11 @@ _TOOL_RESULT_MAX = 8000  # trunca saída de ferramenta p/ não inundar a UI
 
 def is_available() -> bool:
     """O SDK está instalado E o binário `claude` está no PATH?"""
-    return _SDK_OK and bool(_claude_path())
+    return _SDK_OK and bool(claude_path())
 
 
-def _claude_path() -> str | None:
+def claude_path() -> str | None:
+    """Binário `claude` que a aba usa — o mesmo do agente e do login (ver claude_auth)."""
     return shutil.which("claude") or ("/usr/bin/claude" if os.path.exists("/usr/bin/claude") else None)
 
 
@@ -143,7 +144,7 @@ class ClaudeWebSession:
             # permissão. Um hook PreToolUse a intercepta em QUALQUER modo (até dontAsk/bypass),
             # abre o seletor na UI e devolve a escolha em updatedInput.answers.
             hooks={"PreToolUse": [HookMatcher(matcher="AskUserQuestion", hooks=[self._hook_ask_question])]},
-            cli_path=_claude_path(),
+            cli_path=claude_path(),
             stderr=lambda _s: None,
         )
 

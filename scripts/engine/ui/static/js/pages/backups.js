@@ -2,7 +2,7 @@
 //  - "Serviços de Backup": lista de serviços (estilo jobs do Proxmox); criar/editar em modal.
 //  - "Armazenamento de Backup": visualizar/baixar os configs coletados.
 // Config só — a execução no horário é feita por um runner externo.
-import { html, useState, useEffect, useRef, api, useResource, Spinner, toast, handleError, Modal, Tabs } from "../ui.js";
+import { html, useState, useEffect, useRef, api, useResource, Spinner, toast, handleError, Modal, Tabs, ConfirmDialog } from "../ui.js";
 import { authToken } from "../api.js";
 
 const FREQS = [["daily", "Diária"], ["weekly", "Semanal"], ["hourly", "De hora em hora"]];
@@ -96,64 +96,71 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
 
   return html`<${Modal} title=${isNew ? "Novo serviço de backup" : "Editar serviço"} wide onClose=${onClose}>
     <div class="bk-form">
-      <div>
-        <h3>Nome do serviço</h3>
-        <input class="bk-name-input" type="text" value=${name} placeholder="ex.: Núcleo MikroTik diário"
-          onInput=${(e) => setName(e.target.value)} />
-      </div>
+      <div class="bk-form-grid">
+        <div class="bk-col-full">
+          <h3>Nome do serviço</h3>
+          <input class="bk-name-input" type="text" value=${name} placeholder="ex.: Núcleo MikroTik diário"
+            onInput=${(e) => setName(e.target.value)} />
+          <label class="toggle" style="margin-top:10px">
+            <input type="checkbox" checked=${enabled} onChange=${(e) => setEnabled(e.target.checked)} />
+            <span class="track"><span class="thumb"></span></span>
+            <span>Serviço ativo</span>
+          </label>
+        </div>
 
-      <label class="toggle" style="margin-top:12px">
-        <input type="checkbox" checked=${enabled} onChange=${(e) => setEnabled(e.target.checked)} />
-        <span class="track"><span class="thumb"></span></span>
-        <span>Serviço ativo</span>
-      </label>
+        <div>
+          <h3>Agendamento</h3>
+          <div class="bk-sched">
+            <label>Frequência
+              <select value=${freq} onChange=${(e) => setFreq(e.target.value)}>
+                ${FREQS.map(([v, l]) => html`<option key=${v} value=${v}>${l}</option>`)}
+              </select>
+            </label>
+            ${freq !== "hourly" && html`<label>Hora
+              <input type="time" value=${time} onInput=${(e) => setTime(e.target.value)} />
+            </label>`}
+            ${freq === "weekly" && html`<label>Dia da semana
+              <select value=${weekday} onChange=${(e) => setWeekday(e.target.value)}>
+                ${WEEKDAYS.map(([v, l]) => html`<option key=${v} value=${v}>${l}</option>`)}
+              </select>
+            </label>`}
+          </div>
+        </div>
 
-      <h3>Agendamento</h3>
-      <div class="bk-sched">
-        <label>Frequência
-          <select value=${freq} onChange=${(e) => setFreq(e.target.value)}>
-            ${FREQS.map(([v, l]) => html`<option key=${v} value=${v}>${l}</option>`)}
-          </select>
-        </label>
-        ${freq !== "hourly" && html`<label>Hora
-          <input type="time" value=${time} onInput=${(e) => setTime(e.target.value)} />
-        </label>`}
-        ${freq === "weekly" && html`<label>Dia da semana
-          <select value=${weekday} onChange=${(e) => setWeekday(e.target.value)}>
-            ${WEEKDAYS.map(([v, l]) => html`<option key=${v} value=${v}>${l}</option>`)}
-          </select>
-        </label>`}
-      </div>
+        <div>
+          <h3>Retenção</h3>
+          <div class="bk-sched">
+            <label>Manter por
+              <select value=${retMode} onChange=${(e) => setRetMode(e.target.value)}>
+                <option value="count">Quantidade de backups</option>
+                <option value="days">Dias</option>
+              </select>
+            </label>
+            <label>${retMode === "days" ? "Dias" : "Backups por dispositivo"}
+              <input type="number" min="1" max="3650" value=${retValue}
+                onInput=${(e) => setRetValue(e.target.value)} style="width:130px" />
+            </label>
+          </div>
+          <div class="help" style="margin-top:4px">
+            ${retMode === "days"
+              ? "Remove backups mais antigos que o número de dias."
+              : "Mantém apenas os N backups mais recentes de cada dispositivo."}
+          </div>
+        </div>
 
-      <h3>Retenção</h3>
-      <div class="bk-sched">
-        <label>Manter por
-          <select value=${retMode} onChange=${(e) => setRetMode(e.target.value)}>
-            <option value="count">Quantidade de backups</option>
-            <option value="days">Dias</option>
-          </select>
-        </label>
-        <label>${retMode === "days" ? "Dias" : "Backups por dispositivo"}
-          <input type="number" min="1" max="3650" value=${retValue}
-            onInput=${(e) => setRetValue(e.target.value)} style="width:130px" />
-        </label>
+        <div class="bk-col-full">
+          <h3>Grupos <span class="help" style="text-transform:none">(todo host do grupo entra)</span></h3>
+          ${allGroups.length === 0
+            ? html`<div class="help">Nenhum grupo no inventário.</div>`
+            : html`<div class="bk-chips">
+              ${allGroups.map((g) => html`<label key=${g.name} class=${"bk-chip" + (groups.includes(g.name) ? " on" : "")}>
+                <input type="checkbox" checked=${groups.includes(g.name)}
+                  onChange=${() => toggle(groups, setGroups, g.name)} />
+                ${g.name} <span class="bk-count">${g.used_by}</span>
+              </label>`)}
+            </div>`}
+        </div>
       </div>
-      <div class="help" style="margin-top:4px">
-        ${retMode === "days"
-          ? "Remove backups mais antigos que o número de dias."
-          : "Mantém apenas os N backups mais recentes de cada dispositivo."}
-      </div>
-
-      <h3>Grupos <span class="help" style="text-transform:none">(todo host do grupo entra)</span></h3>
-      ${allGroups.length === 0
-        ? html`<div class="help">Nenhum grupo no inventário.</div>`
-        : html`<div class="bk-chips">
-          ${allGroups.map((g) => html`<label key=${g.name} class=${"bk-chip" + (groups.includes(g.name) ? " on" : "")}>
-            <input type="checkbox" checked=${groups.includes(g.name)}
-              onChange=${() => toggle(groups, setGroups, g.name)} />
-            ${g.name} <span class="bk-count">${g.used_by}</span>
-          </label>`)}
-        </div>`}
 
       <h3>Hosts individuais</h3>
       <div class="bk-toolbar">
@@ -209,13 +216,13 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
 
 // ---- Página --------------------------------------------------------------- //
 // ---- Modal de progresso do Run (polling; fechável sem parar o job) -------- //
-function RunModal({ runId, onClose }) {
+function RunModal({ runId, onClose, onDone }) {
   const [st, setSt] = useState(null);
   useEffect(() => {
     let alive = true;
     (function tick() {
       api.get("/backups/runs/" + encodeURIComponent(runId))
-        .then((d) => { if (!alive) return; setSt(d); if (d.state !== "done") setTimeout(tick, 1500); })
+        .then((d) => { if (!alive) return; setSt(d); if (d.state !== "done") setTimeout(tick, 1500); else onDone && onDone(); })
         .catch(() => { if (alive) setTimeout(tick, 3000); });
     })();
     return () => { alive = false; };
@@ -272,12 +279,13 @@ function DiffModal({ data, onClose }) {
 }
 
 // ---- Modal "Ver Backups" de um host (seleção + baixar em lote) ------------ //
-function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, onClose }) {
-  const backups = (host && host.backups) || [];
+function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, onDelete, onClose }) {
+  const [items, setItems] = useState((host && host.backups) || []);
   const [sel, setSel] = useState([]);
-  const allOn = backups.length > 0 && sel.length === backups.length;
+  const [confirming, setConfirming] = useState(false);
+  const allOn = items.length > 0 && sel.length === items.length;
   const toggle = (p) => setSel(sel.includes(p) ? sel.filter((x) => x !== p) : [...sel, p]);
-  const toggleAll = () => setSel(allOn ? [] : backups.map((b) => b.path));
+  const toggleAll = () => setSel(allOn ? [] : items.map((b) => b.path));
   const anchorRef = useRef(null);
   function doDiff() {
     const el = anchorRef.current;
@@ -289,21 +297,27 @@ function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, 
     el.setCustomValidity("");
     // Base = o MAIS ANTIGO, comparado até o mais novo (independe da ordem de clique),
     // p/ que adições fiquem verdes e remoções vermelhas de forma cronológica.
-    const chosen = sel.map((path) => backups.find((b) => b.path === path))
+    const chosen = sel.map((path) => items.find((b) => b.path === path))
       .filter(Boolean).sort((a, b) => a.mtime - b.mtime);
     onDiff(chosen[0].path, chosen[1].path);
   }
-  return html`<${Modal} title=${"Backups · " + host.host} wide onClose=${onClose}>
+  async function doDelete() {
+    const ok = await onDelete(sel);
+    if (ok) { setItems(items.filter((b) => !sel.includes(b.path))); setSel([]); }
+  }
+  return html`<${Modal} title=${"Backups · " + (host.hostname || host.host)} wide onClose=${onClose}>
     <div class="bk-toolbar" style="margin-bottom:10px">
       <label class=${"bk-chip" + (allOn ? " on" : "")}>
         <input type="checkbox" checked=${allOn} onChange=${toggleAll} /> Todos
       </label>
-      <span class="help">${sel.length} de ${backups.length} selecionado(s)</span>
+      <span class="help">${sel.length} de ${items.length} selecionado(s)</span>
       <span style="flex:1"></span>
       <input ref=${anchorRef} class="bk-vanchor" tabindex="-1" aria-hidden="true" />
       <button class="sm" onClick=${doDiff}>Diff</button>
       <button class="btn-ok" disabled=${sel.length === 0}
         onClick=${() => onDownloadZip(sel, host.host + "-selecionados")}>Baixar (${sel.length})</button>
+      <button class="danger" disabled=${sel.length === 0}
+        onClick=${() => setConfirming(true)}>Apagar (${sel.length})</button>
     </div>
     <div class="bk-tablewrap">
       <table>
@@ -312,7 +326,7 @@ function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, 
           <th>Backup</th><th>Tamanho</th><th>Data</th><th style="text-align:right">Ações</th>
         </tr></thead>
         <tbody>
-          ${backups.map((b) => {
+          ${items.map((b) => {
             const on = sel.includes(b.path);
             return html`<tr key=${b.path} class=${on ? "on" : ""} onClick=${() => toggle(b.path)}>
               <td class="bk-col-check"><input type="checkbox" checked=${on}
@@ -330,6 +344,10 @@ function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, 
       </table>
     </div>
     <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>Fechar</button></div>
+    ${confirming && html`<${ConfirmDialog}
+      title="Apagar backups selecionados?"
+      message=${"Isto vai apagar " + sel.length + " backup(s) de " + (host.hostname || host.host) + ". Esta ação é permanente — não será possível reaver os backups apagados."}
+      danger onConfirm=${doDelete} onClose=${() => setConfirming(false)} />`}
   <//>`;
 }
 
@@ -361,6 +379,10 @@ export function BackupsPage() {
     setRuns(m);
   }, [runsRes.data]);
 
+  // Ao entrar na aba Armazenamento, refaz a busca — pega backups recém-criados
+  // sem precisar recarregar a página.
+  useEffect(() => { if (tab === "armazenamento") hostsRes.reload(); }, [tab]);
+
   async function persist(next) {
     try {
       const r = await api.put("/backups", { version: 2, services: next }, rev);
@@ -382,6 +404,15 @@ export function BackupsPage() {
       setRuns({ ...runs, [sid]: r.run_id });
       setRunModal(r.run_id);
     } catch (e) { handleError(e); }
+  }
+
+  async function deleteBackups(paths) {
+    try {
+      const r = await api.post("/backups/files/delete", { paths });
+      hostsRes.reload();
+      toast.ok((r.count || paths.length) + " backup(s) apagado(s)");
+      return true;
+    } catch (e) { handleError(e); return false; }
   }
 
   async function openDiff(a, b) {
@@ -461,7 +492,7 @@ export function BackupsPage() {
     <div class="card">
       <h2>Backups por host</h2>
       <div class="help" style="margin-bottom:8px">Diretório: <code>${storeDir}</code></div>
-      ${hostsRes.loading
+      ${(hostsRes.loading && !hostsRes.data)
         ? html`<${Spinner} />`
         : backupHosts.length === 0
           ? html`<div class="bk-empty">Nenhum backup ainda. Os hosts aparecem aqui após a primeira coleta.</div>`
@@ -470,7 +501,9 @@ export function BackupsPage() {
               <thead><tr><th>Host</th><th>Backups</th><th>Último</th><th>Tamanho</th><th style="text-align:right">Ações</th></tr></thead>
               <tbody>
                 ${backupHosts.map((h) => html`<tr key=${h.host}>
-                  <td class="bk-id">${h.host}</td>
+                  <td>${h.hostname
+                    ? html`<b>${h.hostname}</b> <span class="help" style="font-size:11px">(${h.host})</span>`
+                    : html`<span class="bk-id">${h.host}</span>`}</td>
                   <td>${h.count}</td>
                   <td>${fmtDate(h.latest_mtime)}</td>
                   <td>${fmtSize(h.total_size)}</td>
@@ -502,10 +535,10 @@ export function BackupsPage() {
       onSave=${upsertService}
       onDelete=${() => removeService(editing.initial.id)} />`}
 
-    ${runModal && html`<${RunModal} runId=${runModal} onClose=${() => setRunModal(null)} />`}
+    ${runModal && html`<${RunModal} runId=${runModal} onClose=${() => setRunModal(null)} onDone=${() => hostsRes.reload()} />`}
 
     ${hostModal && html`<${HostBackupsModal} host=${hostModal} onView=${view} onDownloadOne=${download}
-      onDownloadZip=${downloadZip} onDiff=${openDiff} onClose=${() => setHostModal(null)} />`}
+      onDownloadZip=${downloadZip} onDiff=${openDiff} onDelete=${deleteBackups} onClose=${() => setHostModal(null)} />`}
 
     ${diffModal && html`<${DiffModal} data=${diffModal} onClose=${() => setDiffModal(null)} />`}
 
