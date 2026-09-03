@@ -1,6 +1,7 @@
 """Testes E2E do NetOps Console (verificação do plano). Tudo em tmp isolado."""
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -410,6 +411,95 @@ def test_claude_sessions_gated_by_flag(client, env):
     deps.STATE.enable_claude = True
     r = client.get("/api/claude/sessions")
     assert r.status_code == 200 and "sessions" in r.json()
+
+
+# --------------------------------------------------------------------------- #
+# Conta do agente (/login pela aba) — gating + parsing do fluxo OAuth, SEM logar de verdade.
+# --------------------------------------------------------------------------- #
+def test_claude_auth_endpoints_gated_by_flag(client, env):
+    import deps
+    assert client.get("/api/claude/auth/status").status_code == 403
+    assert client.post("/api/claude/auth/logout").status_code == 403
+    deps.STATE.enable_claude = True
+    r = client.get("/api/claude/auth/status")
+    assert r.status_code == 200 and "loggedIn" in r.json()
+
+
+def test_claude_auth_status_never_leaks_secrets(client, env):
+    """O estado do login é metadado — token/refresh nunca podem sair pela API."""
+    import deps
+    deps.STATE.enable_claude = True
+    body = client.get("/api/claude/auth/status").text.lower()
+    for leak in ("accesstoken", "refreshtoken", "sk-ant"):
+        assert leak not in body
+
+
+def test_claude_login_ws_blocked_in_read_only(client, env):
+    import deps
+    _allow_testserver(); deps.STATE.enable_claude = True; deps.STATE.read_only = True
+    with pytest.raises(WebSocketDisconnect) as ei:
+        with client.websocket_connect("/api/claude/login"):
+            pass
+    assert ei.value.code == 4403
+
+
+def test_claude_login_store_points_at_server_home(monkeypatch, tmp_path):
+    """O login grava no HOME do SERVIDOR — o mesmo store que o agente lê. É o ponto todo:
+    logar por outro usuário (terminal web) não vale para a aba."""
+    from services import claude_auth
+    monkeypatch.setenv("HOME", str(tmp_path))
+    store = claude_auth._store()
+    assert store["credentials"] == str(tmp_path / ".claude" / ".credentials.json")
+
+
+def test_claude_login_parses_url_and_prompt():
+    """A saída real do `claude auth login` traz a URL num hyperlink OSC-8 + a URL em texto.
+    O parser tem de achar a URL e o pedido do código depois de limpar o ANSI."""
+    from services import claude_auth
+    raw = ("Opening browser to sign in\r\n"
+           "If the browser didn't open, visit: \x1b]8;;https://claude.com/cai/oauth/authorize?code=true\x07"
+           "https://claude.com/cai/oauth/authorize?code=true\x1b]8;;\x07\r\n"
+           "Paste code here if prompted > ")
+    clean = claude_auth._clean(raw)
+    assert "\x1b" not in clean and clean.count("https://") == 1
+    assert claude_auth._URL.search(clean).group(0) == "https://claude.com/cai/oauth/authorize?code=true"
+    assert claude_auth._ASK_CODE.search(clean)
+
+
+def _drive_login(chunks, code=None):
+    """Roda o tradutor do login sobre pedaços de saída do CLI e devolve os eventos emitidos."""
+    import asyncio
+    from services import claude_auth
+
+    sent = []
+
+    class _FakeWS:
+        async def send_text(self, s):
+            sent.append(json.loads(s))
+
+    async def go():
+        s = claude_auth.ClaudeLoginSession(_FakeWS())
+        if code:
+            s._code, s._pending_code = code, True
+        for c in chunks:
+            await s._translate(c)
+
+    asyncio.run(go())
+    return sent
+
+
+def test_claude_login_rearms_after_invalid_code():
+    """Código mal colado: o CLI diz "Invalid code" e SEGUE esperando, sem reimprimir o prompt.
+    Sem re-armar, a UI travaria num fluxo ainda vivo."""
+    evs = _drive_login(["Invalid code. Please make sure the full code was copied.\r\n"], code="XYZ")
+    assert [e["type"] for e in evs] == ["log", "awaiting_code"]
+
+
+def test_claude_login_never_echoes_the_pasted_code():
+    """O código OAuth é credencial: nem eco do PTY, nem log — nunca sai pela conexão."""
+    evs = _drive_login(["> SEGREDO-123\r\nLogin failed: Request failed with status code 400\r\n"],
+                       code="SEGREDO-123")
+    assert all("SEGREDO-123" not in json.dumps(e) for e in evs), evs
 
 
 # --------------------------------------------------------------------------- #

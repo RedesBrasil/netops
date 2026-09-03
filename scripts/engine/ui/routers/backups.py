@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import FileResponse, Response
 
-from models import BackupsConfig
+from models import BackupsConfig, BackupDeleteRequest
 from services import backups_svc
 
 router = APIRouter(tags=["backups"])
@@ -88,3 +88,9 @@ def backup_files_zip(path: list[str] = Query(default=[]), name: str = "backups")
 def backup_files_diff(a: str = Query(...), b: str = Query(...)):
     """Diferença linha a linha entre dois backups."""
     return backups_svc.diff_files(a, b)
+
+
+@router.post("/backups/files/delete")
+def backup_files_delete(body: BackupDeleteRequest):
+    """Apaga os backups selecionados (IRREVERSÍVEL). Sandbox anti path-traversal."""
+    return backups_svc.delete_stored(body.paths)

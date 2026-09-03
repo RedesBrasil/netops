@@ -54,6 +54,18 @@ falhou**, cheque aqui:
 - **Aba "Claude Code" aparece mas não conecta?** A página exige o binário `claude` no **PATH** do processo
   do servidor (`claude_svc.is_available()`). O `start.sh` já injeta `~/.local/bin` no PATH; se subir o
   `server.py` na mão, garanta que `which claude` funciona no mesmo ambiente.
+- **Agente deslogado ("/login não existe")?** `/login` é comando da **TUI** do Claude Code — ele **não**
+  existe no protocolo do SDK, então nunca aparece na lista de slash da aba. A aba resolve `/login`,
+  `/logout` e `/auth` **por conta própria** (ver `services/claude_auth.py`): abre o fluxo OAuth do
+  `claude auth login`, mostra a URL para você autorizar no navegador e recebe o código colado. O
+  campo de mensagem **não trava** quando a sessão cai — dá para digitar `/login` mesmo desconectado.
+  Depois do login, "Recarregar sessão" relança o agente **retomando a mesma conversa**.
+- **Loguei pelo terminal web e a aba continua deslogada.** Esperado, e é a pegadinha mais cara aqui: a
+  credencial mora em `$HOME/.claude/.credentials.json` **do processo que roda o `claude`**. A aba lança o
+  agente com o env do **servidor**; o terminal web **dropa privilégio** para `netops` (ver `NETOPS_TERM_USER`
+  em `routers/terminal.py`). Com o servidor subindo como root, são dois stores diferentes — e duas listas de
+  conversas (`$HOME/.claude/projects/`). Logue **pela própria aba**: aí cai no store certo. O modal mostra
+  qual arquivo/usuário está em jogo, e `GET /api/claude/auth/status` responde o mesmo (sem token nenhum).
 - **Não vejo NADA além do login?** O cofre está inicializado e você ainda não logou — o gate de login
   (senha-mestra) trava todo o `/api`. Não há mais token de transporte na URL (`?token=`); foi removido.
 
@@ -114,6 +126,12 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   Origin + sessão). A UI expõe **todos os modos** (`plan/default/acceptEdits/dontAsk/bypassPermissions`)
   e um prompt de aprovação na tela (`can_use_tool`); cada aba abre um subprocesso `claude` próprio,
   encerrado no disconnect. Anexos vão para `runs/claude/uploads/`.
+- **Login do agente (`/api/claude/auth/*`, `/api/claude/login`):** o fluxo OAuth do `claude auth login`
+  conduzido pela aba (`services/claude_auth.py`), num PTY, no **mesmo env/HOME** do agente — é o que
+  garante que a credencial caia no store que a aba lê. Mesmo gating dos demais (`--enable-claude`, nunca
+  em `--read-only`, Host + Origin + sessão). O status é **metadado** (`loggedIn`, e-mail, plano, caminho do
+  arquivo): token e refresh token **nunca** saem pela API. O código OAuth colado é tratado como segredo —
+  eco do PTY desligado e redação na saída; não vai para log nenhum.
 
 ## Fronteira (o que a UI NÃO faz)
 

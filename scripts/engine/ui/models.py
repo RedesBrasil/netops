@@ -161,3 +161,8 @@ class BackupsConfig(BaseModel):
     model_config = {"extra": "forbid"}
     version: int = 2
     services: list[BackupService] = Field(default_factory=list)
+
+
+class BackupDeleteRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    paths: list[str] = Field(default_factory=list)
