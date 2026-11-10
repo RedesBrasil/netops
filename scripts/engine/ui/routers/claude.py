@@ -3,29 +3,37 @@
 
 Dirige um agente Claude Code (via `claude-agent-sdk`) rodando COMO O USUÁRIO DO SERVIDOR,
 com cwd=NETOPS_ROOT. Rompe a fronteira "a UI é só CRUD" — por isso só liga com
-`--enable-claude` (default DESLIGADO) e nunca em `--read-only`, igual ao terminal web.
+`--enable-claude` (default DESLIGADO) e nunca em `--read-only`.
 
 A auth do handshake WebSocket é feita À MÃO aqui (o middleware http do app não cobre
 WebSocket no Starlette): replicamos Host (anti DNS-rebinding) + Origin (anti
 Cross-Site WebSocket Hijacking) + sessão de login. A lógica da sessão vive em
 services/claude_svc.py.
+
+Persistência (--enable-claude-persist): com a flag ligada, o WebSocket pode RE-ANEXAR a uma
+sessão viva que sobreviveu a um standby/queda de socket. O dono é provado por um cookie
+HttpOnly (netops_claude_attach) emitido em /claude/attach-ticket — o `session_id` é só índice,
+não credencial. Sem cookie válido, degrada p/ o modo clássico (vida do agente = vida do socket).
 """
 from __future__ import annotations
 
+import json
 import re
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, UploadFile, WebSocket
+from fastapi import APIRouter, Request, Response, UploadFile, WebSocket
 from fastapi.responses import JSONResponse
 
 import deps
-from services import claude_auth, claude_svc
+from services import claude_auth, claude_models, claude_svc
 
 router = APIRouter(tags=["claude"])
 
 UPLOAD_DIR = deps.RUNS_DIR / "claude" / "uploads"
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _MAX_UPLOAD = 20 * 1024 * 1024  # 20 MiB
+# Cookie HttpOnly que identifica o DONO de uma sessão viva (re-anexo). Ver claude_svc.mint_owner.
+_ATTACH_COOKIE = "netops_claude_attach"
 
 
 def _ws_authorized(ws: WebSocket, *, need_sdk: bool = True) -> bool:
@@ -59,8 +67,34 @@ async def claude_ws(ws: WebSocket):
     if not _ws_authorized(ws):
         await ws.close(code=4403)
         return
+    # Modo clássico (persist OFF): vida do agente = vida do socket, como sempre.
+    if not deps.STATE.claude_persist:
+        await ws.accept()
+        await claude_svc.ClaudeWebSession(ws).run()
+        return
+    # Modo persistente: valida o DONO (cookie HttpOnly) e decide re-anexar vs criar.
+    owner = ws.cookies.get(_ATTACH_COOKIE) or ""
+    if not claude_svc.valid_owner(owner):
+        # Sem cookie de dono válido (aba não pediu o ticket, ou persist recém-ligado): degrada
+        # p/ o modo clássico em vez de recusar — nada quebra, só não sobrevive ao standby.
+        await ws.accept()
+        await claude_svc.ClaudeWebSession(ws).run()
+        return
+    resume = ws.query_params.get("resume") or None
+    model = ws.query_params.get("model") or None
+    session, how = claude_svc.attach_or_create(owner=owner, resume=resume, model=model)
+    if how == "too_many":
+        await ws.accept()
+        try:
+            await ws.send_text(json.dumps({"type": "error", "detail": "too_many_sessions"}))
+        finally:
+            await ws.close(code=4423)
+        return
+    if how == "forbidden":
+        await ws.close(code=4403)
+        return
     await ws.accept()
-    await claude_svc.ClaudeWebSession(ws).run()
+    await session.serve(ws, first=(how == "new"))
 
 
 # ----------------------------------------------------------------- autenticação
@@ -89,6 +123,43 @@ async def claude_login_ws(ws: WebSocket):
         return
     await ws.accept()
     await claude_auth.ClaudeLoginSession(ws).run()
+
+
+@router.get("/claude/attach-ticket")
+def claude_attach_ticket(request: Request, response: Response):
+    """Emite o cookie de DONO (HttpOnly) que autoriza re-anexar a uma sessão viva. Só faz
+    sentido com a persistência ligada; passa pela auth http normal (middleware de app.py)."""
+    if not (deps.STATE.enable_claude and deps.STATE.claude_persist):
+        return JSONResponse({"error": "persist_disabled"}, status_code=403)
+    token = claude_svc.mint_owner(request.headers.get("x-netops-session"))
+    # Sem TLS nesta rede (console é HTTP em LAN/túnel) -> Secure=False, senão o cookie não
+    # viaja e o re-anexo quebra. HttpOnly (XSS não lê) + SameSite=strict (anti-CSRF) seguram.
+    response.set_cookie(
+        _ATTACH_COOKIE, token, max_age=12 * 3600, httponly=True, samesite="strict",
+        secure=False, path="/api/claude",
+    )
+    response.status_code = 204
+    return response
+
+
+@router.get("/claude/models")
+def claude_models_endpoint():
+    """Modelos disponíveis (lidos dinamicamente da API) + o padrão econômico.
+    Nunca devolve token/segredo — só id e nome de exibição."""
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    models = claude_models.list_models()
+    return {"models": models, "default": claude_models.default_model(models)}
+
+
+@router.post("/claude/models/refresh")
+def claude_models_refresh():
+    """Releitura MANUAL dos modelos (botão "Verificar modelos"). Força ir à API agora e
+    regrava o cache semanal. ⚠ usar em excesso consome cota e pode gerar rate limit (429)."""
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    models = claude_models.list_models(force=True)
+    return {"models": models, "default": claude_models.default_model(models)}
 
 
 @router.get("/claude/sessions")
