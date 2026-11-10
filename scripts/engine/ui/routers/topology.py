@@ -62,3 +62,16 @@ def topology_preview():
 @router.post("/topology/render")
 def topology_render():
     return topology_svc.render_to_file()
+
+
+@router.put("/topology/link/{link_id}")
+def update_link_by_id(link_id: str, body: Link, request: Request):
+    from services import yaml_io
+    with yaml_io.COMMIT_LOCK:
+        return topology_svc.update_link(topology_svc.link_index(link_id), body.model_dump(exclude_none=True), _rev(request))
+
+@router.delete("/topology/link/{link_id}")
+def delete_link_by_id(link_id: str, request: Request):
+    from services import yaml_io
+    with yaml_io.COMMIT_LOCK:
+        return topology_svc.delete_link(topology_svc.link_index(link_id), _rev(request))

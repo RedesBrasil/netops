@@ -6,6 +6,10 @@ só oferece "regenerar". Links que apontam p/ host fora do inventário são sina
 (constituição VI), mas não bloqueiam (o seed traz exemplos com hosts inexistentes)."""
 from __future__ import annotations
 
+import hashlib
+import json
+import uuid
+
 from ruamel.yaml.comments import CommentedMap
 
 import deps
@@ -27,6 +31,33 @@ def _known_hosts() -> set[str]:
     return set((data.get("hosts") or {}).keys())
 
 
+def link_ids(links) -> list[str]:
+    """IDs legados determinísticos, inclusive para enlaces exatamente duplicados."""
+    seen = {}
+    ids = []
+    for link in links:
+        if link.get("id"):
+            value = str(link["id"])
+        else:
+            fingerprint = hashlib.sha256(json.dumps(link, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:24]
+            ordinal = seen.get(fingerprint, 0)
+            seen[fingerprint] = ordinal + 1
+            value = f"link-{fingerprint}-{ordinal}"
+        if value in ids:
+            raise deps.ValidationFailed([{"loc": "links/id", "msg": "IDs de enlace duplicados"}])
+        ids.append(value)
+    return ids
+
+def ensure_link_ids(data) -> bool:
+    changed = False
+    links = data.get("links") or []
+    for link, value in zip(links, link_ids(links)):
+        if not link.get("id"):
+            link["id"] = value
+            changed = True
+    return changed
+
+@yaml_io.serialized
 def load_topology() -> dict:
     import yaml  # noqa: PLC0415
     text, rev, _ = yaml_io.read_text_meta(deps.TOPOLOGY_FILE)
@@ -34,11 +65,11 @@ def load_topology() -> dict:
     known = _known_hosts()
     links = data.get("links") or []
     out_links = []
-    for i, lk in enumerate(links):
+    for i, (lk, link_id) in enumerate(zip(links, link_ids(links))):
         a = (lk.get("a") or {}).get("host")
         b = (lk.get("b") or {}).get("host")
         dangling = [h for h in (a, b) if h and h not in known]
-        out_links.append({"index": i, **lk, "dangling": dangling})
+        out_links.append({"index": i, **lk, "id": link_id, "dangling": dangling})
     segments = [{"index": i, **s} for i, s in enumerate(data.get("segments") or [])]
     return {"links": out_links, "segments": segments, "rev": rev}
 
@@ -46,7 +77,9 @@ def load_topology() -> dict:
 def _flow_end(end: dict) -> CommentedMap:
     m = CommentedMap()
     m["host"] = end["host"]
-    m["port"] = end["port"]
+    port = (end.get("port") or "").strip()
+    if port:
+        m["port"] = port
     m.fa.set_flow_style()
     return m
 
@@ -73,36 +106,57 @@ def _seg_node(seg: dict) -> CommentedMap:
 # --------------------------------------------------------------------------- #
 # Links
 # --------------------------------------------------------------------------- #
+@yaml_io.serialized
 def add_link(link: dict, rev: str | None) -> dict:
     data, _, y = _load_doc()
-    data.setdefault("links", []).append(_link_node(link))
+    ensure_link_ids(data)
+    node = _link_node(link)
+    node["id"] = "link-" + uuid.uuid4().hex
+    data.setdefault("links", []).append(node)
     yaml_io.write_rt(deps.TOPOLOGY_FILE, y, data, expected=rev, backup=True)
     return load_topology()
 
 
+@yaml_io.serialized
 def update_link(index: int, link: dict, rev: str | None) -> dict:
     data, _, y = _load_doc()
     links = data.get("links") or []
     if not 0 <= index < len(links):
         raise KeyError(f"link índice {index} não existe")
-    links[index] = _link_node(link)
+    ensure_link_ids(data)
+    node = links[index]
+    for key in ("a", "b", "media", "speed", "desc"):
+        if key in ("a", "b"):
+            node[key] = _flow_end(link[key])
+        elif link.get(key) not in (None, ""):
+            node[key] = link[key]
+        else:
+            node.pop(key, None)
     yaml_io.write_rt(deps.TOPOLOGY_FILE, y, data, expected=rev, backup=True)
     return load_topology()
 
 
+@yaml_io.serialized
 def delete_link(index: int, rev: str | None) -> dict:
     data, _, y = _load_doc()
     links = data.get("links") or []
     if not 0 <= index < len(links):
         raise KeyError(f"link índice {index} não existe")
+    ensure_link_ids(data)
+    removed = links[index]["id"]
     del links[index]
-    yaml_io.write_rt(deps.TOPOLOGY_FILE, y, data, expected=rev, backup=True)
+    from services import maps_svc
+    writes = [(deps.TOPOLOGY_FILE, yaml_io.dump_rt(y, data), 0o644)]
+    checks = [(deps.TOPOLOGY_FILE, rev)]
+    maps_svc.cascade_links({removed}, writes, checks)
+    yaml_io.write_many(writes, checks=checks)
     return load_topology()
 
 
 # --------------------------------------------------------------------------- #
 # Segments
 # --------------------------------------------------------------------------- #
+@yaml_io.serialized
 def add_segment(seg: dict, rev: str | None) -> dict:
     data, _, y = _load_doc()
     data.setdefault("segments", []).append(_seg_node(seg))
@@ -110,6 +164,7 @@ def add_segment(seg: dict, rev: str | None) -> dict:
     return load_topology()
 
 
+@yaml_io.serialized
 def update_segment(index: int, seg: dict, rev: str | None) -> dict:
     data, _, y = _load_doc()
     segs = data.get("segments") or []
@@ -120,6 +175,7 @@ def update_segment(index: int, seg: dict, rev: str | None) -> dict:
     return load_topology()
 
 
+@yaml_io.serialized
 def delete_segment(index: int, rev: str | None) -> dict:
     data, _, y = _load_doc()
     segs = data.get("segments") or []
@@ -154,3 +210,12 @@ def render_to_file() -> dict:
 def read_md() -> dict:
     text, rev, _ = yaml_io.read_text_meta(deps.TOPOLOGY_MD)
     return {"markdown": text, "rev": rev}
+
+
+@yaml_io.serialized
+def link_index(link_id: str) -> int:
+    data, _, _ = _load_doc()
+    for i, value in enumerate(link_ids(data.get("links") or [])):
+        if value == link_id:
+            return i
+    raise KeyError("enlace não existe")

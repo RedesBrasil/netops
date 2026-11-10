@@ -18,6 +18,8 @@ get() {  # get <url> <destino>
 
 get "https://unpkg.com/preact@${PREACT}/dist/preact.module.js"            preact.module.js
 get "https://unpkg.com/preact@${PREACT}/hooks/dist/hooks.module.js"        preact-hooks.module.js
+get "https://unpkg.com/preact@${PREACT}/compat/dist/compat.module.js"      preact-compat.module.js
+get "https://unpkg.com/preact@${PREACT}/jsx-runtime/dist/jsxRuntime.module.js" preact-jsx-runtime.module.js
 get "https://unpkg.com/htm@${HTM}/dist/htm.module.js"                      htm.module.js
 get "https://unpkg.com/htm@${HTM}/preact/index.module.js"                  htm-preact.module.js
 get "https://cdn.jsdelivr.net/npm/marked@${MARKED}/lib/marked.esm.js"      marked.esm.js

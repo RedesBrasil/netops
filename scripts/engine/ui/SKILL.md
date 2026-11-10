@@ -13,7 +13,7 @@ formulário de edição** do item (não há botão "Renomear" à parte): ao **Sa
 o servidor renomeia **com cascade** — renomear um grupo atualiza o campo `group` dos hosts que o
 usam; uma credencial atualiza `credential` em hosts/grupos; um host atualiza as pontas de enlace
 em `topology.yaml`. Enquanto o campo está alterado, o form mostra **quantas referências** serão
-atualizadas. Segmentos da topologia já têm o nome editável no formulário; lições **não** se
+atualizadas. Os segmentos continuam nos arquivos canônicos e na API; lições não se
 renomeiam (append-only, constituição §II).
 
 É uma **ferramenta de operador efêmera** (constituição §VII): *stateless* (cada request lê/
@@ -171,3 +171,112 @@ scripts/engine/ui/
 ```
 
 Os testes rodam num diretório temporário isolado — **nunca** tocam nos arquivos reais.
+
+
+## Mapas de rede
+
+A página **Mapas** integra o editor React Flow ao cadastro de **Hosts** e aos enlaces de
+`network/topology.yaml`. A antiga página `/#topology` e seu módulo exclusivo foram removidos;
+links antigos abrem Mapas. As APIs de enlaces são compartilhadas pelo editor e permanecem.
+Não é a demo temporária e não usa localStorage como banco de rede.
+
+- A tela mantém uma única linha com seletor de mapa, novo mapa e exportação. Sem título
+  duplicado, barra de ferramentas extensa ou rodapé permanente.
+- Botão direito no fundo: adicionar host, incluir existente, ligar dispositivos, textos,
+  formas, referência entre mapas, renomear/excluir mapa adicional e enquadrar. Novo mapa
+  e exportação ficam somente na barra superior; a velocidade é editada no cadastro do enlace.
+- Botão direito no host/objeto: editar, iniciar ligação e remover a associação visual quando
+  permitido. No enlace: dobras, linha reta, posição automática, edição e exclusão.
+- No celular, selecionar um item e tocar em **⋯** abre as mesmas ações. Sem item selecionado,
+  **⋯** abre as ações do fundo. Pelo teclado: **Shift+F10**, setas e **Escape**.
+- Estado de salvamento continua anunciado para leitores de tela. Falha ou conflito abre
+  aviso acionável somente quando necessário, sem ocupar uma barra permanente.
+- Criou um host no mapa: aparece imediatamente em Hosts.
+- Criou pela lista: aparece no mapa geral e no mapa de sua localidade (`site`, com herança).
+  Quando todos os hosts estão na mesma localidade, existe apenas **Rede geral**, sem uma
+  segunda visão automática idêntica. Mapas adicionais criados pelo operador são preservados.
+- Mapas adicionais reutilizam hosts existentes; o cadastro de host também oferece associação
+  a um mapa adicional. Posição, notas, formas e referências ficam em `network/maps.yaml`.
+- “Ligar hosts” abre o cadastro de portas A/B. As ligações reais ficam em `topology.yaml`.
+- Vários enlaces da mesma dupla mantêm linhas independentes, inclusive no sentido inverso.
+- “+ Dobra” acrescenta um canto de 90 graus por clique; A/B saem perpendicularmente às bordas.
+  Com hosts alinhados, desloque um deles para formar um L. Os quatro pontos do host ficam ocultos.
+- O mapa geral não permite ocultar host. Mapas adicionais permitem “Remover do mapa”, sem
+  excluir do inventário. Excluir em Hosts é confirmado e limpa os enlaces/referências afetados.
+- Dados são compartilhados entre computador e celular, com atualização ao voltar à janela e
+  consulta periódica enquanto não houver edição em andamento. Respostas atrasadas não
+  sobrescrevem o arraste atual; autosave mantém as dimensões e a visibilidade dos nós.
+- Revisão divergente retorna 409 e exibe “Conflito de versão”. Recarregar exige confirmação
+  para descartar ajustes não salvos. Falha de rede mantém a fila e permite tentar novamente.
+- A página respeita o login e o modo `--read-only`. Nunca lê nem descriptografa senhas.
+
+O editor é distribuído como assets locais. O console continua sem build obrigatório na
+instalação e funciona offline. Para manutenção do editor, ver `maps/SKILL.md`.
+
+### Rodar com dados fictícios isolados
+
+`NETOPS_UI_DATA_ROOT=/caminho/temporario` aponta os arquivos canônicos de rede e o config
+para um diretório de teste. Ele precisa conter `network/hosts.yaml`, `network/topology.yaml`
+e `core/config/project-config.yaml`, todos fictícios. Nunca copiar credenciais reais.
+
+```bash
+NETOPS_UI_DATA_ROOT=/tmp/netops-teste NETOPS_UI_HOST=127.0.0.1 NETOPS_UI_PORT=8771 \
+  NETOPS_UI_CLAUDE=0 NETOPS_UI_TERMINAL=0 scripts/engine/ui/start.sh
+```
+
+O launcher usa `flock` por diretório de dados/endereço, sem matar processos de outro console.
+Se já estiver rodando no mesmo endereço, ele informa o conflito. Para reiniciar, encerre a
+instância desejada primeiro. Testes não devem operar o inventário real.
+
+
+### Validação de enlaces
+
+No formulário de enlace da página Mapas (`LinkForm` em `static/js/components.js`),
+somente Host A/B são obrigatórios.
+Porta A/B são opcionais, tanto na criação quanto na edição; campos vazios não são gravados.
+Porta é o nome da interface do equipamento, como `ether2` ou `sfp1`, não uma porta TCP.
+O formulário indica hosts ausentes antes de enviar, mantém os valores e destaca a primeira
+pendência. A resposta 422 usa `detail` no FastAPI ou `errors` no domínio; `api.js` normaliza
+ambos para erros por campo, sem exibir os valores `input` devolvidos pela validação.
+
+Teste isolado: `tests/link-validation.browser.mjs` (mesmas variáveis Playwright/Chromium e
+`NETOPS_E2E_URL` dos testes de mapas). Teste do parser: `node --test
+scripts/engine/ui/tests/api-errors.test.mjs`.
+
+
+## Ícones dos dispositivos
+
+O formulário **Novo host** e a edição de host oferecem o seletor **Ícone do host** na página
+Hosts e dentro de Mapas. As dez opções são da biblioteca Redes Brasil: roteador, switch,
+servidores Linux/Windows, access point, OLT, cloud, PC, Proxmox e VMware.
+
+A escolha é opcional e fica no campo `icon` do host em `network/hosts.yaml`. Todos os mapas
+usam a mesma escolha do inventário. **Padrão** remove o campo e mantém o símbolo anterior,
+sem reescrever hosts existentes. O backend só aceita IDs disponíveis no catálogo local,
+nunca URLs ou caminhos enviados pelo navegador. Falha de carregamento da imagem mantém
+um símbolo de fallback no mapa, sem esconder o dispositivo.
+
+Originais e catálogo estão em `static/icons/network/`. As miniaturas de até 128 px usadas
+pela UI estão em `static/icons/network/thumbnails/`, sem acesso externo em execução.
+Proveniência, commit, checksums e instruções de atualização em `static/icons/network/README.md`.
+`vendor_icons.py` é uma ferramenta de manutenção, com Pillow opcional somente nessa etapa.
+
+Testes: `tests/test_host_icons.py` e `tests/host-icons.browser.mjs`, este último executado
+somente contra console com `NETOPS_UI_DATA_ROOT` temporário e fixtures.
+
+
+### Persistência em arquivos de texto
+
+Os dados dos mapas são arquivos YAML UTF-8 no servidor:
+
+- `network/maps.yaml`: mapas, posições, notas, formas, referências, âncoras e dobras dos enlaces.
+- `network/hosts.yaml`: dispositivos e escolha de ícone (campo `icon`).
+- `network/topology.yaml`: enlaces, hosts de cada ponta, interfaces opcionais, meio e velocidade.
+
+Nada disso depende de localStorage nem de um banco de dados. Reiniciar o servidor ou trocar
+computador/celular não apaga os dados. O console relê esses arquivos a cada consulta e salva
+com revisão por hash, escrita atômica e backups. Os arquivos reais são git-ignorados por
+conterem informações da rede; apenas os modelos `*.example.yaml` são versionados.
+
+A remoção da tela de Topologia não remove seus dados, os serviços usados por Mapas nem o
+script `scripts/tools/docs/topology_render.py` para gerar a documentação Mermaid.

@@ -38,6 +38,23 @@ mudanças, testam e geram relatórios.
    `network/topology.example.yaml`). Esse arquivo e o `topology.md` gerado são git-ignorados.
 6. **Abra o framework na sua IDE de IA e peça o que precisar.**
 
+## Mapas de rede no console
+
+```bash
+scripts/engine/ui/start.sh
+```
+
+Abra **Mapas** para desenhar a rede no computador ou no celular. O cadastro é o mesmo de
+**Hosts**: adicionar em qualquer uma das páginas reflete na outra. O mapa geral inclui todos
+os dispositivos; mapas por localidade usam o campo Site. É possível criar mapas adicionais,
+referências entre mapas, vários enlaces, dobras de 90 graus, textos e formas.
+As ações ficam no botão direito do mapa, dispositivo ou enlace, com alternativa **⋯** no celular.
+
+O layout é salvo no servidor em `network/maps.yaml`, sem duplicar os hosts nem as senhas.
+Enlaces e interfaces opcionais continuam em `network/topology.yaml`, editados pela página
+**Mapas**. A antiga página Topologia foi removida. A geração Mermaid por script continua
+disponível. Ver `scripts/engine/ui/SKILL.md`.
+
 ## Estrutura
 
 | Pasta | O que contém |

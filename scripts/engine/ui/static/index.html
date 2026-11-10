@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NetOps Console</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ctext y=%2726%27 font-size=%2728%27%3EN%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/vendor/xterm.css" />
   <link rel="stylesheet" href="/app.css" />
   <!-- importmap só com URLs locais (offline / air-gap safe). Ver scripts/ui/vendor_deps.sh -->
@@ -12,6 +13,8 @@
     "imports": {
       "preact": "/vendor/preact.module.js",
       "preact/hooks": "/vendor/preact-hooks.module.js",
+      "preact/compat": "/vendor/preact-compat.module.js",
+      "preact/jsx-runtime": "/vendor/preact-jsx-runtime.module.js",
       "htm": "/vendor/htm.module.js",
       "htm/preact": "/vendor/htm-preact.module.js",
       "marked": "/vendor/marked.esm.js",

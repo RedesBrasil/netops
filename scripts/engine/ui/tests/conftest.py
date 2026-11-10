@@ -27,14 +27,15 @@ def env(tmp_path, monkeypatch):
     (tmp_path / "memory").mkdir(parents=True)
 
     cp = lambda rel: shutil.copy(PROJECT / rel, tmp_path / rel)
-    cp("network/hosts.yaml")
-    cp("network/topology.yaml")
+    shutil.copy(PROJECT / "network/hosts.example.yaml", tmp_path / "network/hosts.yaml")
+    shutil.copy(PROJECT / "network/topology.example.yaml", tmp_path / "network/topology.yaml")
     cp("core/schemas/inventory.schema.json")
     cp("core/config/project-config.yaml")
     cp("memory/MEMORY.md")
 
     monkeypatch.setattr(deps, "HOSTS_FILE", tmp_path / "network" / "hosts.yaml")
     monkeypatch.setattr(deps, "CREDS_FILE", tmp_path / "network" / "credentials.yaml")
+    monkeypatch.setattr(deps, "MAPS_FILE", tmp_path / "network" / "maps.yaml")
     monkeypatch.setattr(deps, "TOPOLOGY_FILE", tmp_path / "network" / "topology.yaml")
     monkeypatch.setattr(deps, "TOPOLOGY_MD", tmp_path / "network" / "topology.md")
     monkeypatch.setattr(deps, "SCHEMA_FILE", tmp_path / "core" / "schemas" / "inventory.schema.json")

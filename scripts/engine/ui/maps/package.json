@@ -1,0 +1,17 @@
+{
+  "name": "netops-map-editor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node test-geometry.mjs && node --test node-state.test.mjs"
+  },
+  "dependencies": {
+    "@xyflow/react": "12.12.1",
+    "preact": "10.27.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

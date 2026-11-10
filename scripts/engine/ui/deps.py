@@ -27,10 +27,12 @@ for _p in (ENGINE_DIR, TOOLS_DIR):
 # --------------------------------------------------------------------------- #
 # Caminhos canônicos (a UI só toca nestes arquivos)
 # --------------------------------------------------------------------------- #
-NETWORK_DIR = NETOPS_ROOT / "network"
+DATA_ROOT = Path(os.environ.get("NETOPS_UI_DATA_ROOT", str(NETOPS_ROOT))).resolve()
+NETWORK_DIR = DATA_ROOT / "network"
 HOSTS_FILE = NETWORK_DIR / "hosts.yaml"
 CREDS_FILE = NETWORK_DIR / "credentials.yaml"
 TOPOLOGY_FILE = NETWORK_DIR / "topology.yaml"
+MAPS_FILE = NETWORK_DIR / "maps.yaml"
 TOPOLOGY_MD = NETWORK_DIR / "topology.md"
 BACKUPS_FILE = NETWORK_DIR / "backups.yaml"
 BACKUPS_STORE = NETOPS_ROOT / "backups"   # configs coletados (populado pelo runner)
@@ -38,7 +40,7 @@ BACKUPS_RUNS = NETOPS_ROOT / "runs" / "backups"   # status/log das execucoes (Ru
 
 CORE_DIR = NETOPS_ROOT / "core"
 SCHEMA_FILE = CORE_DIR / "schemas" / "inventory.schema.json"
-PROJECT_CONFIG = CORE_DIR / "config" / "project-config.yaml"
+PROJECT_CONFIG = DATA_ROOT / "core" / "config" / "project-config.yaml"
 
 MEMORY_DIR = NETOPS_ROOT / "memory"
 MEMORY_MD = MEMORY_DIR / "MEMORY.md"   # arquivo único de memória (ver core/rules/memory-protocol.md)

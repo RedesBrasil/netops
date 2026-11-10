@@ -150,6 +150,7 @@ def test_comments_preserved_on_edit(client, env):
 
 
 def test_delete_host_then_validate(client):
+    _seed_host(client, "rt-dist-03")
     rev = client.get("/api/hosts").json()["rev"]
     r = client.delete("/api/hosts/rt-dist-03", headers={"If-Match": rev})
     assert r.status_code == 200
@@ -507,7 +508,8 @@ def test_claude_login_never_echoes_the_pasted_code():
 # --------------------------------------------------------------------------- #
 def test_topology_dangling_and_render(client):
     t = client.get("/api/topology").json()
-    # o seed referencia hosts inexistentes => sinaliza dangling, não bloqueia
+    _seed_link(client, "host-inexistente", "outro-inexistente")
+    t = client.get("/api/topology").json()
     assert any(lk["dangling"] for lk in t["links"])
     r = client.post("/api/topology/render")
     assert r.status_code == 200 and "graph TD" in r.json()["markdown"]
@@ -562,7 +564,7 @@ def test_host_references_lists_topology(client):
     _seed_link(client, "t-ref")
     refs = client.get("/api/hosts/t-ref/references").json()
     assert refs["count"] >= 1
-    assert all(x["kind"] == "topology-link" for x in refs["references"])
+    assert any(x["kind"] == "topology-link" for x in refs["references"])
 
 
 def test_rename_host_cascades_topology(client, env):
