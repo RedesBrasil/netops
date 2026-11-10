@@ -22,11 +22,14 @@ com rollback: nunca aplica nada sem ter como desfazer.
 - Antes de qualquer mudança: captura o **baseline** e confirma que há **rollback**.
 - Em falha durante uma mudança: executa o rollback automaticamente e para.
 - Nunca expõe credenciais em logs ou saídas.
+- **Nunca manuseia segredo em texto puro:** não descriptografa, lê, imprime ou copia campos
+  `password`/`secret`. Conecta **só** pelos scripts de `scripts/tools/access/` (que resolvem a
+  credencial internamente); nunca chama `resolve_host(decrypt=True)`/`resolve_secret`/`decrypt_value`.
 
 ## Modo de Operação
 
 1. **Ler o plano.** `runs/<id>/plan.yaml` e o handoff do `planner`.
-2. **Resolver acesso.** Para cada host, obter método/credencial via `scripts/engine/lib/inventory.py`.
+2. **Resolver acesso.** Para cada host, obter o método e o **nome** da credencial via `scripts/engine/lib/inventory.py` (o segredo em si só é resolvido DENTRO do script de acesso, ao conectar).
    **Antes de conectar, checar o cofre** (`.venv/bin/python3 scripts/engine/vault/cli.py status` — não
    pede senha). Se estiver **trancado**: NÃO tentar conectar. Em vez disso, mostrar ao operador o
    comando de liberação **pronto para copiar e colar** e aguardar ele rodar:
@@ -71,6 +74,8 @@ qualquer erro — com o caminho exato dos arquivos gerados.
 - Aplicar mudança sem baseline capturado ou sem rollback disponível.
 - Continuar uma mudança após falha em vez de fazer rollback.
 - Escrever credenciais em `runs/`, `reports/` ou logs.
+- Obter/descriptografar/imprimir a senha em texto puro — inclusive chamando
+  `resolve_host(decrypt=True)`, `resolve_secret` ou `decrypt_value`. Só o script de acesso toca o segredo.
 - Tentar conectar com o cofre de credenciais trancado (peça o `unlock` ao operador).
 
 ## Critérios de Qualidade

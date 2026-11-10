@@ -14,13 +14,13 @@ export function HostsPage() {
   const { hosts, rev, groups } = res.data;
 
   const cols = [
-    { key: "id", label: "ID", render: (r) => html`<b>${r.id}</b>` },
-    { key: "hostname", label: "Hostname", render: (r) => r.explicit.hostname },
-    { key: "mgmt_ip", label: "IP", render: (r) => html`<span class="mono">${r.explicit.mgmt_ip}</span>` },
-    { key: "vendor", label: "Vendor", render: (r) => html`<${Badge} kind="accent">${r.effective.vendor || "?"}<//>` },
-    { key: "role", label: "Role", render: (r) => r.effective.role || "—" },
-    { key: "group", label: "Grupo", render: (r) => r.explicit.group || "—" },
-    { key: "access", label: "Acesso", render: (r) => {
+    { key: "id", label: "ID", sort: (r) => r.id || "", render: (r) => html`<b>${r.id}</b>` },
+    { key: "hostname", label: "Hostname", sort: (r) => r.explicit.hostname || "", render: (r) => r.explicit.hostname },
+    { key: "mgmt_ip", label: "IP", sort: (r) => r.explicit.mgmt_ip || "", render: (r) => html`<span class="mono">${r.explicit.mgmt_ip}</span>` },
+    { key: "vendor", label: "Vendor", sort: (r) => r.effective.vendor || "", render: (r) => html`<${Badge} kind="accent">${r.effective.vendor || "?"}<//>` },
+    { key: "role", label: "Role", sort: (r) => r.effective.role || "", render: (r) => r.effective.role || "—" },
+    { key: "group", label: "Grupo", sort: (r) => r.explicit.group || "", render: (r) => r.explicit.group || "—" },
+    { key: "access", label: "Acesso", sort: (r) => (r.effective.access || {}).method || "", render: (r) => {
         const a = r.effective.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
   ];
 
@@ -167,12 +167,12 @@ export function GroupsPage() {
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
   const { groups, rev } = res.data;
   const cols = [
-    { key: "name", label: "Grupo", render: (r) => html`<b>${r.name}</b>` },
-    { key: "vendor", label: "Vendor", render: (r) => r.fields.vendor || "—" },
-    { key: "role", label: "Role", render: (r) => r.fields.role || "—" },
-    { key: "access", label: "Acesso", render: (r) => { const a = r.fields.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
-    { key: "credential", label: "Credencial", render: (r) => r.fields.credential || "—" },
-    { key: "used_by", label: "Hosts", render: (r) => html`<${Badge}>${r.used_by}<//>` },
+    { key: "name", label: "Grupo", sort: (r) => r.name || "", render: (r) => html`<b>${r.name}</b>` },
+    { key: "vendor", label: "Vendor", sort: (r) => r.fields.vendor || "", render: (r) => r.fields.vendor || "—" },
+    { key: "role", label: "Role", sort: (r) => r.fields.role || "", render: (r) => r.fields.role || "—" },
+    { key: "access", label: "Acesso", sort: (r) => (r.fields.access || {}).method || "", render: (r) => { const a = r.fields.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
+    { key: "credential", label: "Credencial", sort: (r) => r.fields.credential || "", render: (r) => r.fields.credential || "—" },
+    { key: "used_by", label: "Hosts", sort: (r) => r.used_by, render: (r) => html`<${Badge}>${r.used_by}<//>` },
   ];
   return html`<div>
     <div class="page-title"><h1>Grupos</h1><span class="spacer"></span>

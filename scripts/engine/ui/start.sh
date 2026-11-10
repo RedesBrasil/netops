@@ -14,11 +14,21 @@
 #   NETOPS_UI_PORT=9000      scripts/engine/ui/start.sh # outra porta
 #   NETOPS_UI_TERMINAL=0     scripts/engine/ui/start.sh # sobe SEM o terminal web
 #   NETOPS_UI_CLAUDE=0       scripts/engine/ui/start.sh # sobe SEM a página Claude Code
+#   NETOPS_UI_CLAUDE_PERSIST=1 scripts/engine/ui/start.sh # aba Claude SOBREVIVE a standby (persistência)
+#   NETOPS_UI_HOME=/root     scripts/engine/ui/start.sh # fixa o store do agente Claude (ver abaixo)
 #   scripts/engine/ui/start.sh --read-only --no-vault-unlock   # flags extras (passthrough)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
+
+# HOME manda no STORE da aba Claude Code: login (`$HOME/.claude/.credentials.json`) E lista de
+# conversas (`$HOME/.claude/projects/`). Trocar de HOME entre um restart e outro troca as duas
+# coisas — e sob `sudo` o HOME muda sem avisar (root vs. o usuário que chamou). NETOPS_UI_HOME
+# fixa isso de propósito; sem ele, vale o HOME de quem subiu o console.
+if [ -n "${NETOPS_UI_HOME:-}" ]; then
+  export HOME="$NETOPS_UI_HOME"
+fi
 
 # Binários do usuário (ex.: o agente `claude`, normalmente em ~/.local/bin) no PATH. Sem isto,
 # a página Claude Code sobe mas não acha o agente (claude_svc.is_available() = False) — a aba
@@ -46,9 +56,17 @@ TERM_FLAG="--enable-terminal"
 CLAUDE_FLAG="--enable-claude"
 [ "${NETOPS_UI_CLAUDE:-1}" = "0" ] && CLAUDE_FLAG=""
 
+# Persistência da sessão Claude (a aba SOBREVIVE a standby/queda do socket: o turno termina e
+# você re-anexa ao voltar). Opt-in — default OFF (kill-switch). Ligue com NETOPS_UI_CLAUDE_PERSIST=1.
+# Só vale com a página Claude ligada. Limites finos: --claude-max-sessions/-detach-grace/-ask-timeout.
+PERSIST_FLAG=""
+[ "${NETOPS_UI_CLAUDE_PERSIST:-0}" = "1" ] && [ -n "$CLAUDE_FLAG" ] && PERSIST_FLAG="--enable-claude-persist"
+
 # Instância única: encerra qualquer servidor anterior antes de subir.
 pkill -f "scripts/engine/ui/server.py" 2>/dev/null && sleep 1 || true
 
 echo "NetOps Console -> http://${HOST}:${PORT}/"
+[ -n "$CLAUDE_FLAG" ] && echo "Claude Code     -> store ${HOME}/.claude (login e conversas da aba)"
+[ -n "$PERSIST_FLAG" ] && echo "Persistência    -> ON (a aba Claude sobrevive a standby)"
 exec "$PY" scripts/engine/ui/server.py \
-  --host "$HOST" --port "$PORT" --no-browser $TERM_FLAG $CLAUDE_FLAG "$@"
+  --host "$HOST" --port "$PORT" --no-browser $TERM_FLAG $CLAUDE_FLAG $PERSIST_FLAG "$@"

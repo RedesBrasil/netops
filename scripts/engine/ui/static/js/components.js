@@ -48,14 +48,33 @@ export function RefSelect({ value, options, onChange, placeholder, allowEmpty = 
 
 /* --------------------------- ResourceTable ------------------------------ */
 export function ResourceTable({ columns, rows, onRowClick, actions, empty }) {
+  // Ordenação opt-in: colunas que definem `sort: (row) => valor` ficam clicáveis.
+  const [sort, setSort] = useState({ key: null, dir: "asc" });
   if (!rows || rows.length === 0) return html`<div class="card"><div class="empty">${empty || "Nada aqui ainda."}</div></div>`;
+
+  const activeCol = sort.key && columns.find((c) => c.key === sort.key && c.sort);
+  let view = rows;
+  if (activeCol) {
+    const val = activeCol.sort;
+    view = [...rows].sort((a, b) => {
+      const va = val(a), vb = val(b);
+      let cmp;
+      if (typeof va === "number" && typeof vb === "number") cmp = va - vb;
+      else cmp = String(va ?? "").localeCompare(String(vb ?? ""), "pt", { numeric: true, sensitivity: "base" });
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+  }
+  const onHead = (c) => { if (c.sort) setSort((s) => s.key === c.key ? { key: c.key, dir: s.dir === "asc" ? "desc" : "asc" } : { key: c.key, dir: "asc" }); };
+  const ind = (c) => sort.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : (c.sort ? "⇅" : "");
+
   return html`<table>
     <thead><tr>
-      ${columns.map((c) => html`<th key=${c.key}>${c.label}</th>`)}
+      ${columns.map((c) => html`<th key=${c.key} class=${c.sort ? "sortable" : ""}
+          onClick=${c.sort ? () => onHead(c) : undefined}>${c.label}${c.sort || sort.key === c.key ? html` <span class="sort-ind">${ind(c)}</span>` : ""}</th>`)}
       ${actions && html`<th></th>`}
     </tr></thead>
     <tbody>
-      ${rows.map((r, i) => html`<tr key=${r._key ?? i} class=${onRowClick ? "clickable" : ""}
+      ${view.map((r, i) => html`<tr key=${r._key ?? i} class=${onRowClick ? "clickable" : ""}
           onClick=${onRowClick ? () => onRowClick(r) : undefined}>
         ${columns.map((c) => html`<td key=${c.key}>${c.render ? c.render(r) : r[c.key]}</td>`)}
         ${actions && html`<td class="actions" onClick=${(e) => e.stopPropagation()}>${actions(r)}</td>`}
@@ -230,7 +249,7 @@ export function VaultBanner() {
     return null;
   }
 
-  const cmd = v.unlock_cmd || "cd /home/francisco/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock";
+  const cmd = v.unlock_cmd || "cd /opt/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock";
   if (v.state === "insecure")
     return html`<div class="vault-banner insecure">⚠ Permissões inseguras no cache do cofre — ${v.detail}
       ${unlockBtn}

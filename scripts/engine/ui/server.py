@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sobe o NetOps Console (CRUD web) — ferramenta de operador local e efêmera.
 
-  cd /home/francisco/netops
+  cd /opt/netops
   .venv/bin/python3 scripts/engine/ui/server.py            # porta livre, abre o browser
   .venv/bin/python3 scripts/engine/ui/server.py --port 8765 --no-browser
   .venv/bin/python3 scripts/engine/ui/server.py --read-only
@@ -60,6 +60,15 @@ def main() -> int:
     parser.add_argument("--enable-claude", action="store_true",
                         help="Liga a página Claude Code (agente de IA). ⚠ EXECUTA COMANDOS E EDITA "
                              "ARQUIVOS como este usuário. Não liga em --read-only. Default: desligado")
+    parser.add_argument("--enable-claude-persist", action="store_true",
+                        help="Mantém a sessão da aba Claude viva após o socket cair (termina o turno; "
+                             "re-anexa ao voltar). Sobrevive a standby/troca de aba. Default: desligado")
+    parser.add_argument("--claude-max-sessions", type=int, default=4,
+                        help="Teto de sessões Claude desanexadas vivas (recusa novas ao estourar)")
+    parser.add_argument("--claude-detach-grace", type=int, default=300,
+                        help="Segundos que uma sessão desanexada e ociosa sobrevive antes do teardown")
+    parser.add_argument("--claude-ask-timeout", type=int, default=180,
+                        help="Segundos que uma pergunta sem resposta espera (desanexado) antes de negar")
     args = parser.parse_args()
 
     is_loopback = args.host in LOOPBACK
@@ -75,6 +84,10 @@ def main() -> int:
     deps.STATE.allow_vault_unlock = not args.no_vault_unlock
     deps.STATE.enable_terminal = args.enable_terminal and not args.read_only
     deps.STATE.enable_claude = args.enable_claude and not args.read_only
+    deps.STATE.claude_persist = args.enable_claude_persist and deps.STATE.enable_claude
+    deps.STATE.claude_max_sessions = max(1, args.claude_max_sessions)
+    deps.STATE.claude_detach_grace = max(1, args.claude_detach_grace)
+    deps.STATE.claude_ask_timeout = max(1, args.claude_ask_timeout)
     # O Host header precisa bater com o IP de bind (anti DNS-rebinding). Mantém loopback + o IP escolhido.
     deps.STATE.allowed_hosts = tuple({"127.0.0.1", "localhost", "::1", args.host})
 
@@ -94,6 +107,12 @@ def main() -> int:
     if deps.STATE.enable_claude:
         print("\n  ⚠ PÁGINA CLAUDE CODE LIGADA (--enable-claude): quem acessar o console dirige um")
         print("    agente de IA que EXECUTA COMANDOS e EDITA ARQUIVOS como este usuário (no repo).")
+
+    if deps.STATE.claude_persist:
+        print("\n  ⚠ PERSISTÊNCIA DA ABA CLAUDE LIGADA (--enable-claude-persist): a sessão sobrevive à")
+        print(f"    queda do socket (standby). Teto {deps.STATE.claude_max_sessions} sessões desanexadas, "
+              f"carência {deps.STATE.claude_detach_grace}s, timeout de pergunta {deps.STATE.claude_ask_timeout}s.")
+        print("    Um turno pode continuar executando com a aba fechada; na dúvida o agente PERGUNTA.")
 
     if not is_loopback:
         print("\n  AVISO DE SEGURANÇA: bind em endereço NÃO-loopback — o console fica acessível na rede.")

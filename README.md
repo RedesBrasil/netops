@@ -47,10 +47,11 @@ mudanças, testam e geram relatórios.
 | `config-examples/` | Exemplos de configuração reais, por fabricante |
 | `scripts/` | Scripts de acesso (SSH/Telnet/API) e diagnóstico (portas, ping, tracert) |
 | `planning-examples/` | Documentos modelo de planejamento |
-| `network/` | Inventário: hosts, credenciais e mapa de topologia |
+| `network/` | Inventário: hosts, credenciais, topologia e config de serviços de backup (`backups.yaml`) |
 | `workflows/` | Pipelines que orquestram os agentes |
 | `memory/` | Memória e auto-aprendizado — o "projeto vivo" |
 | `runs/` · `reports/` | Saída bruta de execuções · relatórios finais |
+| `backups/` | Backups de configuração dos equipamentos, um arquivo por host (aba **Backups** do console) |
 | `core/` | Config, schemas, templates e regras do framework |
 
 ## Princípios

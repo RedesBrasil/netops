@@ -58,3 +58,12 @@ scripts/engine/ui/.ui-token
 .DS_Store
 Thumbs.db
 *.swp
+
+# >>> Artefatos de HOME/IDE — o home do usuário `netops` É a raiz do repo. <<<
+# Credenciais do Claude, transcrições, histórico de shell, cache: NUNCA versionar.
+# Mantém .claude/commands/ (slash commands compartilhados); ignora o resto do .claude/.
+/.claude.json
+/.bash_history
+/.cache/
+/.claude/*
+!/.claude/commands/

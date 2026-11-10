@@ -12,8 +12,9 @@ import { BestPracticesPage, ConfigsPage } from "./pages/knowledge.js";
 import { WorkflowsPage, AgentsPage } from "./pages/catalog.js";
 import { ScriptsPage } from "./pages/scripts.js";
 import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
+import { BackupsPage } from "./pages/backups.js";
 import { TerminalPage } from "./pages/terminal.js";
-import { ClaudeCodePage } from "./pages/claude.js";
+import { ClaudeCodePage, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
 
 const ROUTES = {
   hosts: { label: "Hosts", comp: HostsPage, group: "Inventário" },
@@ -27,6 +28,7 @@ const ROUTES = {
   agents: { label: "Agentes", comp: AgentsPage, group: "Conhecimento" },
   reports: { label: "Relatórios", comp: ReportsPage, group: "Saída" },
   runs: { label: "Execuções", comp: RunsPage, group: "Saída" },
+  backups: { label: "Backups", comp: BackupsPage, group: "Saída" },
   scripts: { label: "Scripts", comp: ScriptsPage, group: "Sistema" },
   claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled" },
   terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled" },
@@ -54,8 +56,15 @@ function Sidebar({ current, meta }) {
   </nav>`;
 }
 
+// A sessão do Claude vive AQUI, acima do roteador: o ClaudeProvider é montado uma vez e
+// não desmonta ao trocar de rota, então a conversa (WS + turno) sobrevive à navegação.
 function App({ onLogout, showLogout }) {
+  return html`<${ClaudeProvider}><${Shell} onLogout=${onLogout} showLogout=${showLogout} /><//>`;
+}
+
+function Shell({ onLogout, showLogout }) {
   const route = useHash();
+  const claude = useClaude();
   const [meta, setMeta] = useState({ network_name: "NetOps" });
   const [theme, setTheme] = useState(localStorage.getItem("netops_theme") || "light");
   useEffect(() => { startVaultPolling(); api.get("/config/meta").then(setMeta).catch(() => {}); }, []);
@@ -68,7 +77,9 @@ function App({ onLogout, showLogout }) {
   }
 
   const Page = (ROUTES[route] || ROUTES.hosts).comp;
-  return html`<div class="shell">
+  // Chat encaixado à direita: só fora da página cheia (#claude) e com conversa viva.
+  const dockVisible = route !== "claude" && !!(claude && claude.hasSession);
+  return html`<div class=${"shell" + (dockVisible ? " has-dock" : "")}>
     <div class="topbar">
       <span class="brand">NetOps Console</span>
       <span class="net">· ${meta.network_name}</span>
@@ -81,6 +92,7 @@ function App({ onLogout, showLogout }) {
     <main class="content">
       <${Page} />
     </main>
+    ${dockVisible && html`<${ChatDock} />`}
     <${ToastHost} />
   </div>`;
 }

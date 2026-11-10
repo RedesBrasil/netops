@@ -13,9 +13,20 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+
+class _NoCacheStatic(StaticFiles):
+    """Estaticos com revalidacao obrigatoria: o browser sempre checa com o servidor
+    (ETag/Last-Modified -> 304 quando nao mudou), entao nunca serve JS/CSS velho de cache."""
+
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
 import deps
 from routers import (
     auth,
+    backups,
     catalog,
     claude,
     config,
@@ -89,12 +100,18 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (auth, meta, hosts, credentials, topology, config, memory, knowledge, catalog, scripts, reports, runs, terminal, claude):
+    for mod in (auth, meta, hosts, credentials, topology, config, memory, knowledge, catalog, scripts, reports, runs, backups, terminal, claude):
         app.include_router(mod.router, prefix="/api")
+
+    @app.on_event("shutdown")
+    async def _claude_shutdown():  # noqa: ANN202
+        # Mata sessões Claude vivas (persist) p/ não deixar subprocesso `claude` órfão num deploy.
+        from services import claude_svc  # noqa: PLC0415
+        await claude_svc.shutdown_all()
 
     # SPA: serve scripts/engine/ui/static/ na raiz (index.html cobre o fallback de rotas hash).
     if deps.STATIC_DIR.exists():
-        app.mount("/", StaticFiles(directory=str(deps.STATIC_DIR), html=True), name="static")
+        app.mount("/", _NoCacheStatic(directory=str(deps.STATIC_DIR), html=True), name="static")
 
     return app
 
@@ -123,7 +140,7 @@ def _register_error_handlers(app: FastAPI) -> None:
             {
                 "error": "vault_locked",
                 "detail": str(exc),
-                "action": "cd /home/francisco/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock",
+                "action": "cd /opt/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock",
             },
             status_code=423,
         )

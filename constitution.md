@@ -1,6 +1,6 @@
 # Constituição do NetOps
 
-> **Versão:** 1.0.2 | **Ratificada:** 2026-05-18 | **Revisado:** 2026-06-01 (§VII: terminal web opt-in)
+> **Versão:** 1.1.0 | **Ratificada:** 2026-05-18 | **Revisado:** 2026-07-28 (§V: proibição de manuseio de segredo em texto puro pela IA)
 
 Este documento define os princípios inegociáveis do NetOps. Todos os agentes, workflows e
 scripts DEVEM respeitá-los. Adaptado da `constitution.md` do AIOX para o domínio de redes e
@@ -63,6 +63,13 @@ Mexer em rede de produção pode derrubar serviços. Toda mudança é reversíve
 - **DEVE:** Em falha durante a aplicação, executar o rollback automaticamente.
 - **NÃO DEVE:** Conectar em host que não esteja no `network/hosts.yaml`.
 - **NÃO DEVE:** Expor credenciais em logs, relatórios ou saídas versionadas.
+- **NÃO DEVE:** A IA obter, descriptografar, ler, imprimir ou copiar o valor em texto puro de
+  qualquer campo `password`/`secret` — nem "por transparência", nem com o cofre destrancado. A
+  descriptografia é **exclusiva** dos scripts de acesso (`scripts/tools/access/*`), no instante de
+  conectar. A IA conecta **só** invocando esses scripts com `--host <nome>`; **nunca** escreve
+  código que chame `resolve_host(decrypt=True)`, `resolve_secret` ou `decrypt_value`, nem lê os
+  campos `password`/`secret`. Cofre destrancado = permissão para as FERRAMENTAS conectarem, não
+  para a IA ler segredos.
 
 ### VI. Inventário é a Fonte da Verdade (DEVE)
 
@@ -104,4 +111,4 @@ scripts Python. Sem banco de dados, sem Docker, sem servidor (princípio do Open
 - **INEGOCIÁVEL:** violação bloqueia a execução. **DEVE:** violação gera alerta.
 - Versionamento: MAJOR (redefinição incompatível), MINOR (novo princípio), PATCH (ajuste).
 
-*NetOps Constitution v1.0.1 — Padronizado | Projeto Vivo | Seguro*
+*NetOps Constitution v1.1.0 — Padronizado | Projeto Vivo | Seguro*
