@@ -78,3 +78,7 @@
  .netops-maps .map-toolbar .map-touch-actions { display:block; min-width:36px; font-size:22px; line-height:1; }
  .netops-maps .map-context button { min-height:44px; }
 }
+.netops-maps .map-shape.chosen { outline:2px solid var(--accent); outline-offset:2px; }
+.netops-maps .map-shape.with-icon { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; opacity:1; }
+.netops-maps .shape-icon-image { display:block; width:min(96px,70%); height:min(96px,65%); object-fit:contain; flex-shrink:1; pointer-events:none; user-select:none; }
+.netops-maps .react-flow__selection, .netops-maps .react-flow__nodesselection-rect { border:1px solid var(--accent); background:var(--accent-weak); opacity:.35; }

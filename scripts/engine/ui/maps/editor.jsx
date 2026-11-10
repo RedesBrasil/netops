@@ -5,7 +5,7 @@ import './editor.css';
 import { separateEdges, nodeRect, straightGeometry } from './parallel-edges.js';
 import { addBend, removeBend, orientRoute } from './orthogonal-route.js';
 import { LineEditing, StraightEdge } from './straight-edges.jsx';
-import { reconcileNodes } from './node-state.js';
+import { reconcileNodes, alignNodes } from './node-state.js';
 import iconCatalog from '../static/icons/network/catalog.json';
 const iconFiles = new Map(iconCatalog.map(icon => [icon.id, '/icons/network/thumbnails/' + icon.file]));
 
@@ -14,7 +14,13 @@ const hostId = id => 'host:' + id;
 const objectId = id => 'object:' + id;
 const roleLabel = { core: 'Core', distribution: 'Distribuição', access: 'Acesso', firewall: 'Firewall', wireless: 'Wireless', server: 'Servidor', other: 'Dispositivo' };
 export const speeds = { '1G': { color: 'var(--map-1g)' }, '10G': { color: 'var(--map-10g)' }, WAN: { color: 'var(--map-wan)', dash: '7 5' } };
+const multiSelectionKeys = ['Control', 'Meta'];
 const speedStyle = speed => speeds[speed] || { color: 'var(--muted)', dash: '3 3' };
+function NodeHandles() {
+  return <>{[['top', Position.Top], ['bottom', Position.Bottom], ['left', Position.Left], ['right', Position.Right]].map(([id, position]) =>
+    <Handle key={id} type="source" id={id} position={position} isConnectable={false} aria-hidden="true" />)}</>;
+}
+const connectable = node => !!(node?.data.hostId || node?.data.mapId || node?.type === 'shape');
 function Device({ data, selected }) {
   const [imageFailed, setImageFailed] = useState(false);
   const image = !data.mapId && iconFiles.get(data.icon);
@@ -24,11 +30,19 @@ function Device({ data, selected }) {
       ? <img className="device-icon-image" src={image} alt="" width={44} height={44} draggable={false} decoding="async" onError={() => setImageFailed(true)} />
       : <span className="device-icon" aria-hidden="true">{data.mapId ? '▧' : data.role === 'server' ? '▥' : '▤'}</span>}
     <div><strong>{data.label}</strong><small>{data.ip}</small><span className="role">{data.mapId ? 'Outro mapa' : roleLabel[data.role] || data.role || 'Dispositivo'}</span></div>
-    {[['top', Position.Top], ['bottom', Position.Bottom], ['left', Position.Left], ['right', Position.Right]].map(([id, position]) => <Handle key={id} type="source" id={id} position={position} isConnectable={false} aria-hidden="true" />)}
+    <NodeHandles />
   </div>;
 }
 function Note({ data }) { return <div className="map-note">{data.label}</div>; }
-function Shape({ data, selected }) { return <><NodeResizer isVisible={selected && !data.readOnly} minWidth={100} minHeight={60} /><div className={`map-shape ${data.form === 'ellipse' ? 'ellipse' : ''}`}><span>{data.label}</span></div></>; }
+function Shape({ data, selected }) {
+  const [failed, setFailed] = useState(false), image = iconFiles.get(data.icon);
+  useEffect(() => setFailed(false), [image]);
+  return <><NodeResizer isVisible={selected && !data.readOnly} minWidth={100} minHeight={60} />
+    <div className={`map-shape ${data.form === 'ellipse' ? 'ellipse' : ''} ${selected ? 'chosen' : ''} ${image && !failed ? 'with-icon' : ''}`}>
+      {image && !failed && <img className="shape-icon-image" src={image} alt="" draggable={false} onError={() => setFailed(true)} />}
+      <span>{data.label}</span>
+    </div><NodeHandles /></>;
+}
 const nodeTypes = { device: Device, note: Note, shape: Shape };
 const edgeTypes = { editableStraight: StraightEdge };
 function makeNodes(map, hosts, readOnly) {
@@ -89,17 +103,19 @@ function MapContextMenu({ menu, onClose, children }) {
     style={{ left: menu.x, top: menu.y }} onKeyDown={keyboard} onContextMenu={event => event.preventDefault()}>{children}</div>;
 }
 export function MapEditor(props) { return <ReactFlowProvider><Editor {...props} /></ReactFlowProvider>; }
-function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onHost, onLink, onSwitch, onNewMap, onDeleteMap, onError, onRetry, onReload, onBusy }) {
+function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onHost, onLink, onSwitch, onNewMap, onDeleteMap, onError, onRetry, onReload, onBusy, IconPicker }) {
   const [layout, setLayout] = useState(map), [nodes, setNodes] = useState(() => makeNodes(map, hosts, readOnly));
-  const layoutRef = useRef(map), nodesRef = useRef(nodes), gesture = useRef(false);
+  const layoutRef = useRef(map), nodesRef = useRef(nodes), gesture = useRef(false), ignoreDoubleClick = useRef(0);
   function visualNodes(value) { nodesRef.current = value; setNodes(value); }
   function nodeGesture(value) { gesture.current = value; onBusy(value); }
   const [selected, setSelected] = useState(null), [focus, setFocus] = useState(null);
   const [dialog, setDialog] = useState(null), [menu, setMenu] = useState(null);
   const [linkMode, setLinkMode] = useState(false), [origin, setOrigin] = useState(null);
+  const [shapeIcon, setShapeIcon] = useState('');
+  const [multiSelect, setMultiSelect] = useState(false);
   const speed = '10G';
   const flow = useReactFlow();
-  useEffect(() => { onBusy(!!dialog || !!menu || linkMode); }, [dialog, menu, linkMode]);
+  useEffect(() => { onBusy(!!dialog || !!menu || linkMode || multiSelect); }, [dialog, menu, linkMode, multiSelect]);
   const edges = useMemo(() => makeEdges(layout, links), [layout, links]);
   useEffect(() => {
     const changedMap = layoutRef.current.id !== map.id;
@@ -109,7 +125,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onH
     const desired = makeNodes(map, hosts, readOnly);
     visualNodes(changedMap ? desired : reconcileNodes(nodesRef.current, desired));
   }, [map, hosts, readOnly]);
-  useEffect(() => { setSelected(null); setFocus(null); setMenu(null); setLinkMode(false); const t = setTimeout(() => flow.fitView({ padding: .2, maxZoom: 1.05 }), 80); return () => clearTimeout(t); }, [map.id]);
+  useEffect(() => { setSelected(null); setFocus(null); setMenu(null); setLinkMode(false); setMultiSelect(false); const t = setTimeout(() => flow.fitView({ padding: .2, maxZoom: 1.05 }), 80); return () => clearTimeout(t); }, [map.id]);
   function update(fn, syncNodes = true) {
     const value = fn(layoutRef.current);
     layoutRef.current = value;
@@ -148,31 +164,63 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onH
     const box = canvas.current.getBoundingClientRect();
     return flow.screenToFlowPosition({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
   };
+  function selectedDevices() { return nodesRef.current.filter(node => node.selected && connectable(node)); }
+  function clearSelection() {
+    visualNodes(applyNodeChanges(nodesRef.current.filter(n => n.selected).map(n => ({ id: n.id, type: 'select', selected: false })), nodesRef.current));
+    setSelected(null);
+  }
   function context(event, kind = 'pane', id = null, corner) {
     event.preventDefault(); event.stopPropagation();
-    setSelected(id);
+    const group = selectedDevices();
+    const nextKind = (kind === 'selection' || kind === 'node' && group.some(n => n.id === id)) && group.length > 1 ? 'selection' : kind;
+    if (kind === 'node' && nextKind !== 'selection') {
+      visualNodes(applyNodeChanges(nodesRef.current.map(n => ({ id: n.id, type: 'select', selected: n.id === id })), nodesRef.current));
+    }
+    setSelected(nextKind === 'selection' ? null : id);
     if (corner !== undefined) setFocus({ id, corner });
-    setMenu({ kind, id, x: event.clientX, y: event.clientY,
+    setMenu({ kind: nextKind, id, x: event.clientX, y: event.clientY,
       point: flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }) });
   }
   function menuFromButton(event) {
     const box = event.currentTarget.getBoundingClientRect();
-    setMenu({ kind: selected ? nodes.some(n => n.id === selected) ? 'node' : 'edge' : 'pane', id: selected,
-      x: box.right, y: box.bottom + 4, point: point() });
+    const kind = selectedDevices().length > 1 ? 'selection' : selected ? nodes.some(n => n.id === selected) ? 'node' : 'edge' : 'pane';
+    setMenu({ kind, id: selected, x: box.right, y: box.bottom + 4, point: point() });
   }
-  function startConnection(id = null) { setLinkMode(true); setOrigin(id); setSelected(null); }
+  function startConnection(id = null) { setMultiSelect(false); clearSelection(); setLinkMode(true); setOrigin(id); }
+  function startMultiSelection() { setLinkMode(false); clearSelection(); setMultiSelect(true); }
+  function align(direction) {
+    if (readOnly) return;
+    try {
+      const positions = alignNodes(selectedDevices(), direction);
+      if (Object.keys(positions).length < 2) return;
+      update(m => ({ ...m, positions: { ...m.positions, ...Object.fromEntries(Object.entries(positions).filter(([id]) => id.startsWith('host:')).map(([id, pos]) => [id.slice(5), pos])) },
+        objects: m.objects.map(o => positions[objectId(o.id)] ? { ...o, position: positions[objectId(o.id)] } : o) }));
+      setMultiSelect(false);
+    } catch (error) { onError(error.message); }
+  }
   function editEdge(edge) { if (edge.data.visual) open('visual', edge); else onLink({ id: edge.id }); }
 
-  function open(kind, object, pos) { setMenu(null); setDialog({ kind, object, position: pos || point() }); }
+  function open(kind, object, pos) { setMenu(null); if (kind === 'shape') setShapeIcon(object?.data.icon || ''); setDialog({ kind, object, position: pos || point() }); }
   function edit(n) { setMenu(null); if (n?.data.hostId) onHost({ id: n.data.hostId }); else if (n?.data.mapId) open('reference', n); else if (n) open(n.type, n); }
   function connect(n) {
+    ignoreDoubleClick.current = Date.now() + 500;
     if (!origin) { setOrigin(n.id); return; }
     if (origin === n.id) return;
     setLinkMode(false); setOrigin(null);
     if (origin.startsWith('host:') && n.id.startsWith('host:')) onLink({ a: { host: origin.slice(5) }, b: { host: n.id.slice(5) }, speed });
-    else update(m => ({ ...m, visual_links: [...m.visual_links, { id: uid(), source: origin, target: n.id, speed, label: 'Referência' }] }));
+    else update(m => ({ ...m, visual_links: [...m.visual_links, { id: uid(), source: origin, target: n.id, speed, label: nodesRef.current.find(node => node.id === origin)?.type === 'shape' || n.type === 'shape' ? 'Ligação visual' : 'Referência' }] }));
   }
-  function nodeClick(e, n) { setMenu(null); setSelected(n.id); if (linkMode && (n.data.hostId || n.data.mapId)) connect(n); }
+  function nodeClick(e, n) {
+    setMenu(null);
+    if (multiSelect && connectable(n)) {
+      ignoreDoubleClick.current = Date.now() + 500;
+      const current = nodesRef.current.find(node => node.id === n.id);
+      visualNodes(applyNodeChanges([{ id: n.id, type: 'select', selected: !current.selected }], nodesRef.current));
+      setSelected(n.id); return;
+    }
+    setSelected(n.id);
+    if (linkMode && connectable(n)) connect(n);
+  }
   function changes(cs) {
     const nextNodes = applyNodeChanges(cs, nodesRef.current);
     visualNodes(nextNodes);
@@ -200,7 +248,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onH
     } else {
       const o = { id: old?.id || uid(), type: dialog.kind, position: old ? nodes.find(n => n.id === dialog.object.id)?.position || old.position : dialog.position,
         label: f.label || maps.find(m => m.id === f.map_id)?.name || '', form: f.form || old?.form || 'rect', width: old?.width || 320, height: old?.height || 200,
-        ...(f.map_id ? { map_id: f.map_id } : {}) };
+        ...(f.map_id ? { map_id: f.map_id } : {}), ...(dialog.kind === 'shape' && shapeIcon ? { icon: shapeIcon } : {}) };
       update(m => ({ ...m, objects: old ? m.objects.map(item => item.id === old.id ? o : item) : [...m.objects, o] }));
     }
     setDialog(null);
@@ -225,14 +273,14 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onH
   const action = (label, fn, danger = false) => <button type="button" role="menuitem" className={danger ? 'danger' : ''}
     onClick={() => { setMenu(null); fn(); }}>{label}</button>;
   return <section className="netops-maps" aria-label="Mapa de rede" onKeyDown={event => {
-    if (event.key === 'Escape') { setMenu(null); setLinkMode(false); }
+    if (event.key === 'Escape') { setMenu(null); setLinkMode(false); setMultiSelect(false); clearSelection(); }
     if (event.key === 'F10' && event.shiftKey) {
       event.preventDefault(); event.stopPropagation();
       const target = event.target.closest('[data-line-id], .react-flow__node');
       const id = target?.dataset.lineId || target?.dataset.id || selected;
       const box = (target || canvas.current).getBoundingClientRect();
       if (id) setSelected(id);
-      setMenu({ kind: id ? nodes.some(n => n.id === id) ? 'node' : 'edge' : 'pane', id,
+      setMenu({ kind: selectedDevices().length > 1 ? 'selection' : id ? nodes.some(n => n.id === id) ? 'node' : 'edge' : 'pane', id,
         x: box.x + Math.min(box.width, 180), y: box.y + Math.min(box.height, 80), point: point() });
     }
   }}>
@@ -245,18 +293,20 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onH
     </div>
     <div className="map-workspace"><div ref={canvas} className="map-canvas" data-testid="map-canvas">
       <LineEditing.Provider value={{ selected, select: selectLine, save: saveLine, disabled: readOnly || linkMode, busy: onBusy, contextMenu: (event, id, corner) => context(event, 'edge', id, corner), focus, focusCorner: (id, corner) => setFocus({ id, corner }) }}>
-        <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={changes} nodesDraggable={!readOnly} nodesConnectable={false} connectionMode={ConnectionMode.Loose}
-          onNodeClick={nodeClick} onNodeDoubleClick={(e, n) => n.data.mapId ? onSwitch(n.data.mapId) : !readOnly && edit(n)}
-          onEdgeClick={(e, edge) => { setMenu(null); selectLine(edge.id); }} onEdgeContextMenu={(event, edge) => context(event, 'edge', edge.id)} onPaneClick={() => { setSelected(null); setMenu(null); }}
+        <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={changes} nodesDraggable={!readOnly && !multiSelect && !linkMode} selectNodesOnDrag={!multiSelect && !linkMode} elementsSelectable={!multiSelect && !linkMode} nodesConnectable={false} connectionMode={ConnectionMode.Loose}
+          onNodeClick={nodeClick} onNodeDoubleClick={(e, n) => { if (!multiSelect && !linkMode && Date.now() > ignoreDoubleClick.current) { if (n.data.mapId) onSwitch(n.data.mapId); else if (!readOnly) edit(n); } }}
+          onEdgeClick={(e, edge) => { setMenu(null); selectLine(edge.id); }} onEdgeContextMenu={(event, edge) => context(event, 'edge', edge.id)} onPaneClick={() => { clearSelection(); setMenu(null); setMultiSelect(false); }}
           onNodeContextMenu={(event, node) => context(event, 'node', node.id)}
+          onSelectionContextMenu={event => context(event, 'selection')} onSelectionStart={() => nodeGesture(true)} onSelectionEnd={() => nodeGesture(false)}
           onPaneContextMenu={event => context(event)} onMoveStart={() => setMenu(null)}
           onNodeDragStart={() => nodeGesture(true)} onNodeDragStop={() => nodeGesture(false)}
-          fitView fitViewOptions={{ padding: .2, maxZoom: 1.05 }} minZoom={.15} maxZoom={2} nodeDragThreshold={3} deleteKeyCode={null} preventScrolling selectionOnDrag={false}>
+          fitView fitViewOptions={{ padding: .2, maxZoom: 1.05 }} minZoom={.15} maxZoom={2} nodeDragThreshold={3} deleteKeyCode={null} preventScrolling selectionOnDrag={false} selectionKeyCode="Shift" multiSelectionKeyCode={multiSelectionKeys}>
           <Background gap={24} size={1} color="var(--border)" /><Controls showInteractive={false} /><MiniMap className="map-overview" pannable zoomable />
         </ReactFlow>
       </LineEditing.Provider>
       <div className="canvas-caption"><strong>{layout.name}</strong><span>{layout.host_ids.length} hosts / {edges.length} conexões</span></div>
-      {linkMode && <div className="connect-banner">{origin ? 'Toque no destino' : 'Toque na origem e depois no destino'}<button onClick={() => setLinkMode(false)}>Cancelar</button></div>}
+      {linkMode && <div className="connect-banner">{origin ? 'Toque no host ou forma de destino' : 'Toque no host ou forma de origem e depois no destino'}<button onClick={() => setLinkMode(false)}>Cancelar</button></div>}
+      {multiSelect && <div className="connect-banner">Toque nos dispositivos para selecionar ({selectedDevices().length}). Use ⋯ para alinhar.<button onClick={() => { setMultiSelect(false); clearSelection(); }}>Cancelar</button></div>}
       {!nodes.length && <div className="map-empty">{layout.kind === 'custom' ? 'Adicione um host existente ou cadastre um novo dispositivo.' : 'Os dispositivos cadastrados em Hosts aparecem aqui automaticamente.'}</div>}
     </div>
     </div>
@@ -265,11 +315,15 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onH
       <button onClick={status === 'Conflito de versão' ? onReload : onRetry}>{status === 'Conflito de versão' ? 'Recarregar' : 'Tentar novamente'}</button>
     </div>}
     {menu && <MapContextMenu menu={menu} onClose={() => setMenu(null)}>
-      {menu.kind === 'pane' ? <>
+      {menu.kind === 'selection' ? <>
+        {!readOnly && <>{action('Alinhar horizontalmente', () => align('horizontal'))}{action('Alinhar verticalmente', () => align('vertical'))}</>}
+        {action('Limpar seleção', () => { clearSelection(); setMultiSelect(false); })}
+      </> : menu.kind === 'pane' ? <>
         {!readOnly && <>
           {action('Adicionar host', () => onHost({ point: menu.point, site: layout.site || '' }))}
           {action('Host existente', () => open('existing', null, menu.point))}
           {action('Ligar hosts', () => startConnection())}
+          {action('Selecionar vários', startMultiSelection)}
           {action('Adicionar texto', () => open('note', null, menu.point))}
           {action('Adicionar forma', () => open('shape', null, menu.point))}
           {action('Referenciar mapa', () => open('reference', null, menu.point))}
@@ -280,7 +334,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onH
         {menuNode.data.mapId && action('Abrir mapa', () => onSwitch(menuNode.data.mapId))}
         {!readOnly && <>
           {action('Editar', () => edit(menuNode))}
-          {(menuNode.data.hostId || menuNode.data.mapId) && action('Ligar a outro dispositivo', () => startConnection(menuNode.id))}
+          {connectable(menuNode) && action('Ligar a outro dispositivo', () => startConnection(menuNode.id))}
           {(!menuNode.data.hostId || layout.kind === 'custom') && action('Remover do mapa', () => removeVisual(menuNode.id), true)}
         </>}
         {menuNode.data.hostId && action('Abrir inventário de hosts', () => { location.hash = 'hosts'; })}
@@ -302,7 +356,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onH
         <h2>{{ note: 'Texto', shape: 'Forma', reference: 'Referência a mapa', existing: 'Adicionar host existente' }[dialog.kind]}</h2>
         {dialog.kind === 'existing' ? <label>Host<select name="host" required><option value="">Selecione</option>{Object.keys(hosts).filter(id => !layout.host_ids.includes(id)).map(id => <option value={id}>{id}</option>)}</select></label> : <label>{dialog.kind === 'reference' ? 'Rótulo (opcional)' : 'Texto'}<textarea name="label" required={dialog.kind !== 'reference'} maxLength={4000} defaultValue={dialog.object?.data.label || ''} /></label>}
         {dialog.kind === 'reference' && <label>Mapa de destino<select name="map_id" required defaultValue={dialog.object?.data.map_id || ''}><option value="">Selecione</option>{maps.filter(m => m.id !== layout.id).map(m => <option value={m.id}>{m.name}</option>)}</select></label>}
-        {dialog.kind === 'shape' && <label>Formato<select name="form" defaultValue={dialog.object?.data.form || 'rect'}><option value="rect">Retângulo</option><option value="ellipse">Elipse</option></select></label>}
+        {dialog.kind === 'shape' && <><IconPicker title="Ícone da forma" defaultLabel="Sem ícone" defaultHint="Sem ícone: manter somente o formato e o texto." value={shapeIcon} onChange={setShapeIcon} /><label>Formato<select name="form" defaultValue={dialog.object?.data.form || 'rect'}><option value="rect">Retângulo</option><option value="ellipse">Elipse</option></select></label></>}
         <div className="modal-actions"><button type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="primary">Salvar</button></div>
       </form>}
     </section></div>}

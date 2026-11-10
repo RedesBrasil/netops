@@ -80,9 +80,11 @@ A página **Mapas** do console lê o cadastro único de `hosts.yaml` e os enlace
 - `kind: custom`: mapa adicional, com associação explícita em `members`.
 - `positions`: coordenadas por ID de host. O cadastro não é duplicado.
 - `objects`: textos (`note`), formas (`shape`) e atalhos para outros mapas (`reference`).
+  Formas aceitam `icon` opcional do catálogo local, sem IP ou cadastro no inventário.
 - `edges`: layout por ID estável do enlace real: `anchors` e `route`.
-- `visual_links`: conexões visuais entre referências de mapas e hosts. Não representam
-  enlace físico nem entram no diagrama Mermaid.
+- `visual_links`: conexões visuais entre hosts, formas e referências de mapas. Quando uma
+  ponta é uma forma, a ligação fica só neste mapa, sem criar host ou enlace físico no
+  inventário. Ligações entre dois hosts continuam em `topology.yaml`. Não entram no Mermaid.
 
 Os IDs de enlaces legados são fixados em `topology.yaml` na primeira edição gráfica.
 Editar um enlace no mapa preserva o ID; remover um enlace limpa seus trajetos.
@@ -95,3 +97,9 @@ com revisão, backup e rollback em falha. O mapa não conecta em equipamentos.
 
 `network/maps.yaml` real é git-ignorado. Só os exemplos são versionados. GET não cria
 arquivos; sem layout salvo, a posição inicial é calculada pelo console.
+
+
+As ações de alinhar horizontal/vertical salvam as posições de todo o grupo em uma única
+edição do mapa, com 24 unidades de intervalo entre as bordas. A seleção de dispositivos é
+transitória e não é gravada no YAML. O alinhamento usa as dimensões medidas, mantém a ordem
+visual e não altera nós fora do grupo nem os trajetos/âncoras das conexões.

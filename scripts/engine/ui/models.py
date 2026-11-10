@@ -218,7 +218,16 @@ class MapObject(BaseModel):
     form: Literal["rect", "ellipse"] = "rect"
     width: FiniteFloat = Field(default=320, ge=100, le=10000)
     height: FiniteFloat = Field(default=200, ge=60, le=10000)
+    icon: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     map_id: Optional[str] = Field(default=None, max_length=100)
+
+    @field_validator("icon")
+    @classmethod
+    def valid_icon(cls, value):
+        from services import icons_svc
+        if value is not None and not icons_svc.known_icon(value):
+            raise ValueError("ícone não existe na biblioteca local")
+        return value
 
     @model_validator(mode="after")
     def reference_target(self):

@@ -1,7 +1,7 @@
 // O editor trabalha sobre os mesmos hosts/enlaces das páginas de inventário.
 import { html, useState, useEffect, useRef, api, Spinner, toast, handleError, Modal, ConfirmDialog } from "../ui.js";
 import { HostForm } from "./hosts.js";
-import { LinkForm } from "../components.js";
+import { LinkForm, IconPicker } from "../components.js";
 
 const blank = (id, name) => ({ id, name, kind: "custom", members: [], positions: {}, objects: [], edges: {}, visual_links: [] });
 const persisted = m => { const { host_ids, ...rest } = m; return rest; };
@@ -109,7 +109,7 @@ export function MapsPage() {
   if (!snapshot || !Editor) return html`<${Spinner} />`;
   const map = snapshot.maps.find(m => m.id === current) || snapshot.maps[0];
   return html`<div class="maps-page">
-    <${Editor} map=${map} maps=${snapshot.maps} hosts=${snapshot.hosts} links=${snapshot.topology.links} readOnly=${snapshot.read_only}
+    <${Editor} IconPicker=${IconPicker} map=${map} maps=${snapshot.maps} hosts=${snapshot.hosts} links=${snapshot.topology.links} readOnly=${snapshot.read_only}
       saving=${saving || !!pending.current.size} status=${status} onSave=${save} onHost=${openHost} onLink=${openLink} onSwitch=${switchMap}
       onNewMap=${async () => { if (await flush()) setNewMap(true); }} onDeleteMap=${() => setConfirm({ kind: "map", id: map.id })}
       onError=${message => toast.err(message)} onBusy=${setBusy}
