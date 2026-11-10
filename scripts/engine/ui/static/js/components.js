@@ -122,6 +122,28 @@ export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
 }
 
 
+export function IconPicker({ value, onChange, error, title = "Ícone do host", defaultLabel = "Padrão", defaultHint = "Padrão: mantém o símbolo atual do dispositivo." }) {
+  const [icons, setIcons] = useState([]);
+  const [loadError, setLoadError] = useState(false);
+  useEffect(() => { api.get("/meta/icons").then(data => setIcons(data.icons)).catch(() => setLoadError(true)); }, []);
+  const chosen = icons.find(icon => icon.id === value);
+  return html`<fieldset class="host-icon-picker">
+    <legend>${title}</legend>
+    <p class="help">${chosen ? `Selecionado: ${chosen.name}` : value ? `Selecionado: ${value}` : defaultHint}</p>
+    <div class="host-icon-options" role="group" aria-label=${`Escolher ${title.toLowerCase()}`}>
+      <button type="button" class=${"host-icon-option" + (!value ? " selected" : "")} aria-pressed=${!value} onClick=${() => onChange("")}>
+        <span class="host-icon-default" aria-hidden="true">▤</span><span>${defaultLabel}</span></button>
+      ${icons.map(icon => html`<button key=${icon.id} type="button" class=${"host-icon-option" + (value === icon.id ? " selected" : "")}
+        aria-label=${`Ícone ${icon.name}`} aria-pressed=${value === icon.id} onClick=${() => onChange(icon.id)}>
+        <img src=${icon.url} alt="" width="48" height="48" loading="lazy" decoding="async" draggable=false /><span>${icon.name}</span>
+      </button>`)}
+    </div>
+    ${loadError && html`<p class="help" role="status">Não foi possível carregar a biblioteca de ícones. A seleção atual será mantida.</p>`}
+    ${error && html`<p class="err" role="alert">${error}</p>`}
+  </fieldset>`;
+}
+
+
 /* --------------------------- ResourceTable ------------------------------ */
 export function ResourceTable({ columns, rows, onRowClick, actions, empty }) {
   // Ordenação opt-in: colunas que definem `sort: (row) => valor` ficam clicáveis.

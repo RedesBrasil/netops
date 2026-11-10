@@ -280,3 +280,35 @@ conterem informações da rede; apenas os modelos `*.example.yaml` são versiona
 
 A remoção da tela de Topologia não remove seus dados, os serviços usados por Mapas nem o
 script `scripts/tools/docs/topology_render.py` para gerar a documentação Mermaid.
+
+
+## Formas sem IP e alinhamento de grupo
+
+O mesmo **Ligar hosts** aceita hosts, formas e referências entre mapas. Formas representam
+equipamentos sem gerência/IP ou elementos visuais, sem cadastro paralelo em Hosts. Também
+oferecem **Ligar a outro dispositivo** no botão direito. Texto de anotação não é uma ponta
+oferecida pelo fluxo de ligação.
+
+No formulário **Adicionar forma/Editar forma**, o seletor **Ícone da forma** usa a biblioteca
+local de rede, com opção **Sem ícone**. O campo `icon` fica no objeto em `maps.yaml`. Host com
+host continua criando enlace real; host-forma e forma-forma ficam em `visual_links` do mapa,
+com os mesmos controles A/B, dobras, arraste e exclusão. Redimensionar a forma ajusta a ponta
+da linha sem perder o ícone. Remover a forma limpa só suas conexões visuais.
+
+Seleção e alinhamento:
+
+- Computador: **Ctrl/Cmd + clique** adiciona/remove dispositivos da seleção, ou **Shift +
+  arraste no fundo** seleciona um retângulo. Clique direito sobre um membro/grupo mantém a
+  seleção e oferece **Alinhar horizontalmente** e **Alinhar verticalmente**.
+- Celular: no menu **⋯**, escolha **Selecionar vários**, toque nos dispositivos e abra **⋯**
+  para alinhar. Cancelar/Escape ou tocar no fundo encerra a seleção temporária.
+- O alinhamento forma uma fila/coluna com centros alinhados e **24 unidades de mapa livres
+  entre bordas**, considerando os tamanhos dos nós. Hosts e formas podem participar juntos.
+- O grupo inteiro é salvo em uma edição, sem mover os outros objetos nem apagar dobras.
+  Apenas posições são persistidas; seleção não altera o inventário.
+- **Limpar seleção** permite voltar à edição individual. Modo somente leitura não oferece
+  alinhamento, alterações de formas ou criação de ligações.
+
+Testes: `tests/test_shape_connections.py`, testes do helper em `maps/node-state.test.mjs` e
+`tests/shapes-align.browser.mjs` (mesmas variáveis Playwright/Chromium dos demais cenários,
+sempre em `NETOPS_UI_DATA_ROOT` temporário).

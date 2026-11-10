@@ -113,3 +113,22 @@ no formulário de enlace.
 edição por menu, dobras, exportação, atalhos e recuperação de conflito em mouse e toque.
 `tests/maps-actions.mjs` é o helper de gestos dos cenários do navegador, não código da UI.
 Os arquivos de inventário/layout e o fluxo de autosave permanecem os mesmos.
+
+
+## Formas conectáveis e grupos
+
+`Shape` usa os mesmos `NodeHandles` invisíveis dos hosts. O fluxo único de conexão aceita
+formas como origem/destino e reutiliza `visual_links`; não cria hosts sem IP. O catálogo de
+ícones é validado em `MapObject`, enquanto o `IconPicker` compartilhado é recebido da SPA
+como prop, sem duplicar componentes/API/Preact no bundle.
+
+A seleção múltipla usa `node.selected` do React Flow, seus modificadores Ctrl/Meta e seleção
+por retângulo com Shift. O menu de grupo e a alternativa por toque chamam `alignNodes` em
+`node-state.js`, função pura que retorna posições por ID, ordenadas no eixo e separadas por
+24 unidades entre bordas. O editor aplica posições de hosts e objetos numa única gravação.
+A reconciliação mantém medidas/seleção e nenhuma rota é reiniciada pelo alinhamento.
+
+`tests/shapes-align.browser.mjs` cobre conexões nos dois sentidos, ícones, persistência,
+seleção de quatro hosts, grupo misto, espaçamento igual e dispositivos não selecionados
+intactos. Executar em uma fixture isolada exclusiva, sem cenários concorrentes alterando
+o mesmo arquivo de mapas.
