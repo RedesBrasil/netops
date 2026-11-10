@@ -104,6 +104,12 @@ def create_app() -> FastAPI:
     for mod in (auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, terminal, claude):
         app.include_router(mod.router, prefix="/api")
 
+    @app.on_event("shutdown")
+    async def _claude_shutdown():  # noqa: ANN202
+        # Mata sessões Claude vivas (persist) p/ não deixar subprocesso `claude` órfão num deploy.
+        from services import claude_svc  # noqa: PLC0415
+        await claude_svc.shutdown_all()
+
     # SPA: serve scripts/engine/ui/static/ na raiz (index.html cobre o fallback de rotas hash).
     if deps.STATIC_DIR.exists():
         app.mount("/", _NoCacheStatic(directory=str(deps.STATIC_DIR), html=True), name="static")

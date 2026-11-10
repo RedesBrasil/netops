@@ -14,6 +14,7 @@
 #   NETOPS_UI_PORT=9000      scripts/engine/ui/start.sh # outra porta
 #   NETOPS_UI_TERMINAL=0     scripts/engine/ui/start.sh # sobe SEM o terminal web
 #   NETOPS_UI_CLAUDE=0       scripts/engine/ui/start.sh # sobe SEM a página Claude Code
+#   NETOPS_UI_CLAUDE_PERSIST=1 scripts/engine/ui/start.sh # aba Claude SOBREVIVE a standby (persistência)
 #   NETOPS_UI_HOME=/root     scripts/engine/ui/start.sh # fixa o store do agente Claude (ver abaixo)
 #   scripts/engine/ui/start.sh --read-only --no-vault-unlock   # flags extras (passthrough)
 set -euo pipefail
@@ -55,6 +56,12 @@ TERM_FLAG="--enable-terminal"
 CLAUDE_FLAG="--enable-claude"
 [ "${NETOPS_UI_CLAUDE:-1}" = "0" ] && CLAUDE_FLAG=""
 
+# Persistência da sessão Claude (a aba SOBREVIVE a standby/queda do socket: o turno termina e
+# você re-anexa ao voltar). Opt-in — default OFF (kill-switch). Ligue com NETOPS_UI_CLAUDE_PERSIST=1.
+# Só vale com a página Claude ligada. Limites finos: --claude-max-sessions/-detach-grace/-ask-timeout.
+PERSIST_FLAG=""
+[ "${NETOPS_UI_CLAUDE_PERSIST:-0}" = "1" ] && [ -n "$CLAUDE_FLAG" ] && PERSIST_FLAG="--enable-claude-persist"
+
 # Instância única por diretório de dados e endereço. Um teste isolado não encerra
 # o console real. O lock é herdado pelo servidor e liberado quando ele termina.
 KEY="$(printf '%s' "${NETOPS_UI_DATA_ROOT:-$ROOT}:$HOST:$PORT" | sha256sum | cut -c1-24)"
@@ -69,5 +76,6 @@ fi
 
 echo "NetOps Console -> http://${HOST}:${PORT}/"
 [ -n "$CLAUDE_FLAG" ] && echo "Claude Code     -> store ${HOME}/.claude (login e conversas da aba)"
+[ -n "$PERSIST_FLAG" ] && echo "Persistência    -> ON (a aba Claude sobrevive a standby)"
 exec "$PY" scripts/engine/ui/server.py \
-  --host "$HOST" --port "$PORT" --no-browser $TERM_FLAG $CLAUDE_FLAG "$@"
+  --host "$HOST" --port "$PORT" --no-browser $TERM_FLAG $CLAUDE_FLAG $PERSIST_FLAG "$@"

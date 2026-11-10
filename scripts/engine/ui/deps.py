@@ -78,6 +78,13 @@ class ServerState:
     allow_vault_unlock: bool = True
     enable_terminal: bool = False
     enable_claude: bool = False
+    # Persistência da aba Claude: a sessão sobrevive à queda do socket (termina o turno;
+    # re-anexa ao voltar). Default OFF (kill-switch). Os limites são ESTÁTICOS (estilo
+    # CacheSize do Zabbix): alocados no arranque, previsíveis. Ver services/claude_svc.py.
+    claude_persist: bool = False
+    claude_max_sessions: int = 4      # teto de sessões desanexadas vivas (recusa ao estourar)
+    claude_detach_grace: int = 300    # seg que uma sessão desanexada e OCIOSA sobrevive
+    claude_ask_timeout: int = 180     # seg que uma pergunta sem resposta espera (desanexado) -> nega
     allowed_hosts: tuple[str, ...] = field(default_factory=lambda: ("127.0.0.1", "localhost"))
     # Sessões de login do console (sid -> {"exp": epoch, "ttl": int}). Em memória do processo:
     # vale só enquanto o servidor está no ar (uvicorn single-process). Ver routers/auth.py.
