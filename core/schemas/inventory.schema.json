@@ -44,6 +44,7 @@
           "type": "string",
           "enum": ["core", "distribution", "access", "firewall", "wireless", "server", "other"]
         },
+        "icon": { "type": "string", "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "description": "ID do ícone local de rede (ex.: router, switch)." },
         "model": { "type": "string" },
         "site": { "type": "string" },
         "notes": { "type": "string" },

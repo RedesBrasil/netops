@@ -6,7 +6,7 @@ import { LoginScreen } from "./components.js";
 import { setOnUnauthorized, clearAuthToken } from "./api.js";
 import { HostsPage, GroupsPage } from "./pages/hosts.js";
 import { CredentialsPage } from "./pages/credentials.js";
-import { TopologyPage } from "./pages/topology.js";
+import { MapsPage } from "./pages/maps.js";
 import { MemoryPage } from "./pages/memory.js";
 import { BestPracticesPage, ConfigsPage } from "./pages/knowledge.js";
 import { WorkflowsPage, AgentsPage } from "./pages/catalog.js";
@@ -20,7 +20,7 @@ const ROUTES = {
   hosts: { label: "Hosts", comp: HostsPage, group: "Inventário" },
   groups: { label: "Grupos", comp: GroupsPage, group: "Inventário" },
   credentials: { label: "Credenciais", comp: CredentialsPage, group: "Inventário" },
-  topology: { label: "Topologia", comp: TopologyPage, group: "Inventário" },
+  maps: { label: "Mapas", comp: MapsPage, group: "Inventário" },
   memory: { label: "Memória", comp: MemoryPage, group: "Conhecimento" },
   practices: { label: "Boas práticas", comp: BestPracticesPage, group: "Conhecimento" },
   configs: { label: "Configurações", comp: ConfigsPage, group: "Conhecimento" },
@@ -37,9 +37,16 @@ const ROUTES = {
 const ORDER = ["Inventário", "Conhecimento", "Saída", "Sistema"];
 
 function useHash() {
-  const [hash, setHash] = useState(location.hash.slice(1) || "hosts");
+  const readHash = () => {
+    const value = location.hash.slice(1) || "hosts";
+    if (value !== "topology") return value;
+    // Links antigos abrem Mapas, sem carregar a página removida.
+    history.replaceState(null, "", "#maps");
+    return "maps";
+  };
+  const [hash, setHash] = useState(readHash);
   useEffect(() => {
-    const on = () => setHash(location.hash.slice(1) || "hosts");
+    const on = () => setHash(readHash());
     addEventListener("hashchange", on); return () => removeEventListener("hashchange", on);
   }, []);
   return hash;
@@ -89,7 +96,7 @@ function Shell({ onLogout, showLogout }) {
       ${showLogout && html`<button class="sm" onClick=${doLogout}>Sair</button>`}
     </div>
     <${Sidebar} current=${route} meta=${meta} />
-    <main class="content">
+    <main class=${"content" + (route === "maps" ? " maps-content" : "")}>
       <${Page} />
     </main>
     ${dockVisible && html`<${ChatDock} />`}

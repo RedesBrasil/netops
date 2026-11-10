@@ -67,3 +67,15 @@ Thumbs.db
 /.cache/
 /.claude/*
 !/.claude/commands/
+
+# Backups coletados de equipamentos reais (config real de device) — nunca versionar.
+# Exceção: backups/exemplo/ (placeholder sem segredo, para demonstrar a feature).
+backups/*
+!backups/exemplo/
+# Config de serviços de backup (referencia hosts reais) — runtime, como hosts.yaml.
+network/backups.yaml
+
+# Mapas reais e ferramentas de build (assets finais são versionados).
+network/maps.yaml
+scripts/engine/ui/maps/node_modules/
+scripts/engine/ui/maps/build-meta.json

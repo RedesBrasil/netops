@@ -16,11 +16,20 @@ let _onUnauthorized = null;
 export function setOnUnauthorized(fn) { _onUnauthorized = fn; }
 
 export class ApiError extends Error {
-  constructor(status, payload) { super(payload?.detail || payload?.error || `HTTP ${status}`); this.status = status; this.payload = payload; }
+  constructor(status, payload) { super(typeof payload?.detail === "string" ? payload.detail : payload?.error || `HTTP ${status}`); this.status = status; this.payload = payload; }
 }
 export class ConflictError extends ApiError {}
 export class ValidationError extends ApiError {
-  get fieldErrors() { return this.payload?.errors || []; }
+  get fieldErrors() {
+    if (Array.isArray(this.payload?.errors)) return this.payload.errors;
+    // FastAPI/Pydantic usa detail; a validação de domínio usa errors.
+    // Expõe só caminho e mensagem, nunca o input recebido pelo servidor.
+    if (!Array.isArray(this.payload?.detail)) return [];
+    return this.payload.detail.map(error => ({
+      loc: (Array.isArray(error.loc) ? error.loc.filter(part => part !== "body") : []).join("/"),
+      msg: error.type === "missing" ? "Campo obrigatório" : error.msg || "Valor inválido",
+    }));
+  }
 }
 export class VaultLockedError extends ApiError {}
 
@@ -33,7 +42,10 @@ async function req(method, path, { body, rev } = {}) {
   let payload = null;
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) { try { payload = await res.json(); } catch (e) {} }
-  if (res.ok) return res.status === 204 ? null : payload;
+  if (res.ok) {
+    if (method !== "GET") window.dispatchEvent(new CustomEvent("netops:changed", { detail: path }));
+    return res.status === 204 ? null : payload;
+  }
   if (res.status === 409) throw new ConflictError(409, payload);
   if (res.status === 422) throw new ValidationError(422, payload);
   if (res.status === 423) throw new VaultLockedError(423, payload);

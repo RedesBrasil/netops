@@ -67,7 +67,9 @@ cross-vendor (não pertence a um fabricante).
 - **scripts/** — cada script tem um `SKILL.md` ao lado descrevendo uso. `lib/` é o núcleo
   reutilizável; `access/`, `diagnostics/`, `analysis/`, `docs/` são as famílias de script.
 - **planning-examples/** — `.plan.md` mostrando objetivo, escopo, passos, riscos, rollback.
-- **network/** — `hosts.yaml`, `credentials.yaml` (git-ignorado), `topology.yaml`, `topology.md`.
+- **network/**: inventário real git-ignorado (`hosts.yaml`, `credentials.yaml`, `topology.yaml`,
+  `topology.md`, `maps.yaml`); modelos `*.example.yaml` versionados. Layout é apresentação,
+  nunca um segundo cadastro de hosts.
 - **workflows/** — `.workflow.yaml` com `steps` (tipo `subagent`/`inline`/`checkpoint`).
 - **memory/** — um arquivo só: `MEMORY.md` (seções: Preferências, Ambiente e convenções, Lições aprendidas).
 

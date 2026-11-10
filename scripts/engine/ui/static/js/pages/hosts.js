@@ -9,6 +9,11 @@ export function HostsPage() {
   const res = useResource("/hosts");
   const [editing, setEditing] = useState(null); // host object or {__new:true}
   const [confirm, setConfirm] = useState(null);
+  const [deleteRefs, setDeleteRefs] = useState(null);
+  useEffect(() => {
+    setDeleteRefs(null);
+    if (confirm) api.get(`/hosts/${encodeURIComponent(confirm)}/references`).then(setDeleteRefs).catch(handleError);
+  }, [confirm]);
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
   const { hosts, rev, groups } = res.data;
@@ -35,7 +40,7 @@ export function HostsPage() {
     ${editing && html`<${HostForm} host=${editing} groups=${groups} rev=${rev}
         onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
     ${confirm && html`<${ConfirmDialog} title="Excluir host" danger=true
-        message=${`Remover o host '${confirm}' do inventário?`}
+        message=${`Remover o host '${confirm}' do inventário? Seus enlaces e referências nos mapas também serão removidos. ${deleteRefs ? `${deleteRefs.count} referência(s) afetada(s): ${deleteRefs.references.map(r => r.label).join(', ') || 'nenhuma'}.` : 'Verificando referências…'}`}
         onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
           try { await api.del(`/hosts/${confirm}`, rev); toast.ok("Host removido"); res.reload(); }
@@ -43,24 +48,28 @@ export function HostsPage() {
   </div>`;
 }
 
-function HostForm({ host, groups, rev, onClose, onSaved }) {
+export function HostForm({ host, groups, rev, onClose, onSaved, placement, initial = {} }) {
   const isNew = !!host.__new;
   const enums = useEnums();
   const [groupDetails, setGroupDetails] = useState({});
   const [creds, setCreds] = useState([]);
   const [conflict, setConflict] = useState(false);
   const [errors, setErrors] = useState({});
-  const explicit = isNew ? {} : host.explicit;
+  const [saving, setSaving] = useState(false);
+  const [mapOptions, setMapOptions] = useState(null);
+  const [mapChoice, setMapChoice] = useState("");
+  const explicit = isNew ? initial : host.explicit;
   const [form, setForm] = useState({
     id: isNew ? "" : host.id,
     hostname: explicit.hostname || "", mgmt_ip: explicit.mgmt_ip || "",
     group: explicit.group || "", vendor: explicit.vendor ?? null, role: explicit.role ?? null,
-    model: explicit.model || "", site: explicit.site || "", notes: explicit.notes || "",
+    model: explicit.model || "", site: explicit.site || "", notes: explicit.notes || "", icon: explicit.icon || "",
     credential: explicit.credential ?? null,
     method: (explicit.access || {}).method ?? null, port: (explicit.access || {}).port ?? "",
   });
 
   useEffect(() => {
+    if (isNew && !placement) api.get("/maps").then(setMapOptions).catch(() => {});
     api.get("/groups").then((g) => setGroupDetails(Object.fromEntries(g.groups.map((x) => [x.name, x.fields]))));
     api.get("/credentials").then((c) => setCreds(c.credentials.map((x) => x.name)));
   }, []);
@@ -79,6 +88,8 @@ function HostForm({ host, groups, rev, onClose, onSaved }) {
   }
 
   async function save() {
+    if (saving) return;
+    setSaving(true);
     setErrors({});
     const payload = {};
     if (isNew) { payload.id = form.id; }
@@ -86,13 +97,15 @@ function HostForm({ host, groups, rev, onClose, onSaved }) {
     payload.hostname = form.hostname; payload.mgmt_ip = form.mgmt_ip;
     if (form.group) payload.group = form.group; else if (!isNew) payload.group = null;
     for (const k of ["vendor", "role", "credential"]) payload[k] = form[k] || null;
-    for (const k of ["model", "site", "notes"]) payload[k] = form[k] || null;
+    for (const k of ["model", "site", "notes", "icon"]) payload[k] = form[k] || null;
     const acc = {};
     if (form.method) acc.method = form.method;
     if (form.port !== "" && form.port != null) acc.port = Number(form.port);
     payload.access = Object.keys(acc).length ? acc : null;
     try {
       if (isNew) {
+        if (placement) payload.placement = placement;
+        else if (mapChoice && mapOptions) payload.placement = { map_id: mapChoice, maps_rev: mapOptions.rev, x: 80, y: 80 };
         await api.post("/hosts", payload, rev);
       } else {
         let curRev = rev;
@@ -102,13 +115,13 @@ function HostForm({ host, groups, rev, onClose, onSaved }) {
         await api.patch(`/hosts/${form.id}`, payload, curRev);
       }
       toast.ok(isNew ? "Host criado" : "Host atualizado");
-      onSaved();
+      onSaved(form.id);
     } catch (e) {
       if (e.name === "ConflictError" || e.constructor?.name === "ConflictError") return setConflict(true);
       const fe = handleError(e);
       const map = {}; fe.forEach((x) => { map[x.loc] = x.msg; });
       setErrors(map);
-    }
+    } finally { setSaving(false); }
   }
   const errFor = (suffix) => Object.entries(errors).find(([k]) => k.endsWith(suffix))?.[1];
 
@@ -145,17 +158,42 @@ function HostForm({ host, groups, rev, onClose, onSaved }) {
       <${RefSelect} value=${form.credential} options=${creds}
         placeholder=${form.group && inh("credential") ? `herdar: ${inh("credential")}` : "(nenhuma)"}
         onChange=${(v) => set("credential", v)} /><//>
+    ${isNew && !placement && mapOptions && html`<${Field} label="Também incluir em um mapa adicional">
+      <select value=${mapChoice} onChange=${e => setMapChoice(e.target.value)}><option value="">Só geral e localidade (automático)</option>
+        ${mapOptions.maps.filter(m => m.kind === "custom").map(m => html`<option value=${m.id}>${m.name}</option>`)}</select><//>`}
     <div class="row">
       <${Field} label="Modelo"><input value=${form.model} onInput=${(e) => set("model", e.target.value)} /><//>
       <${Field} label="Site"><input value=${form.site} onInput=${(e) => set("site", e.target.value)} /><//>
     </div>
+    <${HostIconPicker} value=${form.icon} onChange=${value => set("icon", value)} error=${errFor("/icon") || errors.icon} />
     <${Field} label="Notas"><textarea value=${form.notes} onInput=${(e) => set("notes", e.target.value)}></textarea><//>
     <div class="modal-actions">
       <button onClick=${onClose}>Cancelar</button>
-      <button class="primary" onClick=${save}>${isNew ? "Criar" : "Salvar"}</button>
+      <button class="primary" disabled=${saving} onClick=${save}>${saving ? "Salvando…" : isNew ? "Criar" : "Salvar"}</button>
     </div>
     ${conflict && html`<${ConflictDialog} onReload=${onSaved} onClose=${() => setConflict(false)} />`}
   <//>`;
+}
+
+function HostIconPicker({ value, onChange, error }) {
+  const [icons, setIcons] = useState([]);
+  const [loadError, setLoadError] = useState(false);
+  useEffect(() => { api.get("/meta/icons").then(data => setIcons(data.icons)).catch(() => setLoadError(true)); }, []);
+  const chosen = icons.find(icon => icon.id === value);
+  return html`<fieldset class="host-icon-picker">
+    <legend>Ícone do host</legend>
+    <p class="help">${chosen ? `Selecionado: ${chosen.name}` : value ? `Selecionado: ${value}` : "Padrão: mantém o símbolo atual do dispositivo."}</p>
+    <div class="host-icon-options" role="group" aria-label="Escolher ícone do host">
+      <button type="button" class=${"host-icon-option" + (!value ? " selected" : "")} aria-pressed=${!value} onClick=${() => onChange("")}>
+        <span class="host-icon-default" aria-hidden="true">▤</span><span>Padrão</span></button>
+      ${icons.map(icon => html`<button key=${icon.id} type="button" class=${"host-icon-option" + (value === icon.id ? " selected" : "")}
+        aria-label=${`Ícone ${icon.name}`} aria-pressed=${value === icon.id} onClick=${() => onChange(icon.id)}>
+        <img src=${icon.url} alt="" width="48" height="48" loading="lazy" decoding="async" draggable=false /><span>${icon.name}</span>
+      </button>`)}
+    </div>
+    ${loadError && html`<p class="help" role="status">Não foi possível carregar a biblioteca de ícones. A seleção atual será mantida.</p>`}
+    ${error && html`<p class="err" role="alert">${error}</p>`}
+  </fieldset>`;
 }
 
 /* ------------------------------- Grupos --------------------------------- */

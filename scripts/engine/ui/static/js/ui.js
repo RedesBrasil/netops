@@ -61,6 +61,11 @@ export function useResource(path, deps = []) {
     catch (e) { setState({ data: null, loading: false, error: e }); }
   }, [path]);
   useEffect(() => { reload(); }, deps);
+  useEffect(() => {
+    const focus = () => { if (!document.querySelector(".modal-bg, .map-modal-bg")) reload(); };
+    addEventListener("focus", focus);
+    return () => removeEventListener("focus", focus);
+  }, [reload]);
   return { ...state, reload, setData: (d) => setState((s) => ({ ...s, data: d })) };
 }
 

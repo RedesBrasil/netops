@@ -1,0 +1,25 @@
+# NetOps: apresentação dos mapas de rede (exemplo).
+# O console cria network/maps.yaml na primeira edição. O arquivo real é git-ignorado.
+# Hosts vêm de hosts.yaml; enlaces e suas portas vêm de topology.yaml.
+version: 1
+maps:
+  - id: all
+    name: Rede geral
+    kind: all
+    positions: {}
+    members: []
+    objects: []
+    edges: {}
+    visual_links: []
+  - id: mapa-livre
+    name: Mapa adicional
+    kind: custom
+    members: []
+    positions: {}
+    objects:
+      - id: anotacao
+        type: note
+        position: {x: 80, y: 80}
+        label: Arraste os dispositivos do inventário para organizar este mapa.
+    edges: {}
+    visual_links: []

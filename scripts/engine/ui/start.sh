@@ -62,8 +62,17 @@ CLAUDE_FLAG="--enable-claude"
 PERSIST_FLAG=""
 [ "${NETOPS_UI_CLAUDE_PERSIST:-0}" = "1" ] && [ -n "$CLAUDE_FLAG" ] && PERSIST_FLAG="--enable-claude-persist"
 
-# Instância única: encerra qualquer servidor anterior antes de subir.
-pkill -f "scripts/engine/ui/server.py" 2>/dev/null && sleep 1 || true
+# Instância única por diretório de dados e endereço. Um teste isolado não encerra
+# o console real. O lock é herdado pelo servidor e liberado quando ele termina.
+KEY="$(printf '%s' "${NETOPS_UI_DATA_ROOT:-$ROOT}:$HOST:$PORT" | sha256sum | cut -c1-24)"
+LOCK_DIR="${XDG_RUNTIME_DIR:-/tmp}/netops-ui-$(id -u)"
+mkdir -p "$LOCK_DIR"
+chmod 700 "$LOCK_DIR"
+exec 9>"$LOCK_DIR/$KEY.lock"
+if ! flock -n 9; then
+  echo "ERRO: já existe um console para estes dados em $HOST:$PORT." >&2
+  exit 1
+fi
 
 echo "NetOps Console -> http://${HOST}:${PORT}/"
 [ -n "$CLAUDE_FLAG" ] && echo "Claude Code     -> store ${HOME}/.claude (login e conversas da aba)"

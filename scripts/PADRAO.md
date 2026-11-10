@@ -54,3 +54,16 @@ prompt/paginação e fala com 100+ fabricantes via `device_type`.
 Copie `scripts/tools/_TEMPLATE/` (tem `SKILL.md` + `script.py`), implemente, e — se for
 uma família nova — crie o `SKILL.md` da pasta. Ou crie direto pela página **Scripts** do
 console web (botão **+ Novo**, caminho `familia/arquivo.py`).
+
+
+### Editor visual do console
+
+`engine/ui/maps/` contém o editor JSX e seu build de manutenção. É uma exceção isolada à
+SPA sem build: o operador recebe o módulo ESM/CSS já gerado em `static/vendor/`. Não precisa
+de npm para subir o console. Mantém Preact compartilhado e dependências locais pinadas.
+O padrão de uso e estrutura está em `engine/ui/maps/SKILL.md`.
+
+
+A biblioteca de imagens do editor fica em `engine/ui/static/icons/network/`, com originais,
+catálogo, miniaturas e checksums. `engine/ui/vendor_icons.py` atualiza esses assets a partir
+de uma revisão fixa, sem ser executado no servidor. Ver README local e `engine/ui/SKILL.md`.

@@ -34,6 +34,7 @@ from routers import (
     hosts,
     knowledge,
     memory,
+    maps,
     meta,
     reports,
     runs,
@@ -100,7 +101,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (auth, meta, hosts, credentials, topology, config, memory, knowledge, catalog, scripts, reports, runs, backups, terminal, claude):
+    for mod in (auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, terminal, claude):
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("shutdown")
