@@ -36,8 +36,8 @@ def get_host(host_id: str):
 
 @router.post("/hosts", status_code=201)
 def create_host(body: HostCreate, request: Request):
-    fields = body.model_dump(exclude={"id"}, exclude_unset=True)
-    return inventory_svc.create_host(body.id, fields, _rev(request))
+    fields = body.model_dump(exclude={"id", "placement"}, exclude_unset=True)
+    return inventory_svc.create_host(body.id, fields, _rev(request), placement=body.placement.model_dump() if body.placement else None)
 
 
 @router.put("/hosts/{host_id}")

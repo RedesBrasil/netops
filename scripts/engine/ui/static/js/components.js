@@ -1,8 +1,8 @@
 // Componentes reutilizáveis: formulário, tabela, markdown, banner do cofre.
 import { marked } from "marked";
 import {
-  html, useState, useEffect, api, Badge, CopyButton, Spinner, Modal,
-  vaultStore, useStore, refreshVault, toast,
+  html, useState, useEffect, useRef, api, Badge, CopyButton, Spinner, Modal,
+  vaultStore, useStore, refreshVault, toast, handleError,
 } from "./ui.js";
 import { setAuthToken } from "./api.js";
 // Re-export dos diálogos base p/ as páginas poderem importar tudo de components.js.
@@ -18,12 +18,12 @@ export function useEnums() {
 }
 
 /* ------------------------------- Field ---------------------------------- */
-export function Field({ label, error, hint, tag, children }) {
+export function Field({ label, error, hint, tag, children, htmlFor, errorId }) {
   return html`<div class="field">
-    ${label && html`<label>${label}${tag}</label>`}
+    ${label && html`<label for=${htmlFor}>${label}${tag}</label>`}
     ${children}
     ${hint && html`<div class="help">${hint}</div>`}
-    ${error && html`<div class="err">${error}</div>`}
+    ${error && html`<div class="err" id=${errorId}>${error}</div>`}
   </div>`;
 }
 
@@ -38,13 +38,89 @@ export function EnumSelect({ value, options, onChange, allowInherit, inheritLabe
 }
 
 /* select de referência (credenciais, grupos, hosts) */
-export function RefSelect({ value, options, onChange, placeholder, allowEmpty = true, invalid }) {
-  return html`<select class=${invalid ? "invalid" : ""} value=${value ?? ""}
+export function RefSelect({ value, options, onChange, placeholder, allowEmpty = true, invalid, id, required, describedBy }) {
+  return html`<select id=${id} required=${required} aria-invalid=${invalid || undefined} aria-describedby=${describedBy} class=${invalid ? "invalid" : ""} value=${value ?? ""}
       onChange=${(e) => onChange(e.target.value || null)}>
     ${allowEmpty && html`<option value="">${placeholder || "—"}</option>`}
     ${(options || []).map((o) => html`<option key=${o} value=${o} selected=${o === value}>${o}</option>`)}
   </select>`;
 }
+
+/* ------------------------------ LinkForm -------------------------------- */
+export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
+  const isNew = !!link.__new;
+  const [f, setF] = useState({
+    ah: link.a?.host || "", ap: link.a?.port || "", bh: link.b?.host || "", bp: link.b?.port || "",
+    media: link.media ?? null, speed: link.speed || "", desc: link.desc || "",
+  });
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const form = useRef(null);
+  const fields = { ah: "Host A", bh: "Host B" };
+  const set = (k, v) => {
+    setF(x => ({ ...x, [k]: v }));
+    setErrors(x => { const next = { ...x }; delete next[k]; return next; });
+  };
+  async function save(event) {
+    event.preventDefault();
+    if (saving) return;
+    const required = Object.fromEntries(Object.entries(fields).filter(([k]) => !f[k]?.trim())
+      .map(([k, label]) => [k, `Informe ${label.toLowerCase()}.`]));
+    setErrors(required);
+    if (Object.keys(required).length) {
+      toast.err("Selecione os hosts A e B para salvar o enlace.");
+      form.current?.querySelector(`#link-${Object.keys(required)[0]}`)?.focus();
+      return;
+    }
+    const body = { a: { host: f.ah.trim() }, b: { host: f.bh.trim() } };
+    if (f.ap.trim()) body.a.port = f.ap.trim();
+    if (f.bp.trim()) body.b.port = f.bp.trim();
+    if (f.media) body.media = f.media;
+    if (f.speed.trim()) body.speed = f.speed.trim();
+    if (f.desc.trim()) body.desc = f.desc.trim();
+    setSaving(true);
+    try {
+      if (isNew) await api.post("/topology/links", body, rev);
+      else await api.put(link.id ? `/topology/link/${encodeURIComponent(link.id)}` : `/topology/links/${link.index}`, body, rev);
+      toast.ok("Enlace salvo"); onSaved();
+    } catch (e) {
+      const keys = { "a/host": "ah", "a/port": "ap", "b/host": "bh", "b/port": "bp" };
+      const next = {};
+      for (const error of handleError(e)) next[keys[error.loc] || error.loc] = error.msg;
+      setErrors(next);
+    } finally { setSaving(false); }
+  }
+  return html`<${Modal} title=${isNew ? "Novo enlace" : "Editar enlace"} onClose=${saving ? undefined : onClose}>
+    <form ref=${form} onSubmit=${save} noValidate>
+      <p class="help">Selecione os dois hosts. As interfaces são opcionais e podem ser preenchidas depois, por exemplo ether2, sfp1 ou Gi0/1.</p>
+      ${Object.keys(errors).length > 0 && html`<p role="alert">Revise os campos indicados antes de salvar o enlace.</p>`}
+      <div class="row">
+        <${Field} label="Host A *" htmlFor="link-ah" error=${errors.ah} errorId="link-ah-error">
+          <${RefSelect} id="link-ah" required=true invalid=${!!errors.ah} describedBy=${errors.ah ? "link-ah-error" : undefined}
+            value=${f.ah} options=${hosts} onChange=${v => set("ah", v)} /><//>
+        <${Field} label="Porta A (opcional)" htmlFor="link-ap" error=${errors.ap} errorId="link-ap-error">
+          <input id="link-ap" value=${f.ap} aria-invalid=${!!errors.ap || undefined} aria-describedby=${errors.ap ? "link-ap-error" : undefined}
+            class=${errors.ap ? "invalid" : ""} placeholder="ex.: ether2" onInput=${e => set("ap", e.target.value)} /><//>
+      </div>
+      <div class="row">
+        <${Field} label="Host B *" htmlFor="link-bh" error=${errors.bh} errorId="link-bh-error">
+          <${RefSelect} id="link-bh" required=true invalid=${!!errors.bh} describedBy=${errors.bh ? "link-bh-error" : undefined}
+            value=${f.bh} options=${hosts} onChange=${v => set("bh", v)} /><//>
+        <${Field} label="Porta B (opcional)" htmlFor="link-bp" error=${errors.bp} errorId="link-bp-error">
+          <input id="link-bp" value=${f.bp} aria-invalid=${!!errors.bp || undefined} aria-describedby=${errors.bp ? "link-bp-error" : undefined}
+            class=${errors.bp ? "invalid" : ""} placeholder="ex.: ether1" onInput=${e => set("bp", e.target.value)} /><//>
+      </div>
+      <div class="row">
+        <${Field} label="Meio"><${EnumSelect} value=${f.media} options=${["fiber", "copper"]} onChange=${v => set("media", v)} /><//>
+        <${Field} label="Velocidade" htmlFor="link-speed"><input id="link-speed" value=${f.speed} placeholder="ex.: 10G" onInput=${e => set("speed", e.target.value)} /><//>
+      </div>
+      <${Field} label="Descrição" htmlFor="link-desc"><input id="link-desc" value=${f.desc} onInput=${e => set("desc", e.target.value)} /><//>
+      <div class="modal-actions"><button type="button" disabled=${saving} onClick=${onClose}>Cancelar</button>
+        <button type="submit" class="primary" disabled=${saving}>${saving ? "Salvando…" : "Salvar"}</button></div>
+    </form>
+  <//>`;
+}
+
 
 /* --------------------------- ResourceTable ------------------------------ */
 export function ResourceTable({ columns, rows, onRowClick, actions, empty }) {

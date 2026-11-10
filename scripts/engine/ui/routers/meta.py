@@ -27,6 +27,12 @@ def enums() -> dict:
     }
 
 
+@router.get("/meta/icons")
+def host_icons() -> dict:
+    """Ícones locais disponíveis para o seletor de host."""
+    from services import icons_svc
+    return icons_svc.choices()
+
 @router.get("/vault/status")
 def vault_status() -> dict:
     """Estado do cofre. USA session_status() — NÃO renova o TTL deslizante.
@@ -98,6 +104,7 @@ def config_meta() -> dict:
     return {
         "network_name": network_name,
         "read_only": deps.STATE.read_only,
+        "isolated_data": deps.DATA_ROOT != deps.NETOPS_ROOT,
         "terminal_enabled": deps.STATE.enable_terminal,
         "claude_enabled": deps.STATE.enable_claude,
     }

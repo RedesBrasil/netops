@@ -1,0 +1,134 @@
+// O editor trabalha sobre os mesmos hosts/enlaces das páginas de inventário.
+import { html, useState, useEffect, useRef, api, Spinner, toast, handleError, Modal, ConfirmDialog } from "../ui.js";
+import { HostForm } from "./hosts.js";
+import { LinkForm } from "../components.js";
+
+const blank = (id, name) => ({ id, name, kind: "custom", members: [], positions: {}, objects: [], edges: {}, visual_links: [] });
+const persisted = m => { const { host_ids, ...rest } = m; return rest; };
+export function MapsPage() {
+  const [snapshot, setSnapshot] = useState(null), [Editor, setEditor] = useState(null), [error, setError] = useState(null);
+  const [current, setCurrent] = useState(sessionStorage.getItem("netops_map") || "all");
+  const [status, setStatus] = useState("Salvo no servidor"), [saving, setSaving] = useState(false);
+  const [hostDialog, setHostDialog] = useState(null), [linkDialog, setLinkDialog] = useState(null), [newMap, setNewMap] = useState(false), [confirm, setConfirm] = useState(null);
+  const live = useRef(null), pending = useRef(new Map()), running = useRef(false), blocked = useRef(false), busy = useRef(false), mounted = useRef(true);
+  const activity = useRef(0), readSequence = useRef(0);
+  const dialogs = useRef(false); dialogs.current = !!(hostDialog || linkDialog || newMap || confirm);
+  function setBusy(value) {
+    if (value && !busy.current) activity.current++;
+    busy.current = value;
+  }
+  function accept(data) {
+    const previousServer = live.current;
+    live.current = data;
+    if (mounted.current) {
+      setSnapshot(previous => previous === previousServer && previous?.rev === data.rev && previous?.hosts_rev === data.hosts_rev &&
+        previous?.topology.rev === data.topology.rev && previous?.read_only === data.read_only ? previous : data);
+      setCurrent(id => data.map_aliases?.[id] || (data.maps.some(m => m.id === id) ? id : "all"));
+    }
+  }
+  async function reload({ background = false } = {}) {
+    const version = activity.current, sequence = ++readSequence.current;
+    try {
+      const data = await api.get("/maps");
+      if (!mounted.current || sequence !== readSequence.current || version !== activity.current ||
+          running.current || pending.current.size || blocked.current || busy.current || background && dialogs.current) return;
+      accept(data); setError(null); return data;
+    } catch (e) {
+      if (mounted.current && sequence === readSequence.current && version === activity.current) setError(e);
+      throw e;
+    }
+  }
+  useEffect(() => {
+    mounted.current = true;
+    const css = document.querySelector('link[data-map-editor]');
+    if (!css) { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "/vendor/map-editor.css"; l.dataset.mapEditor = "true"; document.head.append(l); }
+    import("/vendor/map-editor.js").then(m => { if (mounted.current) setEditor(() => m.MapEditor); }).catch(setError);
+    reload().catch(() => {});
+    const poll = () => { if (mounted.current && !running.current && !pending.current.size && !blocked.current && !busy.current && !dialogs.current && document.visibilityState === "visible") reload({ background: true }).catch(() => {}); };
+    const timer = setInterval(poll, 8000);
+    addEventListener("focus", poll); addEventListener("netops:changed", poll);
+    const leave = event => { if (running.current || pending.current.size) { event.preventDefault(); event.returnValue = ""; } };
+    addEventListener("beforeunload", leave);
+    const navigate = event => {
+      const link = event.target.closest?.('a[href^="#"]');
+      if (link && link.hash !== "#maps" && (running.current || pending.current.size || blocked.current)) {
+        event.preventDefault(); event.stopPropagation();
+        toast.err("Aguarde o salvamento do mapa ou resolva a falha antes de sair.");
+      }
+    };
+    document.addEventListener("click", navigate, true);
+    return () => { mounted.current = false; clearInterval(timer); removeEventListener("focus", poll); removeEventListener("netops:changed", poll); removeEventListener("beforeunload", leave); document.removeEventListener("click", navigate, true); };
+  }, []);
+  async function drain() {
+    if (running.current || blocked.current || !pending.current.size) return;
+    running.current = true; setSaving(true); setStatus("Salvando…");
+    try {
+      while (pending.current.size) {
+        const [id, map] = pending.current.entries().next().value;
+        const s = live.current;
+        const result = await api.put(`/maps/${encodeURIComponent(id)}`, { map: persisted(map), hosts_rev: s.hosts_rev, topology_rev: s.topology.rev }, s.rev);
+        if (pending.current.get(id) === map) pending.current.delete(id);
+        live.current = result;
+        // Uma confirmação de um gesto anterior não reposiciona o host ainda em arraste.
+        if (!pending.current.size && !busy.current && mounted.current) setSnapshot(result);
+      }
+      if (mounted.current) setStatus("Salvo no servidor");
+    } catch (e) {
+      blocked.current = true;
+      if (mounted.current) { setStatus(e.status === 409 ? "Conflito de versão" : "Falha ao salvar"); handleError(e); }
+    } finally { running.current = false; if (mounted.current) setSaving(false); }
+  }
+  function save(map) {
+    activity.current++;
+    pending.current.set(map.id, map);
+    setSnapshot(s => ({ ...s, maps: s.maps.some(m => m.id === map.id) ? s.maps.map(m => m.id === map.id ? map : m) : [...s.maps, { ...map, host_ids: map.host_ids || [] }] }));
+    drain();
+  }
+  async function flush() {
+    await drain();
+    if (blocked.current || pending.current.size || running.current) { toast.err("Aguarde o salvamento do mapa ou resolva o conflito antes de continuar."); return false; }
+    return true;
+  }
+  async function switchMap(id) { if (!await flush()) return; setCurrent(id); sessionStorage.setItem("netops_map", id); }
+  async function openHost(args) {
+    if (!await flush()) return;
+    try {
+      const h = await api.get("/hosts");
+      const host = args.id ? h.hosts.find(x => x.id === args.id) : { __new: true };
+      setHostDialog({ host, groups: h.groups, rev: h.rev, initial: { site: args.site || "" },
+        ...(args.point ? { placement: { map_id: live.current.maps.find(m => m.id === current)?.id || "all", maps_rev: live.current.rev, ...args.point } } : {}) });
+    } catch (e) { handleError(e); }
+  }
+  async function openLink(args) {
+    if (!await flush()) return;
+    const s = live.current, link = args.id ? s.topology.links.find(l => l.id === args.id) : { ...args, __new: true };
+    if (args.remove) { setConfirm({ kind: "link", id: args.id }); return; }
+    setLinkDialog({ link, hosts: Object.keys(s.hosts), rev: s.topology.rev });
+  }
+  if (error && (!snapshot || !Editor)) return html`<div class="card">Não foi possível abrir os mapas: ${error.message}<button onClick=${reload}>Tentar novamente</button></div>`;
+  if (!snapshot || !Editor) return html`<${Spinner} />`;
+  const map = snapshot.maps.find(m => m.id === current) || snapshot.maps[0];
+  return html`<div class="maps-page">
+    <${Editor} map=${map} maps=${snapshot.maps} hosts=${snapshot.hosts} links=${snapshot.topology.links} readOnly=${snapshot.read_only}
+      saving=${saving || !!pending.current.size} status=${status} onSave=${save} onHost=${openHost} onLink=${openLink} onSwitch=${switchMap}
+      onNewMap=${async () => { if (await flush()) setNewMap(true); }} onDeleteMap=${() => setConfirm({ kind: "map", id: map.id })}
+      onError=${message => toast.err(message)} onBusy=${setBusy}
+      onRetry=${() => { blocked.current = false; drain(); }} onReload=${() => setConfirm({ kind: "reload" })} />
+    ${hostDialog && html`<${HostForm} ...${hostDialog} onClose=${() => { setHostDialog(null); reload().catch(handleError); }}
+      onSaved=${() => { setHostDialog(null); reload().catch(handleError); }} />`}
+    ${linkDialog && html`<${LinkForm} ...${linkDialog} onClose=${() => setLinkDialog(null)} onSaved=${() => { setLinkDialog(null); reload().catch(handleError); }} />`}
+    ${newMap && html`<${Modal} title="Novo mapa" onClose=${() => setNewMap(false)}><form onSubmit=${e => {
+      e.preventDefault(); const name = new FormData(e.currentTarget).get("name").trim(); if (!name) return;
+      const id = "map-" + (globalThis.crypto?.randomUUID?.() || Date.now()); save(blank(id, name)); setCurrent(id); setNewMap(false);
+    }}><label>Nome do mapa<input name="name" required maxlength="100" autofocus /></label><div class="modal-actions"><button type="button" onClick=${() => setNewMap(false)}>Cancelar</button><button class="primary">Criar mapa</button></div></form><//>`}
+    ${confirm && html`<${ConfirmDialog} title=${confirm.kind === "reload" ? "Recarregar mapas" : "Confirmar exclusão"} danger=true
+      message=${confirm.kind === "map" ? "Excluir este mapa e suas referências? Dispositivos e enlaces do inventário serão preservados." : confirm.kind === "link" ? "Excluir o enlace da topologia e de todos os mapas?" : "Descartar os ajustes locais não salvos e carregar a versão atual do servidor?"}
+      onClose=${() => setConfirm(null)} onConfirm=${async () => {
+        try {
+          if (confirm.kind === "reload") { pending.current.clear(); blocked.current = false; await reload(); setStatus("Salvo no servidor"); }
+          else { if (!await flush()) return; if (confirm.kind === "map") { accept(await api.del(`/maps/${confirm.id}`, live.current.rev)); setCurrent("all"); }
+            else { await api.del(`/topology/link/${confirm.id}`, live.current.topology.rev); await reload(); } }
+        } catch (e) { handleError(e); }
+      }} />`}
+  </div>`;
+}

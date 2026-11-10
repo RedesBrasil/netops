@@ -151,6 +151,7 @@ def credential_references(name: str) -> dict:
     return {"name": name, "references": refs, "count": len(refs)}
 
 
+@yaml_io.serialized
 def rename_credential(old: str, new: str, rev: str | None) -> dict:
     """Renomeia a chave da credencial e atualiza 'credential' em hosts/grupos, numa
     transação atômica. credentials.yaml mantém modo 0600 e o bloco vault: intacto

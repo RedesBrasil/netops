@@ -21,9 +21,9 @@ from services import yaml_io
 ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 # Ordem de chaves p/ hosts/grupos novos (legibilidade do YAML).
-HOST_KEY_ORDER = ["hostname", "mgmt_ip", "group", "vendor", "role", "model", "site", "access", "credential", "notes"]
+HOST_KEY_ORDER = ["hostname", "mgmt_ip", "group", "vendor", "role", "icon", "model", "site", "access", "credential", "notes"]
 GROUP_KEY_ORDER = ["vendor", "role", "access", "credential", "model", "site", "notes"]
-OPTIONAL_STR = {"model", "site", "notes"}
+OPTIONAL_STR = {"model", "site", "notes", "icon"}
 
 
 # --------------------------------------------------------------------------- #
@@ -36,6 +36,7 @@ def load_hosts() -> tuple[dict, str]:
     return data, rev
 
 
+@yaml_io.serialized
 def list_hosts_detailed() -> dict:
     from lib.inventory import resolve_host  # noqa: PLC0415
     data, rev = load_hosts()
@@ -52,6 +53,7 @@ def list_hosts_detailed() -> dict:
     return {"hosts": out, "rev": rev, "groups": sorted((data.get("groups") or {}).keys())}
 
 
+@yaml_io.serialized
 def get_host(name: str) -> dict:
     from lib.inventory import resolve_host  # noqa: PLC0415
     data, rev = load_hosts()
@@ -181,7 +183,8 @@ def _clean_new(fields: dict, order: list[str]) -> dict:
 # --------------------------------------------------------------------------- #
 # CRUD de hosts
 # --------------------------------------------------------------------------- #
-def create_host(host_id: str, fields: dict, rev: str | None) -> dict:
+@yaml_io.serialized
+def create_host(host_id: str, fields: dict, rev: str | None, *, placement: dict | None = None) -> dict:
     data, doc, y = _load_doc()
     hosts = data.setdefault("hosts", {})
     if host_id in hosts:
@@ -189,10 +192,20 @@ def create_host(host_id: str, fields: dict, rev: str | None) -> dict:
     before = _plain(data)
     hosts[host_id] = _clean_new(fields, HOST_KEY_ORDER)
     _gate(before, _plain(data))
-    new_rev = yaml_io.write_rt(deps.HOSTS_FILE, y, data, expected=rev, backup=True)
+    if placement:
+        from services import maps_svc
+        if not rev:
+            maps_svc._fail("rev", "revisão do inventário obrigatória ao criar pelo mapa")
+        writes = [(deps.HOSTS_FILE, yaml_io.dump_rt(y, data), 0o644)]
+        checks = [(deps.HOSTS_FILE, rev)]
+        maps_svc.place_host(host_id, placement, _plain(data), writes, checks)
+        new_rev = yaml_io.write_many(writes, checks=checks)[deps.HOSTS_FILE]
+    else:
+        new_rev = yaml_io.write_rt(deps.HOSTS_FILE, y, data, expected=rev, backup=True)
     return get_host(host_id) | {"rev": new_rev}
 
 
+@yaml_io.serialized
 def update_host(host_id: str, fields: dict, rev: str | None, *, partial: bool) -> dict:
     data, doc, y = _load_doc()
     hosts = data.get("hosts") or {}
@@ -205,13 +218,28 @@ def update_host(host_id: str, fields: dict, rev: str | None, *, partial: bool) -
     return get_host(host_id) | {"rev": new_rev}
 
 
+@yaml_io.serialized
 def delete_host(host_id: str, rev: str | None) -> dict:
     data, doc, y = _load_doc()
     hosts = data.get("hosts") or {}
     if host_id not in hosts:
         raise KeyError(f"host '{host_id}' não existe")
     del hosts[host_id]
-    new_rev = yaml_io.write_rt(deps.HOSTS_FILE, y, data, expected=rev, backup=True)
+    from services import maps_svc, topology_svc
+    writes = [(deps.HOSTS_FILE, yaml_io.dump_rt(y, data), 0o644)]
+    checks = [(deps.HOSTS_FILE, rev)]
+    topo, tr, ty = yaml_io.load_rt(deps.TOPOLOGY_FILE)
+    removed = set()
+    if topo is not None:
+        topology_svc.ensure_link_ids(topo)
+        links = topo.get("links") or []
+        removed = {lk["id"] for lk in links if any((lk.get(e) or {}).get("host") == host_id for e in ("a", "b"))}
+        if removed:
+            topo["links"] = [lk for lk in links if lk["id"] not in removed]
+            writes.append((deps.TOPOLOGY_FILE, yaml_io.dump_rt(ty, topo), 0o644))
+            checks.append((deps.TOPOLOGY_FILE, tr))
+    maps_svc.cascade_host(host_id, None, removed, writes, checks)
+    new_rev = yaml_io.write_many(writes, checks=checks)[deps.HOSTS_FILE]
     return {"deleted": host_id, "rev": new_rev}
 
 
@@ -235,14 +263,17 @@ def _topology_host_refs(host_id: str) -> list[dict]:
     return out
 
 
+@yaml_io.serialized
 def host_references(host_id: str) -> dict:
     data, _ = load_hosts()
     if host_id not in (data.get("hosts") or {}):
         raise KeyError(f"host '{host_id}' não existe")
-    refs = _topology_host_refs(host_id)
+    from services import maps_svc
+    refs = _topology_host_refs(host_id) + maps_svc.host_references(host_id)
     return {"id": host_id, "references": refs, "count": len(refs)}
 
 
+@yaml_io.serialized
 def rename_host(old: str, new: str, rev: str | None) -> dict:
     """Renomeia a chave do host e atualiza as pontas de enlace em topology.yaml,
     numa transação atômica (write_many)."""
@@ -264,6 +295,8 @@ def rename_host(old: str, new: str, rev: str | None) -> dict:
     topo, topo_rev, ty = yaml_io.load_rt(deps.TOPOLOGY_FILE)
     updated: list[dict] = []
     if topo is not None:
+        from services import topology_svc
+        topology_svc.ensure_link_ids(topo)
         for i, lk in enumerate(topo.get("links") or []):
             for end in ("a", "b"):
                 e = (lk or {}).get(end)
@@ -274,6 +307,8 @@ def rename_host(old: str, new: str, rev: str | None) -> dict:
             writes.append((deps.TOPOLOGY_FILE, yaml_io.dump_rt(ty, topo), 0o644))
             checks.append((deps.TOPOLOGY_FILE, topo_rev))
 
+    from services import maps_svc
+    maps_svc.cascade_host(old, new, set(), writes, checks)
     revs = yaml_io.write_many(writes, checks=checks)
     return {"renamed": {"from": old, "to": new}, "updated": updated, "rev": revs[deps.HOSTS_FILE]}
 
@@ -281,6 +316,7 @@ def rename_host(old: str, new: str, rev: str | None) -> dict:
 # --------------------------------------------------------------------------- #
 # CRUD de grupos
 # --------------------------------------------------------------------------- #
+@yaml_io.serialized
 def create_group(name: str, fields: dict, rev: str | None) -> dict:
     data, doc, y = _load_doc()
     groups = data.setdefault("groups", {})
@@ -293,6 +329,7 @@ def create_group(name: str, fields: dict, rev: str | None) -> dict:
     return {"name": name, "fields": fields, "rev": new_rev}
 
 
+@yaml_io.serialized
 def update_group(name: str, fields: dict, rev: str | None, *, partial: bool) -> dict:
     data, doc, y = _load_doc()
     groups = data.get("groups") or {}
@@ -305,6 +342,7 @@ def update_group(name: str, fields: dict, rev: str | None, *, partial: bool) -> 
     return {"name": name, "fields": dict(groups[name]), "rev": new_rev}
 
 
+@yaml_io.serialized
 def delete_group(name: str, rev: str | None, *, force: bool) -> dict:
     data, doc, y = _load_doc()
     groups = data.get("groups") or {}
@@ -331,6 +369,7 @@ def group_references(name: str) -> dict:
     return {"name": name, "references": refs, "count": len(refs)}
 
 
+@yaml_io.serialized
 def rename_group(old: str, new: str, rev: str | None) -> dict:
     if not ID_RE.match(new):
         raise deps.ValidationFailed([{"loc": "to", "msg": "use a-z, 0-9, ponto, hífen ou underline"}])

@@ -74,3 +74,8 @@ backups/*
 !backups/exemplo/
 # Config de serviços de backup (referencia hosts reais) — runtime, como hosts.yaml.
 network/backups.yaml
+
+# Mapas reais e ferramentas de build (assets finais são versionados).
+network/maps.yaml
+scripts/engine/ui/maps/node_modules/
+scripts/engine/ui/maps/build-meta.json

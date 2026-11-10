@@ -1,0 +1,80 @@
+.netops-maps { position:relative; --map-1g: #008300; --map-10g: #2a78d6; --map-wan: #4a3aa7; display:flex; flex-direction:column; flex:1; min-height:440px; height:100%; min-width:0; background:var(--bg); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+[data-theme="dark"] .netops-maps { --map-1g:#008300; --map-10g:#2a78d6; --map-wan:#b03ca0; }
+.netops-maps button, .netops-maps select { min-height:40px; font:inherit; }
+.netops-maps button:focus-visible, .netops-maps select:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+.netops-maps button.active { border-color:var(--accent); color:var(--accent); }
+.netops-maps .map-toolbar { padding:6px 9px; display:flex; align-items:center; gap:8px; background:var(--surface); border-bottom:1px solid var(--border); flex-wrap:nowrap; flex-shrink:0; overflow-x:auto; }
+.netops-maps .map-picker { display:flex; gap:6px; align-items:center; min-width:0; }
+.netops-maps .map-picker select { max-width:230px; }
+.netops-maps select, .netops-maps input, .netops-maps textarea { color:var(--text); background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:7px; }
+.netops-maps .map-tools { display:flex; gap:6px; align-items:center; margin-left:auto; flex-shrink:0; }
+.netops-maps .map-toolbar button { flex-shrink:0; white-space:nowrap; }
+.netops-maps .map-toolbar .map-touch-actions { display:none; }
+.netops-maps .map-workspace { display:flex; flex:1; min-height:0; position:relative; }
+.netops-maps .map-canvas { position:relative; flex:1; min-width:0; min-height:260px; }
+.netops-maps .react-flow { background:var(--bg); }
+.netops-maps .device { display:flex; align-items:center; gap:10px; width:198px; min-height:91px; background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:14px 17px; }
+.netops-maps .device.chosen { border:2px solid var(--accent); padding:13px 16px; }
+.netops-maps .device strong { font-size:13px; display:block; overflow-wrap:anywhere; }
+.netops-maps .device small { color:var(--muted); font-size:11px; display:block; margin-top:4px; }
+.netops-maps .device .role { font-size:10px; display:block; margin-top:5px; color:var(--muted); }
+.netops-maps .device-icon { color:var(--accent); font-size:28px; }
+.netops-maps .map-ref { border-color:var(--map-wan); }
+.netops-maps .react-flow__handle { visibility:hidden; pointer-events:none; }
+.netops-maps .map-note { white-space:pre-wrap; min-width:180px; max-width:300px; padding:13px 17px; background:var(--surface); border-left:3px solid var(--accent); color:var(--text); font-size:13px; line-height:1.7; }
+.netops-maps .react-flow__node-shape { width:320px; height:200px; }
+.netops-maps .map-shape { width:100%; height:100%; background:var(--accent-weak); opacity:.8; border:1px dashed var(--accent); border-radius:14px; padding:13px 18px; font-size:13px; color:var(--text); }
+.netops-maps .map-shape.ellipse { border-radius:50%; text-align:center; }
+.netops-maps .canvas-caption { pointer-events:none; position:absolute; top:14px; left:18px; display:flex; flex-direction:column; gap:3px; }
+.netops-maps .canvas-caption strong { font-size:15px; }.netops-maps .canvas-caption span { font-size:11px; color:var(--muted); }
+.netops-maps .react-flow__controls { border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+.netops-maps .react-flow__controls-button { width:39px; height:39px; min-height:39px; padding:10px; background:var(--surface); color:var(--text); }
+.netops-maps .react-flow__controls-button svg { fill:currentColor; }
+.netops-maps .react-flow__minimap { background:var(--surface); border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+.netops-maps .react-flow__attribution { font-size:9px; background:var(--surface); }
+.netops-maps .connect-banner { z-index:6; position:absolute; top:14px; left:50%; transform:translateX(-50%); background:var(--accent); color:white; padding:8px; border-radius:8px; display:flex; gap:12px; align-items:center; max-width:calc(100% - 24px); pointer-events:none; }.netops-maps .connect-banner button { pointer-events:all; }
+.netops-maps .map-context { position:fixed; z-index:45; width:240px; max-width:calc(100vw - 16px); max-height:calc(100dvh - 16px); overflow-y:auto; padding:5px; background:var(--surface); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px #0003; }
+.netops-maps .map-context button { display:block; border:0; text-align:left; width:100%; min-height:34px; padding:6px 9px; border-radius:4px; font-size:13px; }
+.netops-maps .map-context button.danger { color:var(--danger); background:transparent; }
+.netops-maps .map-context button.danger:hover { background:var(--danger-weak); }
+.netops-maps .map-context [role="separator"] { border-top:1px solid var(--border); margin:4px; }
+.netops-maps .map-save-error { position:absolute; z-index:15; bottom:12px; left:50%; transform:translateX(-50%); max-width:calc(100% - 24px); display:flex; align-items:center; gap:10px; padding:8px 10px; background:var(--surface); border:1px solid var(--danger); border-radius:7px; color:var(--danger); font-size:12px; }
+.netops-maps .map-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.netops-maps .map-modal-bg { position:fixed; inset:0; z-index:60; background:#0007; display:flex; align-items:center; justify-content:center; padding:16px; }
+.netops-maps .map-modal { position:relative; width:430px; max-width:100%; max-height:calc(100dvh - 32px); overflow:auto; background:var(--surface); border-radius:10px; padding:22px; }
+.netops-maps .map-modal h2 { font-size:18px; margin-top:0; }.netops-maps .map-modal label { display:flex; flex-direction:column; gap:7px; margin:14px 0; }
+.netops-maps .map-modal input, .netops-maps .map-modal textarea { width:100%; min-height:44px; font-size:16px; }.netops-maps .map-modal textarea { min-height:80px; }
+.netops-maps .map-close { float:right; }.netops-maps .map-empty { position:absolute; left:12%; right:12%; top:40%; text-align:center; color:var(--muted); pointer-events:none; }
+.netops-maps .straight-line { cursor:grab; touch-action:none; }
+.netops-maps .line-label { position:absolute; min-height:0; padding:3px 7px; border:1px solid var(--border); border-radius:5px; background:var(--surface); color:var(--text); font-size:11px; font-weight:600; line-height:1.3; pointer-events:all; touch-action:none; cursor:grab; z-index:4; }
+.netops-maps .line-label-active { min-height:40px; min-width:70px; font-size:12px; padding:8px 10px; border:2px solid var(--accent); z-index:8; }
+.netops-maps .line-endpoint { position:absolute; width:40px; height:40px; min-height:40px; padding:0; border:2px solid var(--accent); border-radius:50%; background:var(--surface); color:var(--text); font-size:12px; font-weight:700; pointer-events:all; touch-action:none; cursor:grab; z-index:9; }
+.netops-maps .react-flow__edgelabel-renderer { z-index:1100; }
+.netops-maps .line-corner, .netops-maps .line-segment { position:absolute; pointer-events:all; touch-action:none; padding:0; min-height:30px; width:30px; height:30px; color:var(--text); background:var(--surface); border:2px solid var(--accent); z-index:10; font-size:11px; cursor:grab; }
+.netops-maps .line-corner { border-radius:50%; }.netops-maps .line-corner.focused { background:var(--accent); color:white; }.netops-maps .line-segment { border-radius:5px; font-size:19px; z-index:9; }
+.netops-maps .line-corner::after, .netops-maps .line-segment::after { content:''; position:absolute; inset:-5px; }
+.netops-maps .line-corner:active, .netops-maps .line-segment:active, .netops-maps .line-endpoint:active { cursor:grabbing; }
+@media(max-width:760px) {
+ .netops-maps .map-picker { flex:1; }.netops-maps .map-picker select { min-width:0; width:100%; max-width:180px; }
+ .netops-maps .map-picker label { display:none; }
+ .netops-maps .map-toolbar { padding:5px; gap:5px; }
+ .netops-maps .map-tools { gap:5px; }.netops-maps .map-toolbar button { padding:6px 8px; font-size:12px; }
+ .netops-maps button { min-height:44px; }.netops-maps .map-overview { display:none; }
+ .netops-maps .map-modal-bg { align-items:flex-end; }
+}
+@media(prefers-reduced-motion:reduce) { .netops-maps *, .netops-maps *::before, .netops-maps *::after { transition:none!important; animation:none!important; } }
+@media(forced-colors:active) { .netops-maps .react-flow__edge-path { stroke:CanvasText!important; }.netops-maps .device { border-color:CanvasText; } }
+@media(max-height:540px) {
+ .netops-maps { min-height:0; }
+ .netops-maps .map-canvas { min-height:90px; }
+ .netops-maps .map-toolbar { flex-wrap:nowrap; }
+}
+/* As pontas têm prioridade de toque quando um canto está próximo no zoom reduzido. */
+.netops-maps .line-endpoint { z-index:12; }
+.netops-maps .device-icon-image { width:44px; height:44px; object-fit:contain; flex-shrink:0; pointer-events:none; user-select:none; }
+.netops-maps .device > div { min-width:0; }
+
+@media(pointer:coarse) {
+ .netops-maps .map-toolbar .map-touch-actions { display:block; min-width:36px; font-size:22px; line-height:1; }
+ .netops-maps .map-context button { min-height:44px; }
+}

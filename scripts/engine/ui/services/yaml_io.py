@@ -14,6 +14,8 @@ from __future__ import annotations
 import hashlib
 import os
 import time
+from functools import wraps
+from threading import RLock
 from io import StringIO
 from pathlib import Path
 
@@ -22,6 +24,17 @@ from ruamel.yaml import YAML
 import deps
 
 MAX_BACKUPS = 10
+
+# Um lock de commit, sem cache de inventário. Protege leitura + validação + escrita.
+COMMIT_LOCK = RLock()
+
+def serialized(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with COMMIT_LOCK:
+            return fn(*args, **kwargs)
+    return wrapped
+
 
 
 # --------------------------------------------------------------------------- #
