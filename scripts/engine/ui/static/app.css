@@ -205,8 +205,11 @@ pre.raw { font-family: var(--mono); font-size: 13px; background: var(--surface-2
 .cc-composer-bar { display: flex; align-items: center; gap: 8px; padding: 4px 8px 6px; }
 .cc-composer-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; overflow: hidden; }
 .cc-composer-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
-.cc-modepick { display: inline-flex; align-items: center; flex-shrink: 0; }
-.cc-modepick select { padding: 7px 10px; font-size: 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+.cc-modepick, .cc-modelpick { display: inline-flex; align-items: center; flex-shrink: 0; }
+.cc-modepick select, .cc-modelpick select { padding: 7px 10px; font-size: 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+.cc-model-pick .cc-model-msg { padding: 10px 12px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); font-size: 13px; }
+.cc-model-opts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.cc-model-warn { border: 1px solid #b8863b; background: rgba(184,134,59,.12); color: var(--text); font-size: 13px; padding: 10px 12px; margin-bottom: 10px; border-radius: 8px; }
 .cc-meta { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cc-composer-wrap { display: flex; flex-direction: column; }
 

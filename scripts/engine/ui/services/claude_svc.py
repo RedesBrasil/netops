@@ -13,6 +13,14 @@ usuário, troca de modo, respostas de permissão, interromper) e outra bombeia a
 mensagens do SDK de volta como JSON. A autenticação do `claude` reaproveita o login de
 assinatura já existente (~/.claude/.credentials.json) — o SDK herda o HOME do processo.
 
+PERSISTÊNCIA (--enable-claude-persist, default OFF). Com a flag LIGADA, a sessão
+DESACOPLA do socket: se a aba dorme/entra em standby e o WebSocket cai, o agente NÃO é
+morto — termina o turno e o SDK grava tudo no transcript em disco (SEM buffer na RAM).
+Ao voltar, a aba RE-ANEXA à sessão viva (e recarrega o que faltou do disco). O dono é
+validado por um cookie HttpOnly (anti-sequestro); os limites são ESTÁTICOS (teto de
+sessões + carência + timeout de pergunta). Com a flag DESLIGADA tudo isto fica inerte e
+o comportamento é o original (vida do agente = vida do socket). Ver o diário de fixes.
+
 Protocolo (JSON nos dois sentidos) — ver scripts/engine/ui/static/js/pages/claude.js:
   cliente -> servidor:
     {"type":"prompt","text":...}                      turno do usuário (inclui /slash)
@@ -20,6 +28,8 @@ Protocolo (JSON nos dois sentidos) — ver scripts/engine/ui/static/js/pages/cla
     {"type":"set_model","model":...}                  troca o modelo (None = padrão)
     {"type":"permission","id":...,"decision":"allow|deny","updated_input":{...},"message":...}
     {"type":"interrupt"}                              aborta o turno atual
+    {"type":"bye"}                                    fechamento DELIBERADO (encerra a sessão viva;
+                                                      um drop por standby NÃO manda isto -> desanexa)
   servidor -> cliente:
     {"type":"system","subtype":...,"data":{...}}      init traz session_id/model/slash_commands
     {"type":"text_delta","text":...}                  streaming do texto do assistente
@@ -29,21 +39,27 @@ Protocolo (JSON nos dois sentidos) — ver scripts/engine/ui/static/js/pages/cla
     {"type":"assistant_end"}                           fim de uma mensagem do assistente
     {"type":"permission_request","id":..,"tool":..,"input":{...},"context":{...}}
     {"type":"mode_changed","mode":...}
+    {"type":"reattached","busy":bool}                  re-anexou a uma sessão viva (persist)
     {"type":"result","session_id":..,"cost_usd":..,"usage":{...},"is_error":bool,"result":..}
     {"type":"error","detail":...}
 """
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import os
 import re
+import secrets
 import shutil
+import time
+from collections import deque
 from pathlib import Path
 
 from fastapi import WebSocket, WebSocketDisconnect
 
 import deps
+from services import claude_models
 
 # Importado de forma preguiçosa para não quebrar a UI quando o SDK não está instalado
 # (instalação headless sem `pip install claude-agent-sdk`). O router checa is_available().
@@ -72,6 +88,11 @@ except ImportError:  # pragma: no cover - depende da instalação
 # (classificador ainda específico do TS) — slash `/model`/`/permissions` cobre o resto.
 VALID_MODES = ("plan", "default", "acceptEdits", "dontAsk", "bypassPermissions")
 _TOOL_RESULT_MAX = 8000  # trunca saída de ferramenta p/ não inundar a UI
+# stderr do subprocesso `claude` — antes era descartado (cegava o diagnóstico). Vai p/ um log
+# dedicado (não polui o console.log) e alimenta o erro mostrado na UI. Ver ClaudeWebSession._on_stderr.
+_AGENT_LOG = deps.RUNS_DIR / "claude" / "agent-stderr.log"
+# Nunca gravar segredo em texto puro (regra do projeto): redige tokens que porventura vazem no stderr.
+_SECRET_RE = re.compile(r"(sk-ant-[A-Za-z0-9_-]{6,}|Bearer\s+[A-Za-z0-9._-]{8,}|eyJ[A-Za-z0-9._-]{20,})")
 
 
 def is_available() -> bool:
@@ -103,29 +124,136 @@ def _stringify(content) -> str:
     return text
 
 
-class ClaudeWebSession:
-    """Dirige um ClaudeSDKClient a partir de um WebSocket já autorizado e aceito."""
+# --------------------------------------------------------------------------- #
+# Persistência: registro de sessões vivas + donos (cookie). Tudo em memória do
+# processo (uvicorn single-process), como as sessões de login. Ver deps.ServerState
+# e o diário de fixes. NADA de buffer de conteúdo aqui — o disco é a fonte da verdade.
+# --------------------------------------------------------------------------- #
+_LIVE: dict[str, "ClaudeWebSession"] = {}   # session_id -> sessão viva (só quando persist)
+_OWNERS: dict[str, dict] = {}               # token do cookie -> {"login_sid": str, "exp": epoch}
+_OWNER_TTL = 12 * 3600                        # validade do cookie de dono (renovada a cada emissão)
 
-    def __init__(self, ws: WebSocket):
+
+def mint_owner(login_sid: str | None) -> str:
+    """Emite um token de DONO (vai num cookie HttpOnly) amarrado à sessão de login atual.
+    O `session_id` NÃO é credencial — é só índice; o re-anexo exige ESTE token."""
+    _gc_owners()
+    tok = secrets.token_urlsafe(32)
+    _OWNERS[tok] = {"login_sid": login_sid or "", "exp": time.time() + _OWNER_TTL}
+    return tok
+
+
+def valid_owner(token: str | None) -> bool:
+    """True se o token existe, não expirou e a sessão de login que o criou ainda vale
+    (logout/restart invalida — amarra o re-anexo ao login vivo)."""
+    if not token:
+        return False
+    o = _OWNERS.get(token)
+    if not o:
+        return False
+    if o["exp"] <= time.time():
+        _OWNERS.pop(token, None)
+        return False
+    if deps.auth_required() and o.get("login_sid") and not deps.auth_session_valid(o["login_sid"]):
+        return False
+    return True
+
+
+def _gc_owners() -> None:
+    now = time.time()
+    for k in [k for k, v in _OWNERS.items() if v["exp"] <= now]:
+        _OWNERS.pop(k, None)
+
+
+def _detached_count() -> int:
+    return sum(1 for s in _LIVE.values() if s.ws is None and not s._closing_done)
+
+
+def attach_or_create(*, owner: str, resume: str | None, model: str | None):
+    """Decide entre RE-ANEXAR a uma sessão viva e CRIAR uma nova (respeitando o teto estático).
+
+    Retorna (session|None, how) com how em {"reattach","new","too_many","forbidden"}.
+    """
+    if resume and resume in _LIVE:
+        s = _LIVE[resume]
+        if s._closing_done:          # estava morrendo (carência disparou): cria nova
+            _LIVE.pop(resume, None)
+        else:
+            # TAKEOVER (não "forbidden"): QUALQUER usuário autenticado pode retomar a conversa —
+            # outro PC, ou o MESMO navegador após re-login (cookie novo). O acesso já é protegido
+            # pelo login da senha-mestra (_ws_authorized); travar por dono deixava a sessão
+            # IRRECUPERÁVEL ("erro" sem saída). Assume a posse e re-anexa; o socket antigo (se
+            # ainda vivo) é fechado no attach() (supersede). Prioridade: continuar a conversa.
+            if s.owner != owner:
+                s.owner = owner
+            return s, "reattach"
+    if _detached_count() >= deps.STATE.claude_max_sessions:
+        return None, "too_many"       # teto estático: recusa com mensagem (o cliente avisa)
+    s = ClaudeWebSession(owner=owner, persist=True, resume=resume, model=model)
+    return s, "new"
+
+
+async def shutdown_all() -> None:
+    """Teardown de todas as sessões vivas (chamado no shutdown do uvicorn) — não deixa
+    subprocesso `claude` órfão num deploy/restart."""
+    for s in list(_LIVE.values()):
+        try:
+            await s.teardown()
+        except Exception:
+            pass
+    _LIVE.clear()
+    _OWNERS.clear()
+
+
+class ClaudeWebSession:
+    """Dirige um ClaudeSDKClient. O socket é um atributo TROCÁVEL (attach/detach): no modo
+    persistente a sessão vive acima do socket; no modo clássico nasce e morre com ele."""
+
+    def __init__(self, ws: WebSocket | None = None, *, owner: str = "",
+                 persist: bool = False, resume: str | None = None, model: str | None = None):
         self.ws = ws
+        self.owner = owner
+        self.persist = persist
+        # resume/model ficam na SESSÃO (não no socket), p/ (re)lançar igual em cada anexo.
+        self._resume = resume if resume is not None else ((ws.query_params.get("resume") if ws else None) or None)
+        self._model = model if model is not None else ((ws.query_params.get("model") if ws else None) or None)
+        self.sid: str | None = self._resume   # vira o session_id real quando o init chega
         self.client: ClaudeSDKClient | None = None
-        self._pending: dict[str, asyncio.Future] = {}  # id de permissão -> Future
+        self._pending: dict[str, asyncio.Future] = {}   # id de permissão -> Future
+        self._pending_payloads: dict[str, dict] = {}     # id -> card (p/ reemitir no re-anexo)
         self._counter = 0
-        self._ask_tool_ids: set[str] = set()           # tool_use_ids de AskUserQuestion (suprimir card)
+        self._ask_tool_ids: set[str] = set()            # tool_use_ids de AskUserQuestion (suprimir card)
+        self._stderr_tail: deque[str] = deque(maxlen=60)  # últimas linhas de stderr do agente (diagnóstico)
+        self._busy = False               # turno em andamento? (controla a carência de teardown)
+        self._closing = False            # cliente mandou "bye" (fechamento deliberado)
+        self._closing_done = False       # teardown já executado (idempotência)
+        self._started = False            # client já conectado?
+        self._sdk_task: asyncio.Task | None = None
+        self._grace_handle = None        # timer de teardown (desanexado + ocioso)
+        self._ask_timers: dict[str, object] = {}  # id -> TimerHandle (timeout de pergunta)
 
     # ------------------------------------------------------------------ envio
     async def _send(self, obj: dict) -> None:
+        # Desanexado (persist): NÃO guarda nada — o transcript em disco é a verdade. Descarta.
+        ws = self.ws
+        if ws is None:
+            return
         # default=str protege contra qualquer valor não-serializável vindo do SDK.
         try:
-            await self.ws.send_text(json.dumps(obj, default=str))
+            await ws.send_text(json.dumps(obj, default=str))
         except (WebSocketDisconnect, RuntimeError):
             pass
 
     def _options(self) -> "ClaudeAgentOptions":
-        resume = self.ws.query_params.get("resume") or None  # retomar sessão passada (?resume=<sid>)
+        resume = self._resume  # retomar sessão passada
+        # Modelo econômico por padrão (Sonnet). O default herdado do store pode apontar p/ um alias
+        # inexistente (ex.: "sonnet-failover[1m]") e IMPEDIR o início da conversa; forçamos aqui.
+        # A UI troca em runtime (set_model) e passa ?model= no (re)lançamento.
+        model = self._model or claude_models.default_model()
         return ClaudeAgentOptions(
             cwd=str(deps.NETOPS_ROOT),
             resume=resume,
+            model=model,
             setting_sources=["user", "project", "local"],  # herda CLAUDE.md/skills/agentes
             # O modo bypassPermissions (exposto na UI) exige DUAS condições no lançamento:
             #  1) a sessão precisa nascer com --dangerously-skip-permissions, senão o SDK recusa a
@@ -145,31 +273,57 @@ class ClaudeWebSession:
             # abre o seletor na UI e devolve a escolha em updatedInput.answers.
             hooks={"PreToolUse": [HookMatcher(matcher="AskUserQuestion", hooks=[self._hook_ask_question])]},
             cli_path=claude_path(),
-            stderr=lambda _s: None,
+            stderr=self._on_stderr,
         )
+
+    # ------------------------------------------------------------- stderr do agente
+    def _on_stderr(self, line: str) -> None:
+        """Cada linha de stderr do subprocesso `claude`. Antes era jogada fora (`lambda: None`),
+        o que cegava todo diagnóstico de por que um turno morre no meio. Guarda as últimas linhas
+        (anexadas ao erro que a UI recebe) e registra num log dedicado, redigindo segredos."""
+        try:
+            text = _SECRET_RE.sub("«redacted»", (line or "").rstrip("\n"))
+            if not text.strip():
+                return
+            self._stderr_tail.append(text)
+            ts = datetime.datetime.now().isoformat(timespec="seconds")
+            _AGENT_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with _AGENT_LOG.open("a", encoding="utf-8") as fh:
+                fh.write(f"{ts} [{id(self):x}] {text}\n")
+        except Exception:
+            pass  # diagnóstico nunca pode derrubar a sessão
 
     # -------------------------------------------------------- ponte de permissão
     async def _ask_ui(self, tool_name: str, input_data: dict, context: dict | None = None):
         """Envia uma requisição à UI e bloqueia até a resposta (resolvida pelo _ws_pump).
-        Devolve o dict da resposta {decision, updated_input?, message?} ou None se o WS cair."""
+        Devolve o dict da resposta {decision, updated_input?, message?} ou None se o WS cair.
+
+        No modo persistente, se a pergunta nasce (ou fica) SEM socket anexado, um timeout a
+        resolve como NEGAÇÃO — "dúvida sem resposta = não faz" (ver _arm_ask_timer)."""
         loop = asyncio.get_event_loop()
         fut: asyncio.Future = loop.create_future()
         self._counter += 1
         rid = f"perm{self._counter}"
         self._pending[rid] = fut
-        await self._send({
+        payload = {
             "type": "permission_request",
             "id": rid,
             "tool": tool_name,
             "input": input_data,
             "context": context or {},
-        })
+        }
+        self._pending_payloads[rid] = payload
+        await self._send(payload)
+        if self.persist and self.ws is None:   # perguntou já desanexado -> começa a contar
+            self._arm_ask_timer(rid)
         try:
             return await fut
         except asyncio.CancelledError:
             return None
         finally:
             self._pending.pop(rid, None)
+            self._pending_payloads.pop(rid, None)
+            self._cancel_ask_timer(rid)
 
     async def _can_use_tool(self, tool_name: str, input_data: dict, context):
         """Chamado pelo SDK quando uma ferramenta precisa de aprovação (modos default/plan/
@@ -208,28 +362,137 @@ class ClaudeWebSession:
             "permissionDecisionReason": reason or "Usuário pulou a pergunta.",
         }}
 
+    # ----------------------------------------------------- attach / detach / timers
+    def attach(self, ws: WebSocket) -> None:
+        """(Re)anexa um socket. Cancela os timers de carência/pergunta e reemite os cards de
+        permissão pendentes (o envio original foi DESCARTADO enquanto desanexado)."""
+        old = self.ws
+        self.ws = ws
+        if old is not None and old is not ws:   # supersede (ex.: nova aba) — fecha o antigo
+            try:
+                asyncio.create_task(old.close())
+            except Exception:
+                pass
+        self._cancel_grace()
+        self._cancel_ask_timers()               # você voltou: perguntas voltam a esperar sem pressa
+        for payload in list(self._pending_payloads.values()):
+            asyncio.create_task(self._send(payload))
+
+    def detach(self) -> None:
+        """Solta o socket SEM matar o agente. Arma a carência (se ocioso) e o timeout das
+        perguntas em aberto."""
+        self.ws = None
+        if self._pending_payloads:              # perguntas em aberto e você saiu -> conta o timeout
+            self._arm_ask_timers()
+        self._maybe_arm_grace()
+
+    def _maybe_arm_grace(self) -> None:
+        # Só agenda o teardown quando NÃO há socket, NÃO há turno rodando e NÃO há pergunta aberta.
+        if self.ws is None and not self._busy and not self._pending and not self._closing_done:
+            self._arm_grace()
+
+    def _arm_grace(self) -> None:
+        self._cancel_grace()
+        loop = asyncio.get_event_loop()
+        self._grace_handle = loop.call_later(
+            max(1, deps.STATE.claude_detach_grace),
+            lambda: asyncio.create_task(self.teardown()),
+        )
+
+    def _cancel_grace(self) -> None:
+        if self._grace_handle is not None:
+            self._grace_handle.cancel()
+            self._grace_handle = None
+
+    def _arm_ask_timer(self, rid: str) -> None:
+        if rid in self._ask_timers:
+            return
+        loop = asyncio.get_event_loop()
+        self._ask_timers[rid] = loop.call_later(
+            max(1, deps.STATE.claude_ask_timeout),
+            lambda: self._expire_ask(rid),
+        )
+
+    def _arm_ask_timers(self) -> None:
+        for rid in list(self._pending_payloads.keys()):
+            self._arm_ask_timer(rid)
+
+    def _expire_ask(self, rid: str) -> None:
+        self._ask_timers.pop(rid, None)
+        fut = self._pending.get(rid)
+        if fut and not fut.done():
+            fut.set_result({"decision": "deny", "message": "sem resposta (timeout)"})
+
+    def _cancel_ask_timer(self, rid: str) -> None:
+        t = self._ask_timers.pop(rid, None)
+        if t is not None:
+            t.cancel()
+
+    def _cancel_ask_timers(self) -> None:
+        for t in self._ask_timers.values():
+            t.cancel()
+        self._ask_timers.clear()
+
     # ------------------------------------------------------------- ciclo de vida
-    async def run(self) -> None:
-        """Conecta o cliente e roda os dois pumps até o WebSocket fechar."""
+    async def start(self) -> None:
+        """Conecta o client e inicia o pump do SDK (uma vez por sessão viva)."""
+        if self._started:
+            return
+        self._started = True
         self.client = ClaudeSDKClient(options=self._options())
         await self.client.connect()  # sem prompt: modo streaming, pronto p/ query()
-        pump = asyncio.create_task(self._sdk_pump())
+        self._sdk_task = asyncio.create_task(self._sdk_pump())
+
+    async def run(self) -> None:
+        """Caminho CLÁSSICO (persist OFF): vida do agente = vida do socket."""
+        await self.start()
         try:
-            await self._ws_pump()  # retorna ao desconectar
+            await self._ws_pump()
         finally:
-            pump.cancel()
-            for fut in self._pending.values():
-                if not fut.done():
-                    fut.cancel()
-            self._pending.clear()
-            try:
+            await self.teardown()
+
+    async def serve(self, ws: WebSocket, first: bool) -> None:
+        """Caminho PERSISTENTE: (re)anexa este socket e roda o ws_pump. Ao cair, DESANEXA
+        (não mata), a menos que o cliente tenha mandado "bye" (fechamento deliberado)."""
+        self.attach(ws)
+        if first:
+            await self.start()
+        else:
+            await self._send({"type": "reattached", "busy": self._busy})
+        try:
+            await self._ws_pump()
+        finally:
+            if self._closing:
+                await self.teardown()
+            elif self.ws is ws:        # só desanexa se OUTRO socket não tomou o lugar
+                self.detach()
+
+    async def teardown(self) -> None:
+        """Mata o subprocesso `claude`, cancela timers/futures e sai do registro. Idempotente."""
+        if self._closing_done:
+            return
+        self._closing_done = True
+        self._cancel_grace()
+        self._cancel_ask_timers()
+        if self._sdk_task is not None:
+            self._sdk_task.cancel()
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.cancel()
+        self._pending.clear()
+        self._pending_payloads.clear()
+        if self.sid and _LIVE.get(self.sid) is self:
+            _LIVE.pop(self.sid, None)
+        try:
+            if self.client is not None:
                 await self.client.disconnect()  # mata o subprocesso `claude`
-            except Exception:
-                pass
-            try:
+        except Exception:
+            pass
+        try:
+            if self.ws is not None:
                 await self.ws.close()
-            except Exception:
-                pass
+        except Exception:
+            pass
 
     async def _ws_pump(self) -> None:
         while True:
@@ -245,7 +508,13 @@ class ClaudeWebSession:
             if kind == "prompt":
                 text = (raw.get("text") or "").strip()
                 if text:
+                    self._busy = True
                     await self.client.query(text)
+            elif kind == "bye":
+                # Fechamento DELIBERADO (encerrar / trocar de sessão): mata a sessão viva.
+                # Um drop por standby NÃO manda "bye" — por isso lá a gente só desanexa.
+                self._closing = True
+                return
             elif kind == "set_mode":
                 mode = raw.get("mode")
                 if mode in VALID_MODES:
@@ -256,7 +525,8 @@ class ClaudeWebSession:
                         await self._send({"type": "error", "detail": f"set_mode: {e}"})
             elif kind == "set_model":
                 try:
-                    await self.client.set_model(raw.get("model") or None)
+                    self._model = raw.get("model") or None
+                    await self.client.set_model(self._model)
                 except Exception as e:
                     await self._send({"type": "error", "detail": f"set_model: {e}"})
             elif kind == "interrupt":
@@ -276,11 +546,21 @@ class ClaudeWebSession:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            await self._send({"type": "error", "detail": str(e)})
+            detail = str(e)
+            tail = "\n".join(list(self._stderr_tail)[-8:])
+            if tail:
+                detail += f"\n\n— stderr recente do agente —\n{tail}"
+            await self._send({"type": "error", "detail": detail})
 
     # -------------------------------------------------------------- tradução
     async def _translate(self, msg) -> None:
         if isinstance(msg, SystemMessage):
+            # Persistência: ao conhecer o session_id real, registra a sessão p/ o re-anexo achá-la.
+            if self.persist and msg.subtype == "init":
+                sid = (msg.data or {}).get("session_id")
+                if sid:
+                    self.sid = sid
+                    _LIVE[sid] = self
             await self._send({"type": "system", "subtype": msg.subtype, "data": msg.data})
 
         elif isinstance(msg, StreamEvent):
@@ -319,6 +599,7 @@ class ClaudeWebSession:
                         })
 
         elif isinstance(msg, ResultMessage):
+            self._busy = False
             await self._send({
                 "type": "result",
                 "session_id": msg.session_id,
@@ -327,6 +608,10 @@ class ClaudeWebSession:
                 "is_error": msg.is_error,
                 "result": msg.result,
             })
+            if self.persist:
+                # Turno acabou. Se a aba está dormindo (desanexado), começa a contar a carência
+                # até o teardown — a resposta já foi gravada no disco.
+                self._maybe_arm_grace()
 
 
 # --------------------------------------------------------------------------- #

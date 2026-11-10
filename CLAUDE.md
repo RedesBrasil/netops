@@ -96,3 +96,8 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   SDK, a aba os resolve sozinha e abre o fluxo OAuth. Logue **por ali**, não pelo terminal web: a credencial
   vai para o `$HOME/.claude/` do **processo do servidor**, e o terminal web roda como outro usuário (`netops`),
   ou seja, outro cofre e outra lista de conversas. Ver `scripts/engine/ui/SKILL.md`.
+- **Aba Claude Code — persistência e DÚVIDA (quando `--enable-claude-persist`):** a sessão sobrevive à queda
+  do socket (standby/troca de aba): o turno **termina** mesmo com a aba fechada e você re-anexa ao voltar (a
+  resposta é relida do transcript, sem buffer). Como um turno pode executar **sem ninguém olhando**, vale a
+  regra de ouro: **na dúvida, PERGUNTE** — use `AskUserQuestion` em vez de assumir, e **nunca** execute ação
+  irreversível sem certeza. Pergunta sem resposta expira (timeout) e é tratada como negação ("não faz").
