@@ -425,7 +425,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
   useLayoutEffect(() => { setSlot(document.getElementById('topbar-slot')); }, []);
   const toolbar = <>
     <div className="map-toolbar"><div className="map-picker"><label htmlFor="map-select">Mapa</label><select id="map-select" value={layout.id} disabled={saving} onChange={e => onSwitch(e.currentTarget.value)}>{maps.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
-        {!readOnly && <button aria-label="Novo mapa" onClick={onNewMap}>+</button>}</div>
+        {!readOnly && <button aria-label="Novo mapa" onClick={onNewMap}>+</button>}{!readOnly && layout.kind !== 'all' && <button aria-label="Excluir mapa" title="Excluir mapa" disabled={saving} onClick={onDeleteMap}>🗑</button>}</div>
         <SaveBadge readOnly={readOnly} saving={saving} status={status} saveError={saveError} onRetry={onRetry} onReload={onReload} />
         <div className="map-tools">{!readOnly && <><button aria-label="Desfazer (Ctrl+Z)" title={`Desfazer (Ctrl+Z) — ${history.undo} de 10`} disabled={!history.undo} onClick={undo}>↶</button>
           <button aria-label="Refazer (Ctrl+Shift+Z)" title="Refazer (Ctrl+Shift+Z ou Ctrl+Y)" disabled={!history.redo} onClick={redo}>↷</button></>}
@@ -504,7 +504,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           {action('Adicionar texto', () => open('note', null, menu.point))}
           {action('Adicionar forma', () => open('shape', null, menu.point))}
           {action('Referenciar mapa', () => open('reference', null, menu.point))}
-          {layout.kind === 'custom' && <><div role="separator" />{action('Nome do mapa', () => open('rename'))}{action('Excluir mapa', onDeleteMap, true)}</>}
+          {layout.kind === 'custom' && <><div role="separator" />{action('Nome do mapa', () => open('rename'))}</>}{layout.kind !== 'all' && <><div role="separator" />{action('Excluir mapa', onDeleteMap, true)}</>}
         </>}
         {action('Enquadrar mapa', () => flow.fitView({ padding: .2, maxZoom: 1.05 }))}
       </> : menuNode ? <>

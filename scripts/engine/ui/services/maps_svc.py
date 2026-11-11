@@ -107,7 +107,7 @@ def _consolidate_maps(data, hosts):
         return {}
     maps = data["maps"]
     general = next(m for m in maps if m["id"] == "all")
-    duplicates = [m for m in maps if m.get("kind") == "site" and m.get("site") == site]
+    duplicates = [m for m in maps if m.get("kind") == "site" and m.get("site") == site and not m.get("deleted")]
     aliases = {m["id"]: "all" for m in duplicates}
     # Aceita também seleção antiga de um mapa automático ainda não salvo.
     legacy_id = "site-" + hashlib.sha256(site.encode()).hexdigest()[:20]
@@ -201,6 +201,8 @@ def snapshot():
     known_links = {link["id"] for link in topology["links"]}
     maps = []
     for m in data["maps"]:
+        if m.get("deleted"):
+            continue
         try:
             value = deepcopy(m) if legacy else NetworkMap.model_validate(m).model_dump(exclude_none=True)
         except ValidationError:
@@ -229,7 +231,7 @@ def _validate(m, maps, hosts, links):
     for name in set(m.get("members") or []) | {p["host_id"] for p in positions}:
         if name not in valid_hosts:
             _fail("hosts", f"host '{name}' fora do inventário")
-    map_ids = {item["id"] for item in maps}
+    map_ids = {item["id"] for item in maps if not item.get("deleted")}
     objects = m.get("objects") or []
     ids = [o["id"] for o in objects]
     if len(ids) != len(set(ids)):
@@ -302,10 +304,16 @@ def delete_map(ident, rev):
     m = next((m for m in data["maps"] if m["id"] == ident), None)
     if not m:
         raise KeyError("mapa não existe")
-    if m["kind"] != "custom":
-        _fail("map", "mapas automáticos acompanham o inventário e não podem ser excluídos")
-    data["maps"] = [m for m in data["maps"] if m["id"] != ident]
+    if m["kind"] == "all" or ident == "all":
+        _fail("map", "a Rede geral não pode ser excluída")
+    if m.get("deleted"):
+        raise KeyError("mapa não existe")
+    # Exclusão suave: o bloco fica no arquivo (e impede a recriação automática do mapa
+    # de localidade), mas o mapa deixa de ser exibido e de receber hosts.
+    m["deleted"] = True
     for other in data["maps"]:
+        if other is m:
+            continue
         removed = {o["id"] for o in other.get("objects") or [] if o.get("map_id") == ident}
         other["objects"] = [o for o in other.get("objects") or [] if o["id"] not in removed]
         other["visual_links"] = [v for v in other.get("visual_links") or []

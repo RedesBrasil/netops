@@ -289,6 +289,7 @@ class NetworkMap(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     kind: Literal["all", "site", "custom"] = "custom"
     site: Optional[str] = Field(default=None, max_length=200)
+    deleted: Optional[bool] = None  # exclusão suave: some da tela, o bloco permanece no maps.yaml
     members: list[HostId] = Field(default_factory=list, max_length=5000)
     positions: list[MapHostPosition] = Field(default_factory=list, max_length=5000)
     objects: list[MapObject] = Field(default_factory=list, max_length=1000)
