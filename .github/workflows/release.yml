@@ -55,13 +55,33 @@ jobs:
           version = os.environ['REQUESTED_VERSION']
           unpack(root / 'netops-release' / f'netops-{version}.tar.gz', root / 'validated-release', version)
           PY
-      - name: Criar draft com changelog e assets
+      - name: Criar ou retomar draft da mesma revisão
         run: |
-          gh release create "v$REQUESTED_VERSION" --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" --title "NetOps v$REQUESTED_VERSION" --draft \
-            --notes-file "$RUNNER_TEMP/netops-release/release-notes.md" \
-            "$RUNNER_TEMP/netops-release/netops-$REQUESTED_VERSION.tar.gz" \
-            "$RUNNER_TEMP/netops-release/SHA256SUMS"
+          if gh release view "v$REQUESTED_VERSION" --repo "$GITHUB_REPOSITORY" \
+              --json isDraft,targetCommitish,tagName,assets > "$RUNNER_TEMP/existing-release.json"; then
+            python - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads((Path(os.environ['RUNNER_TEMP']) / 'existing-release.json').read_text())
+          version = os.environ['REQUESTED_VERSION']
+          assert data['isDraft'], 'Nunca substituir uma release publicada'
+          assert data['tagName'] == f'v{version}'
+          assert data['targetCommitish'] == os.environ['GITHUB_SHA'], 'Draft de outra revisão; investigar antes de retomar'
+          allowed = {f'netops-{version}.tar.gz', 'SHA256SUMS'}
+          assert all(a['name'] in allowed for a in data['assets']), 'Draft contém assets desconhecidos'
+          PY
+            gh release edit "v$REQUESTED_VERSION" --repo "$GITHUB_REPOSITORY" \
+              --notes-file "$RUNNER_TEMP/netops-release/release-notes.md"
+            gh release upload "v$REQUESTED_VERSION" --repo "$GITHUB_REPOSITORY" --clobber \
+              "$RUNNER_TEMP/netops-release/netops-$REQUESTED_VERSION.tar.gz" \
+              "$RUNNER_TEMP/netops-release/SHA256SUMS"
+          else
+            gh release create "v$REQUESTED_VERSION" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "NetOps v$REQUESTED_VERSION" --draft \
+              --notes-file "$RUNNER_TEMP/netops-release/release-notes.md" \
+              "$RUNNER_TEMP/netops-release/netops-$REQUESTED_VERSION.tar.gz" \
+              "$RUNNER_TEMP/netops-release/SHA256SUMS"
+          fi
       - name: Conferir digest publicado e publicar release
         run: |
           python - <<'PY'
@@ -69,10 +89,15 @@ jobs:
           from pathlib import Path
           version = os.environ['REQUESTED_VERSION']
           repo = os.environ['GITHUB_REPOSITORY']
-          name = f'netops-{version}.tar.gz'
-          data = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/releases/tags/v{version}']))
-          asset = next(a for a in data['assets'] if a['name'] == name)
-          digest = hashlib.sha256((Path(os.environ['RUNNER_TEMP']) / 'netops-release' / name).read_bytes()).hexdigest()
-          assert asset['digest'] == f'sha256:{digest}', 'Digest do GitHub divergente'
+          # A API /releases/tags/<tag> não encontra drafts sem tag publicada.
+          data = json.loads(subprocess.check_output(['gh', 'release', 'view', f'v{version}', '--repo', repo,
+                                                     '--json', 'isDraft,targetCommitish,tagName,assets']))
+          assert data['isDraft'] and data['targetCommitish'] == os.environ['GITHUB_SHA']
+          assert data['tagName'] == f'v{version}'
+          expected = {f'netops-{version}.tar.gz', 'SHA256SUMS'}
+          assert len(data['assets']) == len(expected) and {a['name'] for a in data['assets']} == expected
+          for asset in data['assets']:
+              digest = hashlib.sha256((Path(os.environ['RUNNER_TEMP']) / 'netops-release' / asset['name']).read_bytes()).hexdigest()
+              assert asset['digest'] == f'sha256:{digest}', 'Digest do GitHub divergente: ' + asset['name']
           PY
           gh release edit "v$REQUESTED_VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest

@@ -14,6 +14,7 @@
 - Links inválidos ou de sessões removidas mostram uma orientação sem iniciar o agente em repetição.
 - Abrir a mesma sessão persistente em outra aba informa a transferência e evita disputa de reconexão.
 - Login do console compartilhado entre abas, com sincronização de entrada, saída e expiração, sem persistir a senha.
+- Conferência dos pacotes antes da publicação reconhece rascunhos e permite retomar um rascunho da mesma revisão.
 
 ### Preservação e compatibilidade
 

@@ -31,6 +31,12 @@ Depois do código aprovado, commitado e integrado em `main`, execute manualmente
 
 Se falhar depois de criar o draft, mantenha-o privado e investigue. Não crie automaticamente outra tag nem publique um pacote parcial para contornar a falha. Releases sem pacote verificável não são instaláveis pelo console.
 
+O workflow pode retomar um draft da **mesma revisão**, substituindo seus assets privados e
+conferindo novamente os dois digests. Draft de outra revisão exige investigação e ajuste
+explícito do destino antes da nova execução; uma tag já publicada nunca é movida.
+A conferência usa `gh release view`, pois `/releases/tags/<tag>` retorna 404 para drafts
+cuja tag ainda não existe. Release publicada ou assets desconhecidos bloqueiam a retomada.
+
 ## Validação final
 
 Consulte a release publicada, confira tag, changelog e assets. Verifique no console a listagem de todas as versões superiores e faça um teste de atualização em cópia isolada, comparando dados antes/depois. Informe claramente o que foi publicado, o que foi apenas preparado e quais testes realmente rodaram.
