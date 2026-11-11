@@ -1,32 +1,40 @@
 // Conhecimento: best-practices/ e config-examples/ (catálogo + editores de arquivo).
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
-import { ResourceTable, Field, Modal, MarkdownEditor, CodeTextEditor, MarkdownView, EnumSelect, useEnums } from "../components.js";
+import { useMenuRoute, matchText } from "../route.js";
+import { FilterBar, ResourceTable, Field, Modal, MarkdownEditor, CodeTextEditor, MarkdownView, EnumSelect, useEnums } from "../components.js";
 
 // Página de uma única seção (boas práticas OU exemplos de config), sem abas.
-function KnowledgeSection({ kind, title }) {
-  const [creating, setCreating] = useState(false);
+// URL: #<menu>[/<vendor>/<arquivo>|/new][?q=&vendor=]  (core/rules/urls-navegacao.md)
+function KnowledgeSection({ kind, title, menu }) {
+  const r = useMenuRoute(menu);
   return html`<div>
     <div class="page-title"><h1>${title}</h1><span class="spacer"></span>
-      <button class="primary" onClick=${() => setCreating(true)}>+ Novo arquivo</button></div>
-    <${KnowledgeKind} kind=${kind} creating=${creating} setCreating=${setCreating} />
+      <button class="primary" onClick=${() => r.open("new")}>+ Novo arquivo</button></div>
+    <${KnowledgeKind} kind=${kind} r=${r} />
   </div>`;
 }
 
 export function BestPracticesPage() {
-  return html`<${KnowledgeSection} kind="best-practices" title="Boas práticas" />`;
+  return html`<${KnowledgeSection} kind="best-practices" title="Boas práticas" menu="practices" />`;
 }
 
 export function ConfigsPage() {
-  return html`<${KnowledgeSection} kind="config-examples" title="Configurações" />`;
+  return html`<${KnowledgeSection} kind="config-examples" title="Configurações" menu="configs" />`;
 }
 
-function KnowledgeKind({ kind, creating, setCreating }) {
+function KnowledgeKind({ kind, r }) {
   const res = useResource(`/knowledge/${kind}`, [kind]);
-  const [open, setOpen] = useState(null);   // {vendor, name}
+  const creating = r.segments[0] === "new";
+  const open = r.segments.length >= 2 ? { vendor: r.segments[0], name: r.segments.slice(1).join("/") } : null;
+  const setOpen = (t) => (t ? r.open([t.vendor, ...t.name.split("/")]) : r.close());
+  const setCreating = (v) => (v ? r.open("new") : r.close());
+  const { q = "", vendor = "" } = r.params;
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
   const { index, files } = res.data;
-  const rows = (index || []).map((e) => ({ ...e, _key: e.file }));
+  const all = index || [];
+  const rows = all.filter((e) => (!vendor || e.vendor === vendor) && matchText(q, e.titulo, e.topico, e.file, e.quando_usar, e.descricao))
+    .map((e) => ({ ...e, _key: e.file }));
   const cols = kind === "best-practices"
     ? [{ key: "titulo", label: "Título", render: (r) => html`<b>${r.titulo}</b>` },
        { key: "vendor", label: "Vendor", render: (r) => html`<${Badge}>${r.vendor}<//>` },
@@ -37,10 +45,14 @@ function KnowledgeKind({ kind, creating, setCreating }) {
        { key: "file", label: "Arquivo", render: (r) => html`<span class="mono">${r.file}</span>` },
        { key: "descricao", label: "Descrição", render: (r) => r.descricao }];
   function split(rel) { const [vendor, ...rest] = rel.split("/"); return { vendor, name: rest.join("/") }; }
+  const link = (r0, label) => html`<a href=${"#" + (kind === "best-practices" ? "practices" : "configs") + "/" + r0.file.split("/").map(encodeURIComponent).join("/")} onClick=${(e) => e.stopPropagation()}>${label}</a>`;
+  cols[0].render = (r0) => link(r0, html`<b>${r0.titulo || r0.topico}</b>`);
   return html`<div>
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar arquivo"
+      selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: [...new Set(all.map((e) => e.vendor))].sort() }]} />
     <${ResourceTable} columns=${cols} rows=${rows} onRowClick=${(r) => setOpen(split(r.file))} empty="Catálogo vazio." />
     ${files?.length ? html`<div class="help" style="margin-top:8px">Arquivos em disco: ${files.join(", ")}</div>` : ""}
-    ${open && html`<${FileEditor} kind=${kind} target=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}
+    ${open && html`<${FileEditor} key=${open.vendor + "/" + open.name} kind=${kind} target=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}
     ${creating && html`<${NewFile} kind=${kind} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); res.reload(); }} />`}
   </div>`;
 }
