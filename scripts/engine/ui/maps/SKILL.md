@@ -169,12 +169,25 @@ O texto da forma e da prévia usa preto ou branco conforme a luminância do pree
 conservando contraste independentemente do tema do console.
 Objetos antigos sem esses campos conservam as cores do tema até serem editados.
 
-Hosts e objetos compartilham a mesma ordem visual, salva em `positions[].z_index`
-(associada pelo inteiro `positions[].host_id`) e
-`objects[].z_index`. Enviar para frente/trás troca exatamente com o vizinho, sem salto ao
-extremo. A seleção não altera a camada; mapas antigos mantêm as formas atrás dos hosts.
+Hosts, objetos (formas, notas, referências) e links (enlaces físicos e ligações visuais)
+compartilham UMA pilha de camadas, salva em `positions[].z_index` (associada pelo inteiro
+`positions[].host_id`), `objects[].z_index`, `edges.<id>.z_index` e `visual_links[].z_index`.
+O React Flow roda com `zIndexMode="manual"` e sem elevar na seleção, então a camada exibida é
+exatamente a salva. Menu de nó e de link: Trazer para o topo / Enviar para frente / Enviar
+para trás / Enviar para o fundo. Frente/trás pulam até depois do próximo item que se
+**sobrepõe** geometricamente ao alvo (retângulo dos nós; segmento centro-a-centro dos links,
+ou caixa envolvente se houver dobras); sem sobreposição, anda uma camada. Sem `z_index`,
+formas ficam no fundo e links logo abaixo do dispositivo mais baixo. Rótulos de link ficam
+sempre por cima (camada própria do React Flow). A seleção não altera a camada.
 Mover/alinha um host preserva sua camada. Duplicar cria outra forma com ID próprio, mesmas
 cores/ícone/tamanho/texto, deslocada 32 unidades e uma camada acima da original.
+
+Ctrl+Z desfaz e Ctrl+Shift+Z / Ctrl+Y refazem (botões ↶ ↷ na barra) até 10 alterações de
+layout por mapa: mover/redimensionar (1 passo por gesto), camadas, criar/editar/duplicar/
+remover formas, notas e ligações visuais, remover host de mapa adicional, alinhar, renomear.
+O estado restaurado é reconciliado com o inventário/topologia atuais (`reconcileLayout`).
+Exclusões canônicas (host do inventário, enlace da topologia) NÃO entram no histórico.
+O histórico zera ao trocar de mapa e é ignorado em campos de texto e no terminal.
 
 Delete remove objetos selecionados e suas ligações visuais. Em mapas adicionais, hosts
 selecionados são apenas removidos do mapa. Em mapas automáticos, a seleção com hosts abre

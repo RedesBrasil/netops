@@ -1,5 +1,6 @@
 // Reports (read-only), Runs (read-only) e Settings (project-config.yaml).
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
+import { UpdatesControl } from "./updates.js";
 import { ResourceTable, Field, Modal, MarkdownPanel, CodeTextEditor } from "../components.js";
 
 export function ReportsPage() {
@@ -92,6 +93,10 @@ export function SettingsPage() {
       <${Field} label="TTL da sessão do cofre (segundos)" hint="Tempo de inatividade até re-trancar (default 900)">
         <input type="number" value=${vault.session_ttl_seconds || ""} onInput=${(e) => upd("vault", "session_ttl_seconds", e.target.value)} /><//>
       <button class="primary" onClick=${save}>Salvar</button>
+    </div>
+    <div class="card">
+      <h3>Atualizações</h3>
+      <${UpdatesControl} />
     </div>
   </div>`;
 }

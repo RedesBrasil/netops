@@ -8,11 +8,11 @@
 import { html, useState, useEffect, useRef, useCallback, toast, api } from "../ui.js";
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
-import { MarkdownView, VaultBanner, Modal } from "../components.js";
+import { MarkdownView, VaultBanner, Modal, Field } from "../components.js";
 import { authToken } from "../api.js";
 import { classifyClaudeError, claudeErrorDetail } from "../claude-errors.js";
 import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
-  rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, copyClaudeSessionLink } from "../claude-sessions.js";
+  rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, claudePrefsOpen, setClaudePrefsHash, copyClaudeSessionLink } from "../claude-sessions.js";
 
 async function copySessionLink(id) {
   try { await copyClaudeSessionLink(id); toast.ok("Link da sessão copiado"); }
@@ -74,6 +74,7 @@ function useClaudeSession() {
   const [sessionId, setSessionId] = useState("");
   const [slash, setSlash] = useState([]);             // nomes de slash commands (do init)
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState([]);   // [{path,name}] já enviados, ainda não mandados ao agente
   const [gen, setGen] = useState(0);                  // bump => reconecta
   const [showSessions, setShowSessions] = useState(false);
   const [active, setActive] = useState(false);        // há sessão ligada? (independe da rota)
@@ -86,6 +87,15 @@ function useClaudeSession() {
   const wsRef = useRef(null);
   const fileRef = useRef(null);
   const sessionIdRef = useRef("");      // sid vigente (p/ retomar na reconexao automatica)
+  const defaultsRef = useRef({ model: "", mode: "default", catalogModel: "" }); // padrões p/ conversas novas
+  const [prefs, setPrefs] = useState({ default_model: "", default_mode: "default" });
+  const [showPrefs, setShowPrefsState] = useState(() => claudePrefsOpen());
+  const setShowPrefs = useCallback((v) => { setClaudePrefsHash(!!v); }, []);
+  useEffect(() => {
+    const on = () => setShowPrefsState(claudePrefsOpen());
+    addEventListener("hashchange", on); on();
+    return () => removeEventListener("hashchange", on);
+  }, []);
   const modelRef = useRef("");          // modelo vigente (vai no ?model=; vazio => default do servidor)
   const noReconnectRef = useRef(false); // erro terminal (rate limit/modelo): NÃO reconectar em loop
   const failCountRef = useRef(0);       // quedas seguidas sem conectar (circuit breaker anti-tempestade)
@@ -107,8 +117,13 @@ function useClaudeSession() {
     resumeIdRef.current = id || "";
     sessionIdRef.current = id || "";
     activeRef.current = true;
-    setInput(""); setShowSessions(false);
+    setInput(""); setAttachments([]); setShowSessions(false);
     setShowModelPick(false); setShowRateLimit(false);
+    if (!id) {   // conversa NOVA: começa nos padrões das configurações (não herda a anterior)
+      const dflt = defaultsRef.current;
+      const m = dflt.model || dflt.catalogModel || "";
+      modelRef.current = m; setModelSel(m); setMode(dflt.mode || "default");
+    }
     setSessionId(id || ""); setItems([]); setWorking(false); setStatus("conectando");
     setActive(true); setGen((g) => g + 1);
   }
@@ -175,7 +190,13 @@ function useClaudeSession() {
 
   // O provider acompanha também voltar/avançar: a página cheia não remonta entre UUIDs.
   useEffect(() => {
-    const onRoute = () => { openRoute(); };
+    const baseOf = (h) => (claudePrefsOpen(h) ? h.slice(0, -"/padroes".length) : h);
+    let lastBase = baseOf(location.hash);
+    const onRoute = () => {
+      const b = baseOf(location.hash);
+      if (b === lastBase && sessionIdRef.current !== undefined && activeRef.current) return; // só o popup de Padrões abriu/fechou
+      lastBase = b; openRoute();
+    };
     addEventListener("hashchange", onRoute);
     onRoute();
     return () => { routeRequestRef.current++; removeEventListener("hashchange", onRoute); };
@@ -224,10 +245,23 @@ function useClaudeSession() {
   // Modelos disponíveis: catálogo do CLI, sem inferência nem acesso direto a credenciais.
   // Popula o seletor e define o padrão econômico; o init depois ajusta p/ o modelo real vigente.
   useEffect(() => {
-    api.get("/claude/models").then((d) => {
+    Promise.all([api.get("/claude/models").catch(() => ({})), api.get("/claude/prefs").catch(() => ({}))]).then(([d, p]) => {
       if (Array.isArray(d.models) && d.models.length) setModels(d.models);
-      if (d.default && !modelRef.current) { setModelSel(d.default); modelRef.current = d.default; }
-    }).catch(() => {});
+      defaultsRef.current = { model: p.default_model || "", mode: p.default_mode || "default", catalogModel: d.default || "" };
+      setPrefs({ default_model: p.default_model || "", default_mode: p.default_mode || "default" });
+      if (!modelRef.current && !sessionIdRef.current) {
+        const m = defaultsRef.current.model || defaultsRef.current.catalogModel;
+        if (m) { setModelSel(m); modelRef.current = m; }
+        if (!activeRef.current || !sessionIdRef.current) setMode(defaultsRef.current.mode);
+      }
+    });
+  }, []);
+
+  const savePrefs = useCallback(async (next) => {
+    const p = await api.put("/claude/prefs", next);
+    defaultsRef.current = { ...defaultsRef.current, model: p.default_model || "", mode: p.default_mode || "default" };
+    setPrefs({ default_model: p.default_model || "", default_mode: p.default_mode || "default" });
+    return p;
   }, []);
 
   function handleAgentError(ev) {
@@ -274,6 +308,15 @@ function useClaudeSession() {
       const resume = reconnect ? sessionIdRef.current : rid;
       setStatus("conectando");
       // Carrega antes de abrir o socket: uma leitura atrasada não apaga streaming/permissões.
+      if (resume && !reconnect) {   // volta no ÚLTIMO modelo/modo desta conversa
+        try {
+          const p = await api.get(`/claude/prefs?sid=${encodeURIComponent(resume)}`);
+          if (!current()) return;
+          const sv = p.session || {};
+          if (sv.model) { modelRef.current = sv.model; setModelSel(sv.model); }
+          if (sv.mode) setMode(sv.mode);
+        } catch (_) {}
+      }
       if (resume) {
         try {
           const h = await api.get(`/claude/sessions/${encodeURIComponent(resume)}/messages`);
@@ -325,7 +368,9 @@ function useClaudeSession() {
           case "system":
             if (ev.subtype === "init") {
               const d = ev.data || {};
-              if (d.model) { setModel(d.model); setModelSel(d.model); modelRef.current = d.model; }
+              // O init traz o id RESOLVIDO (pode diferir do id da lista): só informativo. A escolha
+              // do usuário (modelRef) manda no seletor — antes isto o fazia "pular" sozinho.
+              if (d.model) { setModel(d.model); if (!modelRef.current) { setModelSel(d.model); modelRef.current = d.model; } }
               if (d.permissionMode) setMode(d.permissionMode);
               if (d.session_id) identifySession(d.session_id);
               if (Array.isArray(d.slash_commands)) setSlash(d.slash_commands);
@@ -401,15 +446,16 @@ function useClaudeSession() {
   }, [active, gen]);
 
   function submit() {
-    const text = input.trim();
-    if (!text) return;
+    const typed = input.trim();
+    if (!typed && !attachments.length) return;
+    const text = [...attachments.map((a) => "@" + a.path), typed].filter(Boolean).join(" ");
     // /login, /logout, /auth são resolvidos AQUI (o SDK não os conhece) e funcionam mesmo
     // com a sessão caída — que é exatamente quando você precisa deles.
     if (LOCAL_SLASH_RE.test(text)) { setInput(""); setShowAuth(true); return; }
     if (status !== "pronto" || working) return;
     if (!send({ type: "prompt", text })) { toast.err("Sem conexão"); return; }
     setItems((prev) => [...prev, { type: "user", text }]);
-    setInput("");
+    setInput(""); setAttachments([]);
     setWorking(true);
   }
 
@@ -492,7 +538,7 @@ function useClaudeSession() {
       const res = await fetch("/api/claude/upload", { method: "POST", headers, body: fd });
       if (!res.ok) { toast.err("Upload falhou (" + res.status + ")"); return; }
       const d = await res.json();
-      setInput((v) => (v ? v.replace(/\s*$/, " ") : "") + "@" + d.path + " ");
+      setAttachments((v) => [...v, { path: d.path, name: d.name }]);
       toast.ok("Anexado: " + d.name);
     } catch (_) { toast.err("Upload falhou"); }
   }
@@ -503,8 +549,9 @@ function useClaudeSession() {
   const hasSession = active && (working || items.length > 0);
 
   return {
-    status, items, working, mode, model, modelSel, models, sessionId, slash, input, setInput,
+    status, items, working, mode, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
+    prefs, savePrefs, showPrefs, setShowPrefs,
     send, submit, stop, newSession, resumeSession, answerPermission, changeMode, changeModel, uploadFile,
     endSession,
     auth, showAuth, setShowAuth, refreshAuth, relaunch, refreshModels,
@@ -533,16 +580,74 @@ function Transcript() {
   </div>`;
 }
 
+
+// Miniatura de anexo: imagens do diretório de uploads são buscadas com o header de sessão
+// (um <img src> puro não o envia) e exibidas via blob URL; outros arquivos viram um chip.
+const UPLOAD_REF_RE = /@(runs\/claude\/uploads\/[A-Za-z0-9._-]+)/g;
+const IMG_RE = /\.(png|jpe?g|gif|webp)$/i;
+function AttachThumb({ path }) {
+  const name = path.split("/").pop();
+  const [url, setUrl] = useState("");
+  const isImg = IMG_RE.test(name);
+  useEffect(() => {
+    if (!isImg) return;
+    let dead = false, obj = "";
+    const headers = {}; const a = authToken(); if (a) headers["X-Netops-Session"] = a;
+    fetch("/api/claude/upload/" + encodeURIComponent(name), { headers })
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((b) => { if (b && !dead) { obj = URL.createObjectURL(b); setUrl(obj); } })
+      .catch(() => {});
+    return () => { dead = true; if (obj) URL.revokeObjectURL(obj); };
+  }, [path]);
+  const [big, setBig] = useState(false);
+  useEffect(() => {
+    if (!big) return;
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); setBig(false); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [big]);
+  if (isImg && url) return html`<img class="cc-thumb" src=${url} alt=${name} title=${name} onClick=${() => setBig(true)} />
+    ${big && html`<div class="cc-lightbox" onClick=${() => setBig(false)}>
+      <button class="cc-lightbox-x" title="Fechar (Esc)" onClick=${() => setBig(false)}>✕ Fechar</button>
+      <img src=${url} alt=${name} onClick=${(e) => e.stopPropagation()} />
+    </div>`}`;
+  return html`<span class="cc-file-chip" title=${path}>${isImg ? "🖼" : "📎"} ${name}</span>`;
+}
+function UserMsg({ text }) {
+  const refs = [...text.matchAll(UPLOAD_REF_RE)].map((m) => m[1]);
+  const rest = text.replace(UPLOAD_REF_RE, "").replace(/[ \t]{2,}/g, " ").trim();
+  return html`<div class="cc-msg user"><div class="cc-role">você</div>
+    ${refs.length > 0 && html`<div class="cc-attach-row user">${refs.map((r) => html`<${AttachThumb} key=${r} path=${r} />`)}</div>`}
+    ${(rest || !refs.length) && html`<div class="cc-usertext">${refs.length ? rest : text}</div>`}</div>`;
+}
+
 // Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
-  const { input, setInput, submit, stop, working, disabled, mode, changeMode, modelSel, models, changeModel, uploadFile, slash, fileRef } = useClaude();
+  const { input, setInput, submit, stop, working, disabled, mode, changeMode, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments } = useClaude();
   const taRef = useRef(null);
   // textarea que cresce com o conteúdo: começa em 1 linha e sobe até o teto (CSS), aí rola.
   useEffect(() => {
     const el = taRef.current; if (!el) return;
     el.style.height = "auto"; el.style.height = el.scrollHeight + "px";
   }, [input]);
+
+  // Ctrl+V com imagem na área de transferência: sobe como anexo (vira @caminho), igual ao 📎.
+  function onPaste(e) {
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    const imgs = [];
+    for (const it of items) {
+      if (it.kind === "file" && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) imgs.push(f); }
+    }
+    if (!imgs.length) return;              // texto comum: deixa colar normalmente
+    e.preventDefault();
+    if (disabled) { return; }
+    const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+    imgs.forEach((f, i) => {
+      const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg").replace(/[^a-z0-9]/gi, "");
+      uploadFile(new File([f], `colada-${stamp}-${i + 1}.${ext}`, { type: f.type }));
+    });
+  }
 
   function onKeyDown(e) {
     if (e.key === "Escape" && working) { e.preventDefault(); stop(); return; }
@@ -559,19 +664,25 @@ function Composer() {
 
   // A caixa NUNCA trava: desconectado ainda dá p/ digitar /login (é justamente aí que se precisa).
   const isLocal = LOCAL_SLASH_RE.test(input.trim());
-  const cantSend = (disabled && !isLocal) || !input.trim();
+  const cantSend = (disabled && !isLocal) || (!input.trim() && !attachments.length);
 
   return html`<div class="cc-composer-wrap">
     ${slashMatches.length > 0 && html`<div class="cc-slash-menu">
       ${slashMatches.map((c) => html`<button key=${c} class="cc-slash" onClick=${() => setInput("/" + c + " ")}>/${c}</button>`)}
     </div>`}
     <div class="cc-composer">
+      ${attachments.length > 0 && html`<div class="cc-attach-row">
+        ${attachments.map((a) => html`<div class="cc-attach" key=${a.path}>
+          <${AttachThumb} path=${a.path} />
+          <button class="cc-attach-x" title="Remover" onClick=${() => setAttachments((v) => v.filter((x) => x.path !== a.path))}>×</button>
+        </div>`)}
+      </div>`}
       <textarea ref=${taRef} rows="1"
         placeholder=${disabled
           ? "Sem sessão — digite /login para entrar, ou aguarde a reconexão"
           : "Mensagem (Enter envia · Shift+Enter quebra linha · / para comandos)"}
         value=${input}
-        onInput=${(e) => setInput(e.target.value)} onKeyDown=${onKeyDown}></textarea>
+        onInput=${(e) => setInput(e.target.value)} onKeyDown=${onKeyDown} onPaste=${onPaste}></textarea>
       <div class="cc-composer-bar">
         <div class="cc-composer-left">
           <label class="cc-modepick" title="Modo de permissão do agente">
@@ -581,7 +692,8 @@ function Composer() {
           </label>
           <label class="cc-modelpick" title="Modelo — lido da API; Sonnet é o mais econômico">
             <select value=${modelSel} onChange=${(e) => changeModel(e.target.value)}>
-              ${models.map((m) => html`<option key=${m.id} value=${m.id} selected=${m.id === modelSel}>${m.name}</option>`)}
+              ${(modelSel && !models.some((m) => m.id === modelSel) ? [...models, { id: modelSel, name: modelSel }] : models)
+                .map((m) => html`<option key=${m.id} value=${m.id} selected=${m.id === modelSel}>${m.name}</option>`)}
             </select>
           </label>
         </div>
@@ -589,7 +701,7 @@ function Composer() {
           <input type="file" ref=${fileRef} style="display:none"
             onChange=${(e) => { uploadFile(e.target.files[0]); e.target.value = ""; }} />
           <button class="sm" disabled=${disabled} onClick=${() => fileRef.current && fileRef.current.click()}
-            title="Anexa um arquivo (vira @caminho na mensagem)">📎 Anexar</button>
+            title="Anexa um arquivo (vira @caminho na mensagem) — ou cole uma imagem com Ctrl+V">📎 Anexar</button>
           ${working
             ? html`<button class="danger" onClick=${stop} title="Interrompe o agente (Esc)">⏹ Parar</button>`
             : html`<button class="primary" disabled=${cantSend} onClick=${submit}>Enviar</button>`}
@@ -600,25 +712,41 @@ function Composer() {
 }
 
 // Página cheia; seleção da sessão é controlada pelo fragmento da URL no provider.
+export function ClaudeSessionTitle() {
+  const s = useClaude();
+  const [title, setTitle] = useState("");
+  useEffect(() => {
+    if (!s.sessionId) { setTitle(""); return; }
+    let dead = false;
+    api.get("/claude/sessions").then((d) => {
+      const f = (d.sessions || []).find((x) => x.id === s.sessionId);
+      if (!dead) setTitle(f && f.title ? f.title : "");
+    }).catch(() => {});
+    return () => { dead = true; };
+  }, [s.sessionId, s.working]);
+  return title ? html`<span class="cc-topbar-title" title=${title}>${title}</span>` : null;
+}
+
+export function ClaudeTopbarControls() {
+  const s = useClaude();
+  return html`
+    <${VaultBanner} compact=${true} />
+    <span class="badge ${s.badge}">${s.status}</span>
+    ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
+    ${s.auth && s.auth.available && html`<button
+      class=${"sm cc-authbtn " + (s.auth.loggedIn ? "" : "danger")}
+      onClick=${() => s.setShowAuth(true)}
+      title=${s.auth.loggedIn ? "Conta do agente: " + (s.auth.email || s.auth.authMethod || "conectado") + " (/login)" : "O agente está deslogado — clique para entrar"}>
+      ${s.auth.loggedIn ? "👤" : "🔓 entrar (/login)"}
+    </button>`}
+    <button class="sm" onClick=${() => s.setShowPrefs(true)} title="Modelo e modo de permissão padrão p/ novas conversas">⚙ Padrões</button>
+    <button class="sm" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
+    <button class="sm" onClick=${s.newSession} title="Encerra esta sessão e abre uma nova">Nova sessão</button>`;
+}
+
 export function ClaudeCodePage() {
   const s = useClaude();
   return html`<div class="claude-page">
-    <div class="page-title">
-      <h1>Claude Code</h1>
-      <span class="badge ${s.badge}">${s.status}</span>
-      ${s.auth && s.auth.available && html`<button
-        class=${"sm cc-authbtn " + (s.auth.loggedIn ? "" : "danger")}
-        onClick=${() => s.setShowAuth(true)}
-        title=${s.auth.loggedIn ? "Conta do agente (/login)" : "O agente está deslogado — clique para entrar"}>
-        ${s.auth.loggedIn ? "👤 " + (s.auth.email || s.auth.authMethod || "conectado") : "🔓 entrar (/login)"}
-      </button>`}
-      <span class="spacer"></span>
-      ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
-      <button class="sm" disabled=${!s.sessionId} onClick=${() => copySessionLink(s.sessionId)}>Copiar link</button>
-      <button class="sm" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
-      <button class="sm" onClick=${s.newSession} title="Encerra esta sessão e abre uma nova">Nova sessão</button>
-    </div>
-    <${VaultBanner} />
     <${Transcript} />
     <${Composer} />
     ${s.showSessions && html`<${SessionsModal} currentId=${s.sessionId}
@@ -629,7 +757,35 @@ export function ClaudeCodePage() {
       onClose=${() => s.setShowModelPick(false)} onPick=${s.pickModelAndRelaunch} />`}
     ${s.showRateLimit && html`<${RateLimitModal} detail=${s.rateLimitDetail}
       onClose=${() => s.setShowRateLimit(false)} />`}
+    ${s.showPrefs && html`<${PrefsModal} prefs=${s.prefs} models=${s.models} onSave=${s.savePrefs}
+      onClose=${() => s.setShowPrefs(false)} />`}
   </div>`;
+}
+
+// Padrões p/ conversas NOVAS. Conversas existentes sempre voltam no último modelo/modo usados.
+function PrefsModal({ prefs, models, onSave, onClose }) {
+  const [model, setM] = useState(prefs.default_model || "");
+  const [mode, setMd] = useState(prefs.default_mode || "default");
+  async function save() {
+    try { await onSave({ default_model: model, default_mode: mode }); toast.ok("Padrões salvos"); onClose(); }
+    catch (_) { toast.err("Falha ao salvar"); }
+  }
+  return html`<${Modal} title="Padrões para novas conversas" onClose=${onClose}>
+    <${Field} label="Modelo padrão">
+      <select value=${model} onChange=${(e) => setM(e.target.value)}>
+        <option value="">Automático (Sonnet mais recente)</option>
+        ${models.map((m) => html`<option key=${m.id} value=${m.id}>${m.name}</option>`)}
+      </select><//>
+    <${Field} label="Modo de permissão padrão"
+      hint="Vale só para conversas novas. Ao reabrir uma conversa, ela volta no último modelo e modo usados nela.">
+      <select value=${mode} onChange=${(e) => setMd(e.target.value)}>
+        ${MODES.map((m) => html`<option key=${m.value} value=${m.value}>${m.label}</option>`)}
+      </select><//>
+    <div class="modal-actions">
+      <button onClick=${onClose}>Cancelar</button>
+      <button class="primary" onClick=${save}>Salvar</button>
+    </div>
+  <//>`;
 }
 
 // Aviso no topo da transcrição quando o agente está deslogado — é o que explica a aba morta.
@@ -909,7 +1065,7 @@ function fmtTime(ms) {
 
 function Item({ it, onPermission }) {
   if (it.type === "user")
-    return html`<div class="cc-msg user"><div class="cc-role">você</div><div class="cc-usertext">${it.text}</div></div>`;
+    return html`<${UserMsg} text=${it.text} />`;
 
   if (it.type === "assistant")
     return html`<div class="cc-msg assistant"><div class="cc-role">claude</div><${MarkdownView} text=${it.text} /></div>`;

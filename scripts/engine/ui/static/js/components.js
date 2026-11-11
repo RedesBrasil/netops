@@ -325,7 +325,7 @@ export function UnlockModal({ onClose }) {
 }
 
 /* ----------------------------- VaultBanner ------------------------------ */
-export function VaultBanner() {
+export function VaultBanner({ compact = false } = {}) {
   const v = useStore(vaultStore);
   const [tick, setTick] = useState(0);
   const [showUnlock, setShowUnlock] = useState(false);
@@ -343,16 +343,25 @@ export function VaultBanner() {
     if (v.state === "cache") {
       const left = Math.max(0, (v.expires_in || 0) - tick);
       const mm = String(Math.floor(left / 60)).padStart(2, "0"), ss = String(left % 60).padStart(2, "0");
+      if (compact) return html`<span class="vault-chip ok" title="Cofre destrancado (sessão) — expira em ${mm}:${ss}">🔓 ${mm}:${ss}
+        <button class="sm" onClick=${refreshVault}>Re-verificar</button>
+        <button class="sm" onClick=${doLock}>Trancar</button></span>`;
       return html`<div class="vault-banner ok">🔓 Cofre destrancado (sessão) — expira em ${mm}:${ss}
         <span class="spacer"></span>
         <button class="sm" onClick=${refreshVault}>Re-verificar</button>
         <button class="sm" onClick=${doLock}>Trancar</button></div>`;
     }
-    if (v.state === "env") return html`<div class="vault-banner ok">🔓 Cofre destrancado (variável de ambiente)</div>`;
+    if (v.state === "env") return compact
+      ? html`<span class="vault-chip ok" title="Cofre destrancado (variável de ambiente)">🔓</span>`
+      : html`<div class="vault-banner ok">🔓 Cofre destrancado (variável de ambiente)</div>`;
     return null;
   }
 
   const cmd = v.unlock_cmd || "cd /opt/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock";
+  if (compact) return html`<span class=${"vault-chip " + (v.state === "insecure" ? "insecure" : "locked")}
+    title=${v.state === "insecure" ? "Permissões inseguras no cache do cofre — " + v.detail : "Cofre TRANCADO — edições de senha desabilitadas"}>
+    ${v.state === "insecure" ? "⚠ Cofre inseguro" : "🔒 Cofre trancado"}${unlockBtn}
+    <button class="sm" onClick=${refreshVault}>Re-verificar</button>${modal}</span>`;
   if (v.state === "insecure")
     return html`<div class="vault-banner insecure">⚠ Permissões inseguras no cache do cofre — ${v.detail}
       ${unlockBtn}

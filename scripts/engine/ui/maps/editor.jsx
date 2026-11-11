@@ -1,11 +1,12 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 import { ReactFlow, ReactFlowProvider, Handle, Position, ConnectionMode, Background, Controls, MiniMap, NodeResizer, applyNodeChanges, useReactFlow } from '@xyflow/react';
+import { createPortal } from 'react-dom';
 import '@xyflow/react/dist/style.css';
 import './editor.css';
 import { separateEdges, nodeRect, straightGeometry } from './parallel-edges.js';
 import { addBend, removeBend, orientRoute } from './orthogonal-route.js';
 import { LineEditing, StraightEdge } from './straight-edges.jsx';
-import { reconcileNodes, alignNodes, defaultHostPosition, orderedNodeIds, moveLayer, duplicateShape, removeMapNodes, contrastingText } from './node-state.js';
+import { reconcileNodes, alignNodes, defaultHostPosition, orderedNodeIds, mapLinkIds, edgeLayerId, moveLayer, shapesOverlap, pushHistory, reconcileLayout, duplicateShape, removeMapNodes, contrastingText } from './node-state.js';
 import iconCatalog from '../static/icons/network/catalog.json';
 import { parseHostId, nodeHostId, mapToWire, hostLabel } from '../static/js/host-identity.js';
 const iconFiles = new Map(iconCatalog.map(icon => [icon.id, '/icons/network/thumbnails/' + icon.file]));
@@ -47,8 +48,9 @@ function Shape({ data, selected }) {
 }
 const nodeTypes = { device: Device, note: Note, shape: Shape };
 const edgeTypes = { editableStraight: StraightEdge };
-function makeNodes(map, hosts, readOnly) {
-  const layers = new Map(orderedNodeIds(map).map((id, index) => [id, index]));
+function layerMap(map, links) { return new Map(orderedNodeIds(map, mapLinkIds(map, links)).map((id, index) => [id, index])); }
+function makeNodes(map, hosts, readOnly, links) {
+  const layers = layerMap(map, links);
   const nodes = map.host_ids.map((id, index) => ({ id: hostId(id), type: 'device',
     position: { x: map.positions[id]?.x ?? defaultHostPosition(index).x, y: map.positions[id]?.y ?? defaultHostPosition(index).y }, zIndex: layers.get(hostId(id)),
     data: { hostId: id, label: hosts[id]?.hostname || id, ip: hosts[id]?.mgmt_ip || '', role: hosts[id]?.role, icon: hosts[id]?.icon } }));
@@ -69,7 +71,9 @@ function makeEdges(map, links) {
     id: 'visual:' + l.id, source: l.source, target: l.target, sourceHandle: 'bottom', targetHandle: 'top', label: l.label || '',
     data: { speed: l.speed, anchors: l.anchors, route: l.route, visual: true }, style: { stroke: speedStyle(l.speed).color, strokeDasharray: '7 5' },
   }));
-  return separateEdges([...physical, ...visual]);
+  // Links entram na mesma pilha dos nós: qualquer item pode ficar acima ou abaixo de qualquer outro.
+  const layers = layerMap(map, links);
+  return separateEdges([...physical, ...visual]).map(e => ({ ...e, zIndex: layers.get(e.data.visual ? e.id : edgeLayerId(e.id)) }));
 }
 function ColorField({ name, label, value, onChange, onError }) {
   const valid = /^#[0-9a-f]{6}$/i.test(value), input = useRef(null);
@@ -124,9 +128,31 @@ function MapContextMenu({ menu, onClose, children }) {
   return <div ref={ref} className="map-context nodrag nopan" role="menu" aria-label={menu.kind === 'pane' ? 'Ações do mapa' : 'Ações do item'}
     style={{ left: menu.x, top: menu.y }} onKeyDown={keyboard} onContextMenu={event => event.preventDefault()}>{children}</div>;
 }
+// Indicador de salvamento visível no topo: salvando, salvo (com horário) ou erro.
+function SaveBadge({ readOnly, saving, status, saveError, onRetry, onReload }) {
+  const [savedAt, setSavedAt] = useState(null), [flash, setFlash] = useState(false);
+  const previous = useRef(status);
+  useEffect(() => {
+    const before = previous.current; previous.current = status;
+    if (status !== 'Salvo no servidor' || before === status) return;
+    setSavedAt(new Date()); setFlash(true);
+    const t = setTimeout(() => setFlash(false), 3000);
+    return () => clearTimeout(t);
+  }, [status]);
+  if (readOnly) return <span className="map-save-badge muted">Somente leitura</span>;
+  if (status === 'Falha ao salvar' || status === 'Conflito de versão') {
+    const conflict = status === 'Conflito de versão';
+    return <button type="button" className="map-save-badge error" title={saveError || (conflict ? 'O mapa mudou no servidor. Recarregue.' : 'Clique para tentar salvar de novo.')}
+      onClick={conflict ? onReload : onRetry}>⚠ {conflict ? 'Conflito — recarregar' : 'Erro ao salvar — tentar de novo'}</button>;
+  }
+  if (saving || status === 'Salvando…') return <span className="map-save-badge saving"><span className="map-save-spin" aria-hidden="true" />Salvando…</span>;
+  const time = savedAt && savedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return <span className={'map-save-badge ' + (flash ? 'ok flash' : 'ok')} title={time ? `Último salvamento às ${time}` : 'Tudo salvo no servidor'}>
+    ✓ {time ? `Salvo às ${time}` : 'Salvo'}</span>;
+}
 export function MapEditor(props) { return <ReactFlowProvider><Editor {...props} /></ReactFlowProvider>; }
 function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, onSave, onHost, onLink, onSwitch, onNewMap, onDeleteMap, onDeleteSelection, onError, onRetry, onReload, onBusy, IconPicker }) {
-  const [layout, setLayout] = useState(map), [nodes, setNodes] = useState(() => makeNodes(map, hosts, readOnly));
+  const [layout, setLayout] = useState(map), [nodes, setNodes] = useState(() => makeNodes(map, hosts, readOnly, links));
   const layoutRef = useRef(map), nodesRef = useRef(nodes), gesture = useRef(false), ignoreDoubleClick = useRef(0);
   function visualNodes(value) { nodesRef.current = value; setNodes(value); }
   function nodeGesture(value) { gesture.current = value; onBusy(value); }
@@ -145,17 +171,49 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     if (!changedMap && gesture.current) return;
     layoutRef.current = map;
     setLayout(map);
-    const desired = makeNodes(map, hosts, readOnly);
+    const desired = makeNodes(map, hosts, readOnly, links);
     visualNodes(changedMap ? desired : reconcileNodes(nodesRef.current, desired));
-  }, [map, hosts, readOnly]);
-  useEffect(() => { setSelected(null); setFocus(null); setMenu(null); setLinkMode(false); setMultiSelect(false); const t = setTimeout(() => flow.fitView({ padding: .2, maxZoom: 1.05 }), 80); return () => clearTimeout(t); }, [map.id]);
+  }, [map, hosts, readOnly, links]);
+  useEffect(() => { undoStack.current = []; redoStack.current = []; syncHistory(); setSelected(null); setFocus(null); setMenu(null); setLinkMode(false); setMultiSelect(false); const t = setTimeout(() => flow.fitView({ padding: .2, maxZoom: 1.05 }), 80); return () => clearTimeout(t); }, [map.id]);
+  // Desfazer/refazer: até 10 estados de layout por mapa (posições, formas, notas, camadas,
+  // ligações visuais, remoções do mapa). Cada arraste/redimensionamento conta como 1 passo.
+  const undoStack = useRef([]), redoStack = useRef([]);
+  const [history, setHistory] = useState({ undo: 0, redo: 0 });
+  function syncHistory() { setHistory({ undo: undoStack.current.length, redo: redoStack.current.length }); }
   function update(fn, syncNodes = true) {
-    const value = fn(layoutRef.current);
+    const before = layoutRef.current, value = fn(before);
+    if (value !== before) { undoStack.current = pushHistory(undoStack.current, before); redoStack.current = []; syncHistory(); }
     layoutRef.current = value;
     setLayout(value);
-    if (syncNodes) visualNodes(reconcileNodes(nodesRef.current, makeNodes(value, hosts, readOnly)));
+    if (syncNodes) visualNodes(reconcileNodes(nodesRef.current, makeNodes(value, hosts, readOnly, links)));
     onSave(value);
   }
+  function restore(from, to) {
+    if (readOnly || !from.current.length) return;
+    const target = from.current[from.current.length - 1];
+    from.current = from.current.slice(0, -1);
+    to.current = pushHistory(to.current, layoutRef.current);
+    const value = reconcileLayout(target, layoutRef.current, Object.keys(hosts), links.map(l => l.id));
+    layoutRef.current = value;
+    setLayout(value); setMenu(null); setFocus(null); setSelected(null);
+    visualNodes(reconcileNodes(nodesRef.current, makeNodes(value, hosts, readOnly, links)));
+    syncHistory();
+    onSave(value);
+  }
+  const undo = () => restore(undoStack, redoStack), redo = () => restore(redoStack, undoStack);
+  const historyKeys = useRef(null);
+  historyKeys.current = event => {
+    if (readOnly || dialog || !(event.ctrlKey || event.metaKey) || event.altKey) return;
+    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], .xterm')) return;
+    const key = event.key.toLowerCase();
+    if (key === 'z' && !event.shiftKey) { event.preventDefault(); undo(); }
+    else if (key === 'y' || key === 'z' && event.shiftKey) { event.preventDefault(); redo(); }
+  };
+  useEffect(() => {
+    const listener = event => historyKeys.current(event);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
   function saveLine(id, patch) {
     update(m => id.startsWith('visual:') ? { ...m, visual_links: m.visual_links.map(l => l.id === id.slice(7) ? { ...l, ...patch } : l) }
       : { ...m, edges: { ...m.edges, [id]: { ...m.edges[id], ...patch } } });
@@ -181,7 +239,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
   }
   function resetLine(id = selected) {
     if (id.startsWith('visual:')) saveLine(id, { anchors: null, route: null });
-    else update(m => { const next = { ...m.edges }; delete next[id]; return { ...m, edges: next }; });
+    else update(m => { const next = { ...m.edges }, z = next[id]?.z_index; delete next[id]; if (z != null) next[id] = { z_index: z }; return { ...m, edges: next }; });
   }
   const canvas = useRef(null), paneTouch = useRef(null);
   const point = () => {
@@ -285,7 +343,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
   }
   function duplicate(id) {
     const newId = uid();
-    update(m => duplicateShape(m, id, newId));
+    update(m => duplicateShape(m, id, newId, mapLinkIds(m, links)));
     visualNodes(applyNodeChanges(nodesRef.current.map(n => ({ id: n.id, type: 'select', selected: n.id === objectId(newId) })), nodesRef.current));
     setSelected(objectId(newId));
     canvas.current?.focus({ preventScroll: true });
@@ -318,6 +376,42 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
   const menuNode = nodes.find(n => n.id === menu?.id), menuEdge = edges.find(e => e.id === menu?.id);
   const action = (label, fn, danger = false) => <button type="button" role="menuitem" className={danger ? 'danger' : ''}
     onClick={() => { setMenu(null); fn(); }}>{label}</button>;
+  // Geometria atual de cada camada, p/ frente/trás pularem até o próximo item sobreposto.
+  function layerShape(layer) {
+    if (layer.startsWith('host:') || layer.startsWith('object:')) {
+      const node = flow.getInternalNode(layer); return node && { rect: nodeRect(node) };
+    }
+    const edge = edges.find(e => e.id === (layer.startsWith('edge:') ? layer.slice(5) : layer));
+    const s = edge && flow.getInternalNode(edge.source), t = edge && flow.getInternalNode(edge.target);
+    if (!s || !t) return null;
+    const a = nodeRect(s), b = nodeRect(t);
+    if (!edge.data.route) return { segment: [{ x: a.cx, y: a.cy }, { x: b.cx, y: b.cy }] };
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+    return { rect: { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y } };
+  }
+  const overlaps = (a, b) => shapesOverlap(layerShape(a), layerShape(b));
+  const layerActions = id => <>
+    {action('Trazer para o topo', () => update(m => moveLayer(m, id, 'front', mapLinkIds(m, links))))}
+    {action('Enviar para frente', () => update(m => moveLayer(m, id, 'forward', mapLinkIds(m, links), overlaps)))}
+    {action('Enviar para trás', () => update(m => moveLayer(m, id, 'backward', mapLinkIds(m, links), overlaps)))}
+    {action('Enviar para o fundo', () => update(m => moveLayer(m, id, 'back', mapLinkIds(m, links))))}
+  </>;
+  // A barra do mapa vai para a faixa superior do app (slot #topbar-slot), liberando altura
+  // para o desenho. Sem o slot (embed isolado/testes), fica no topo do próprio editor.
+  const [slot, setSlot] = useState(null);
+  useLayoutEffect(() => { setSlot(document.getElementById('topbar-slot')); }, []);
+  const toolbar = <>
+    <div className="map-toolbar"><div className="map-picker"><label htmlFor="map-select">Mapa</label><select id="map-select" value={layout.id} disabled={saving} onChange={e => onSwitch(e.currentTarget.value)}>{maps.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+        {!readOnly && <button aria-label="Novo mapa" onClick={onNewMap}>+</button>}</div>
+        <SaveBadge readOnly={readOnly} saving={saving} status={status} saveError={saveError} onRetry={onRetry} onReload={onReload} />
+        <div className="map-tools">{!readOnly && <><button aria-label="Desfazer (Ctrl+Z)" title={`Desfazer (Ctrl+Z) — ${history.undo} de 10`} disabled={!history.undo} onClick={undo}>↶</button>
+          <button aria-label="Refazer (Ctrl+Shift+Z)" title="Refazer (Ctrl+Shift+Z ou Ctrl+Y)" disabled={!history.redo} onClick={redo}>↷</button></>}
+          <button onClick={exportMap}>Exportar JSON</button>
+          <button className="map-touch-actions" aria-label="Ações do mapa" aria-haspopup="menu" aria-expanded={!!menu} onClick={menuFromButton}>⋯</button>
+        </div>
+        <span className="map-sr-only" role="status" aria-live="polite">{readOnly ? 'Somente leitura' : status}</span>
+      </div>
+  </>;
   return <section className="netops-maps" aria-label="Mapa de rede" onKeyDown={event => {
     if (event.key === 'Delete' && !dialog && !readOnly && !event.target.closest('input, textarea, select, [contenteditable="true"]')) {
       event.preventDefault(); event.stopPropagation(); removeSelection(); return;
@@ -334,13 +428,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
         x: box.x + Math.min(box.width, 180), y: box.y + Math.min(box.height, 80), point: point() });
     }
   }}>
-    <div className="map-toolbar"><div className="map-picker"><label htmlFor="map-select">Mapa</label><select id="map-select" value={layout.id} disabled={saving} onChange={e => onSwitch(e.currentTarget.value)}>{maps.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
-      {!readOnly && <button aria-label="Novo mapa" onClick={onNewMap}>+</button>}</div>
-      <div className="map-tools"><button onClick={exportMap}>Exportar JSON</button>
-        <button className="map-touch-actions" aria-label="Ações do mapa" aria-haspopup="menu" aria-expanded={!!menu} onClick={menuFromButton}>⋯</button>
-      </div>
-      <span className="map-sr-only" role="status" aria-live="polite">{readOnly ? 'Somente leitura' : status}</span>
-    </div>
+    {slot ? createPortal(<div className="netops-maps netops-maps-bar">{toolbar}</div>, slot) : toolbar}
     <div className="map-workspace"><div ref={canvas} className="map-canvas" data-testid="map-canvas" tabIndex={0}
       onPointerDownCapture={event => {
         paneTouch.current = event.pointerType === 'touch' && event.isPrimary && event.target.classList.contains('react-flow__pane')
@@ -365,7 +453,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           onSelectionContextMenu={event => context(event, 'selection')} onSelectionStart={() => nodeGesture(true)} onSelectionEnd={() => nodeGesture(false)}
           onPaneContextMenu={event => context(event)} onMoveStart={() => setMenu(null)}
           onNodeDragStart={() => nodeGesture(true)} onNodeDragStop={() => nodeGesture(false)}
-          fitView fitViewOptions={{ padding: .2, maxZoom: 1.05 }} minZoom={.15} maxZoom={2} nodeDragThreshold={3} deleteKeyCode={null} preventScrolling selectionOnDrag={!linkMode && !multiSelect} panOnDrag={[1]} selectionKeyCode="Shift" multiSelectionKeyCode={multiSelectionKeys} elevateNodesOnSelect={false}>
+          fitView fitViewOptions={{ padding: .2, maxZoom: 1.05 }} minZoom={.15} maxZoom={2} nodeDragThreshold={3} deleteKeyCode={null} preventScrolling selectionOnDrag={!linkMode && !multiSelect} panOnDrag={[1]} selectionKeyCode="Shift" multiSelectionKeyCode={multiSelectionKeys} elevateNodesOnSelect={false} elevateEdgesOnSelect={false} zIndexMode="manual">
           <Background gap={24} size={1} color="var(--border)" /><Controls showInteractive={false} /><MiniMap className="map-overview" pannable zoomable />
         </ReactFlow>
       </LineEditing.Provider>
@@ -401,8 +489,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
         {!readOnly && <>
           {action('Editar', () => edit(menuNode))}
           {connectable(menuNode) && action('Ligar a outro dispositivo', () => startConnection(menuNode.id))}
-          {action('Enviar para frente', () => update(m => moveLayer(m, menuNode.id, 'forward')))}
-          {action('Enviar para trás', () => update(m => moveLayer(m, menuNode.id, 'backward')))}
+          {layerActions(menuNode.id)}
           {menuNode.type === 'shape' && action('Duplicar', () => duplicate(menuNode.id))}
           {action(menuNode.data.hostId && layout.kind !== 'custom' ? 'Excluir host' : 'Remover do mapa', () => removeVisual(menuNode.id), true)}
         </>}
@@ -414,6 +501,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           {action('Posição automática', () => resetLine(menuEdge.id))}
           <div role="separator" />
           {action('Editar', () => editEdge(menuEdge))}
+          {layerActions(menuEdge.data.visual ? menuEdge.id : edgeLayerId(menuEdge.id))}
           {action(menuEdge.data.visual ? 'Remover do mapa' : 'Excluir enlace', () => removeVisual(menuEdge.id), true)}
         </>}
         {readOnly && action('Enquadrar mapa', () => flow.fitView({ padding: .2, maxZoom: 1.05 }))}

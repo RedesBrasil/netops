@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { reconcileNodes, orderedNodeIds, moveLayer, removeMapNodes, duplicateShape, contrastingText } from './node-state.js';
+import { reconcileNodes, orderedNodeIds, moveLayer, removeMapNodes, duplicateShape, contrastingText, shapesOverlap, pushHistory, reconcileLayout } from './node-state.js';
 
 const host = () => ({ id: 'host:a', type: 'device', position: { x: 10, y: 20 }, data: { label: 'A' } });
 const measured = () => ({ ...host(), measured: { width: 198, height: 91 }, selected: true, dragging: false });
@@ -98,36 +98,60 @@ test('texto da forma e prévia contrastam com cores claras/escuras em qualquer t
   for (const hex of ['#000000', '#123456', '#0000ff']) assert.equal(contrastingText(hex), '#ffffff');
   for (const invalid of [null, undefined, '', 'red', '#abc', '#12345z']) assert.equal(contrastingText(invalid), undefined);
 });
-test('pilha legada conserva formas atrás de hosts e demais objetos', () => {
-  assert.deepEqual(orderedNodeIds(stackedMap()), ['object:area', 'host:a', 'host:b', 'object:note']);
+test('pilha legada: formas no fundo, links logo abaixo dos dispositivos, hosts e notas acima', () => {
+  assert.deepEqual(orderedNodeIds(stackedMap(), ['real']), ['object:area', 'edge:real', 'visual:visual', 'visual:other', 'host:a', 'host:b', 'object:note']);
+  assert.deepEqual(orderedNodeIds(stackedMap()), ['object:area', 'visual:visual', 'visual:other', 'host:a', 'host:b', 'object:note']);
 });
-test('avançar/recuar troca exatamente uma camada mista e preserva posições/rotas', () => {
+test('avançar/recuar troca exatamente uma camada da pilha mista e preserva posições/rotas', () => {
   const map = stackedMap(), before = structuredClone(map);
-  let next = moveLayer(map, 'object:area', 'forward');
-  assert.deepEqual(orderedNodeIds(next), ['host:a', 'object:area', 'host:b', 'object:note']);
-  assert.equal(next.positions.a.z_index, 0); assert.equal(next.objects[0].z_index, 1);
-  next = moveLayer(next, 'object:area', 'forward');
-  assert.deepEqual(orderedNodeIds(next), ['host:a', 'host:b', 'object:area', 'object:note']);
-  next = moveLayer(next, 'object:area', 'backward');
-  assert.deepEqual(orderedNodeIds(next), ['host:a', 'object:area', 'host:b', 'object:note']);
-  assert.deepEqual(next.edges, map.edges); assert.equal(next.positions.a.x, 1);
-  assert.deepEqual(map, before); assert.deepEqual(orderedNodeIds(structuredClone(next)), orderedNodeIds(next));
+  let next = moveLayer(map, 'object:area', 'forward', ['real']);
+  assert.deepEqual(orderedNodeIds(next, ['real']), ['edge:real', 'object:area', 'visual:visual', 'visual:other', 'host:a', 'host:b', 'object:note']);
+  assert.equal(next.edges.real.z_index, 0); assert.equal(next.objects[0].z_index, 1);
+  assert.deepEqual(next.edges.real.route, map.edges.real.route);
+  next = moveLayer(next, 'object:area', 'backward', ['real']);
+  assert.deepEqual(orderedNodeIds(next, ['real']), ['object:area', 'edge:real', 'visual:visual', 'visual:other', 'host:a', 'host:b', 'object:note']);
+  assert.equal(next.positions.a.x, 1);
+  assert.deepEqual(map, before); assert.deepEqual(orderedNodeIds(structuredClone(next), ['real']), orderedNodeIds(next, ['real']));
+});
+test('forma vai para cima de hosts e links; link vai para cima de forma e host', () => {
+  let map = moveLayer(stackedMap(), 'object:area', 'front', ['real']);
+  assert.equal(orderedNodeIds(map, ['real']).at(-1), 'object:area');
+  map = moveLayer(map, 'edge:real', 'front', ['real']);
+  assert.deepEqual(orderedNodeIds(map, ['real']).slice(-2), ['object:area', 'edge:real']);
+  map = moveLayer(map, 'visual:other', 'front', ['real']);
+  assert.equal(orderedNodeIds(map, ['real']).at(-1), 'visual:other');
+  assert.equal(map.visual_links[1].z_index, 6);
+  map = moveLayer(map, 'host:b', 'back', ['real']);
+  assert.equal(orderedNodeIds(map, ['real'])[0], 'host:b');
+  map = moveLayer(map, 'object:note', 'back', ['real']);
+  assert.deepEqual(orderedNodeIds(map, ['real']).slice(0, 2), ['object:note', 'host:b']);
+  // A ordem sobrevive à ida e volta pelo YAML (só z_index inteiros, sem empates).
+  const z = [...Object.values(map.positions).map(p => p.z_index), ...map.objects.map(o => o.z_index),
+    map.edges.real.z_index, ...map.visual_links.map(l => l.z_index)];
+  assert.deepEqual([...z].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5, 6]);
 });
 test('pilha respeita limites e inicializa posições de hosts automáticos', () => {
   const map = stackedMap(); delete map.positions.b;
   assert.equal(moveLayer(map, 'object:area', 'backward'), map);
+  assert.equal(moveLayer(map, 'object:area', 'back'), map);
   assert.equal(moveLayer(map, 'object:note', 'forward'), map);
+  assert.equal(moveLayer(map, 'object:note', 'front'), map);
   assert.equal(moveLayer(map, 'missing', 'forward'), map);
   const next = moveLayer(map, 'object:area', 'forward');
-  assert.deepEqual(next.positions.b, { x: 370, y: 165, z_index: 2 });
+  assert.deepEqual(next.positions.b, { x: 370, y: 165, z_index: 4 });
   assert.throws(() => moveLayer(map, 'host:a', 'invalid'));
+});
+test('mapa sem dispositivos põe links acima das formas', () => {
+  const map = { host_ids: [], positions: {}, edges: {}, objects: [{ id: 's', type: 'shape', position: { x: 0, y: 0 } }],
+    visual_links: [{ id: 'v', source: 'object:s', target: 'object:s' }] };
+  assert.deepEqual(orderedNodeIds(map), ['object:s', 'visual:v']);
 });
 test('duplicar forma preserva estilo/tamanho/ícone, desloca e insere uma camada acima', () => {
   const map = stackedMap(), next = duplicateShape(map, 'object:area', 'copy'), copy = next.objects.at(-1);
   assert.deepEqual(copy, { ...map.objects[0], id: 'copy', position: { x: 42, y: 52 }, z_index: 1 });
-  assert.deepEqual(orderedNodeIds(next), ['object:area', 'object:copy', 'host:a', 'host:b', 'object:note']);
+  assert.deepEqual(orderedNodeIds(next), ['object:area', 'object:copy', 'visual:visual', 'visual:other', 'host:a', 'host:b', 'object:note']);
   assert.notEqual(copy.position, map.objects[0].position);
-  assert.equal(next.visual_links, map.visual_links); assert.equal(map.objects.length, 2);
+  assert.deepEqual(next.visual_links.map(({ z_index, ...l }) => l), map.visual_links); assert.equal(map.objects.length, 2);
   assert.equal(duplicateShape(map, 'object:note', 'copy'), map);
 });
 test('remover grupo misto limpa somente membros/objetos/linhas visuais envolvidos', () => {
@@ -141,4 +165,45 @@ test('mapa automático protege hosts enquanto permite excluir formas selecionada
   const map = { ...stackedMap(), kind: 'all' }, next = removeMapNodes(map, ['host:a', 'object:area']);
   assert.deepEqual(next.host_ids, map.host_ids); assert.deepEqual(next.members, map.members);
   assert.deepEqual(next.positions, map.positions); assert.deepEqual(next.objects.map(o => o.id), ['note']);
+});
+test('frente/trás pulam até o próximo item sobreposto, ignorando links distantes', () => {
+  // area (fundo) ... links distantes ... host:a sobreposto
+  const map = stackedMap(), links = ['real'];
+  const touching = new Set(['object:area|host:a', 'host:a|object:area']);
+  const overlaps = (a, b) => touching.has(a + '|' + b);
+  let next = moveLayer(map, 'object:area', 'forward', links, overlaps);
+  const order = orderedNodeIds(next, links);
+  assert.ok(order.indexOf('object:area') > order.indexOf('host:a'));
+  assert.ok(order.indexOf('object:area') < order.indexOf('host:b'));
+  next = moveLayer(next, 'object:area', 'backward', links, overlaps);
+  const back = orderedNodeIds(next, links);
+  assert.ok(back.indexOf('object:area') < back.indexOf('host:a'));
+  // ninguém sobreposto: anda uma camada
+  assert.deepEqual(orderedNodeIds(moveLayer(map, 'object:area', 'forward', links, () => false), links).slice(0, 2), ['edge:real', 'object:area']);
+});
+test('sobreposição geométrica: retângulos, segmento x retângulo e segmentos cruzados', () => {
+  const r = (x, y, w, h) => ({ rect: { x, y, width: w, height: h } }), seg = (a, b, c, d) => ({ segment: [{ x: a, y: b }, { x: c, y: d }] });
+  assert.ok(shapesOverlap(r(0, 0, 10, 10), r(5, 5, 10, 10)));
+  assert.ok(!shapesOverlap(r(0, 0, 10, 10), r(20, 0, 5, 5)));
+  assert.ok(shapesOverlap(seg(-5, 5, 15, 5), r(0, 0, 10, 10)));
+  assert.ok(!shapesOverlap(seg(-5, 20, 15, 20), r(0, 0, 10, 10)));
+  assert.ok(shapesOverlap(seg(0, 0, 10, 10), seg(0, 10, 10, 0)));
+  assert.ok(!shapesOverlap(seg(0, 0, 10, 0), seg(0, 5, 10, 5)));
+});
+test('histórico guarda só as últimas 10 alterações', () => {
+  let stack = [];
+  for (let i = 0; i < 15; i++) stack = pushHistory(stack, i);
+  assert.deepEqual(stack, [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+});
+test('desfazer reconcilia com inventário/topologia atuais e restaura objeto apagado', () => {
+  const before = stackedMap();
+  const current = removeMapNodes(before, ['object:area', 'host:b']);
+  // host b sumiu do inventário depois; o enlace "real" também
+  const restored = reconcileLayout(before, current, ['a'], []);
+  assert.deepEqual(restored.objects.map(o => o.id), ['area', 'note']);
+  assert.deepEqual(restored.host_ids, ['a']); assert.deepEqual(restored.members, ['a']);
+  assert.deepEqual(Object.keys(restored.positions), ['a']); assert.deepEqual(restored.edges, {});
+  assert.deepEqual(restored.visual_links.map(l => l.id), ['visual']);
+  // tudo ainda existe: volta exatamente ao estado anterior
+  assert.deepEqual(reconcileLayout(before, current, ['a', 'b'], ['real']), before);
 });

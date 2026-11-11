@@ -229,6 +229,7 @@ class MapEdgeLayout(BaseModel):
     model_config = {"extra": "forbid"}
     anchors: Optional[MapAnchors] = None
     route: Optional[MapRoute] = None
+    z_index: Optional[int] = Field(default=None, strict=True, ge=-100000, le=100000)
 
 class MapObject(BaseModel):
     model_config = {"extra": "forbid"}

@@ -59,7 +59,7 @@ from pathlib import Path
 from fastapi import WebSocket, WebSocketDisconnect
 
 import deps
-from services import claude_models
+from services import claude_models, claude_prefs
 
 # Importado de forma preguiçosa para não quebrar a UI quando o SDK não está instalado
 # (instalação headless sem `pip install claude-agent-sdk`). O router checa is_available().
@@ -218,6 +218,14 @@ class ClaudeWebSession:
         self._resume = resume if resume is not None else ((ws.query_params.get("resume") if ws else None) or None)
         self._model = model if model is not None else ((ws.query_params.get("model") if ws else None) or None)
         self.sid: str | None = self._resume   # vira o session_id real quando o init chega
+        # Conversa retomada volta no ÚLTIMO modelo/modo usados nela; nova usa os padrões das configurações.
+        saved = claude_prefs.get_session(self._resume) if self._resume else {}
+        dflt = claude_prefs.defaults()
+        if saved.get("model"):
+            self._model = saved["model"]
+        elif not self._model and dflt["default_model"] and not self._resume:
+            self._model = dflt["default_model"]
+        self._mode = saved.get("mode") or (dflt["default_mode"] if not self._resume else "default")
         self.client: ClaudeSDKClient | None = None
         self._pending: dict[str, asyncio.Future] = {}   # id de permissão -> Future
         self._pending_payloads: dict[str, dict] = {}     # id -> card (p/ reemitir no re-anexo)
@@ -442,6 +450,11 @@ class ClaudeWebSession:
             self._model = await asyncio.to_thread(claude_models.default_model)
         self.client = ClaudeSDKClient(options=self._options())
         await self.client.connect()  # sem prompt: modo streaming, pronto p/ query()
+        if self._mode != "default" and self._mode in VALID_MODES:
+            try:
+                await self.client.set_permission_mode(self._mode)
+            except Exception:
+                self._mode = "default"
         self._sdk_task = asyncio.create_task(self._sdk_pump())
 
     async def run(self) -> None:
@@ -521,6 +534,8 @@ class ClaudeWebSession:
                 if mode in VALID_MODES:
                     try:
                         await self.client.set_permission_mode(mode)
+                        self._mode = mode
+                        claude_prefs.set_session(self.sid, mode=mode)
                         await self._send({"type": "mode_changed", "mode": mode})
                     except Exception as e:
                         await self._send({"type": "error", "detail": f"set_mode: {e}"})
@@ -528,6 +543,7 @@ class ClaudeWebSession:
                 try:
                     self._model = raw.get("model") or None
                     await self.client.set_model(self._model)
+                    claude_prefs.set_session(self.sid, model=self._model)
                 except Exception as e:
                     await self._send({"type": "error", "detail": f"set_model: {e}"})
             elif kind == "interrupt":
@@ -562,7 +578,14 @@ class ClaudeWebSession:
                 if sid:
                     self.sid = sid
                     _LIVE[sid] = self
-            await self._send({"type": "system", "subtype": msg.subtype, "data": msg.data})
+            data = msg.data
+            if msg.subtype == "init":
+                sid = (data or {}).get("session_id")
+                # grava o modelo/modo vigentes desta conversa se ainda não há registro
+                if sid and not claude_prefs.get_session(sid):
+                    claude_prefs.set_session(sid, model=self._model, mode=self._mode)
+                data = {**(data or {}), "permissionMode": self._mode}   # o CLI sempre diz "default"
+            await self._send({"type": "system", "subtype": msg.subtype, "data": data})
 
         elif isinstance(msg, StreamEvent):
             ev = msg.event or {}

@@ -22,10 +22,10 @@ import re
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request, Response, UploadFile, WebSocket
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 import deps
-from services import claude_auth, claude_models, claude_svc
+from services import claude_auth, claude_models, claude_prefs, claude_svc
 
 router = APIRouter(tags=["claude"])
 
@@ -166,6 +166,17 @@ def claude_models_refresh():
     return {"models": models, "default": claude_models.default_model(models)}
 
 
+@router.get("/claude/prefs")
+def claude_prefs_get(sid: str = ""):
+    """Padrões p/ conversas novas + (se sid) o último modelo/modo daquela conversa."""
+    return {**claude_prefs.defaults(), "session": claude_prefs.get_session(sid)}
+
+
+@router.put("/claude/prefs")
+def claude_prefs_put(body: dict):
+    return claude_prefs.set_defaults(body.get("default_model"), body.get("default_mode"))
+
+
 @router.get("/claude/sessions")
 def claude_sessions():
     """Lista as sessões Claude Code passadas deste projeto (p/ retomar)."""
@@ -235,3 +246,20 @@ async def claude_upload(file: UploadFile):
     dest.write_bytes(raw)
     rel = dest.relative_to(deps.NETOPS_ROOT).as_posix()
     return {"path": rel, "name": dest.name, "size": len(raw)}
+
+
+_IMG_EXT = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"}
+
+
+@router.get("/claude/upload/{name}")
+def claude_upload_get(name: str):
+    """Serve um anexo de IMAGEM já enviado (preview no chat). Só imagens, só dentro de UPLOAD_DIR."""
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    if _SAFE_NAME.search(name) or name.startswith("."):
+        return JSONResponse({"error": "bad_name"}, status_code=400)
+    mt = _IMG_EXT.get(name.rsplit(".", 1)[-1].lower())
+    f = UPLOAD_DIR / name
+    if not mt or not f.is_file():
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return FileResponse(str(f), media_type=mt, headers={"X-Content-Type-Options": "nosniff"})

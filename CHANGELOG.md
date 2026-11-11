@@ -1,5 +1,19 @@
 # Changelog do NetOps
 
+## [2.1.0] - 2026-11-11
+
+### Novidades
+
+- Aba Claude Code com barra única: título da sessão, status, Padrões, Sessões, Nova sessão e estado do cofre ficam na barra superior, liberando espaço na janela. O botão "Copiar link" da página foi removido (continua na lista de Sessões).
+- Padrões de modelo e modo de permissão para novas conversas agora têm URL própria (`#claude/<sessão>/padroes`) e um popup no mesmo padrão visual do restante do console.
+- "Verificar atualizações" passou para Configuração; a versão instalada continua no canto da barra.
+- Pré-visualização de imagens anexadas no chat e persistência dos padrões por conversa.
+- Mapas: ordem de camada (z-index) das ligações e melhorias no editor de nós.
+
+### Compatibilidade
+
+- Sem mudança de formato de dados; o atualizador preserva dados e personalizações.
+
 ## [2.0.1] - 2026-11-11
 
 ### Correções

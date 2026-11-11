@@ -13,7 +13,8 @@ const PHASES = {
   migration_failed: "Código instalado; migração de dados bloqueada",
 };
 
-export function UpdatesControl() {
+// part: "version" = só o número (topbar); "button" = botão + painel (Configuração).
+export function UpdatesControl({ part = "button" } = {}) {
   const [open, setOpen] = useState(!!sessionStorage.getItem(JOB_KEY));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -69,8 +70,9 @@ export function UpdatesControl() {
   }
 
   const latest = data?.releases?.[0];
+  if (part === "version")
+    return data?.current_version ? html`<span class="updates-version">v${data.current_version}</span>` : null;
   return html`<div class="updates-control">
-    ${data?.current_version && html`<span class="updates-version">v${data.current_version}</span>`}
     <button class="sm" onClick=${busy || pending ? () => setOpen(true) : check}>${busy ? "Atualização em andamento" : "Verificar atualizações"}</button>
     ${open && html`<${Modal} title="Atualizações do NetOps" wide=${true} onClose=${() => setOpen(false)}>
       <div class="updates-panel" role="region" aria-label="Atualizações">

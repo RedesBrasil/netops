@@ -15,7 +15,7 @@ import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
 import { BackupsPage } from "./pages/backups.js";
 import { UpdatesControl } from "./pages/updates.js";
 import { TerminalPage } from "./pages/terminal.js";
-import { ClaudeCodePage, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
+import { ClaudeCodePage, ClaudeTopbarControls, ClaudeSessionTitle, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
 
 const ROUTES = {
   hosts: { label: "Hosts", comp: HostsPage, group: "Inventário" },
@@ -92,10 +92,12 @@ function Shell({ onLogout, showLogout }) {
   const dockVisible = route !== "claude" && !!(claude && claude.hasSession);
   return html`<div class=${"shell" + (dockVisible ? " has-dock" : "")}>
     <div class="topbar">
-      <span class="brand">NetOps Console</span>
-      <span class="net">· ${meta.network_name}</span>
-      <span class="spacer"></span>
-      <${UpdatesControl} />
+      ${route === "claude"
+        ? html`<span class="brand">Claude Code</span><${ClaudeSessionTitle} />`
+        : html`<span class="brand">NetOps Console</span><span class="net">· ${meta.network_name}</span>`}
+      <div id="topbar-slot" class="topbar-slot"></div>
+      ${route === "claude" && html`<${ClaudeTopbarControls} />`}
+      <${UpdatesControl} part="version" />
       <button class="sm" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}>
         ${theme === "light" ? "🌙 escuro" : "☀ claro"}</button>
       ${showLogout && html`<button class="sm" onClick=${doLogout}>Sair</button>`}

@@ -8,7 +8,18 @@ export function claudeSessionHash(id) {
   return validSessionId(id) ? "#claude/" + id : "#claude";
 }
 
+// Sufixo que abre o popup de Padrões como URL própria (ex.: #claude/<id>/padroes).
+const PREFS_SUFFIX = "/padroes";
+export function claudePrefsOpen(hash = location.hash) { return hash.endsWith(PREFS_SUFFIX) && hash.startsWith("#claude"); }
+export function setClaudePrefsHash(open) {
+  const base = location.hash.endsWith(PREFS_SUFFIX) ? location.hash.slice(0, -PREFS_SUFFIX.length) : location.hash;
+  if (open) { location.hash = (base === "#claude" ? "#claude" : base) + PREFS_SUFFIX; return; }
+  if (location.hash.endsWith(PREFS_SUFFIX)) history.replaceState(null, "", base || "#claude");
+  dispatchEvent(new Event("hashchange"));
+}
+
 export function readClaudeRoute(hash) {
+  if (claudePrefsOpen(hash)) hash = hash.slice(0, -PREFS_SUFFIX.length);
   if (hash === "#claude" || hash === "#claude/") return { kind: "last" };
   if (!hash.startsWith("#claude/")) return null;
   if (hash === "#claude/new") return { kind: "new" };
@@ -35,6 +46,7 @@ export function forgetClaudeSession(id) {
 }
 
 export function replaceClaudeHash(hash) {
+  if (claudePrefsOpen()) hash += PREFS_SUFFIX;   // não fecha o popup de Padrões
   if (location.hash === hash) return;
   history.replaceState(null, "", hash);
   dispatchEvent(new Event("hashchange"));
