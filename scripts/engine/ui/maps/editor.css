@@ -21,7 +21,11 @@
 .netops-maps .device-icon { color:var(--accent); font-size:28px; }
 .netops-maps .map-ref { border-color:var(--map-wan); }
 .netops-maps .react-flow__handle { visibility:hidden; pointer-events:none; }
-.netops-maps .map-note { white-space:pre-wrap; min-width:180px; max-width:300px; padding:13px 17px; background:var(--surface); border-left:3px solid var(--accent); color:var(--text); font-size:13px; line-height:1.7; }
+.netops-maps .react-flow__node-note { width:220px; height:48px; }
+.netops-maps .map-note { width:100%; height:100%; overflow:hidden; box-sizing:border-box; color:var(--text); display:flex; align-items:center; }
+.netops-maps .map-note-text { width:100%; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.15; max-height:100%; }
+.netops-maps .map-note.chosen { outline:1px dashed var(--accent); outline-offset:2px; }
+.netops-maps .map-check { display:flex; flex-direction:row; align-items:center; gap:8px; }
 .netops-maps .react-flow__node-shape { width:320px; height:200px; }
 .netops-maps .map-shape { width:100%; height:100%; background:var(--accent-weak); opacity:.8; border:1px dashed var(--accent); border-radius:14px; padding:13px 18px; font-size:13px; color:var(--text); }
 .netops-maps .map-shape.ellipse { border-radius:50%; text-align:center; }

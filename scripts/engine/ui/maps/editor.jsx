@@ -35,7 +35,26 @@ function Device({ data, selected }) {
     <NodeHandles />
   </div>;
 }
-function Note({ data }) { return <div className="map-note">{data.label}</div>; }
+// Texto puro: sem caixa, a fonte acompanha o tamanho do quadro (arrastar as bordas = aumentar/diminuir o texto).
+function Note({ data, selected }) {
+  const box = useRef(null), text = useRef(null);
+  useEffect(() => {
+    const fit = () => {
+      const b = box.current, t = text.current; if (!b || !t) return;
+      let lo = 4, hi = 600;
+      while (hi - lo > 0.5) { const mid = (lo + hi) / 2; t.style.fontSize = mid + 'px'; if (t.scrollHeight <= b.clientHeight && t.scrollWidth <= b.clientWidth) lo = mid; else hi = mid; }
+      t.style.fontSize = lo + 'px';
+    };
+    fit();
+    const ro = new ResizeObserver(fit); ro.observe(box.current);
+    return () => ro.disconnect();
+  }, [data.label]);
+  return <><NodeResizer isVisible={selected && !data.readOnly} minWidth={24} minHeight={14} />
+    <div ref={box} className={`map-note ${selected ? 'chosen' : ''}`}
+      style={{ color: data.text_color || undefined, background: data.color || 'transparent', border: data.stroke ? '2px solid ' + data.stroke : undefined }}>
+      <div ref={text} className="map-note-text">{data.label}</div>
+    </div></>;
+}
 function Shape({ data, selected }) {
   const [failed, setFailed] = useState(false), image = iconFiles.get(data.icon);
   useEffect(() => setFailed(false), [image]);
@@ -55,7 +74,7 @@ function makeNodes(map, hosts, readOnly, links) {
     position: { x: map.positions[id]?.x ?? defaultHostPosition(index).x, y: map.positions[id]?.y ?? defaultHostPosition(index).y }, zIndex: layers.get(hostId(id)),
     data: { hostId: id, label: hosts[id]?.hostname || id, ip: hosts[id]?.mgmt_ip || '', role: hosts[id]?.role, icon: hosts[id]?.icon } }));
   for (const o of map.objects) nodes.push({ id: objectId(o.id), type: o.type === 'reference' ? 'device' : o.type,
-    position: o.position, zIndex: layers.get(objectId(o.id)), ...(o.type === 'shape' ? { style: { width: o.width, height: o.height } } : {}),
+    position: o.position, zIndex: layers.get(objectId(o.id)), ...(o.type === 'shape' || o.type === 'note' ? { style: { width: o.width, height: o.height } } : {}),
     data: { ...o, mapId: o.map_id, ip: o.type === 'reference' ? 'Toque para abrir' : '', readOnly } });
   return nodes;
 }
@@ -87,7 +106,7 @@ function ColorField({ name, label, value, onChange, onError }) {
       setCopied(true);
     } catch (error) { onError(error.message || 'Selecione o código HEX e use Ctrl+C para copiar.'); }
   }
-  const description = name === 'color' ? 'cor de preenchimento' : 'cor do contorno';
+  const description = { color: 'cor de preenchimento', stroke: 'cor do contorno', text_color: 'cor do texto' }[name];
   return <div className="map-color-field"><label htmlFor={'shape-' + name}>{label} (HEX)</label><div className="map-color-controls">
     <input type="color" aria-label={'Selecionar ' + description} value={valid ? value : '#000000'} onInput={e => onChange(e.currentTarget.value)} />
     <input ref={input} id={'shape-' + name} name={name} value={value} onInput={e => onChange(e.currentTarget.value)} pattern="#[0-9a-fA-F]{6}" required maxLength={7} spellCheck={false} aria-label={label + ' (HEX)'} />
@@ -161,6 +180,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
   const [linkMode, setLinkMode] = useState(false), [origin, setOrigin] = useState(null);
   const [shapeIcon, setShapeIcon] = useState('');
   const [shapeColor, setShapeColor] = useState('#dbeafe'), [shapeStroke, setShapeStroke] = useState('#2563eb');
+  const [noteText, setNoteText] = useState(''), [noteFill, setNoteFill] = useState(''), [noteStroke, setNoteStroke] = useState('');
   const [multiSelect, setMultiSelect] = useState(false);
   const speed = '10G';
   const flow = useReactFlow();
@@ -285,6 +305,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
   function open(kind, object, pos) {
     setMenu(null);
     if (kind === 'shape') { setShapeIcon(object?.data.icon || ''); setShapeColor(object?.data.color || '#dbeafe'); setShapeStroke(object?.data.stroke || '#2563eb'); }
+    if (kind === 'note') { setNoteText(object?.data.text_color || (document.documentElement.dataset.theme === 'light' ? '#000000' : '#ffffff')); setNoteFill(object?.data.color || ''); setNoteStroke(object?.data.stroke || ''); }
     setDialog({ kind, object, position: pos || point() });
   }
   function edit(n) { setMenu(null); if (n?.data.hostId) onHost({ id: n.data.hostId }); else if (n?.data.mapId) open('reference', n); else if (n) open(n.type, n); }
@@ -335,8 +356,10 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       update(m => ({ ...m, members: [...new Set([...m.members, ident])], host_ids: [...new Set([...m.host_ids, ident])], positions: { ...m.positions, [ident]: dialog.position } }));
     } else {
       const o = { ...old, id: old?.id || uid(), type: dialog.kind, position: old ? nodes.find(n => n.id === dialog.object.id)?.position || old.position : dialog.position,
-        label: f.label || maps.find(m => m.id === f.map_id)?.name || '', form: f.form || old?.form || 'rect', width: old?.width || 320, height: old?.height || 200,
-        ...(f.map_id ? { map_id: f.map_id } : {}), ...(dialog.kind === 'shape' ? { icon: shapeIcon || null, color: f.color, stroke: f.stroke } : {}) };
+        label: f.label || maps.find(m => m.id === f.map_id)?.name || '', form: f.form || old?.form || 'rect',
+        width: old?.width || (dialog.kind === 'note' ? 220 : 320), height: old?.height || (dialog.kind === 'note' ? 48 : 200),
+        ...(f.map_id ? { map_id: f.map_id } : {}), ...(dialog.kind === 'shape' ? { icon: shapeIcon || null, color: f.color, stroke: f.stroke } : {}),
+        ...(dialog.kind === 'note' ? { text_color: noteText, color: noteFill || null, stroke: noteStroke || null } : {}) };
       update(m => ({ ...m, objects: old ? m.objects.map(item => item.id === old.id ? o : item) : [...m.objects, o] }));
     }
     setDialog(null);
@@ -517,6 +540,11 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           <ColorField name="color" label="Preenchimento" value={shapeColor} onChange={setShapeColor} onError={onError} />
           <ColorField name="stroke" label="Contorno" value={shapeStroke} onChange={setShapeStroke} onError={onError} />
           <div className="map-color-preview" aria-label="Prévia das cores" style={{ background: shapeColor, borderColor: shapeStroke, color: contrastingText(shapeColor) }}>Prévia</div></>}
+        {dialog.kind === 'note' && <>
+          <ColorField name="text_color" label="Cor do texto" value={noteText} onChange={setNoteText} onError={onError} />
+          {[['color', 'Fundo', noteFill, setNoteFill, '#fef3c7'], ['stroke', 'Borda', noteStroke, setNoteStroke, '#2563eb']].map(([name, label, value, set, init]) => value
+            ? <div><ColorField name={name} label={label} value={value} onChange={set} onError={onError} /><button type="button" onClick={() => set('')}>Remover {label.toLowerCase()}</button></div>
+            : <div><button type="button" onClick={() => set(init)}>Adicionar {label.toLowerCase()}</button></div>)}</>}
         <div className="modal-actions"><button type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="primary">Salvar</button></div>
       </form>}
     </section></div>}

@@ -169,9 +169,14 @@ def create_app() -> FastAPI:
                 # recuperação/conversão antes de aceitar as primeiras requisições.
                 await app.state.host_migration_task
         except Exception:
-            # Migração falhou mas não deve impedir o startup. O estado de erro
-            # é registrado pelo host_migration_svc e será exibido na UI.
-            pass
+            # Durante uma ATUALIZAÇÃO (candidato recém-instalado), a falha precisa
+            # derrubar o startup: o supervisor então restaura o código anterior e os
+            # dados antigos ficam intactos (relatório em host-migration-preflight.json).
+            if os.environ.get("NETOPS_UPDATE_RECOVERING") == "1":
+                raise
+            # Fora de atualização, o console sobe mesmo assim; o erro aparece na UI.
+            import logging
+            logging.getLogger("netops").exception("Migração de IDs falhou no startup")
 
         async def receipt():
             await asyncio.sleep(0.15)

@@ -452,3 +452,8 @@ resolve um modelo antigo em memória. O reinício pode exigir novo login; regist
 não salvos antes de sair da página. Não remova o campo `icon` nem relaxe a validação para
 contornar o erro. O aviso persistente de salvamento orienta a atualização/reinício sem
 descartar a fila; ícone inválido continua sendo tratado como erro de validação comum.
+
+
+## Reiniciar o console
+
+Use `scripts/engine/restart-console.sh` (desacopla, preserva host/flags, espera o lock, valida HTTP, log em `/tmp/netops-restart.log`). Nunca `kill` + `start.sh` manual.

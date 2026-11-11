@@ -238,11 +238,12 @@ class MapObject(BaseModel):
     position: MapPoint
     label: str = Field(default="", max_length=4000)
     form: Literal["rect", "ellipse"] = "rect"
-    width: FiniteFloat = Field(default=320, ge=100, le=10000)
-    height: FiniteFloat = Field(default=200, ge=60, le=10000)
+    width: FiniteFloat = Field(default=320, ge=24, le=10000)
+    height: FiniteFloat = Field(default=200, ge=14, le=10000)
     z_index: Optional[int] = Field(default=None, strict=True, ge=-100000, le=100000)
     color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     stroke: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    text_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     icon: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     map_id: Optional[str] = Field(default=None, max_length=100)
 

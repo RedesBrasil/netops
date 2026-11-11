@@ -12,6 +12,12 @@
 
 - O login do console agora vale 7 dias (configurável em `ui.login_ttl_seconds`) e sobrevive ao reinício do servidor. Os logins são gravados apenas como hash SHA-256, com permissão 0600, em `runs/` (fora do Git).
 
+- Novo `scripts/engine/restart-console.sh`: reinicia o console de forma segura (espera o supervisor e o lock, valida o HTTP), inclusive de dentro da aba Claude.
+
+### Correções
+
+- Corrige a regressão da 2.0.1: durante uma atualização, uma migração de IDs com referências inválidas voltou a provocar o rollback automático para a versão anterior, com os dados antigos intactos e o diagnóstico em `.netops-update/host-migration-preflight.json`. Fora de atualizações, o console continua subindo e registra o erro.
+
 ### Compatibilidade
 
 - Sem mudança de formato de dados; o atualizador preserva dados e personalizações. Quem estiver logado precisa entrar uma vez após a atualização, e os logins passam a ser persistentes a partir daí.

@@ -9,7 +9,7 @@ export function reconcileNodes(previous, desired) {
     for (const key of ['position', 'data', 'style']) {
       if (same(old[key], node[key])) next[key] = old[key];
     }
-    if (node.type === 'shape') {
+    if (node.type === 'shape' || node.type === 'note') {
       next.width = node.style.width;
       next.height = node.style.height;
     }
