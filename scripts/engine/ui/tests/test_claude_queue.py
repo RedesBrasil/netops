@@ -199,3 +199,34 @@ def test_reorder_queue(env, result_cls):
         await s._translate(_result(result_cls))           # despacha na NOVA ordem
         assert s.client.queries == ["tarefa", "c"]
     asyncio.run(check())
+
+
+def test_queue_add_restores_browser_cache_without_dispatching(env, result_cls):
+    """Cache da aba devolvido após o servidor perder a fila: entra na fila, NÃO roda sozinho."""
+    async def check():
+        s, sent = _session([{"type": "queue_add", "texts": ["a", "  ", 3, "b"]},
+                            {"type": "queue_add", "texts": "não é lista"}])
+        await s._ws_pump()
+        assert [q["text"] for q in s._queue] == ["a", "b"]
+        assert s.client.queries == [] and s._busy is False   # ocioso e mesmo assim não despacha
+        await s._query("novo turno")
+        await s._translate(_result(result_cls))              # fim do próximo turno -> roda "a"
+        assert s.client.queries == ["novo turno", "a"]
+    asyncio.run(check())
+
+
+def test_new_session_announces_fresh_queue_but_reattach_does_not(env):
+    async def check():
+        s, sent = _session([])
+        async def no_start():
+            pass
+        s.start = no_start
+        await s.run()                                         # sessão nova (clássico)
+        assert {"type": "queue", "items": [], "fresh": True} in sent
+        s2, sent2 = _session([])
+        s2._started = True
+        s2._queue = [{"id": "q1", "text": "x"}]
+        await s2.serve(FakeWS([]), first=False)              # re-anexo: servidor manda, sem fresh
+        q = [e for e in sent2 if e["type"] == "queue"]
+        assert q == [{"type": "queue", "items": [{"id": "q1", "text": "x"}]}]
+    asyncio.run(check())

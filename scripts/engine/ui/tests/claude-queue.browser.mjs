@@ -34,6 +34,10 @@ async function fixture(browser, mobile) {
         super(); this.url = url; this.readyState = 0; this.sent = []; this.busy = false; this.queue = []; this.seq = 0;
         mock.sockets.push(this); mock.ws = this;
         setTimeout(() => { this.readyState = 1; this.onopen?.({});
+          const re = sessionStorage.getItem('mockReattach');   // re-anexo: fila do servidor, sem fresh
+          if (re) { this.queue = JSON.parse(re); this.seq = 50; this.busy = true;
+            this.emit({ type: 'reattached', busy: true }); this.emit({ type: 'queue', items: this.queue }); }
+          else this.emit({ type: 'queue', items: [], fresh: true });
           this.emit({ type: 'system', subtype: 'init', data: { session_id: sid, model: 'm', permissionMode: 'default', slash_commands: [] } }); }, 0);
       }
       emit(p) { this.onmessage?.({ data: JSON.stringify(p) }); }
@@ -46,6 +50,9 @@ async function fixture(browser, mobile) {
           const it = this.queue.find(q => q.id === m.id); this.queue = this.queue.filter(q => q.id !== m.id);
           this.emit({ type: 'queue', items: this.queue });
           if (m.type === 'queue_send_now' && it) this.emit({ type: 'queue_dispatched', ...it });
+        } else if (m.type === 'queue_add') {
+          for (const t of m.texts) this.queue.push({ id: 'q' + (++this.seq), text: t });
+          this.emit({ type: 'queue', items: this.queue });
         } else if (m.type === 'queue_move') {
           const i = this.queue.findIndex(q => q.id === m.id);
           if (i >= 0) { const [it] = this.queue.splice(i, 1); this.queue.splice(Math.max(0, Math.min(m.to, this.queue.length)), 0, it); }
@@ -160,6 +167,35 @@ try {
     await q.getByTitle(/Enviar agora/).click();
     await page.waitForFunction(() => !document.querySelector('.cc-queue'));
     assert.ok((await bubbles(page)).includes('promover'));
+
+    // 9) F5 com fila e o servidor PERDEU a dele (sessão nova, fresh): a aba devolve do localStorage
+    await type(page, 'guardada A');
+    await choice.waitFor(); await page.keyboard.press('f');
+    await type(page, 'guardada B');
+    await choice.waitFor(); await page.keyboard.press('f');
+    await q.waitFor();
+    assert.equal((await q.locator('.cc-queue-text').allTextContents()).length, 2);
+    await page.reload();
+    await page.waitForFunction(() => window.__mock.ws?.readyState === 1);
+    await page.locator('.cc-queue').waitFor();
+    assert.deepEqual(await page.locator('.cc-queue-text').allTextContents(), ['guardada A', 'guardada B']);
+    assert.deepEqual((await page.evaluate(() => window.__mock.ws.sent)).filter(m => m.type === 'queue_add'),
+      [{ type: 'queue_add', texts: ['guardada A', 'guardada B'] }]);
+    assert.equal((await page.evaluate(() => window.__mock.ws.sent)).filter(m => m.type === 'prompt').length, 0, 'restaurar não envia nada');
+
+    // 10) F5 com re-anexo (servidor ainda tem a fila, só 1 item porque o outro já rodou): NÃO reenvia o cache
+    await page.evaluate(() => sessionStorage.setItem('mockReattach', JSON.stringify([{ id: 'q60', text: 'guardada B' }])));
+    await page.reload();
+    await page.waitForFunction(() => window.__mock.ws?.readyState === 1);
+    await page.locator('.cc-queue').waitFor();
+    assert.deepEqual(await page.locator('.cc-queue-text').allTextContents(), ['guardada B']);
+    assert.equal((await page.evaluate(() => window.__mock.ws.sent)).filter(m => m.type === 'queue_add').length, 0);
+    const cache = await page.evaluate(sid => JSON.parse(localStorage.getItem('cc-queue:' + sid)).items.map(x => x.text), SID);
+    assert.deepEqual(cache, ['guardada B'], 'cache espelha o servidor');
+    await page.evaluate(() => sessionStorage.removeItem('mockReattach'));
+    await page.reload();   // limpa o estado para o próximo cenário
+    await page.waitForFunction(() => window.__mock.ws?.readyState === 1);
+    await page.evaluate(() => window.__mock.ws.finish());
 
     if (mobile) {   // a fila e a escolha cabem na largura do celular
       await type(page, 'texto de teste bem comprido para a fila, com várias palavras para quebrar');

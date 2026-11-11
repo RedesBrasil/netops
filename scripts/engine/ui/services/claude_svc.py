@@ -30,6 +30,9 @@ Protocolo (JSON nos dois sentidos) — ver scripts/engine/ui/static/js/pages/cla
     {"type":"queue_remove","id":...}                  tira um item da fila
     {"type":"queue_send_now","id":...}                tira da fila e manda imediatamente
     {"type":"queue_move","id":...,"to":int}           reordena: põe o item na posição `to` (0 = próximo)
+    {"type":"queue_add","texts":[...]}                devolve à fila o que a ABA guardou (localStorage)
+                                                      quando o servidor perdeu a dele; NÃO despacha na
+                                                      hora — roda no fim do próximo turno ou via ⚡
     {"type":"set_mode","mode":...}                    troca o permission_mode em tempo real
     {"type":"set_model","model":...}                  troca o modelo (None = padrão)
     {"type":"permission","id":...,"decision":"allow|deny","updated_input":{...},"message":...}
@@ -47,6 +50,8 @@ Protocolo (JSON nos dois sentidos) — ver scripts/engine/ui/static/js/pages/cla
     {"type":"mode_changed","mode":...}
     {"type":"reattached","busy":bool}                  re-anexou a uma sessão viva (persist)
     {"type":"queue","items":[{"id":..,"text":..}]}     estado da fila (a cada mudança e no re-anexo)
+    {"type":"queue","items":[],"fresh":true}           sessão NOVA neste socket (fila do servidor vazia
+                                                      de verdade): a aba pode devolver o cache dela
     {"type":"queue_dispatched","id":..,"text":..}      item da fila virou turno (UI mostra a bolha)
     {"type":"queue_restored","items":[...]}            turno interrompido/com erro: a fila NÃO roda
                                                       sozinha — os textos voltam p/ a caixa
@@ -487,6 +492,7 @@ class ClaudeWebSession:
     async def run(self) -> None:
         """Caminho CLÁSSICO (persist OFF): vida do agente = vida do socket."""
         await self.start()
+        await self._send_queue(fresh=True)
         try:
             await self._ws_pump()
         finally:
@@ -498,6 +504,7 @@ class ClaudeWebSession:
         self.attach(ws)
         if first:
             await self.start()
+            await self._send_queue(fresh=True)
         else:
             await self._send({"type": "reattached", "busy": self._busy})
             await self._send_queue()
@@ -571,6 +578,8 @@ class ClaudeWebSession:
             elif kind == "queue_remove":
                 if self._pop_queued(raw.get("id")) is not None:
                     await self._send_queue()
+            elif kind == "queue_add":
+                await self._add_to_queue(raw.get("texts"))
             elif kind == "queue_move":
                 if self._move_queued(raw.get("id"), raw.get("to")):
                     await self._send_queue()
@@ -623,8 +632,27 @@ class ClaudeWebSession:
         self._busy = True
         await self.client.query(text)
 
-    async def _send_queue(self) -> None:
-        await self._send({"type": "queue", "items": list(self._queue)})
+    async def _send_queue(self, fresh: bool = False) -> None:
+        ev = {"type": "queue", "items": list(self._queue)}
+        if fresh:
+            ev["fresh"] = True
+        await self._send(ev)
+
+    async def _add_to_queue(self, texts) -> None:
+        """Re-enfileira o cache da aba SEM despachar (nem com o agente ocioso): o turno que as
+        esperava morreu junto com a fila do servidor — o humano decide (⚡) ou o próximo turno leva."""
+        if not isinstance(texts, list):
+            return
+        for t in texts:
+            t = t.strip() if isinstance(t, str) else ""
+            if not t:
+                continue
+            if len(self._queue) >= MAX_QUEUE:
+                await self._send({"type": "error", "detail": f"Fila cheia ({MAX_QUEUE} mensagens)."})
+                break
+            self._queue_seq += 1
+            self._queue.append({"id": f"q{self._queue_seq}", "text": t})
+        await self._send_queue()
 
     async def _enqueue(self, text: str) -> None:
         if len(self._queue) >= MAX_QUEUE:

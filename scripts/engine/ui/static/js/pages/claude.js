@@ -42,6 +42,27 @@ const MODELS_FALLBACK = [
 ];
 
 // Fecha o último item "aberto" (bolha em streaming) antes de empurrar outro tipo.
+// Espelho da fila no navegador (por conversa): se o servidor perder a fila dele (reinício do
+// console, sessão em modo clássico que morre com o socket), a aba a devolve ao reconectar.
+// Só o texto, nada do projeto em disco. Entradas velhas (>24 h) são ignoradas.
+const QUEUE_CACHE = "cc-queue:";
+const QUEUE_TTL = 24 * 3600 * 1000;
+function loadQueueCache(sid) {
+  if (!sid) return [];
+  try {
+    const v = JSON.parse(localStorage.getItem(QUEUE_CACHE + sid) || "null");
+    if (!v || !Array.isArray(v.items) || Date.now() - (v.at || 0) > QUEUE_TTL) return [];
+    return v.items.filter((x) => x && typeof x.text === "string" && x.text.trim());
+  } catch (_) { return []; }
+}
+function saveQueueCache(sid, items) {
+  if (!sid) return;
+  try {
+    if (items.length) localStorage.setItem(QUEUE_CACHE + sid, JSON.stringify({ at: Date.now(), items }));
+    else localStorage.removeItem(QUEUE_CACHE + sid);
+  } catch (_) {}
+}
+
 function closeOpen(arr) {
   if (!arr.length) return arr.slice();
   const next = arr.slice();
@@ -376,7 +397,12 @@ function useClaudeSession() {
         failCountRef.current += 1;
         if (failCountRef.current >= 4) { setStatus("erro"); return; }
         setStatus("desconectado");
-        reconnTimerRef.current = setTimeout(() => open(true), 3000);
+        // Renova o cookie de dono antes de reconectar: após um reinício do console o antigo
+        // não vale mais e o servidor cairia calado no modo clássico (sessão morre no F5,
+        // levando a fila junto — incidente 11/11).
+        reconnTimerRef.current = setTimeout(() => {
+          api.get("/claude/attach-ticket").then(() => open(true), () => open(true));
+        }, 3000);
       };
 
       ws.onmessage = (e) => {
@@ -431,9 +457,24 @@ function useClaudeSession() {
           case "reattached":
             setWorking(!!ev.busy);   // re-anexou a uma sessão viva: reflete se há turno rodando
             break;
-          case "queue":
-            setQueue(Array.isArray(ev.items) ? ev.items : []);
+          case "queue": {
+            const items = Array.isArray(ev.items) ? ev.items : [];
+            const sid = sessionIdRef.current;
+            // Sessão NOVA no servidor (fila vazia de verdade) + cache na aba = a fila se perdeu
+            // lá (reinício/modo clássico): devolve. No re-anexo (sem `fresh`) o servidor manda —
+            // o que sumiu foi despachado de fato e reenviar duplicaria.
+            if (ev.fresh && !items.length) {
+              const cached = loadQueueCache(sid);
+              if (cached.length) {
+                send({ type: "queue_add", texts: cached.map((x) => x.text) });
+                toast.info(cached.length === 1 ? "1 mensagem da fila foi restaurada." : `${cached.length} mensagens da fila foram restauradas.`);
+                break;   // o servidor responde com a fila real; aí o cache é regravado
+              }
+            }
+            setQueue(items);
+            saveQueueCache(sid, items);
             break;
+          }
           case "queue_dispatched":   // item da fila virou turno no servidor
             setItems((prev) => [...closeOpen(prev), { type: "user", text: ev.text, queued: true }]);
             setWorking(true);
@@ -847,7 +888,7 @@ function SendChoice({ text, onChoose, onCancel }) {
 // Mensagens na fila do servidor: rodam uma por vez, cada uma quando o turno anterior termina.
 function QueueList({ queue, working, disabled, onRemove, onSendNow, onMove }) {
   return html`<div class="cc-queue">
-    <div class="cc-queue-head">Na fila (${queue.length}) — ${working ? "roda quando a tarefa atual terminar" : "aguardando"}</div>
+    <div class="cc-queue-head">Na fila (${queue.length}) — ${working ? "roda quando a tarefa atual terminar" : "aguardando: ⚡ envia, ou roda no fim da próxima tarefa"}</div>
     ${queue.map((q, i) => html`<div class="cc-queue-item" key=${q.id}>
       <span class="cc-queue-n">${i + 1}</span>
       <span class="cc-queue-text" title=${q.text}>${q.text}</span>

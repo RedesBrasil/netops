@@ -282,8 +282,16 @@ Com `--enable-claude-persist`, ela **continua andando com a aba fechada** e o es
 re-anexo. Em modo clássico, ela morre junto com o socket. **Interromper** ou um turno com **erro** não
 dispara a fila sozinha: os textos voltam para a caixa (`queue_restored`) para você decidir o que fazer,
 inclusive quando a aba estava fechada nesse momento. Protocolo: `prompt{queue:bool}`, `queue_remove`,
-`queue_send_now`, `queue_move{id,to}` → `queue`, `queue_dispatched`, `queue_restored` (ver docstring de `services/claude_svc.py`).
+`queue_send_now`, `queue_move{id,to}`, `queue_add{texts}` → `queue`, `queue_dispatched`, `queue_restored` (ver docstring de `services/claude_svc.py`).
 Se o turno termina entre a escolha "fila" e a chegada ao servidor, a mensagem roda na hora.
+
+**A fila sobrevive ao F5 mesmo se o servidor a perder.** A aba espelha a fila no `localStorage`
+(`cc-queue:<UUID da conversa>`, só o texto, validade de 24 h). Quando o servidor abre uma sessão
+**nova** para o socket (`queue` com `fresh:true`: reinício do console, modo clássico), a aba devolve o
+cache com `queue_add`. Os itens voltam para a fila **sem disparar** e rodam no fim do próximo turno ou
+via ⚡. No **re-anexo**, o servidor é a verdade: o que sumiu foi executado de fato, e reenviar duplicaria.
+antigo. O servidor caía calado no modo clássico e o F5 matava a sessão, levando o turno e a fila. Agora a
+reconexão renova o `attach-ticket` antes de abrir o socket.
 
 Testes: `tests/test_claude_queue.py` (pytest, client/WebSocket fictícios) e
 `tests/claude-queue.browser.mjs` (Playwright, desktop + celular, WebSocket fictício).
