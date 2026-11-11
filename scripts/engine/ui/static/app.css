@@ -439,4 +439,7 @@ th.sortable:hover { color: var(--text); }
 .cc-dot.on { width: 14px; height: 14px; background: var(--text); }
 .cc-send { width: 28px; height: 28px; border-radius: 8px; border: none; background: var(--accent, #c8553d); color: #fff; font-size: 15px; cursor: pointer; }
 .cc-send:disabled { opacity: .4; cursor: default; }
-.cc-send.stop { background: var(--danger); }
+.cc-send.stop { display: inline-flex; align-items: center; justify-content: center; padding: 0; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 50%; }
+.cc-send.stop:hover { border-color: var(--danger); color: var(--danger); }
+.cc-stopsq { width: 10px; height: 10px; border-radius: 2px; background: currentColor; display: block; }

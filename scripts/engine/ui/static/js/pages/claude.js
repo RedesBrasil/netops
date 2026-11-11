@@ -737,7 +737,7 @@ function Composer() {
               <${EffortRow} effort=${effort} changeEffort=${changeEffort} />`}
           <//>
           ${working
-            ? html`<button class="cc-send stop" onClick=${stop} title="Interrompe o agente (Esc)">⏹</button>`
+            ? html`<button class="cc-send stop" onClick=${stop} title="Parar (Esc)" aria-label="Parar"><i class="cc-stopsq"></i></button>`
             : html`<button class="cc-send" disabled=${cantSend} onClick=${submit} title="Enviar (Enter)">↑</button>`}
         </div>
       </div>
