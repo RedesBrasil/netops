@@ -1,14 +1,16 @@
 // Workflows (*.workflow.yaml) e Agents (*.agent.md) — editores de texto cru + validação.
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
-import { ResourceTable, Field, Modal, CodeTextEditor, MarkdownEditor } from "../components.js";
+import { useMenuRoute, matchText } from "../route.js";
+import { FilterBar, ResourceTable, Field, Modal, CodeTextEditor, MarkdownEditor } from "../components.js";
 
 // Página de um único tipo (workflows OU agentes), sem abas.
+// URL: #workflows|#agents[/<arquivo>|/new][?q=]  (core/rules/urls-navegacao.md)
 function CatalogSection({ kind, title }) {
-  const [creating, setCreating] = useState(false);
+  const r = useMenuRoute(kind);
   return html`<div>
     <div class="page-title"><h1>${title}</h1><span class="spacer"></span>
-      <button class="primary" onClick=${() => setCreating(true)}>+ Novo</button></div>
-    <${Kind} kind=${kind} creating=${creating} setCreating=${setCreating} />
+      <button class="primary" onClick=${() => r.open("new")}>+ Novo</button></div>
+    <${Kind} kind=${kind} r=${r} />
   </div>`;
 }
 
@@ -20,12 +22,16 @@ export function AgentsPage() {
   return html`<${CatalogSection} kind="agents" title="Agentes" />`;
 }
 
-function Kind({ kind, creating, setCreating }) {
+function Kind({ kind, r }) {
   const res = useResource(`/${kind}`, [kind]);
-  const [open, setOpen] = useState(null);
+  const creating = r.segments[0] === "new";
+  const open = r.segments[0] && !creating ? r.segments[0] : null;
+  const setOpen = (f) => (f ? r.open(f) : r.close());
+  const setCreating = (v) => (v ? r.open("new") : r.close());
+  const q = r.params.q || "";
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
-  const items = res.data[kind] || [];
+  const items = (res.data[kind] || []).filter((i) => matchText(q, i.name, i.file, i.id, i.function));
   const cols = kind === "workflows"
     ? [{ key: "name", label: "Nome", render: (r) => html`<b>${r.name || r.file}</b><div class="help">${r.file}</div>` },
        { key: "id", label: "ID", render: (r) => r.id || "—" },
@@ -33,10 +39,12 @@ function Kind({ kind, creating, setCreating }) {
     : [{ key: "name", label: "Agente", render: (r) => html`${r.icon || ""} <b>${r.name || r.file}</b><div class="help">${r.file}</div>` },
        { key: "id", label: "ID", render: (r) => r.id || "—" },
        { key: "function", label: "Função", render: (r) => r.function || "—" }];
+  cols[0].render = ((orig) => (row) => html`<a href=${"#" + kind + "/" + encodeURIComponent(row.file)} onClick=${(e) => e.stopPropagation()}>${orig(row)}</a>`)(cols[0].render);
   return html`<div>
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar" />
     <${ResourceTable} columns=${cols} rows=${items.map((i) => ({ ...i, _key: i.file }))}
       onRowClick=${(r) => setOpen(r.file)} empty="Nada aqui." />
-    ${open && html`<${Editor} kind=${kind} file=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}
+    ${open && html`<${Editor} key=${open} kind=${kind} file=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}
     ${creating && html`<${Creator} kind=${kind} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); res.reload(); }} />`}
   </div>`;
 }
