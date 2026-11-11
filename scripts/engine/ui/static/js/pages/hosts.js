@@ -1,8 +1,8 @@
 // Hosts e Grupos (network/hosts.yaml) — formulário ciente de herança de grupo.
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
-import { ResourceTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog, RenameCascadeHint, IconPicker as HostIconPicker } from "../components.js";
+import { FilterBar, ResourceTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog, RenameCascadeHint, IconPicker as HostIconPicker } from "../components.js";
 import { Modal, ConflictDialog } from "../ui.js";
-import { useRoute, navigate } from "../route.js";
+import { useRoute, navigate, useMenuRoute, matchText } from "../route.js";
 
 const INHERIT = ["vendor", "role", "credential"];
 
@@ -188,15 +188,22 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
 }
 
 /* ------------------------------- Grupos --------------------------------- */
+// URL: #groups[/<nome>|/new][?q=&vendor=&role=]  (core/rules/urls-navegacao.md)
 export function GroupsPage() {
   const res = useResource("/groups");
-  const [editing, setEditing] = useState(null);
+  const r = useMenuRoute("groups");
+  const { q = "", vendor = "", role = "" } = r.params;
   const [confirm, setConfirm] = useState(null);
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
-  const { groups, rev } = res.data;
+  const { groups: allGroups, rev } = res.data;
+  const seg = r.segments[0];
+  const editing = seg === "new" ? { __new: true } : seg ? allGroups.find((g) => g.name === seg) || null : null;
+  const setEditing = (g) => (g ? r.open(g.__new ? "new" : g.name) : r.close());
+  const groups = allGroups.filter((g) => (!vendor || g.fields.vendor === vendor) && (!role || g.fields.role === role) && matchText(q, g.name, g.fields.credential));
+  const optsOf = (f) => [...new Set(allGroups.map((g) => g.fields[f]).filter(Boolean))].sort();
   const cols = [
-    { key: "name", label: "Grupo", sort: (r) => r.name || "", render: (r) => html`<b>${r.name}</b>` },
+    { key: "name", label: "Grupo", sort: (r) => r.name || "", render: (r) => html`<a href=${"#groups/" + encodeURIComponent(r.name)} onClick=${(e) => e.stopPropagation()}><b>${r.name}</b></a>` },
     { key: "vendor", label: "Vendor", sort: (r) => r.fields.vendor || "", render: (r) => r.fields.vendor || "—" },
     { key: "role", label: "Role", sort: (r) => r.fields.role || "", render: (r) => r.fields.role || "—" },
     { key: "access", label: "Acesso", sort: (r) => (r.fields.access || {}).method || "", render: (r) => { const a = r.fields.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
@@ -206,11 +213,14 @@ export function GroupsPage() {
   return html`<div>
     <div class="page-title"><h1>Grupos</h1><span class="spacer"></span>
       <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Novo grupo</button></div>
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar grupo"
+      selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: optsOf("vendor") }, { key: "role", label: "Role", value: role, options: optsOf("role") }]} />
+    ${seg && seg !== "new" && !editing && html`<div class="card">Grupo '${seg}' não encontrado. <a href="#groups">Voltar aos grupos</a></div>`}
     <${ResourceTable} columns=${cols} rows=${groups.map((g) => ({ ...g, _key: g.name }))}
       onRowClick=${(r) => setEditing(r)}
       actions=${(r) => html`<button class="sm danger" onClick=${() => setConfirm(r)}>Excluir</button>`}
       empty="Nenhum grupo." />
-    ${editing && html`<${GroupForm} group=${editing} rev=${rev}
+    ${editing && html`<${GroupForm} key=${editing.name || "new"} group=${editing} rev=${rev}
         onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
     ${confirm && html`<${ConfirmDialog} title="Excluir grupo" danger=true
         message=${confirm.used_by ? `Grupo em uso por ${confirm.used_by} host(s). Excluir mesmo assim?` : `Excluir o grupo '${confirm.name}'?`}

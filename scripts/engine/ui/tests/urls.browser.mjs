@@ -13,7 +13,7 @@ const CASES = {
   configs: { row: "table a[href^='#configs/']", open: ".modal", q: "zzzz-sem-resultado", qRows: 0 },
   workflows: { row: "table a[href^='#workflows/']", open: ".modal", q: "zzzz-sem-resultado", qRows: 0 },
   agents: { row: "table a[href^='#agents/']", open: ".modal", q: "zzzz-sem-resultado", qRows: 0 },
-  credentials: { row: "table a[href^='#credentials/']", open: ".modal", q: "demo", qRows: 1 },
+  credentials: { row: "table a[href^='#credentials/']", open: ".modal", q: "demo", qRows: 1, deep: ["#credentials/cred_demo/password", ".modal:has-text('Definir password')"] },
   reports: { row: "table a[href^='#reports/']", open: ".modal", q: "b.md", qRows: 1 },
   runs: { row: "table a[href^='#runs/']", open: ".modal", q: "run-b", qRows: 1 },
 };
@@ -47,6 +47,7 @@ for (const menu of want) {
     // 6) item inexistente não quebra a tela
     await page.goto(`${BASE}/#${menu}/nao-existe-xyz`); await settle();
     assert.equal(errors.length, 0, `${menu}: erros JS ${errors}`);
+    if (c.deep) { await page.goto(`${BASE}/${c.deep[0]}`); await page.locator(c.deep[1]).first().waitFor(); }
     // 7) filtro na URL
     await page.goto(`${BASE}/#${menu}`); await page.locator(c.row).first().waitFor();
     await page.locator("input[type=search]").fill(c.q); await settle();
