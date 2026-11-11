@@ -87,7 +87,8 @@ async def claude_ws(ws: WebSocket):
         await claude_svc.ClaudeWebSession(ws).run()
         return
     model = ws.query_params.get("model") or None
-    session, how = claude_svc.attach_or_create(owner=owner, resume=resume, model=model)
+    session, how = claude_svc.attach_or_create(owner=owner, resume=resume, model=model,
+                                                  effort=ws.query_params.get("effort") or None)
     if how == "too_many":
         await ws.accept()
         try:

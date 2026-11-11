@@ -404,3 +404,39 @@ th.sortable:hover { color: var(--text); }
 .vault-chip.ok { background: var(--ok-weak); color: var(--ok); }
 .cc-topbar-title { flex: 0 1 auto; min-width: 0; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #667); font-size: 13px; }
 .cc-topbar-title::before { content: "· "; }
+
+/* Barra do composer estilo Claude Code: + · cache · contexto · modelo | modo · enviar */
+.cc-composer-left { gap: 8px; overflow: visible; }
+.cc-iconbtn { background: transparent; border: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 6px; cursor: pointer; border-radius: 6px; }
+.cc-iconbtn:hover { background: var(--surface-2); color: var(--text); }
+.cc-cache { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: default; }
+.cc-cache.off { opacity: .55; }
+.cc-ctxring { display: inline-flex; align-items: center; color: var(--muted); cursor: default; }
+.cc-ctxring.warn { color: var(--danger); }
+.cc-pill { background: var(--surface-2); border: none; border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--text); cursor: pointer; white-space: nowrap; }
+.cc-pill:hover { filter: brightness(1.15); }
+.cc-pill em { font-style: normal; color: var(--muted); }
+.cc-popwrap { position: relative; display: inline-flex; }
+.cc-pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30; width: 340px; max-width: 86vw; padding: 6px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: 0 8px 28px rgba(0,0,0,.4); }
+.cc-pop.right { left: auto; right: 0; }
+.cc-pop-title { font-size: 11px; color: var(--muted); padding: 4px 8px; }
+.cc-pop-scroll { max-height: 280px; overflow-y: auto; }
+.cc-pop-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: transparent; border: none; color: var(--text);
+  padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.cc-pop-item:hover, .cc-pop-item.sel { background: var(--surface-2); }
+.cc-pop-item > span:not(.cc-pop-ico) { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.cc-pop-item small { font-size: 11px; color: var(--muted); font-weight: normal; }
+.cc-pop-item b { font-weight: 500; }
+.cc-pop-item.sel b { font-weight: 600; }
+.cc-pop-ico { width: 18px; text-align: center; color: var(--muted); }
+.cc-pop-sep { height: 1px; background: var(--border); margin: 6px 0; }
+.cc-effortrow { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; font-size: 13px; color: var(--muted); }
+.cc-effortrow em { font-style: normal; opacity: .8; }
+.cc-dots { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 999px; background: var(--surface-2); }
+.cc-dot { width: 7px; height: 7px; padding: 0; border: none; border-radius: 50%; background: var(--border); cursor: pointer; }
+.cc-dot:hover { background: var(--muted); }
+.cc-dot.on { width: 14px; height: 14px; background: var(--text); }
+.cc-send { width: 28px; height: 28px; border-radius: 8px; border: none; background: var(--accent, #c8553d); color: #fff; font-size: 15px; cursor: pointer; }
+.cc-send:disabled { opacity: .4; cursor: default; }
+.cc-send.stop { background: var(--danger); }

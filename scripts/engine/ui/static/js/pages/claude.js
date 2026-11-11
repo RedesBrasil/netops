@@ -28,11 +28,11 @@ const LOCAL_SLASH_RE = /^\/(login|logout|auth)\b/i;
 
 // Modos de operação expostos (todos, incl. bypass — decisão do projeto).
 const MODES = [
-  { value: "plan", label: "Plano (só leitura)" },
-  { value: "default", label: "Perguntar antes" },
-  { value: "acceptEdits", label: "Auto-editar" },
-  { value: "dontAsk", label: "Não perguntar (nega o resto)" },
-  { value: "bypassPermissions", label: "Bypass — full-auto ⚠" },
+  { value: "default", label: "Perguntar antes", short: "Manual", icon: "✋", desc: "Pede aprovação antes de cada ação" },
+  { value: "acceptEdits", label: "Auto-editar", short: "Auto-editar", icon: "‹›", desc: "Edita arquivos sozinho; pergunta o resto" },
+  { value: "plan", label: "Plano (só leitura)", short: "Plano", icon: "☰", desc: "Explora e apresenta um plano antes de editar" },
+  { value: "dontAsk", label: "Não perguntar", short: "Não perguntar", icon: "⌀", desc: "Nega tudo que não estiver pré-aprovado" },
+  { value: "bypassPermissions", label: "Bypass — full-auto ⚠", short: "Bypass", icon: "⚡", desc: "Executa sem pedir aprovação, até comandos perigosos" },
 ];
 
 // Catálogo anunciado pelo mesmo CLI/provider que executa a conversa. Se indisponível,
@@ -68,6 +68,10 @@ function useClaudeSession() {
   const [items, setItems] = useState([]);             // transcript ordenado
   const [working, setWorking] = useState(false);      // turno em andamento
   const [mode, setMode] = useState("default");
+  const [effort, setEffort] = useState(() => { try { return localStorage.getItem("cc-effort") || ""; } catch (_) { return ""; } });
+  const effortRef = useRef(effort);
+  const [ctxUse, setCtxUse] = useState(null);      // {total,max,percentage} do contexto
+  const [lastUsage, setLastUsage] = useState(null); // usage do último turno (p/ cache)
   const [model, setModel] = useState("");
   const [modelSel, setModelSel] = useState("");         // modelo escolhido (vazio até carregar do servidor)
   const [models, setModels] = useState(MODELS_FALLBACK); // modelos disponíveis (lidos de /claude/models)
@@ -328,6 +332,7 @@ function useClaudeSession() {
       const proto = location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${proto}://${location.host}/api/claude`
         + `?auth=${encodeURIComponent(authToken())}`
+        + (effortRef.current ? `&effort=${encodeURIComponent(effortRef.current)}` : "")
         + (modelRef.current ? `&model=${encodeURIComponent(modelRef.current)}` : "")
         + (resume ? `&resume=${encodeURIComponent(resume)}` : ""));
       wsRef.current = ws;
@@ -401,6 +406,9 @@ function useClaudeSession() {
               return next;
             });
             break;
+          case "context_usage":
+            setCtxUse({ total: ev.total, max: ev.max, percentage: ev.percentage });
+            break;
           case "mode_changed":
             setMode(ev.mode);
             break;
@@ -409,6 +417,7 @@ function useClaudeSession() {
             break;
           case "result":
             setWorking(false);
+            if (ev.usage) setLastUsage({ ...ev.usage, _at: Date.now() });
             if (ev.session_id) identifySession(ev.session_id);
             if (ev.is_error && (ev.result || ev.errors?.length || ev.api_error_status)) handleAgentError(ev);
             setItems((prev) => {
@@ -512,6 +521,13 @@ function useClaudeSession() {
     send({ type: "set_mode", mode: m });
   }
 
+  // Esforço: o SDK só o aplica no (re)lançamento — vale a partir da próxima sessão/relançamento.
+  function changeEffort(v) {
+    setEffort(v); effortRef.current = v;
+    try { localStorage.setItem("cc-effort", v); } catch (_) {}
+    send({ type: "set_effort", effort: v });
+  }
+
   // Troca o modelo: aplica na sessão viva (set_model) e memoriza p/ o próximo (re)lançamento.
   function changeModel(m) {
     setModelSel(m);
@@ -549,6 +565,7 @@ function useClaudeSession() {
   const hasSession = active && (working || items.length > 0);
 
   return {
+    effort, changeEffort, ctxUse, lastUsage,
     status, items, working, mode, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
@@ -624,7 +641,7 @@ function UserMsg({ text }) {
 // Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
-  const { input, setInput, submit, stop, working, disabled, mode, changeMode, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments } = useClaude();
+  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments } = useClaude();
   const taRef = useRef(null);
   // textarea que cresce com o conteúdo: começa em 1 linha e sobe até o teto (CSS), aí rola.
   useEffect(() => {
@@ -685,30 +702,110 @@ function Composer() {
         onInput=${(e) => setInput(e.target.value)} onKeyDown=${onKeyDown} onPaste=${onPaste}></textarea>
       <div class="cc-composer-bar">
         <div class="cc-composer-left">
-          <label class="cc-modepick" title="Modo de permissão do agente">
-            <select value=${mode} onChange=${(e) => changeMode(e.target.value)} disabled=${disabled}>
-              ${MODES.map((m) => html`<option key=${m.value} value=${m.value} selected=${m.value === mode}>${m.label}</option>`)}
-            </select>
-          </label>
-          <label class="cc-modelpick" title="Modelo — lido da API; Sonnet é o mais econômico">
-            <select value=${modelSel} onChange=${(e) => changeModel(e.target.value)}>
-              ${(modelSel && !models.some((m) => m.id === modelSel) ? [...models, { id: modelSel, name: modelSel }] : models)
-                .map((m) => html`<option key=${m.id} value=${m.id} selected=${m.id === modelSel}>${m.name}</option>`)}
-            </select>
-          </label>
-        </div>
-        <div class="cc-composer-actions">
           <input type="file" ref=${fileRef} style="display:none"
             onChange=${(e) => { uploadFile(e.target.files[0]); e.target.value = ""; }} />
-          <button class="sm" disabled=${disabled} onClick=${() => fileRef.current && fileRef.current.click()}
-            title="Anexa um arquivo (vira @caminho na mensagem) — ou cole uma imagem com Ctrl+V">📎 Anexar</button>
+          <button class="cc-iconbtn" disabled=${disabled} onClick=${() => fileRef.current && fileRef.current.click()}
+            title="Anexar arquivo (vira @caminho) — ou cole uma imagem com Ctrl+V">+</button>
+          <${CacheClock} usage=${lastUsage} />
+          <${ContextRing} ctx=${ctxUse} />
+          <${Popover} up=${true} btnClass="cc-pill" title="Modelo e esforço"
+            label=${html`${(models.find((m) => m.id === modelSel) || { name: modelSel || "Modelo" }).name}${effort ? html` <em>${EFFORTS.find(([v]) => v === effort)[1]}</em>` : ""}`}>
+            ${(close) => html`
+              <div class="cc-pop-title">Selecione o modelo</div>
+              <div class="cc-pop-scroll">
+              ${(modelSel && !models.some((m) => m.id === modelSel) ? [...models, { id: modelSel, name: modelSel }] : models)
+                .map((m) => html`<button key=${m.id} class=${"cc-pop-item" + (m.id === modelSel ? " sel" : "")}
+                    onClick=${() => { changeModel(m.id); close(); }}>
+                  <span><b>${m.name}</b>${m.description && html`<small>${m.description}</small>`}</span>
+                  ${m.id === modelSel && html`<i>✓</i>`}
+                </button>`)}
+              </div>
+              <${EffortRow} effort=${effort} changeEffort=${changeEffort} />`}
+          <//>
+        </div>
+        <div class="cc-composer-actions">
+          <${Popover} up=${true} align="right" btnClass="cc-pill" disabled=${disabled} title="Modo de permissão do agente"
+            label=${html`<span class="cc-pill-ico">${(MODES.find((m) => m.value === mode) || MODES[0]).icon}</span> ${(MODES.find((m) => m.value === mode) || MODES[0]).short}`}>
+            ${(close) => html`
+              <div class="cc-pop-title">Modos</div>
+              ${MODES.map((m) => html`<button key=${m.value} class=${"cc-pop-item" + (m.value === mode ? " sel" : "")}
+                  onClick=${() => { changeMode(m.value); close(); }}>
+                <span class="cc-pop-ico">${m.icon}</span>
+                <span><b>${m.label}</b><small>${m.desc}</small></span>
+                ${m.value === mode && html`<i>✓</i>`}
+              </button>`)}
+              <${EffortRow} effort=${effort} changeEffort=${changeEffort} />`}
+          <//>
           ${working
-            ? html`<button class="danger" onClick=${stop} title="Interrompe o agente (Esc)">⏹ Parar</button>`
-            : html`<button class="primary" disabled=${cantSend} onClick=${submit}>Enviar</button>`}
+            ? html`<button class="cc-send stop" onClick=${stop} title="Interrompe o agente (Esc)">⏹</button>`
+            : html`<button class="cc-send" disabled=${cantSend} onClick=${submit} title="Enviar (Enter)">↑</button>`}
         </div>
       </div>
     </div>
   </div>`;
+}
+
+const EFFORTS = [["low", "baixo"], ["medium", "médio"], ["high", "alto"], ["xhigh", "extra"], ["max", "máx"]];
+const fmtK = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : String(n));
+
+// Popover simples (abre p/ cima, fecha ao clicar fora). `children` é função (close) => conteúdo.
+function Popover({ label, children, btnClass, title, up, align, disabled }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const off = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", off); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", off); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const kids = Array.isArray(children) ? children[0] : children;
+  return html`<span class="cc-popwrap" ref=${ref}>
+    <button class=${btnClass} title=${title} disabled=${disabled} onClick=${() => setOpen(!open)}>${label}</button>
+    ${open && html`<div class=${"cc-pop" + (align === "right" ? " right" : "")}>${kids(() => setOpen(false))}</div>`}
+  </span>`;
+}
+
+// Linha "Esforço" com trilho de pontos (vazio = padrão do agente, mostrado em "médio" apagado).
+function EffortRow({ effort, changeEffort }) {
+  const cur = EFFORTS.find(([v]) => v === effort);
+  return html`<div class="cc-pop-sep"></div>
+    <div class="cc-effortrow" title="Vale a partir da próxima sessão/relançamento">
+      <span>Esforço${cur ? html` <em>(${cur[1]})</em>` : html` <em>(padrão)</em>`}</span>
+      <span class="cc-dots">
+        ${EFFORTS.map(([v, l], i) => html`<button key=${v} class=${"cc-dot" + (v === effort ? " on" : "")}
+          title=${l} onClick=${() => changeEffort(v)}></button>`)}
+      </span>
+    </div>`;
+}
+
+// Bolinha da janela de contexto: preenche conforme o uso; tooltip com o percentual.
+function ContextRing({ ctx }) {
+  if (!ctx || typeof ctx.percentage !== "number") return null;
+  const pct = Math.min(100, Math.max(0, ctx.percentage)), r = 7, c = 2 * Math.PI * r;
+  return html`<span class=${"cc-ctxring" + (pct >= 85 ? " warn" : "")}
+      title=${`Janela de contexto: ${pct.toFixed(1)}% usado · ${fmtK(ctx.total)} / ${fmtK(ctx.max)} tokens`}>
+    <svg width="18" height="18" viewBox="0 0 18 18">
+      <circle cx="9" cy="9" r=${r} fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="2.5" />
+      <circle cx="9" cy="9" r=${r} fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+        stroke-dasharray=${c} stroke-dashoffset=${c * (1 - pct / 100)} transform="rotate(-90 9 9)" />
+    </svg>
+  </span>`;
+}
+
+// Relógio do cache de prompt (ícone + tempo restante). TTL: 5 min (1 h se houve escrita ephemeral_1h);
+// reinicia a cada requisição — contamos do fim do último turno.
+function CacheClock({ usage }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  if (!usage || !usage._at || ((usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0)) === 0) return null;
+  const ttl = ((usage.cache_creation || {}).ephemeral_1h_input_tokens || 0) > 0 ? 3600 : 300;
+  const n = Math.max(0, Math.ceil(ttl - (now - usage._at) / 1000));
+  const txt = n >= 3600 ? "1h" : n >= 120 ? Math.ceil(n / 60) + "m" : n + "s";
+  const tip = n > 0 ? `Cache de prompt ativo — cerca de ${Math.ceil(n / 60)} min restantes` : "Cache de prompt expirado — a próxima resposta relê o contexto inteiro (mais lenta e cara)";
+  return html`<span class=${"cc-cache" + (n === 0 ? " off" : "")} title=${tip}>
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.5V8l2.3 1.5" stroke-linecap="round"/></svg>
+    ${n > 0 ? txt : "exp."}</span>`;
 }
 
 // Página cheia; seleção da sessão é controlada pelo fragmento da URL no provider.

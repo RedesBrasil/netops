@@ -169,7 +169,7 @@ def _detached_count() -> int:
     return sum(1 for s in _LIVE.values() if s.ws is None and not s._closing_done)
 
 
-def attach_or_create(*, owner: str, resume: str | None, model: str | None):
+def attach_or_create(*, owner: str, resume: str | None, model: str | None, effort: str | None = None):
     """Decide entre RE-ANEXAR a uma sessão viva e CRIAR uma nova (respeitando o teto estático).
 
     Retorna (session|None, how) com how em {"reattach","new","too_many","forbidden"}.
@@ -189,7 +189,7 @@ def attach_or_create(*, owner: str, resume: str | None, model: str | None):
             return s, "reattach"
     if _detached_count() >= deps.STATE.claude_max_sessions:
         return None, "too_many"       # teto estático: recusa com mensagem (o cliente avisa)
-    s = ClaudeWebSession(owner=owner, persist=True, resume=resume, model=model)
+    s = ClaudeWebSession(owner=owner, persist=True, resume=resume, model=model, effort=effort)
     return s, "new"
 
 
@@ -205,18 +205,24 @@ async def shutdown_all() -> None:
     _OWNERS.clear()
 
 
+VALID_EFFORT = ("low", "medium", "high", "xhigh", "max")
+
+
 class ClaudeWebSession:
     """Dirige um ClaudeSDKClient. O socket é um atributo TROCÁVEL (attach/detach): no modo
     persistente a sessão vive acima do socket; no modo clássico nasce e morre com ele."""
 
     def __init__(self, ws: WebSocket | None = None, *, owner: str = "",
-                 persist: bool = False, resume: str | None = None, model: str | None = None):
+                 persist: bool = False, resume: str | None = None, model: str | None = None,
+                 effort: str | None = None):
         self.ws = ws
         self.owner = owner
         self.persist = persist
         # resume/model ficam na SESSÃO (não no socket), p/ (re)lançar igual em cada anexo.
         self._resume = resume if resume is not None else ((ws.query_params.get("resume") if ws else None) or None)
         self._model = model if model is not None else ((ws.query_params.get("model") if ws else None) or None)
+        _eff = effort or (ws.query_params.get("effort") if ws else None) or None
+        self._effort = _eff if _eff in VALID_EFFORT else None
         self.sid: str | None = self._resume   # vira o session_id real quando o init chega
         # Conversa retomada volta no ÚLTIMO modelo/modo usados nela; nova usa os padrões das configurações.
         saved = claude_prefs.get_session(self._resume) if self._resume else {}
@@ -260,6 +266,7 @@ class ClaudeWebSession:
             cwd=str(deps.NETOPS_ROOT),
             resume=resume,
             model=model,
+            **({"effort": self._effort} if self._effort else {}),
             setting_sources=["user", "project", "local"],  # herda CLAUDE.md/skills/agentes
             # O modo bypassPermissions (exposto na UI) exige DUAS condições no lançamento:
             #  1) a sessão precisa nascer com --dangerously-skip-permissions, senão o SDK recusa a
@@ -546,6 +553,10 @@ class ClaudeWebSession:
                     claude_prefs.set_session(self.sid, model=self._model)
                 except Exception as e:
                     await self._send({"type": "error", "detail": f"set_model: {e}"})
+            elif kind == "set_effort":
+                # O SDK só aceita o esforço no lançamento: vale para o próximo (re)lançamento.
+                eff = raw.get("effort")
+                self._effort = eff if eff in VALID_EFFORT else None
             elif kind == "interrupt":
                 try:
                     await self.client.interrupt()
@@ -639,6 +650,13 @@ class ClaudeWebSession:
                 "errors": getattr(msg, "errors", None),
                 "api_error_status": getattr(msg, "api_error_status", None),
             })
+            try:   # uso do contexto p/ o indicador discreto da UI (best-effort)
+                cu = await self.client.get_context_usage()
+                await self._send({"type": "context_usage", "total": cu.get("totalTokens"),
+                                  "max": cu.get("rawMaxTokens") or cu.get("maxTokens"),
+                                  "percentage": cu.get("percentage")})
+            except Exception:
+                pass
             if self.persist:
                 # Turno acabou. Se a aba está dormindo (desanexado), começa a contar a carência
                 # até o teardown — a resposta já foi gravada no disco.
