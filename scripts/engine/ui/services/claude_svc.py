@@ -29,6 +29,7 @@ Protocolo (JSON nos dois sentidos) — ver scripts/engine/ui/static/js/pages/cla
                                                       na FILA e só envia quando o turno terminar
     {"type":"queue_remove","id":...}                  tira um item da fila
     {"type":"queue_send_now","id":...}                tira da fila e manda imediatamente
+    {"type":"queue_move","id":...,"to":int}           reordena: põe o item na posição `to` (0 = próximo)
     {"type":"set_mode","mode":...}                    troca o permission_mode em tempo real
     {"type":"set_model","model":...}                  troca o modelo (None = padrão)
     {"type":"permission","id":...,"decision":"allow|deny","updated_input":{...},"message":...}
@@ -570,6 +571,9 @@ class ClaudeWebSession:
             elif kind == "queue_remove":
                 if self._pop_queued(raw.get("id")) is not None:
                     await self._send_queue()
+            elif kind == "queue_move":
+                if self._move_queued(raw.get("id"), raw.get("to")):
+                    await self._send_queue()
             elif kind == "queue_send_now":
                 item = self._pop_queued(raw.get("id"))
                 if item is not None:
@@ -635,6 +639,17 @@ class ClaudeWebSession:
             if it["id"] == qid:
                 return self._queue.pop(i)
         return None
+
+    def _move_queued(self, qid, to) -> bool:
+        """Move o item `qid` p/ a posição `to` (limitada à fila). Item ausente (já despachado
+        ou removido no caminho) ou posição inválida = no-op; a UI recebe o estado real de volta."""
+        if not isinstance(to, int) or isinstance(to, bool):
+            return False
+        item = self._pop_queued(qid)
+        if item is None:
+            return False
+        self._queue.insert(max(0, min(to, len(self._queue))), item)
+        return True
 
     async def _after_turn(self, is_error: bool) -> None:
         """Fim de turno: despacha o próximo da fila — ou, se o turno foi interrompido/deu erro,

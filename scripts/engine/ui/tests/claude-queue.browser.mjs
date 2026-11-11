@@ -46,6 +46,10 @@ async function fixture(browser, mobile) {
           const it = this.queue.find(q => q.id === m.id); this.queue = this.queue.filter(q => q.id !== m.id);
           this.emit({ type: 'queue', items: this.queue });
           if (m.type === 'queue_send_now' && it) this.emit({ type: 'queue_dispatched', ...it });
+        } else if (m.type === 'queue_move') {
+          const i = this.queue.findIndex(q => q.id === m.id);
+          if (i >= 0) { const [it] = this.queue.splice(i, 1); this.queue.splice(Math.max(0, Math.min(m.to, this.queue.length)), 0, it); }
+          this.emit({ type: 'queue', items: this.queue });
         } else if (m.type === 'interrupt') this.interrupted = true;
       }
       // fim do turno no "servidor": result + despacho/restauração da fila
@@ -107,6 +111,17 @@ try {
     assert.deepEqual(await q.locator('.cc-queue-text').allTextContents(), ['depois 1', 'depois 2']);
     assert.ok(!(await bubbles(page)).includes('depois 1'), 'item da fila não vira bolha antes de rodar');
     assert.deepEqual((await prompts(page)).slice(-2).map(p => p.queue), [true, true]);
+
+    // 3b) reordenar: ↓ no 1º troca a ordem; o 1º não sobe e o último não desce
+    const items = q.locator('.cc-queue-item');
+    assert.ok(await items.nth(0).getByTitle('Subir na fila').isDisabled());
+    assert.ok(await items.nth(1).getByTitle('Descer na fila').isDisabled());
+    await items.nth(0).getByTitle('Descer na fila').click();
+    await page.waitForFunction(() => document.querySelector('.cc-queue-text')?.textContent === 'depois 2');
+    assert.deepEqual(await q.locator('.cc-queue-text').allTextContents(), ['depois 2', 'depois 1']);
+    assert.deepEqual((await page.evaluate(() => window.__mock.ws.sent)).at(-1), { type: 'queue_move', id: 'q1', to: 1 });
+    await items.nth(1).getByTitle('Subir na fila').click();     // volta: depois 1, depois 2
+    await page.waitForFunction(() => document.querySelector('.cc-queue-text')?.textContent === 'depois 1');
 
     // 4) Esc na escolha cancela e mantém o texto para editar; NÃO interrompe o agente
     await type(page, 'rascunho');

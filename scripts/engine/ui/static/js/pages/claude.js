@@ -521,6 +521,16 @@ function useClaudeSession() {
   const cancelPending = () => setPendingSend(null);
   const queueRemove = (id) => send({ type: "queue_remove", id });
   const queueSendNow = (id) => send({ type: "queue_send_now", id });
+  // Reordena: otimista na tela, o servidor devolve a ordem real (fonte da verdade).
+  const queueMove = (id, to) => {
+    setQueue((q) => {
+      const i = q.findIndex((x) => x.id === id);
+      if (i < 0 || to < 0 || to >= q.length || to === i) return q;
+      const next = q.slice(); const [it] = next.splice(i, 1); next.splice(to, 0, it);
+      return next;
+    });
+    send({ type: "queue_move", id, to });
+  };
 
   function stop() {
     if (send({ type: "interrupt" })) toast.info("Interrompendo…");
@@ -620,7 +630,7 @@ function useClaudeSession() {
 
   return {
     effort, changeEffort, ctxUse, lastUsage,
-    queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow,
+    queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove,
     status, items, working, mode, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
@@ -697,7 +707,7 @@ function UserMsg({ text, tag }) {
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
   const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments,
-    queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow } = useClaude();
+    queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove } = useClaude();
   const taRef = useRef(null);
   // textarea que cresce com o conteúdo: começa em 1 linha e sobe até o teto (CSS), aí rola.
   useEffect(() => {
@@ -744,7 +754,7 @@ function Composer() {
 
   return html`<div class="cc-composer-wrap">
     ${queue.length > 0 && html`<${QueueList} queue=${queue} working=${working} disabled=${disabled}
-      onRemove=${queueRemove} onSendNow=${queueSendNow} />`}
+      onRemove=${queueRemove} onSendNow=${queueSendNow} onMove=${queueMove} />`}
     ${pendingSend && html`<${SendChoice} text=${pendingSend.text} onChoose=${choosePending}
       onCancel=${() => { cancelPending(); taRef.current && taRef.current.focus(); }} />`}
     ${slashMatches.length > 0 && html`<div class="cc-slash-menu">
@@ -835,12 +845,16 @@ function SendChoice({ text, onChoose, onCancel }) {
 }
 
 // Mensagens na fila do servidor: rodam uma por vez, cada uma quando o turno anterior termina.
-function QueueList({ queue, working, disabled, onRemove, onSendNow }) {
+function QueueList({ queue, working, disabled, onRemove, onSendNow, onMove }) {
   return html`<div class="cc-queue">
     <div class="cc-queue-head">Na fila (${queue.length}) — ${working ? "roda quando a tarefa atual terminar" : "aguardando"}</div>
     ${queue.map((q, i) => html`<div class="cc-queue-item" key=${q.id}>
       <span class="cc-queue-n">${i + 1}</span>
       <span class="cc-queue-text" title=${q.text}>${q.text}</span>
+      ${queue.length > 1 && html`<button class="cc-iconbtn" disabled=${disabled || i === 0}
+        title="Subir na fila" aria-label="Subir na fila" onClick=${() => onMove(q.id, i - 1)}>↑</button>
+      <button class="cc-iconbtn" disabled=${disabled || i === queue.length - 1}
+        title="Descer na fila" aria-label="Descer na fila" onClick=${() => onMove(q.id, i + 1)}>↓</button>`}
       <button class="cc-iconbtn" disabled=${disabled} title="Enviar agora (o agente incorpora na tarefa atual)" onClick=${() => onSendNow(q.id)}>⚡</button>
       <button class="cc-iconbtn" disabled=${disabled} title="Tirar da fila" onClick=${() => onRemove(q.id)}>×</button>
     </div>`)}

@@ -182,3 +182,20 @@ def test_queue_has_static_limit(env):
         assert len(s._queue) == claude_svc.MAX_QUEUE
         assert any(e["type"] == "error" and "Fila cheia" in e["detail"] for e in sent)
     asyncio.run(check())
+
+
+def test_reorder_queue(env, result_cls):
+    async def check():
+        s, sent = _session([{"type": "prompt", "text": "tarefa"}]
+                           + [{"type": "prompt", "text": t, "queue": True} for t in ("a", "b", "c")]
+                           + [{"type": "queue_move", "id": "q3", "to": 0},      # c, a, b
+                              {"type": "queue_move", "id": "q1", "to": 99},     # c, b, a (limitado ao fim)
+                              {"type": "queue_move", "id": "sumiu", "to": 0},   # no-op
+                              {"type": "queue_move", "id": "q2", "to": "1"},    # tipo inválido: no-op
+                              {"type": "queue_move", "id": "q2", "to": True}])  # bool não é posição
+        await s._ws_pump()
+        assert [q["text"] for q in s._queue] == ["c", "b", "a"]
+        assert sent[-1] == {"type": "queue", "items": s._queue}
+        await s._translate(_result(result_cls))           # despacha na NOVA ordem
+        assert s.client.queries == ["tarefa", "c"]
+    asyncio.run(check())
