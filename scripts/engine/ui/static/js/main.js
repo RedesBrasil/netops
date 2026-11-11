@@ -71,7 +71,8 @@ function App({ onLogout, showLogout }) {
 }
 
 function Shell({ onLogout, showLogout }) {
-  const route = useHash();
+  const hash = useHash();
+  const route = hash.startsWith("claude/") ? "claude" : hash;
   const claude = useClaude();
   const [meta, setMeta] = useState({ network_name: "NetOps" });
   const [theme, setTheme] = useState(localStorage.getItem("netops_theme") || "light");

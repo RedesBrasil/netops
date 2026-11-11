@@ -197,6 +197,36 @@ O cenário `tests/auth.browser.mjs` valida três abas em desktop/celular, login 
 recarregamento, logout e expiração; exige console temporário em loopback via
 `NETOPS_E2E_URL`, com `PLAYWRIGHT_MODULE` e `CHROMIUM_EXECUTABLE` se necessário.
 
+## Links e reabertura das sessões Claude Code
+
+Cada conversa tem a URL `/#claude/<UUID>`. **Copiar link**, no cabeçalho ou na lista
+**Sessões**, permite referenciá-la separadamente. O título da conversa na lista também
+é um link que pode ser aberto em outra aba. O link exige o login normal do console;
+contém apenas a referência da conversa, sem credenciais de autenticação.
+
+Abrir **Claude Code** (`/#claude`) retoma a última conversa selecionada nesse navegador.
+Somente o UUID fica em `localStorage` (`netops_claude_last_session`); mensagens continuam
+nos transcripts do Claude Code no servidor. Sem preferência salva, ou após a exclusão da
+conversa preferida, abre a mais recente do projeto. Sem conversas, inicia uma nova.
+Um link explícito tem prioridade sobre a preferência. **Nova sessão** (`/#claude/new`)
+continua abrindo uma conversa vazia e recebe seu UUID quando o agente o informar.
+
+Recarregar, voltar/avançar e alternar entre o dock e a página cheia preservam a referência
+selecionada. Cada aba mantém sua própria conversa; alterar a última seleção salva não
+troca automaticamente a conversa nas outras abas. Com persistência ligada, abrir a mesma
+conversa em outra aba transfere o socket para ela; a anterior informa a transferência e
+para de reconectar. Para retomá-la na aba anterior, recarregue.
+
+O lookup `GET /api/claude/sessions/<UUID>` verifica a existência no projeto, inclusive para
+conversas mais antigas que a lista recente. Links inválidos/removidos mostram orientação
+para escolher outra conversa ou criar uma nova. UUIDs inválidos ou ausentes são recusados
+antes de iniciar o agente. Respostas HTTP e eventos de sockets antigos não podem substituir
+a conversa selecionada; o histórico é carregado antes de iniciar o streaming.
+
+Testes: `node --test scripts/engine/ui/tests/*.test.mjs`, `tests/test_claude_sessions.py`
+e `tests/claude-sessions.browser.mjs`. O cenário de navegador usa APIs e WebSockets
+fictícios, em console temporário; não inicia o agente real nem acessa conversas pessoais.
+
 
 ## Mapas de rede
 

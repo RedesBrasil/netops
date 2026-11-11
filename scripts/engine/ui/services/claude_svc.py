@@ -370,7 +370,7 @@ class ClaudeWebSession:
         self.ws = ws
         if old is not None and old is not ws:   # supersede (ex.: nova aba) — fecha o antigo
             try:
-                asyncio.create_task(old.close())
+                asyncio.create_task(old.close(code=4409, reason="session_superseded"))
             except Exception:
                 pass
         self._cancel_grace()
@@ -617,7 +617,26 @@ class ClaudeWebSession:
 # --------------------------------------------------------------------------- #
 # Sessões passadas (retomar) — lê os transcripts em ~/.claude/projects/<projeto>.
 # --------------------------------------------------------------------------- #
-def list_project_sessions(limit: int = 60) -> list[dict]:
+def project_session_exists(sid: str) -> bool:
+    """Confere UUID e pertencimento ao projeto, sem iniciar o agente nem ler mensagens."""
+    if not re.fullmatch(r"[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}", sid):
+        return False
+    live = _LIVE.get(sid)
+    if live is not None and not live._closing_done:
+        return True
+    if not _SDK_OK:
+        return False
+    try:
+        from claude_agent_sdk import get_session_info  # noqa: PLC0415
+        return get_session_info(sid, directory=str(deps.NETOPS_ROOT)) is not None
+    except ImportError:
+        # SDKs anteriores ao lookup individual ainda oferecem list_sessions.
+        return any(s["id"] == sid for s in list_project_sessions(limit=None))
+    except Exception:
+        return False
+
+
+def list_project_sessions(limit: int | None = 60) -> list[dict]:
     """Sessões Claude Code deste projeto (cwd=NETOPS_ROOT), mais recentes primeiro."""
     if not _SDK_OK:
         return []

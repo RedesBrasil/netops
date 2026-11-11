@@ -1,5 +1,26 @@
 # Changelog do NetOps
 
+## [1.2.0] - 2026-11-11
+
+### Novidades
+
+- Cada conversa do Claude Code tem um link próprio (`#claude/<id>`), com opção de copiar na conversa e na lista de sessões.
+- Abrir Claude Code retoma a última conversa selecionada no navegador; sem preferência salva, abre a conversa mais recente do projeto.
+- Links diretos, recarregamento e os botões voltar/avançar preservam a sessão escolhida. Nova sessão continua disponível explicitamente.
+
+### Correções
+
+- Histórico, tickets de conexão e eventos atrasados de uma conversa anterior não substituem a sessão atual.
+- Links inválidos ou de sessões removidas mostram uma orientação sem iniciar o agente em repetição.
+- Abrir a mesma sessão persistente em outra aba informa a transferência e evita disputa de reconexão.
+- Login do console compartilhado entre abas, com sincronização de entrada, saída e expiração, sem persistir a senha.
+
+### Preservação e compatibilidade
+
+- Conversas existentes continuam no histórico do Claude Code, sem migração ou alteração dos transcripts.
+- A preferência local guarda somente o identificador da conversa. Os links exigem o login normal do console.
+- Esta primeira release publicada inclui também o atualizador, os mapas e os recursos descritos em 1.1.0. Inventário, credenciais, memória e personalizações são preservados pelo atualizador.
+
 ## [1.1.0] - 2026-11-10
 
 ### Novidades

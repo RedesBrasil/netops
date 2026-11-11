@@ -10,6 +10,13 @@ import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import { MarkdownView, VaultBanner, Modal } from "../components.js";
 import { authToken } from "../api.js";
+import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
+  rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, copyClaudeSessionLink } from "../claude-sessions.js";
+
+async function copySessionLink(id) {
+  try { await copyClaudeSessionLink(id); toast.ok("Link da sessão copiado"); }
+  catch (e) { toast.err(e.message || "Não foi possível copiar o link."); }
+}
 
 // Comandos que a ABA resolve sozinha — NÃO vão para o modelo. `/login` é comando da TUI do
 // Claude Code: ele não existe no protocolo do SDK, então nunca vem na lista de slash do init
@@ -93,7 +100,6 @@ function useClaudeSession() {
   const [slash, setSlash] = useState([]);             // nomes de slash commands (do init)
   const [input, setInput] = useState("");
   const [gen, setGen] = useState(0);                  // bump => reconecta
-  const [resumeId, setResumeId] = useState("");       // se setado, retoma a sessão ao reconectar
   const [showSessions, setShowSessions] = useState(false);
   const [active, setActive] = useState(false);        // há sessão ligada? (independe da rota)
   const [auth, setAuth] = useState(null);             // login do `claude` {loggedIn, email, store…}
@@ -114,6 +120,91 @@ function useClaudeSession() {
   const retryRef = useRef(0);           // tentativa de reconexao (backoff exponencial)
   const reconnTimerRef = useRef(null);  // timer do proximo reconnect
   const hbRef = useRef(null);           // intervalo de heartbeat/watchdog (detecta half-open)
+  const activeRef = useRef(false);
+  const selectionRef = useRef(null);    // UUID selecionado ou "new" até o init do SDK
+  const routeRequestRef = useRef(0);    // invalida resoluções de rota atrasadas
+  const connectionRef = useRef(0);      // invalida callbacks do socket anterior imediatamente
+
+  function activateSession(id, force = false) {
+    const target = id || "new";
+    if (!force && activeRef.current && selectionRef.current === target) return;
+    connectionRef.current++;
+    selectionRef.current = target;
+    resumeIdRef.current = id || "";
+    sessionIdRef.current = id || "";
+    activeRef.current = true;
+    setInput(""); setShowSessions(false);
+    setSessionId(id || ""); setItems([]); setWorking(false); setStatus("conectando");
+    setActive(true); setGen((g) => g + 1);
+  }
+
+  function identifySession(id) {
+    if (!validSessionId(id)) return;
+    const changed = sessionIdRef.current !== id;
+    setSessionId(id); sessionIdRef.current = id;
+    selectionRef.current = id; resumeIdRef.current = id;
+    const route = readClaudeRoute(location.hash);
+    // Um init antigo não pode trocar um link explícito recém-aberto.
+    if (route && route.kind === "session" && route.id !== id) return;
+    if (changed) rememberClaudeSession(id);
+    if (route && route.kind !== "invalid") replaceClaudeHash(claudeSessionHash(id));
+  }
+
+  async function openRoute() {
+    const request = ++routeRequestRef.current;
+    const route = readClaudeRoute(location.hash);
+    if (!route) return; // navegar para Hosts mantém a sessão viva no dock
+    const current = () => request === routeRequestRef.current;
+    try {
+      if (route.kind === "invalid") throw new Error("Link de sessão inválido. Escolha uma conversa em Sessões ou abra Nova sessão.");
+      if (route.kind === "new") { activateSession(""); return; }
+      if (route.kind === "session") {
+        if (activeRef.current && sessionIdRef.current === route.id) return;
+        await api.get(`/claude/sessions/${encodeURIComponent(route.id)}`);
+        if (!current()) return;
+        rememberClaudeSession(route.id);
+        activateSession(route.id);
+        return;
+      }
+      if (activeRef.current) {
+        if (sessionIdRef.current) replaceClaudeHash(claudeSessionHash(sessionIdRef.current));
+        else replaceClaudeHash("#claude/new");
+        return;
+      }
+      let id = lastClaudeSession();
+      if (id) {
+        try { await api.get(`/claude/sessions/${encodeURIComponent(id)}`); }
+        catch (e) {
+          if (e.status !== 404) throw e;
+          forgetClaudeSession(id); id = "";
+        }
+      }
+      if (!current()) return;
+      if (!id) {
+        const data = await api.get("/claude/sessions");
+        if (!current()) return;
+        id = (data.sessions || []).find((s) => validSessionId(s.id))?.id || "";
+      }
+      if (id) rememberClaudeSession(id);
+      activateSession(id);
+      replaceClaudeHash(id ? claudeSessionHash(id) : "#claude/new");
+    } catch (e) {
+      if (!current()) return;
+      endSession();
+      setStatus("erro");
+      setItems([{ type: "error", detail: e.status === 404
+        ? "Sessão não encontrada neste projeto. Escolha outra em Sessões ou abra Nova sessão."
+        : e.message || "Não foi possível abrir a sessão. Tente novamente." }]);
+    }
+  }
+
+  // O provider acompanha também voltar/avançar: a página cheia não remonta entre UUIDs.
+  useEffect(() => {
+    const onRoute = () => { openRoute(); };
+    addEventListener("hashchange", onRoute);
+    onRoute();
+    return () => { routeRequestRef.current++; removeEventListener("hashchange", onRoute); };
+  }, []);
 
   const send = useCallback((obj) => {
     const ws = wsRef.current;
@@ -136,9 +227,6 @@ function useClaudeSession() {
       return next;
     });
   }, []);
-
-  // Liga a sessão (chamado ao abrir a página do Claude). Idempotente.
-  const ensureActive = useCallback(() => setActive(true), []);
 
   // Estado do login do agente. Consultado ao ligar a sessão e depois de todo erro — quando a
   // credencial expira o SDK só devolve um erro opaco, então perguntar ao servidor é o jeito
@@ -174,6 +262,9 @@ function useClaudeSession() {
   // Ctrl+F5: o cliente reconecta com backoff e RETOMA o sid vigente (?resume=<sid>).
   useEffect(() => {
     if (!active) return;
+    let disposed = false;
+    const generation = connectionRef.current;
+    const current = () => !disposed && generation === connectionRef.current;
     manualCloseRef.current = false;
     retryRef.current = 0;
     noReconnectRef.current = false;
@@ -183,33 +274,45 @@ function useClaudeSession() {
     setSessionId(rid || ""); sessionIdRef.current = rid || "";
     setStatus("conectando");
     // retomada explicita: carrega o historico da sessao na transcricao.
-    if (rid) api.get(`/claude/sessions/${rid}/messages`).then((h) => setItems(h.items || [])).catch(() => {});
-
-    const open = (reconnect) => {
+    const open = async (reconnect) => {
+      if (!current()) return;
       if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
       const resume = reconnect ? sessionIdRef.current : rid;
       setStatus("conectando");
+      // Carrega antes de abrir o socket: uma leitura atrasada não apaga streaming/permissões.
+      if (resume) {
+        try {
+          const h = await api.get(`/claude/sessions/${encodeURIComponent(resume)}/messages`);
+          if (!current()) return;
+          setItems(h.items || []);
+        } catch (_) {}
+      }
+      if (!current()) return;
       const proto = location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${proto}://${location.host}/api/claude`
         + `?auth=${encodeURIComponent(authToken())}`
         + (modelRef.current ? `&model=${encodeURIComponent(modelRef.current)}` : "")
         + (resume ? `&resume=${encodeURIComponent(resume)}` : ""));
       wsRef.current = ws;
+      const currentSocket = () => current() && wsRef.current === ws;
 
       ws.onopen = () => {
+        if (!currentSocket()) return;
         failCountRef.current = 0; setStatus("pronto");                 // conectou = conectado; zera o breaker
-        // Reconexão (ex.: voltou do standby): recarrega a verdade do disco — pega o que o
-        // agente entregou enquanto a aba dormia. Substitui p/ não duplicar o que já havia na tela.
-        if (reconnect && sessionIdRef.current) {
-          api.get(`/claude/sessions/${sessionIdRef.current}/messages`)
-            .then((h) => { if (h && Array.isArray(h.items)) setItems(h.items); })
-            .catch(() => {});
-        }
       };
       ws.onerror = () => {};
-      ws.onclose = () => {                             // caiu = desconectado
+      ws.onclose = (event) => {                        // caiu = desconectado
+        if (!currentSocket()) return;
         if (manualCloseRef.current) return;           // fechamento deliberado (encerrar / troca de sessão)
         setWorking(false);
+        if (event.code === 4409 || event.code === 4404) {
+          noReconnectRef.current = true;
+          setStatus("desconectado");
+          setItems((prev) => [...closeOpen(prev), { type: "error", detail: event.code === 4409
+            ? "Esta sessão foi aberta em outra aba. Recarregue para retomá-la aqui."
+            : "Sessão não encontrada. Escolha outra em Sessões ou abra Nova sessão." }]);
+          return;
+        }
         // Erro TERMINAL (rate limit / modelo inválido): reconectar+retomar em loop só MARTELA o
         // token do agente e mantém o 429 aceso. Não reconecta — o modal já orienta. (2026-09-28)
         if (noReconnectRef.current) { setStatus("erro"); return; }
@@ -222,6 +325,7 @@ function useClaudeSession() {
       };
 
       ws.onmessage = (e) => {
+        if (!currentSocket()) return;
         let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
         switch (ev.type) {
           case "system":
@@ -229,7 +333,7 @@ function useClaudeSession() {
               const d = ev.data || {};
               if (d.model) { setModel(d.model); setModelSel(d.model); modelRef.current = d.model; }
               if (d.permissionMode) setMode(d.permissionMode);
-              if (d.session_id) { setSessionId(d.session_id); sessionIdRef.current = d.session_id; }
+              if (d.session_id) identifySession(d.session_id);
               if (Array.isArray(d.slash_commands)) setSlash(d.slash_commands);
             }
             break;
@@ -266,7 +370,7 @@ function useClaudeSession() {
             break;
           case "result":
             setWorking(false);
-            if (ev.session_id) { setSessionId(ev.session_id); sessionIdRef.current = ev.session_id; }
+            if (ev.session_id) identifySession(ev.session_id);
             setItems((prev) => {
               const next = closeOpen(prev);
               next.push({ type: "result", cost: ev.cost_usd, usage: ev.usage, isError: ev.is_error });
@@ -293,6 +397,7 @@ function useClaudeSession() {
     api.get("/claude/attach-ticket").then(() => open(false), () => open(false));
 
     return () => {
+      disposed = true;
       manualCloseRef.current = true;                                 // impede reconexao ao trocar de sessao/encerrar
       if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
       if (hbRef.current) { clearInterval(hbRef.current); hbRef.current = null; }
@@ -319,20 +424,31 @@ function useClaudeSession() {
     if (send({ type: "interrupt" })) toast.info("Interrompendo…");
   }
 
-  function newSession() { resumeIdRef.current = ""; setResumeId(""); setActive(true); setGen((g) => g + 1); }
-  function resumeSession(id) { resumeIdRef.current = id; setResumeId(id); setShowSessions(false); setActive(true); setGen((g) => g + 1); }
+  function newSession() {
+    routeRequestRef.current++;
+    activateSession("", true);
+    if (location.hash !== "#claude/new") location.hash = "#claude/new";
+  }
+  function resumeSession(id) {
+    if (!validSessionId(id)) return;
+    setShowSessions(false);
+    if (location.hash === claudeSessionHash(id)) openRoute();
+    else location.hash = claudeSessionHash(id);
+  }
 
   // Pós-login: o subprocesso `claude` vivo ainda carrega a credencial velha, então é preciso
   // relançar. RETOMA o mesmo sid — a conversa continua de onde parou (o histórico é relido do
   // transcript). Sem sid ainda, cai numa sessão nova.
   function relaunch() {
     const sid = sessionIdRef.current || "";
-    resumeIdRef.current = sid; setResumeId(sid);
-    setActive(true); setGen((g) => g + 1);
+    activateSession(sid, true);
   }
 
   // Encerra a conversa (fecha o dock): derruba o WS e limpa o estado.
   const endSession = useCallback(() => {
+    routeRequestRef.current++;
+    connectionRef.current++;
+    activeRef.current = false; selectionRef.current = null;
     manualCloseRef.current = true;
     if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
     try { const w = wsRef.current; if (w && w.readyState === 1) w.send(JSON.stringify({ type: "bye" })); } catch (_) {}  // encerrar: mata a sessão viva
@@ -371,8 +487,7 @@ function useClaudeSession() {
     modelRef.current = m;
     setShowModelPick(false);
     const sid = sessionIdRef.current || "";
-    resumeIdRef.current = sid; setResumeId(sid);
-    setActive(true); setGen((g) => g + 1);
+    activateSession(sid, true);
   }
 
   async function uploadFile(file) {
@@ -398,7 +513,7 @@ function useClaudeSession() {
     status, items, working, mode, model, modelSel, models, sessionId, slash, input, setInput,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     send, submit, stop, newSession, resumeSession, answerPermission, changeMode, changeModel, uploadFile,
-    ensureActive, endSession,
+    endSession,
     auth, showAuth, setShowAuth, refreshAuth, relaunch, refreshModels,
     showModelPick, setShowModelPick, modelErr, pickModelAndRelaunch,
     showRateLimit, setShowRateLimit, rateLimitDetail,
@@ -491,10 +606,9 @@ function Composer() {
   </div>`;
 }
 
-// Página cheia (#claude). Liga a sessão ao montar.
+// Página cheia; seleção da sessão é controlada pelo fragmento da URL no provider.
 export function ClaudeCodePage() {
   const s = useClaude();
-  useEffect(() => { s.ensureActive(); }, []);
   return html`<div class="claude-page">
     <div class="page-title">
       <h1>Claude Code</h1>
@@ -507,6 +621,7 @@ export function ClaudeCodePage() {
       </button>`}
       <span class="spacer"></span>
       ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
+      <button class="sm" disabled=${!s.sessionId} onClick=${() => copySessionLink(s.sessionId)}>Copiar link</button>
       <button class="sm" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
       <button class="sm" onClick=${s.newSession} title="Encerra esta sessão e abre uma nova">Nova sessão</button>
     </div>
@@ -716,7 +831,7 @@ export function ChatDock() {
       <b>Claude Code</b>
       ${s.working && html`<span class="chat-dock-live">● ao vivo</span>`}
       <span class="spacer"></span>
-      <a class="sm dock-btn" href="#claude" title="Abrir em tela cheia">⤢</a>
+      <a class="sm dock-btn" href=${claudeSessionHash(s.sessionId)} title="Abrir em tela cheia">⤢</a>
       <button class="sm dock-btn" onClick=${s.endSession} title="Encerrar conversa">✕</button>
     </div>
     <${Transcript} />
@@ -753,7 +868,7 @@ function SessionsModal({ currentId, onClose, onResume }) {
   async function del(id, e) {
     e.stopPropagation();
     setBusy(true);
-    try { await api.del(`/claude/sessions/${id}`); load(q); }
+    try { await api.del(`/claude/sessions/${encodeURIComponent(id)}`); forgetClaudeSession(id); load(q); }
     catch (_) { toast.err("Falha ao excluir"); }
     finally { setBusy(false); }
   }
@@ -771,11 +886,17 @@ function SessionsModal({ currentId, onClose, onResume }) {
         ${list.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "")}
             onClick=${() => onResume(s.id)} title="Retomar esta sessão">
           <div class="cc-sess-main">
-            <div class="cc-sess-title">${hl(s.title, term)}${s.id === currentId ? html` <span class="badge ok">atual</span>` : ""}</div>
+            <div class="cc-sess-title"><a href=${claudeSessionHash(s.id)} onClick=${(e) => {
+              e.stopPropagation();
+              if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                e.preventDefault(); onResume(s.id);
+              }
+            }}>${hl(s.title, term)}</a>${s.id === currentId ? html` <span class="badge ok">atual</span>` : ""}</div>
             ${s.preview && html`<div class="cc-sess-prev help">${hl(s.preview, term)}</div>`}
             ${s.snippet && html`<div class="cc-sess-snip help">${hl(s.snippet, term)}</div>`}
             <div class="cc-sess-meta help mono">${fmtTime(s.mtime)} · ${(s.id || "").slice(0, 8)}${s.branch ? " · " + s.branch : ""}</div>
           </div>
+          <button class="sm" title="Copiar link da sessão" onClick=${(e) => { e.stopPropagation(); copySessionLink(s.id); }}>Copiar link</button>
           <button class="sm danger" disabled=${busy} title="Excluir sessão" onClick=${(e) => del(s.id, e)}>🗑</button>
         </div>`)}
       </div>`}
