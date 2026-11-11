@@ -15,7 +15,7 @@ import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
 import { BackupsPage } from "./pages/backups.js";
 import { UpdatesControl } from "./pages/updates.js";
 import { TerminalPage } from "./pages/terminal.js";
-import { ClaudeCodePage, ClaudeTopbarControls, ClaudeSessionTitle, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
+import { ClaudeCodePage, ClaudeTopbarControls, ClaudeStatusDot, ClaudeSessionTitle, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
 
 const ROUTES = {
   hosts: { label: "Hosts", comp: HostsPage, group: "Inventário" },
@@ -53,9 +53,9 @@ function useHash() {
   return hash;
 }
 
-function Sidebar({ current, meta }) {
+function Sidebar({ current, meta, open, onNavigate }) {
   const visible = ([, r]) => !r.flag || meta[r.flag];
-  return html`<nav class="sidebar">
+  return html`<nav class=${"sidebar" + (open ? " open" : "")} onClick=${(e) => { if (e.target.closest("a")) onNavigate(); }}>
     ${ORDER.map((g) => html`<div key=${g}>
       <div class="group-label">${g}</div>
       ${Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
@@ -75,6 +75,8 @@ function Shell({ onLogout, showLogout }) {
   const route = hash.startsWith("claude/") ? "claude" : hash;
   const claude = useClaude();
   const [meta, setMeta] = useState({ network_name: "NetOps" });
+  const [navOpen, setNavOpen] = useState(false);     // gaveta de navegação (mobile)
+  const [moreOpen, setMoreOpen] = useState(false);   // folha de ações do topo (mobile)
   const [theme, setTheme] = useState(localStorage.getItem("netops_theme") || "light");
   useEffect(() => { startVaultPolling(); api.get("/config/meta").then(setMeta).catch(() => {}); }, []);
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("netops_theme", theme); }, [theme]);
@@ -92,17 +94,24 @@ function Shell({ onLogout, showLogout }) {
   const dockVisible = route !== "claude" && !!(claude && claude.hasSession);
   return html`<div class=${"shell" + (dockVisible ? " has-dock" : "")}>
     <div class="topbar">
+      <button class="sm mob-only nav-toggle" aria-label="Menu" onClick=${() => { setMoreOpen(false); setNavOpen(!navOpen); }}>☰</button>
       ${route === "claude"
         ? html`<span class="brand">Claude Code</span><${ClaudeSessionTitle} />`
         : html`<span class="brand">NetOps Console</span><span class="net">· ${meta.network_name}</span>`}
       <div id="topbar-slot" class="topbar-slot"></div>
-      ${route === "claude" && html`<${ClaudeTopbarControls} />`}
-      <${UpdatesControl} part="version" />
-      <button class="sm" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}>
-        ${theme === "light" ? "🌙 escuro" : "☀ claro"}</button>
-      ${showLogout && html`<button class="sm" onClick=${doLogout}>Sair</button>`}
+      ${route === "claude" && html`<${ClaudeStatusDot} />`}
+      <button class="sm mob-only more-toggle" aria-label="Ações" onClick=${() => { setNavOpen(false); setMoreOpen(!moreOpen); }}>⋯</button>
+      <div class=${"topbar-actions" + (moreOpen ? " open" : "")}
+        onClick=${(e) => { if (e.target.closest("button") && !e.target.closest(".keep-open")) setMoreOpen(false); }}>
+        ${route === "claude" && html`<${ClaudeTopbarControls} />`}
+        <div class="keep-open"><${UpdatesControl} part="version" /></div>
+        <button class="sm" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}>
+          ${theme === "light" ? "🌙 escuro" : "☀ claro"}</button>
+        ${showLogout && html`<button class="sm" onClick=${doLogout}>Sair</button>`}
+      </div>
     </div>
-    <${Sidebar} current=${route} meta=${meta} />
+    ${(navOpen || moreOpen) && html`<div class="mob-backdrop" onClick=${() => { setNavOpen(false); setMoreOpen(false); }}></div>`}
+    <${Sidebar} current=${route} meta=${meta} open=${navOpen} onNavigate=${() => setNavOpen(false)} />
     <main class=${"content" + (route === "maps" ? " maps-content" : "")}>
       <${Page} />
     </main>

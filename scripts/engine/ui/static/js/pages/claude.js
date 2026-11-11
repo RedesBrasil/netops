@@ -724,7 +724,10 @@ function Composer() {
 
   function onKeyDown(e) {
     if (e.key === "Escape" && working) { e.preventDefault(); stop(); return; }
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+    // Celular/tablet (toque como ponteiro principal): Enter quebra linha, envia só pelo botão ↑.
+    // Desktop: Enter envia, Shift+Enter quebra linha.
+    const touch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !touch) { e.preventDefault(); submit(); }
   }
 
   // sugestões de slash: só quando o texto começa com "/" e ainda não tem espaço.
@@ -757,7 +760,7 @@ function Composer() {
       <textarea ref=${taRef} rows="1"
         placeholder=${disabled
           ? "Sem sessão — digite /login para entrar, ou aguarde a reconexão"
-          : "Mensagem (Enter envia · Shift+Enter quebra linha · / para comandos)"}
+          : (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? "Mensagem (Enter quebra linha · ↑ envia · / para comandos)" : "Mensagem (Enter envia · Shift+Enter quebra linha · / para comandos)")}
         value=${input}
         onInput=${(e) => setInput(e.target.value)} onKeyDown=${onKeyDown} onPaste=${onPaste}></textarea>
       <div class="cc-composer-bar">
@@ -923,11 +926,17 @@ export function ClaudeSessionTitle() {
   return title ? html`<span class="cc-topbar-title" title=${title}>${title}</span>` : null;
 }
 
+// Bolinha de status sempre visível na barra do topo (no celular o resto vai p/ a folha "⋯").
+export function ClaudeStatusDot() {
+  const s = useClaude();
+  return html`<span class="badge dot-mob ${s.badge}" title=${s.status}>${s.status}</span>`;
+}
+
 export function ClaudeTopbarControls() {
   const s = useClaude();
   return html`
-    <${VaultBanner} compact=${true} />
-    <span class="badge ${s.badge}">${s.status}</span>
+    <div class="keep-open"><${VaultBanner} compact=${true} /></div>
+    <span class="badge ${s.badge} desk-only">${s.status}</span>
     ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
     ${s.auth && s.auth.available && html`<button
       class=${"sm cc-authbtn " + (s.auth.loggedIn ? "" : "danger")}
