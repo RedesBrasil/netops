@@ -1,5 +1,18 @@
 # Changelog do NetOps
 
+## [1.2.1] - 2026-11-11
+
+### Correções
+
+- Atualização pelo console não é mais recusada com "encerre: terminal ou sessão interativa aberta" quando nenhuma sessão está visível. A conexão da aba Claude Code fica ativa em todas as páginas e era contada como sessão aberta.
+- Terminal web e sessões do agente abertos não bloqueiam a atualização: são encerrados no reinício. Backup de equipamento e workflow em execução continuam impedindo a atualização até terminarem.
+- Aviso de confirmação e documentação do atualizador refletem a nova regra.
+
+### Preservação e compatibilidade
+
+- Sem migração de dados. Conversas do Claude Code ficam no transcript em disco e podem ser retomadas após o reinício.
+- Instalações em versão anterior ainda aplicam a barreira antiga: para chegar à 1.2.1, encerre a aba Claude Code em todos os navegadores e feche o terminal web antes de clicar em Atualizar.
+
 ## [1.2.0] - 2026-11-11
 
 ### Novidades
