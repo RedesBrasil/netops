@@ -1,24 +1,33 @@
 // Credenciais (network/credentials.yaml). Senhas sempre mascaradas; encrypt-on-write.
 import { html, useState, api, useResource, Spinner, Badge, toast, handleError, useStore, vaultStore } from "../ui.js";
-import { ResourceTable, Field, Modal, ConfirmDialog, RenameCascadeHint } from "../components.js";
+import { useMenuRoute, matchText } from "../route.js";
+import { FilterBar, ResourceTable, Field, Modal, ConfirmDialog, RenameCascadeHint } from "../components.js";
 import { vaultWritable } from "../components.js";
 
+// URL: #credentials[/<nome>|/new|/<nome>/password|/<nome>/secret][?q=]  (core/rules/urls-navegacao.md)
 export function CredentialsPage() {
   const res = useResource("/credentials");
   const v = useStore(vaultStore);
-  const [editing, setEditing] = useState(null); // row (edit) or {__new:true}
-  const [rotating, setRotating] = useState(null); // {name, field}
+  const r = useMenuRoute("credentials");
+  const q = r.params.q || "";
   const [confirm, setConfirm] = useState(null);
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
-  const { credentials, rev, vault_initialized } = res.data;
+  const { credentials: allCreds, rev, vault_initialized } = res.data;
+  const [seg, sub] = r.segments;
+  const found = seg && seg !== "new" ? allCreds.find((c) => c.name === seg) : null;
+  const rotating = found && (sub === "password" || sub === "secret") ? { name: seg, field: sub } : null;
+  const editing = seg === "new" ? { __new: true } : found && !rotating ? found : null;
+  const setEditing = (c) => (c ? r.open(c.__new ? "new" : c.name) : r.close());
+  const setRotating = (t) => (t ? r.open([t.name, t.field]) : r.close());
+  const credentials = allCreds.filter((c) => matchText(q, c.name, c.username));
   const writable = v.state === "cache" || v.state === "env";
 
   const secretBadge = (s) => !s ? html`<${Badge}>não def.<//>`
     : s.encrypted ? html`<${Badge} kind="ok">🔒 cifrado<//>` : html`<${Badge} kind="warn">⚠ texto puro<//>`;
 
   const cols = [
-    { key: "name", label: "Credencial", render: (r) => html`<b>${r.name}</b>` },
+    { key: "name", label: "Credencial", render: (r) => html`<a href=${"#credentials/" + encodeURIComponent(r.name)} onClick=${(e) => e.stopPropagation()}><b>${r.name}</b></a>` },
     { key: "username", label: "Usuário", render: (r) => r.username || "—" },
     { key: "password", label: "Senha", render: (r) => secretBadge(r.password) },
     { key: "secret", label: "Secret", render: (r) => r.secret ? secretBadge(r.secret) : "—" },
@@ -30,6 +39,8 @@ export function CredentialsPage() {
       <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Nova credencial</button></div>
     ${!vault_initialized && html`<div class="card"><b>Cofre não inicializado.</b> Para guardar senhas cifradas,
       rode no terminal: <code>python scripts/engine/vault/cli.py init</code> e depois <code>encrypt</code>.</div>`}
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar credencial" />
+    ${seg && seg !== "new" && !found && html`<div class="card">Credencial '${seg}' não encontrada. <a href="#credentials">Voltar às credenciais</a></div>`}
     <${ResourceTable} columns=${cols} rows=${credentials.map((c) => ({ ...c, _key: c.name }))}
       onRowClick=${(r) => setEditing(r)}
       actions=${(r) => html`
@@ -40,7 +51,7 @@ export function CredentialsPage() {
         <button class="sm danger" onClick=${() => setConfirm(r.name)}>Excluir</button>`}
       empty="Nenhuma credencial. Crie uma e depois defina a senha." />
 
-    ${editing && html`<${CredentialForm} cred=${editing} rev=${rev} onClose=${() => setEditing(null)}
+    ${editing && html`<${CredentialForm} key=${editing.name || "new"} cred=${editing} rev=${rev} onClose=${() => setEditing(null)}
         onSaved=${() => { setEditing(null); res.reload(); }} />`}
     ${rotating && html`<${RotateModal} target=${rotating} writable=${writable}
         onClose=${() => setRotating(null)} onSaved=${() => { setRotating(null); res.reload(); }} />`}
