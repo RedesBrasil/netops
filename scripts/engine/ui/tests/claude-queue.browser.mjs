@@ -119,16 +119,35 @@ try {
     assert.ok(!(await bubbles(page)).includes('depois 1'), 'item da fila não vira bolha antes de rodar');
     assert.deepEqual((await prompts(page)).slice(-2).map(p => p.queue), [true, true]);
 
-    // 3b) reordenar: ↓ no 1º troca a ordem; o 1º não sobe e o último não desce
-    const items = q.locator('.cc-queue-item');
-    assert.ok(await items.nth(0).getByTitle('Subir na fila').isDisabled());
-    assert.ok(await items.nth(1).getByTitle('Descer na fila').isDisabled());
-    await items.nth(0).getByTitle('Descer na fila').click();
+    // 3b) reordenar ARRASTANDO pela alça ⠿ (mouse; no celular, toque — ambos são Pointer Events)
+    const texts = () => q.locator('.cc-queue-text').allTextContents();
+    async function dragTo(fromIdx, toIdx) {
+      const grip = q.locator('.cc-queue-item').nth(fromIdx).locator('.cc-queue-grip');
+      const target = await q.locator('.cc-queue-item').nth(toIdx).boundingBox();
+      const g = await grip.boundingBox();
+      await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+      await page.mouse.down();
+      const y = toIdx > fromIdx ? target.y + target.height * 0.8 : target.y + target.height * 0.2;
+      await page.mouse.move(g.x + g.width / 2, y, { steps: 6 });
+      await page.mouse.up();
+    }
+    assert.equal(await q.locator('.cc-queue-item button[title^="Subir"]').count(), 0, 'sem setas');
+    const sentBefore = (await page.evaluate(() => window.__mock.ws.sent)).length;
+    await dragTo(0, 1);
     await page.waitForFunction(() => document.querySelector('.cc-queue-text')?.textContent === 'depois 2');
-    assert.deepEqual(await q.locator('.cc-queue-text').allTextContents(), ['depois 2', 'depois 1']);
-    assert.deepEqual((await page.evaluate(() => window.__mock.ws.sent)).at(-1), { type: 'queue_move', id: 'q1', to: 1 });
-    await items.nth(1).getByTitle('Subir na fila').click();     // volta: depois 1, depois 2
+    assert.deepEqual(await texts(), ['depois 2', 'depois 1']);
+    const moves = (await page.evaluate(() => window.__mock.ws.sent)).slice(sentBefore).filter(m => m.type === 'queue_move');
+    assert.deepEqual(moves, [{ type: 'queue_move', id: 'q1', to: 1 }], 'um queue_move só, ao soltar');
+    // arrastar e soltar no mesmo lugar não envia nada
+    const n0 = (await page.evaluate(() => window.__mock.ws.sent)).length;
+    const g0 = await q.locator('.cc-queue-grip').first().boundingBox();
+    await page.mouse.move(g0.x + 4, g0.y + 4); await page.mouse.down(); await page.mouse.move(g0.x + 4, g0.y + 6); await page.mouse.up();
+    assert.equal((await page.evaluate(() => window.__mock.ws.sent)).length, n0);
+    // teclado: alça focada + ↑ volta a ordem e o foco continua na alça
+    await q.locator('.cc-queue-item').nth(1).locator('.cc-queue-grip').focus();
+    await page.keyboard.press('ArrowUp');
     await page.waitForFunction(() => document.querySelector('.cc-queue-text')?.textContent === 'depois 1');
+    assert.ok(await page.evaluate(() => document.activeElement?.classList.contains('cc-queue-grip')), 'foco fica na alça');
 
     // 4) Esc na escolha cancela e mantém o texto para editar; NÃO interrompe o agente
     await type(page, 'rascunho');

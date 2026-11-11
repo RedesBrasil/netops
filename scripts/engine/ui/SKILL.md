@@ -274,7 +274,7 @@ a aba **pergunta** o que fazer:
   num único `result`). A bolha leva a etiqueta "durante a execução".
 - **Colocar na fila** (`F`): a mensagem fica na **fila do servidor** e só vira turno quando a
   tarefa atual **terminar por completo** (`ResultMessage`). Vários itens rodam em ordem, um turno
-  cada. A fila aparece acima da caixa: ↑/↓ reordenam (o de cima é o próximo), ⚡ manda um item já, × tira da fila. A bolha leva a etiqueta "da fila".
+  cada. A fila aparece acima da caixa: arraste pela alça ⠿ para reordenar (mouse ou toque; com a alça focada, ↑/↓ do teclado; o de cima é o próximo), ⚡ manda um item já, × tira da fila. A bolha leva a etiqueta "da fila".
 - **Cancelar** (Esc): volta a editar sem interromper o agente.
 
 Regras: a fila é **por sessão** e vive no servidor (`ClaudeWebSession._queue`, teto `MAX_QUEUE`=20).

@@ -886,16 +886,88 @@ function SendChoice({ text, onChoose, onCancel }) {
 }
 
 // Mensagens na fila do servidor: rodam uma por vez, cada uma quando o turno anterior termina.
+// Reordenar = arrastar pela alça ⠿ (Pointer Events: mouse E toque — o DnD nativo do HTML não
+// funciona em tela de toque). A lista reordena AO VIVO durante o arraste e só manda
+// `queue_move` ao soltar. Com a alça focada, ↑/↓ do teclado movem o item (acessibilidade).
 function QueueList({ queue, working, disabled, onRemove, onSendNow, onMove }) {
-  return html`<div class="cc-queue">
+  const listRef = useRef(null);
+  const [drag, setDrag] = useState(null);          // {id, items, from} durante o arraste
+  const dragRef = useRef(null); dragRef.current = drag;
+  const focusId = useRef(null);                     // devolve o foco à alça após mover pelo teclado
+
+  // Durante o arraste: escuta na janela (a linha muda de lugar no DOM e perderia o pointer capture).
+  useEffect(() => {
+    if (!drag) return;
+    const move = (e) => {
+      const d = dragRef.current; if (!d || !listRef.current) return;
+      e.preventDefault();
+      // Posição alvo = quantas OUTRAS linhas têm o meio acima do ponteiro (estável: não depende
+      // da linha arrastada, que já está se mexendo).
+      let to = 0;
+      for (const row of listRef.current.querySelectorAll("[data-qid]")) {
+        if (row.dataset.qid === d.id) continue;
+        const r = row.getBoundingClientRect();
+        if (e.clientY > r.top + r.height / 2) to++;
+      }
+      const cur = d.items.findIndex((x) => x.id === d.id);
+      if (to === cur) return;
+      const items = d.items.filter((x) => x.id !== d.id);
+      items.splice(to, 0, d.items[cur]);
+      setDrag({ ...d, items });
+    };
+    const up = () => {
+      const d = dragRef.current; setDrag(null);
+      if (!d) return;
+      const to = d.items.findIndex((x) => x.id === d.id);
+      if (to !== d.from && to >= 0) onMove(d.id, to);
+    };
+    const cancel = (e) => { if (e.key === "Escape") { e.preventDefault(); setDrag(null); } };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    window.addEventListener("keydown", cancel, true);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      window.removeEventListener("keydown", cancel, true);
+    };
+  }, [!!drag]);
+
+  useEffect(() => {
+    if (!focusId.current || !listRef.current) return;
+    const h = listRef.current.querySelector(`[data-qid="${focusId.current}"] .cc-queue-grip`);
+    focusId.current = null;   // uma vez só (o reordenamento otimista já renderizou a nova posição)
+    if (h && document.activeElement !== h) h.focus();
+  });
+
+  function startDrag(e, q, i) {
+    if (disabled || queue.length < 2 || (e.button != null && e.button !== 0)) return;
+    e.preventDefault();
+    focusId.current = null;
+    setDrag({ id: q.id, from: i, items: queue.slice() });
+  }
+  function onGripKey(e, q, i) {
+    const to = e.key === "ArrowUp" ? i - 1 : e.key === "ArrowDown" ? i + 1 : null;
+    if (to === null) return;
+    e.preventDefault();
+    if (to < 0 || to >= queue.length) return;
+    focusId.current = q.id;
+    onMove(q.id, to);
+  }
+
+  // Durante o arraste mostra a ordem provisória (sem perder itens que o servidor mudou no meio).
+  const shown = drag
+    ? [...drag.items.filter((x) => queue.some((q) => q.id === x.id)), ...queue.filter((q) => !drag.items.some((x) => x.id === q.id))]
+    : queue;
+  return html`<div class=${"cc-queue" + (drag ? " dragging" : "")} ref=${listRef}>
     <div class="cc-queue-head">Na fila (${queue.length}) — ${working ? "roda quando a tarefa atual terminar" : "aguardando: ⚡ envia, ou roda no fim da próxima tarefa"}</div>
-    ${queue.map((q, i) => html`<div class="cc-queue-item" key=${q.id}>
+    ${shown.map((q, i) => html`<div class=${"cc-queue-item" + (drag && drag.id === q.id ? " drag" : "")} key=${q.id} data-qid=${q.id}>
+      ${queue.length > 1 && html`<button class="cc-queue-grip" disabled=${disabled}
+        title="Arraste para reordenar (ou ↑/↓ com a alça focada)" aria-label=${"Reordenar: posição " + (i + 1) + " de " + shown.length}
+        onPointerDown=${(e) => startDrag(e, q, i)} onKeyDown=${(e) => onGripKey(e, q, i)}>⠿</button>`}
       <span class="cc-queue-n">${i + 1}</span>
       <span class="cc-queue-text" title=${q.text}>${q.text}</span>
-      ${queue.length > 1 && html`<button class="cc-iconbtn" disabled=${disabled || i === 0}
-        title="Subir na fila" aria-label="Subir na fila" onClick=${() => onMove(q.id, i - 1)}>↑</button>
-      <button class="cc-iconbtn" disabled=${disabled || i === queue.length - 1}
-        title="Descer na fila" aria-label="Descer na fila" onClick=${() => onMove(q.id, i + 1)}>↓</button>`}
       <button class="cc-iconbtn" disabled=${disabled} title="Enviar agora (o agente incorpora na tarefa atual)" onClick=${() => onSendNow(q.id)}>⚡</button>
       <button class="cc-iconbtn" disabled=${disabled} title="Tirar da fila" onClick=${() => onRemove(q.id)}>×</button>
     </div>`)}

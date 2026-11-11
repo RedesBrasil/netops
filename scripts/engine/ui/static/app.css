@@ -587,3 +587,8 @@ th.sortable:hover { color: var(--text); }
 .fb-count { margin-left:auto; color:var(--muted); font-size:12.5px; }
 @media (max-width: 720px) { .fb-search { flex-basis:100%; max-width:none; } .fb-count { margin-left:0; width:100%; } }
 .help + .fb { margin-top:10px; }
+/* Alça de arrastar da fila (mouse e toque). touch-action:none impede o scroll de roubar o gesto. */
+.cc-queue-grip { border: none; background: transparent; color: var(--muted); cursor: grab; padding: 2px 4px; font-size: 14px; line-height: 1; touch-action: none; user-select: none; border-radius: 4px; }
+.cc-queue-grip:hover:not(:disabled), .cc-queue-grip:focus-visible { color: var(--text); background: var(--surface-2); }
+.cc-queue.dragging, .cc-queue.dragging * { cursor: grabbing !important; user-select: none; }
+.cc-queue-item.drag { background: var(--surface-2); border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
