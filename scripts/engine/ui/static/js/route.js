@@ -50,6 +50,8 @@ export function useMenuRoute(menu) {
     open: (segs) => go([].concat(segs), params, false),
     close: () => go([], params, false),
     setParams: (patch) => go(segments, { ...params, ...patch }, true),
+    pushParams: (patch) => go(segments, { ...params, ...patch }, false),   // abre modal/painel via parâmetro (com histórico)
+    openWith: (segs, patch = {}) => go([].concat(segs), { ...params, ...patch }, false),
   };
 }
 

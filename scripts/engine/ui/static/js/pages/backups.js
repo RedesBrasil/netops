@@ -4,6 +4,8 @@
 // Config só — a execução no horário é feita por um runner externo.
 import { html, useState, useEffect, useRef, api, useResource, Spinner, toast, handleError, Modal, Tabs, ConfirmDialog } from "../ui.js";
 import { authToken } from "../api.js";
+import { useMenuRoute, matchText } from "../route.js";
+import { FilterBar } from "../components.js";
 
 const FREQS = [["daily", "Diária"], ["weekly", "Semanal"], ["hourly", "De hora em hora"]];
 const WEEKDAYS = [["mon", "Seg"], ["tue", "Ter"], ["wed", "Qua"], ["thu", "Qui"],
@@ -357,15 +359,30 @@ export function BackupsPage() {
   const candRes = useResource("/backups/candidates");
   const hostsRes = useResource("/backups/hosts");
   const runsRes = useResource("/backups/runs");
-  const [tab, setTab] = useState("servicos");
+  // URL (core/rules/urls-navegacao.md):
+  //   #backups[/services[/<id>|/new]]  #backups/storage[/<host>]  ?q=  &run=<id>  &file=<caminho>  &diffa=&diffb=
+  const r = useMenuRoute("backups");
+  const tab = r.segments[0] === "storage" ? "armazenamento" : "servicos";
+  const itemSeg = r.segments[1] || null;
+  const q = r.params.q || "";
+  const setTab = (k) => r.openWith(k === "armazenamento" ? ["storage"] : [], { q: "" });
   const [services, setServices] = useState([]);
   const [rev, setRev] = useState(null);
-  const [editing, setEditing] = useState(null);   // { initial: service|null } ou null
   const [viewing, setViewing] = useState(null);
   const [runs, setRuns] = useState({});         // serviceId -> run_id (mais recente)
-  const [runModal, setRunModal] = useState(null);
-  const [hostModal, setHostModal] = useState(null);
+  const runModal = r.params.run || null;
+  const setRunModal = (id) => r.pushParams({ run: id || "" });
   const [diffModal, setDiffModal] = useState(null);
+  const closeItem = () => r.openWith(tab === "armazenamento" ? ["storage"] : ["services"]);
+  const fileParam = r.params.file || "", diffA = r.params.diffa || "", diffB = r.params.diffb || "";
+  useEffect(() => {
+    if (!fileParam) { setViewing(null); return; }
+    api.get("/backups/files/view?path=" + encodeURIComponent(fileParam)).then(setViewing).catch((e) => { handleError(e); r.setParams({ file: "" }); });
+  }, [fileParam]);
+  useEffect(() => {
+    if (!diffA || !diffB) { setDiffModal(null); return; }
+    api.get("/backups/files/diff?a=" + encodeURIComponent(diffA) + "&b=" + encodeURIComponent(diffB)).then(setDiffModal).catch((e) => { handleError(e); r.setParams({ diffa: "", diffb: "" }); });
+  }, [diffA, diffB]);
 
   useEffect(() => {
     if (!cfgRes.data) return;
@@ -394,10 +411,10 @@ export function BackupsPage() {
   async function upsertService(svc) {
     const exists = services.some((s) => s.id === svc.id);
     const next = exists ? services.map((s) => (s.id === svc.id ? svc : s)) : [...services, svc];
-    if (await persist(next)) setEditing(null);
+    if (await persist(next)) closeItem();
   }
   async function removeService(id) {
-    if (await persist(services.filter((s) => s.id !== id))) setEditing(null);
+    if (await persist(services.filter((s) => s.id !== id))) closeItem();
   }
 
   async function startRun(sid) {
@@ -418,13 +435,11 @@ export function BackupsPage() {
   }
 
   async function openDiff(a, b) {
-    try { setDiffModal(await api.get("/backups/files/diff?a=" + encodeURIComponent(a) + "&b=" + encodeURIComponent(b))); }
-    catch (e) { handleError(e); }
+    r.pushParams({ diffa: a, diffb: b });
   }
 
   async function view(path) {
-    try { setViewing(await api.get("/backups/files/view?path=" + encodeURIComponent(path))); }
-    catch (e) { handleError(e); }
+    r.pushParams({ file: path });
   }
   async function download(path) {
     try {
@@ -463,20 +478,28 @@ export function BackupsPage() {
   const allGroups = (candRes.data && candRes.data.groups) || [];
   const backupHosts = (hostsRes.data && hostsRes.data.hosts) || [];
   const storeDir = (hostsRes.data && hostsRes.data.dir) || "";
+  const hostKey = (h) => (h.host != null ? String(h.host) : "dir-" + h.directory);
+  const editing = tab === "servicos" && itemSeg
+    ? (itemSeg === "new" ? { initial: null } : services.find((x) => x.id === itemSeg) ? { initial: services.find((x) => x.id === itemSeg) } : null) : null;
+  const hostModal = tab === "armazenamento" && itemSeg ? backupHosts.find((h) => hostKey(h) === itemSeg) || null : null;
+  const missing = itemSeg && !editing && !hostModal && !(tab === "armazenamento" && hostsRes.loading && !hostsRes.data);
+  const svcLink = (id) => "#backups/services/" + encodeURIComponent(id);
+  const shownServices = services.filter((x) => matchText(q, x.name, x.id));
+  const shownHosts = backupHosts.filter((h) => matchText(q, hostLabel(h), h.directory));
 
   const servicos = html`<div>
     <div style="display:flex; align-items:center; gap:12px; margin:4px 0 12px">
       <div class="help">Cada serviço define seus próprios hosts/grupos e agendamento.</div>
       <span style="flex:1"></span>
-      <button class="primary" onClick=${() => setEditing({ initial: null })}>＋ Criar serviço</button>
+      <button class="primary" onClick=${() => r.open(["services", "new"])}>＋ Criar serviço</button>
     </div>
     ${services.length === 0
       ? html`<div class="card bk-empty">Nenhum serviço de backup configurado. Clique em <b>Criar serviço</b>.</div>`
       : html`<div class="bk-svc-list">
-        ${services.map((s) => html`<div key=${s.id} class="card bk-svc" onClick=${() => setEditing({ initial: s })}>
+        ${shownServices.map((s) => html`<div key=${s.id} class="card bk-svc" onClick=${() => r.open(["services", s.id])}>
           <div class="bk-svc-main">
             <div class="bk-svc-name">
-              ${s.name}
+              <a href=${svcLink(s.id)} onClick=${(e) => e.stopPropagation()}>${s.name}</a>
               ${s.enabled !== false ? html`<span class="badge ok">ativo</span>` : html`<span class="badge">pausado</span>`}
             </div>
             <div class="help">${scheduleSummary(s.schedule)} · ${targetsSummary(s.targets)} · ${retentionSummary(s.retention)}</div>
@@ -484,7 +507,7 @@ export function BackupsPage() {
           <div class="bk-svc-btns" onClick=${(e) => e.stopPropagation()}>
             <button class="sm primary" onClick=${() => startRun(s.id)}>▶ Run</button>
             ${runs[s.id] && html`<button class="sm" onClick=${() => setRunModal(runs[s.id])}>acompanhar</button>`}
-            <button class="sm" onClick=${() => setEditing({ initial: s })}>Editar</button>
+            <button class="sm" onClick=${() => r.open(["services", s.id])}>Editar</button>
           </div>
         </div>`)}
       </div>`}
@@ -502,13 +525,13 @@ export function BackupsPage() {
             <table>
               <thead><tr><th>Host</th><th>Backups</th><th>Último</th><th>Tamanho</th><th style="text-align:right">Ações</th></tr></thead>
               <tbody>
-                ${backupHosts.map((h) => html`<tr key=${h.host != null ? h.host : "unassigned:" + h.directory}>
-                  <td>${hostLabel(h)}</td>
+                ${shownHosts.map((h) => html`<tr key=${h.host != null ? h.host : "unassigned:" + h.directory}>
+                  <td><a href=${"#backups/storage/" + encodeURIComponent(hostKey(h))}>${hostLabel(h)}</a></td>
                   <td>${h.count}</td>
                   <td>${fmtDate(h.latest_mtime)}</td>
                   <td>${fmtSize(h.total_size)}</td>
                   <td><div class="bk-actions">
-                    <button class="sm" onClick=${() => setHostModal(h)}>Ver Backups</button>
+                    <button class="sm" onClick=${() => r.open(["storage", hostKey(h)])}>Ver Backups</button>
                     <button class="sm btn-ok" onClick=${() => downloadZip(h.backups.map((b) => b.path), hostLabel(h) + "-backups")}>Baixar todos</button>
                   </div></td>
                 </tr>`)}
@@ -525,31 +548,34 @@ export function BackupsPage() {
       { key: "servicos", label: "Serviços de Backup" },
       { key: "armazenamento", label: "Armazenamento de Backup" },
     ]} />
-    <div style="margin-top:12px">${tab === "servicos" ? servicos : armazenamento}</div>
+    <div style="margin-top:12px">
+      <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${tab === "servicos" ? "Buscar serviço" : "Buscar host"} />
+      ${missing && html`<div class="card">Item '${itemSeg}' não encontrado. <a href=${tab === "servicos" ? "#backups/services" : "#backups/storage"}>Voltar</a></div>`}
+      ${tab === "servicos" ? servicos : armazenamento}</div>
 
-    ${editing && html`<${ServiceEditor}
+    ${editing && html`<${ServiceEditor} key=${itemSeg}
       initial=${editing.initial}
       allHosts=${allHosts} allGroups=${allGroups}
       existingIds=${services.map((s) => s.id)}
-      onClose=${() => setEditing(null)}
+      onClose=${closeItem}
       onSave=${upsertService}
       onDelete=${() => removeService(editing.initial.id)} />`}
 
     ${runModal && html`<${RunModal} runId=${runModal} onClose=${() => setRunModal(null)} onDone=${() => hostsRes.reload()} />`}
 
     ${hostModal && html`<${HostBackupsModal} host=${hostModal} onView=${view} onDownloadOne=${download}
-      onDownloadZip=${downloadZip} onDiff=${openDiff} onDelete=${deleteBackups} onClose=${() => setHostModal(null)} />`}
+      onDownloadZip=${downloadZip} onDiff=${openDiff} onDelete=${deleteBackups} onClose=${closeItem} />`}
 
-    ${diffModal && html`<${DiffModal} data=${diffModal} onClose=${() => setDiffModal(null)} />`}
+    ${diffModal && html`<${DiffModal} data=${diffModal} onClose=${() => r.pushParams({ diffa: "", diffb: "" })} />`}
 
-    ${viewing && html`<${Modal} title=${viewing.path} wide onClose=${() => setViewing(null)}>
+    ${viewing && html`<${Modal} title=${viewing.path} wide onClose=${() => r.pushParams({ file: "" })}>
       ${viewing.binary
         ? html`<div class="help">Arquivo binário — use “Baixar”.</div>`
         : html`<pre class="raw md-readbox bk-viewer">${viewing.text}</pre>`}
       ${viewing.truncated && html`<div class="help" style="margin-top:6px">Exibindo os primeiros 2 MB do arquivo.</div>`}
       <div class="modal-actions" style="margin-top:10px">
         <button class="btn-ok" onClick=${() => download(viewing.path)}>Baixar</button>
-        <button onClick=${() => setViewing(null)}>Fechar</button>
+        <button onClick=${() => r.pushParams({ file: "" })}>Fechar</button>
       </div>
     <//>`}
   </div>`;
