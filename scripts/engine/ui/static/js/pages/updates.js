@@ -1,5 +1,6 @@
 // Atualizações oficiais: notas como texto, sem HTML remoto e sem tokens no navegador.
 import { html, useState, useEffect, useRef, api, Modal, Spinner } from "../ui.js";
+import { useMenuRoute } from "../route.js";
 
 const JOB_KEY = "netops_update_job";
 const FINISHED = new Set(["completed", "failed", "rolled_back", "recovery_failed", "migration_failed"]);
@@ -15,7 +16,10 @@ const PHASES = {
 
 // part: "version" = só o número (topbar); "button" = botão + painel (Configuração).
 export function UpdatesControl({ part = "button" } = {}) {
-  const [open, setOpen] = useState(!!sessionStorage.getItem(JOB_KEY));
+  // URL: #settings/updates abre o painel (core/rules/urls-navegacao.md)
+  const rt = useMenuRoute("settings");
+  const open = part === "button" && rt.segments[0] === "updates";
+  const setOpen = (v) => (v ? rt.open("updates") : rt.close());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -26,6 +30,11 @@ export function UpdatesControl({ part = "button" } = {}) {
   const pending = sessionStorage.getItem(JOB_KEY);
   const mounted = useRef(true);
 
+  useEffect(() => {   // deep link / job em andamento reabrem o painel
+    if (part !== "button") return;
+    if (sessionStorage.getItem(JOB_KEY)) { if (!open) setOpen(true); }
+    else if (open) check();
+  }, []);
   useEffect(() => {
     mounted.current = true;
     api.get("/updates/status").then((d) => { if (mounted.current) setData(d); }).catch(() => {});

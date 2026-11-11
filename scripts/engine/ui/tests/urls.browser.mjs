@@ -28,6 +28,26 @@ const CASES = {
   backups: { row: ".bk-svc a[href^='#backups/services/']", open: ".modal", q: "Servico B", qRows: -1, extra: [
     ["#backups/storage", "a[href^='#backups/storage/']"], ["#backups/storage/1", ".modal:has-text('Backups')"],
     ["#backups/storage/1?file=by-id%2F1%2Fa.rsc", ".modal pre"], ["#backups/services/new", ".modal"]] },
+  smoke: { custom: async (page, BASE, { assert, settle, hash }) => {   // todo menu abre sem erro, com URL e item ativo na sidebar
+    await page.goto(`${BASE}/#hosts`); await page.locator(".sidebar a").first().waitFor();
+    const hrefs = await page.locator(".sidebar a").evaluateAll((a) => a.map((x) => x.getAttribute("href")));
+    assert.ok(hrefs.length >= 12, `smoke: ${hrefs.length} menus`);
+    for (const h of hrefs) {
+      await page.goto(`${BASE}/${h}`); await settle();
+      assert.ok(hash().startsWith(h), `smoke: ${h} → ${hash()}`);
+      assert.equal(await page.locator(`.sidebar a[href="${h}"].active`).count(), 1, `smoke: ${h} ativo`);
+      await page.goto(`${BASE}/${h}/item-inexistente-xyz`); await settle();
+      assert.equal(await page.locator(`.sidebar a[href="${h}"].active`).count(), 1, `smoke: ${h}/x ativo`);
+    }
+  } },
+  settings: { custom: async (page, BASE, { assert, settle, hash }) => {
+    await page.goto(`${BASE}/#settings`); await page.getByRole("button", { name: /Verificar atualizações/ }).click(); await settle();
+    assert.equal(hash(), "#settings/updates"); await page.locator(".modal").first().waitFor();
+    await page.reload(); await page.locator(".modal").first().waitFor();
+    assert.equal(hash(), "#settings/updates", "settings: F5 mantém painel");
+    await page.goBack(); await settle();
+    assert.equal(await page.locator(".modal").count(), 0, "settings: Voltar fecha painel");
+  } },
   scripts: { row: "table a[href^='#scripts/']", open: ".modal", q: "ssh", qRows: -1, deep: ["#scripts?sort=location&dir=desc", "th:has-text('Pasta'):has-text('▼')"] },
   credentials: { row: "table a[href^='#credentials/']", open: ".modal", q: "demo", qRows: 1, deep: ["#credentials/cred_demo/password", ".modal:has-text('Definir password')"] },
   reports: { row: "table a[href^='#reports/']", open: ".modal", q: "b.md", qRows: 1 },
