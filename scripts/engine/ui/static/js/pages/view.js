@@ -19,7 +19,7 @@ export function ReportsPage() {
   ];
   return html`<div>
     <div class="page-title"><h1>Relatórios</h1></div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar relatório" />
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar relatório" count=${res.data.reports.filter((x) => matchText(q, x.file)).length} total=${res.data.reports.length} />
     <${ResourceTable} columns=${cols} rows=${res.data.reports.filter((x) => matchText(q, x.file)).map((x) => ({ ...x, _key: x.file }))}
       onRowClick=${(r) => setOpen(r.file)} empty="Nenhum relatório em reports/." />
     ${open && html`<${ReportView} key=${open} file=${open} onClose=${() => setOpen(null)} />`}
@@ -50,7 +50,7 @@ export function RunsPage() {
   ];
   return html`<div>
     <div class="page-title"><h1>Execuções</h1></div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar execução"
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar execução" count=${res.data.runs.filter((x) => (!status || x.status === status) && matchText(q, x.id)).length} total=${res.data.runs.length}
       selects=${[{ key: "status", label: "Status", value: status, options: [...new Set(res.data.runs.map((x) => x.status).filter(Boolean))].sort() }]} />
     <${ResourceTable} columns=${cols} rows=${res.data.runs.filter((x) => (!status || x.status === status) && matchText(q, x.id)).map((x) => ({ ...x, _key: x.id }))}
       onRowClick=${(r) => setOpen(r.id)} empty="Nenhuma execução em runs/ (criadas durante workflows)." />

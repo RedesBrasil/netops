@@ -48,7 +48,7 @@ function KnowledgeKind({ kind, r }) {
   const link = (r0, label) => html`<a href=${"#" + (kind === "best-practices" ? "practices" : "configs") + "/" + r0.file.split("/").map(encodeURIComponent).join("/")} onClick=${(e) => e.stopPropagation()}>${label}</a>`;
   cols[0].render = (r0) => link(r0, html`<b>${r0.titulo || r0.topico}</b>`);
   return html`<div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar arquivo"
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar arquivo" count=${rows.length} total=${all.length}
       selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: [...new Set(all.map((e) => e.vendor))].sort() }]} />
     <${ResourceTable} columns=${cols} rows=${rows} onRowClick=${(r) => setOpen(split(r.file))} empty="Catálogo vazio." />
     ${files?.length ? html`<div class="help" style="margin-top:8px">Arquivos em disco: ${files.join(", ")}</div>` : ""}

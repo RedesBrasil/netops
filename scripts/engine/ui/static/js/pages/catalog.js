@@ -41,7 +41,7 @@ function Kind({ kind, r }) {
        { key: "function", label: "Função", render: (r) => r.function || "—" }];
   cols[0].render = ((orig) => (row) => html`<a href=${"#" + kind + "/" + encodeURIComponent(row.file)} onClick=${(e) => e.stopPropagation()}>${orig(row)}</a>`)(cols[0].render);
   return html`<div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar" />
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar" count=${items.length} total=${(res.data[kind] || []).length} />
     <${ResourceTable} columns=${cols} rows=${items.map((i) => ({ ...i, _key: i.file }))}
       onRowClick=${(r) => setOpen(r.file)} empty="Nada aqui." />
     ${open && html`<${Editor} key=${open} kind=${kind} file=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}

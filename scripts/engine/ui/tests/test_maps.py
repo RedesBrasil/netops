@@ -344,3 +344,16 @@ def test_legacy_site_id_cannot_be_recreated_as_custom_map(client):
     ident = 'site-' + hashlib.sha256(b'matriz').hexdigest()[:20]
     r = save(client, {'id': ident, 'name': 'Personalizado', 'kind': 'custom'})
     assert r.status_code == 409  # ID reservado pelo alias do mapa automático antigo
+
+
+def test_delete_any_map_is_soft_and_not_recreated(client, env):
+    assert save(client, {'id': 'custom', 'name': 'Mapa adicional', 'kind': 'custom'}).status_code == 200
+    s = snapshot(client)
+    r = client.delete('/api/maps/custom', headers={'If-Match': s['rev']})
+    assert r.status_code == 200
+    assert 'custom' not in [m['id'] for m in r.json()['maps']]
+    assert 'custom' in (env_maps := (env / 'network/maps.yaml').read_text())  # registro permanece no arquivo
+    assert 'deleted: true' in env_maps
+    s = snapshot(client)
+    assert 'custom' not in [m['id'] for m in s['maps']]
+    assert client.delete('/api/maps/all', headers={'If-Match': s['rev']}).status_code == 422

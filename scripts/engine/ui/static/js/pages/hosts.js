@@ -43,7 +43,7 @@ export function HostsPage() {
   return html`<div>
     <div class="page-title"><h1>Hosts</h1><span class="spacer"></span>
       <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Novo host</button></div>
-    <${FilterBar} pretty=${true} q=${q} onChange=${setParams} placeholder="Buscar por nome ou IP" count=${hosts.length} total=${allHosts.length}
+    <${FilterBar} q=${q} onChange=${setParams} placeholder="Buscar por nome ou IP" count=${hosts.length} total=${allHosts.length}
       selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: opts((h) => h.effective.vendor) },
                  { key: "role", label: "Role", value: role, options: opts((h) => h.effective.role) },
                  { key: "group", label: "Grupo", value: group, options: opts((h) => h.explicit.group) }]} />
@@ -210,7 +210,7 @@ export function GroupsPage() {
   return html`<div>
     <div class="page-title"><h1>Grupos</h1><span class="spacer"></span>
       <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Novo grupo</button></div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar grupo"
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar grupo" count=${groups.length} total=${allGroups.length}
       selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: optsOf("vendor") }, { key: "role", label: "Role", value: role, options: optsOf("role") }]} />
     ${seg && seg !== "new" && !editing && html`<div class="card">Grupo '${seg}' não encontrado. <a href="#groups">Voltar aos grupos</a></div>`}
     <${ResourceTable} columns=${cols} rows=${groups.map((g) => ({ ...g, _key: g.name }))}

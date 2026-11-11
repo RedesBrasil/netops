@@ -586,3 +586,4 @@ th.sortable:hover { color: var(--text); }
 .fb-clear:hover { background:var(--accent-weak); }
 .fb-count { margin-left:auto; color:var(--muted); font-size:12.5px; }
 @media (max-width: 720px) { .fb-search { flex-basis:100%; max-width:none; } .fb-count { margin-left:0; width:100%; } }
+.help + .fb { margin-top:10px; }

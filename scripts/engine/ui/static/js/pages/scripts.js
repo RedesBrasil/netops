@@ -39,9 +39,8 @@ export function ScriptsPage() {
       <button class="primary" onClick=${() => setCreating(true)}>+ Novo</button></div>
     <div class="help">Scripts operacionais em <span class="mono">scripts/tools/</span> (Python/Shell) — acesso, diagnóstico, análise. O motor do NetOps não aparece aqui. Execução: Terminal/Claude.</div>
 
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Pesquisar nome, pasta, descrição…"
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Pesquisar nome, pasta, descrição…" count=${rows.length} total=${all.length}
       selects=${[{ key: "location", label: "Pasta", value: location, options: locations.filter((l) => l !== "(raiz)") }, { key: "lang", label: "Tipo", value: lang, options: [...new Set(all.map((s) => s.lang).filter(Boolean))].sort() }]} />
-    <div class="help" style="margin-bottom:8px">${rows.length}/${all.length}</div>
     ${open && res.data && !all.some((s) => s.path === open) && html`<div class="card">Script '${open}' não encontrado. <a href="#scripts">Voltar aos scripts</a></div>`}
 
     ${rows.length === 0 ? html`<div class="card"><div class="empty">Nenhum script.</div></div>` : html`

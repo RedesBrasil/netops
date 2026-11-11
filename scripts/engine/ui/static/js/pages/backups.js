@@ -549,7 +549,8 @@ export function BackupsPage() {
       { key: "armazenamento", label: "Armazenamento de Backup" },
     ]} />
     <div style="margin-top:12px">
-      <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${tab === "servicos" ? "Buscar serviço" : "Buscar host"} />
+      <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${tab === "servicos" ? "Buscar serviço" : "Buscar host"}
+        count=${tab === "servicos" ? shownServices.length : shownHosts.length} total=${tab === "servicos" ? services.length : backupHosts.length} />
       ${missing && html`<div class="card">Item '${itemSeg}' não encontrado. <a href=${tab === "servicos" ? "#backups/services" : "#backups/storage"}>Voltar</a></div>`}
       ${tab === "servicos" ? servicos : armazenamento}</div>
 

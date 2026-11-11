@@ -167,7 +167,7 @@ export function IconPicker({ value, onChange, error, title = "Ícone do host", d
 
 /* ---------------------------- FilterBar --------------------------------- */
 // Filtros que vivem na URL: o chamador passa valores e `onChange(patch)` (useMenuRoute().setParams).
-export function FilterBar({ q = "", selects = [], onChange, placeholder = "Buscar", pretty = false, count = null, total = null }) {
+export function FilterBar({ q = "", selects = [], onChange, placeholder = "Buscar", pretty = true, count = null, total = null }) {
   const active = q || selects.some((s) => s.value);
   const clear = () => onChange({ q: "", ...Object.fromEntries(selects.map((s) => [s.key, ""])) });
   if (pretty) return html`<div class="fb" role="search">
