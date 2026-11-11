@@ -163,3 +163,9 @@ leitura durante a sequência. Delete em campos de texto mantém a edição norma
 `node-state.test.mjs` cobre a pilha mista, limites, duplicação e limpeza de grupos sem mutar
 o snapshot anterior. `tests/maps-editing.browser.mjs` verifica os recursos no navegador
 com dados fictícios isolados.
+
+O React Flow omite `onPaneClick` no toque quando `selectionOnDrag` está ativo. O canvas
+reconhece um toque curto no fundo por `pointerId` e deslocamento máximo de 6px para limpar
+a seleção; arrastes continuam sendo pan e a seleção por mouse permanece disponível também
+em dispositivos híbridos. Seleção múltipla, conexão e duplicação devolvem o foco ao canvas,
+permitindo Escape/Delete imediatamente após fechar o menu.
