@@ -29,6 +29,10 @@ prompt/paginação e fala com 100+ fabricantes via `device_type`.
 | `engine/vault/` | Cofre de credenciais — CLI `init`/`encrypt`/`unlock`/`lock`/`status`/`change-password` |
 | `engine/ui/` | Console web (FastAPI + SPA). Subir SEMPRE por `scripts/engine/ui/start.sh` |
 
+`engine/update/` contém política de distribuição, cliente GitHub, pacote, snapshot, journal e
+supervisor efêmero de atualização. `SKILL.md` documenta uso e recuperação. Os módulos Python
+seguem a separação de engine, não aparecem como scripts operacionais e nunca conectam em equipamentos.
+
 ### `tools/` — scripts operacionais (CRUD pela UI)
 
 | Pasta | Conteúdo |

@@ -15,6 +15,7 @@ digitada na UI -> derive_key -> sessão); use --no-vault-unlock para exigir o te
 from __future__ import annotations
 
 import argparse
+import os
 import socket
 import sys
 import threading
@@ -132,7 +133,7 @@ def main() -> int:
     from app import create_app  # noqa: PLC0415  (importa depois de setar STATE)
     application = create_app()
 
-    port = _free_port(args.host, args.port)
+    port = args.port if os.environ.get("NETOPS_UPDATE_MANAGED") == "1" else _free_port(args.host, args.port)
     url = f"http://{args.host}:{port}/"
 
     print("\n  NetOps Console")

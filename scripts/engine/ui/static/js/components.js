@@ -4,7 +4,7 @@ import {
   html, useState, useEffect, useRef, api, Badge, CopyButton, Spinner, Modal,
   vaultStore, useStore, refreshVault, toast, handleError,
 } from "./ui.js";
-import { setAuthToken } from "./api.js";
+import { authToken, setAuthToken } from "./api.js";
 // Re-export dos diálogos base p/ as páginas poderem importar tudo de components.js.
 export { Modal, ConfirmDialog, ConflictDialog, Tabs } from "./ui.js";
 
@@ -253,6 +253,7 @@ export function LoginScreen({ onAuthed }) {
       setPw("");
       setAuthToken(r.auth_token);
       await refreshVault();
+      if (authToken() !== r.auth_token) return;
       onAuthed && onAuthed();
     } catch (e2) {
       if (e2.status === 401) setErr("Senha mestra incorreta.");

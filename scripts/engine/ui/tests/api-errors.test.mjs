@@ -18,3 +18,27 @@ test('campos ausentes usam mensagem legível e payloads desconhecidos não quebr
   assert.deepEqual(new ValidationError(422, { detail: 'Falha' }).fieldErrors, []);
   assert.equal(new ApiError(409, { detail: 'Arquivo mudou' }).message, 'Arquivo mudou');
 });
+
+test('ícone de forma rejeitado como campo extra indica backend incompatível', () => {
+  for (const loc of [['body', 'map', 'objects', 0, 'icon'], ['map', 'objects', 2, 'icon']]) {
+    const error = new ValidationError(422, { detail: [{ loc, type: 'extra_forbidden', msg: 'Extra inputs are not permitted', input: 'não expor' }] });
+    assert.match(error.recoveryHint, /Atualize o NetOps e reinicie o console no servidor/);
+    assert.match(error.recoveryHint, /ainda não foram salvos/);
+    assert.ok(!error.recoveryHint.includes('não expor'));
+    assert.equal(error.fieldErrors[0].loc, loc.filter(part => part !== 'body').join('/'));
+  }
+});
+
+test('ícones inválidos e outros campos extras continuam como erros de validação', () => {
+  const cases = [
+    { loc: ['body', 'map', 'objects', 0, 'icon'], type: 'value_error' },
+    { loc: ['body', 'map', 'objects', 0, 'icon'], type: 'string_pattern_mismatch' },
+    { loc: ['body', 'map', 'objects', 0, 'unknown'], type: 'extra_forbidden' },
+    { loc: ['body', 'icon'], type: 'extra_forbidden' },
+    { loc: ['body', 'map', 'objects', 'icon'], type: 'extra_forbidden' },
+    { loc: ['body', 'map', 'objects', '0', 'icon'], type: 'extra_forbidden' },
+  ];
+  for (const detail of cases) assert.equal(new ValidationError(422, { detail: [detail] }).recoveryHint, null);
+  assert.equal(new ValidationError(422, { errors: [{ loc: 'map/objects/0/icon', msg: 'Ícone inválido' }] }).recoveryHint, null);
+  assert.equal(new ValidationError(422, { detail: 'Falha' }).recoveryHint, null);
+});

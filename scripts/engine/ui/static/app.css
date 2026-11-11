@@ -46,6 +46,24 @@ code, .mono { font-family: var(--mono); }
 .page-title h1 { font-size: 20px; margin: 0; }
 .page-title .spacer { flex: 1; }
 
+/* Releases: notas legíveis, sem HTML remoto. */
+.updates-control { display: flex; align-items: center; gap: 8px; }
+.updates-version { color: var(--muted); font-size: 12px; }
+.updates-panel { max-width: 75ch; }
+.update-release { padding: 16px 0; border-top: 1px solid var(--border); }
+.update-release h3 { margin: 0 0 8px; }
+.update-release small { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 12px; }
+.update-changelog { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
+.updates-progress, .updates-confirm { border-left: 3px solid var(--accent); padding: 8px 14px; background: var(--surface-2); margin: 12px 0; }
+.updates-progress code { overflow-wrap: anywhere; }
+.updates-error { color: var(--danger); }
+.updates-confirm button { margin: 4px 8px 4px 0; }
+@media (max-width: 650px) {
+  .topbar { gap: 6px; }
+  .topbar .net, .updates-version { display: none; }
+  .updates-control > button { max-width: 125px; white-space: normal; line-height: 1.1; }
+}
+
 /* botões */
 button, .btn { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--surface);
   color: var(--text); padding: 6px 12px; border-radius: 6px; }

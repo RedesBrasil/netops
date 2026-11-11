@@ -33,6 +33,14 @@ def env(tmp_path, monkeypatch):
     cp("core/config/project-config.yaml")
     cp("memory/MEMORY.md")
 
+    monkeypatch.setattr(deps, "NETOPS_ROOT", tmp_path)
+    monkeypatch.setattr(deps, "DATA_ROOT", tmp_path)
+    monkeypatch.setattr(deps, "BACKUPS_RUNS", tmp_path / "runs" / "backups")
+    cp("core/config/core-config.yaml")
+    deps.STATE.update_pending = False
+    deps.STATE.active_writes = 0
+    deps.STATE.active_sessions = 0
+    deps.STATE.active_requests = 0
     monkeypatch.setattr(deps, "HOSTS_FILE", tmp_path / "network" / "hosts.yaml")
     monkeypatch.setattr(deps, "CREDS_FILE", tmp_path / "network" / "credentials.yaml")
     monkeypatch.setattr(deps, "MAPS_FILE", tmp_path / "network" / "maps.yaml")

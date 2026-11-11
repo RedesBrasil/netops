@@ -28,6 +28,13 @@ netops/
 └── core/              Config, schemas, templates e regras do framework
 ```
 
+### Distribuição e atualização
+
+O motor de atualização vive em `scripts/engine/update/`, com `SKILL.md`. Estado e snapshots
+privados ficam em `.netops-update/` (git-ignorado). Releases seguem `core/rules/releases.md`,
+com versão única em `core/config/core-config.yaml`, notas em `CHANGELOG.md` e workflow em
+`.github/workflows/release.yml`. Pacotes distribuem somente caminhos autorizados, nunca dados locais.
+
 ## 2. Convenções de nomenclatura
 
 | Item | Padrão | Exemplo |

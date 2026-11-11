@@ -103,7 +103,7 @@ function MapContextMenu({ menu, onClose, children }) {
     style={{ left: menu.x, top: menu.y }} onKeyDown={keyboard} onContextMenu={event => event.preventDefault()}>{children}</div>;
 }
 export function MapEditor(props) { return <ReactFlowProvider><Editor {...props} /></ReactFlowProvider>; }
-function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onHost, onLink, onSwitch, onNewMap, onDeleteMap, onError, onRetry, onReload, onBusy, IconPicker }) {
+function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, onSave, onHost, onLink, onSwitch, onNewMap, onDeleteMap, onError, onRetry, onReload, onBusy, IconPicker }) {
   const [layout, setLayout] = useState(map), [nodes, setNodes] = useState(() => makeNodes(map, hosts, readOnly));
   const layoutRef = useRef(map), nodesRef = useRef(nodes), gesture = useRef(false), ignoreDoubleClick = useRef(0);
   function visualNodes(value) { nodesRef.current = value; setNodes(value); }
@@ -311,7 +311,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, onSave, onH
     </div>
     </div>
     {(status === 'Falha ao salvar' || status === 'Conflito de versão') && <div className="map-save-error" role="alert">
-      <span>{status}. Seus ajustes ainda não foram salvos.</span>
+      <span>{saveError || `${status}. Seus ajustes ainda não foram salvos.`}</span>
       <button onClick={status === 'Conflito de versão' ? onReload : onRetry}>{status === 'Conflito de versão' ? 'Recarregar' : 'Tentar novamente'}</button>
     </div>}
     {menu && <MapContextMenu menu={menu} onClose={() => setMenu(null)}>

@@ -37,7 +37,7 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 
 PY="$ROOT/.venv/bin/python3"
-if [ ! -x "$PY" ]; then
+if [ ! -x "$PY" ] && [ ! -f "$ROOT/.netops-update/journal.json" ]; then
   echo "ERRO: venv ausente em .venv/. Rode:" >&2
   echo "  python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
   exit 1
@@ -77,5 +77,14 @@ fi
 echo "NetOps Console -> http://${HOST}:${PORT}/"
 [ -n "$CLAUDE_FLAG" ] && echo "Claude Code     -> store ${HOME}/.claude (login e conversas da aba)"
 [ -n "$PERSIST_FLAG" ] && echo "Persistência    -> ON (a aba Claude sobrevive a standby)"
-exec "$PY" scripts/engine/ui/server.py \
+# Supervisor só usa stdlib. Continua recuperável mesmo se a troca de venv for interrompida.
+SUPERVISOR="$ROOT/scripts/engine/update/supervisor.py"
+if [ -f "$ROOT/.netops-update/recovery-supervisor" ]; then
+  IFS= read -r SAVED_SUPERVISOR < "$ROOT/.netops-update/recovery-supervisor"
+  case "$SAVED_SUPERVISOR" in
+    "$ROOT"/.netops-update/runtime/*/update/supervisor.py) SUPERVISOR="$SAVED_SUPERVISOR" ;;
+    *) printf '%s\n' 'ERRO: caminho de recuperação inválido.' >&2; exit 1 ;;
+  esac
+fi
+exec python3 "$SUPERVISOR" --root "$ROOT" -- \
   --host "$HOST" --port "$PORT" --no-browser $TERM_FLAG $CLAUDE_FLAG $PERSIST_FLAG "$@"
