@@ -592,3 +592,15 @@ th.sortable:hover { color: var(--text); }
 .cc-queue-grip:hover:not(:disabled), .cc-queue-grip:focus-visible { color: var(--text); background: var(--surface-2); }
 .cc-queue.dragging, .cc-queue.dragging * { cursor: grabbing !important; user-select: none; }
 .cc-queue-item.drag { background: var(--surface-2); border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+
+/* Ditado por voz (composer da aba Claude) */
+.cc-dict { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.cc-dict.rec { color: var(--text); }
+.cc-dict-dot { width: 8px; height: 8px; border-radius: 50%; background: #d33; animation: cc-dict-blink 1s infinite; }
+@keyframes cc-dict-blink { 50% { opacity: .25; } }
+.cc-mic { display: inline-flex; align-items: center; justify-content: center; }
+
+/* Data/hora discreta nas mensagens da aba Claude */
+.cc-time { font-size: 10px; color: var(--muted); opacity: .65; font-variant-numeric: tabular-nums; }
+.cc-msg.user .cc-time { align-self: flex-end; }
+.cc-msg.assistant .cc-time { align-self: flex-start; }

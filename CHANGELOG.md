@@ -1,5 +1,22 @@
 # Changelog do NetOps
 
+## [2.3.0] - 2026-11-11
+
+### Novidades
+
+- Aba Claude Code: **ditado por voz**. Um microfone ao lado do botão de enviar grava a fala (OGG/Opus, até 10 minutos), transcreve com o Whisper da Cloudflare Workers AI e acrescenta o texto ao campo de mensagem, sem enviar. Em «Padrões» há a seção *Transcrição de áudio*: basta colar o API Token (o Account ID é descoberto sozinho; se o token enxergar várias contas, você escolhe), com atalho para criar o token, teste e remoção. O token fica em `runs/claude/` (0600), cifrado pelo cofre quando destrancado, e nunca volta ao navegador. O microfone só aparece com a Cloudflare configurada e exige HTTPS ou `localhost`.
+- Console atrás de proxy reverso/domínio próprio: com login ativo, qualquer Host/Origin é aceito (o acesso é protegido pela sessão, enviada em header, nunca cookie). Sem login, Host/Origin seguem estritos e podem ser ampliados com `NETOPS_UI_ALLOWED_HOSTS`. O servidor confia em `X-Forwarded-*` (`NETOPS_UI_FORWARDED_ALLOW_IPS`); o proxy precisa repassar WebSocket.
+- Aba Claude Code: data/hora discreta em cada mensagem; Ctrl/Cmd+clique em «Nova sessão» e nas sessões abre em nova janela.
+
+### Correções
+
+- O login do console não é mais perdido ao reiniciar: a suíte de testes sobrescrevia o arquivo real de sessões; agora o caminho é resolvido na hora e as gravações fazem merge sob trava.
+- O relógio de cache da aba Claude começa limpo ao abrir uma conversa nova ou outra.
+
+### Compatibilidade
+
+- Sem migração de dados. Nova dependência Python: `httpx` (instalada pelo atualizador a partir de `requirements.txt`). O ditado não usa nada além do navegador e da Cloudflare; sem configuração, a interface não muda.
+
 ## [2.2.0] - 2026-11-11
 
 ### Novidades

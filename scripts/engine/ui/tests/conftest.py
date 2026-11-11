@@ -52,6 +52,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(deps, "SCHEMA_FILE", tmp_path / "core" / "schemas" / "inventory.schema.json")
     monkeypatch.setattr(deps, "PROJECT_CONFIG", tmp_path / "core" / "config" / "project-config.yaml")
     monkeypatch.setattr(deps, "MEMORY_MD", tmp_path / "memory" / "MEMORY.md")
+    monkeypatch.setattr(deps, "AUTH_SESSIONS_FILE", tmp_path / "runs" / ".ui-auth-sessions.json")
     deps.STATE.read_only = False
     deps.STATE.allow_vault_unlock = True
     deps.STATE.enable_terminal = False

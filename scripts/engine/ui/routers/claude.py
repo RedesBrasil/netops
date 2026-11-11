@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import re
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request, Response, UploadFile, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
@@ -46,17 +45,8 @@ def _ws_authorized(ws: WebSocket, *, need_sdk: bool = True) -> bool:
         return False
     if not (claude_svc.is_available() if need_sdk else claude_svc.claude_path()):
         return False
-    host = ws.headers.get("host", "")
-    hostname = host.rsplit(":", 1)[0].strip("[]")
-    if hostname not in deps.STATE.allowed_hosts:
+    if not deps.host_origin_allowed(ws.headers.get("host"), ws.headers.get("origin")):
         return False
-    origin = ws.headers.get("origin")
-    if origin:
-        try:
-            if (urlparse(origin).hostname or "") not in deps.STATE.allowed_hosts:
-                return False
-        except ValueError:
-            return False
     if deps.auth_required() and not deps.auth_session_valid(ws.query_params.get("auth")):
         return False
     return True

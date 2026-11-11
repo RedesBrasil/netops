@@ -20,6 +20,31 @@ def test_rejects_non_loopback_host(env):
     assert c.get("/api/hosts").status_code == 403
 
 
+def test_reverse_proxy_any_domain_when_login_active(env, monkeypatch):
+    """Com login ativo, qualquer Host/Origin (domínio do proxy) passa; o gate é a sessão."""
+    import deps
+    from app import create_app
+    monkeypatch.setattr(deps, "auth_required", lambda: True)
+    c = TestClient(create_app(), base_url="https://netops.exemplo.com.br")
+    assert c.get("/api/config/meta").status_code == 200
+    assert c.get("/api/hosts").status_code == 401            # pede autenticação, não forbidden_host
+    r = c.post("/api/auth/login", json={"password": "x"}, headers={"Origin": "https://netops.exemplo.com.br"})
+    assert r.status_code != 403
+
+
+def test_no_login_keeps_strict_host_and_allowlist(env, monkeypatch):
+    """Sem login o console está aberto: Host estranho segue barrado, salvo NETOPS_UI_ALLOWED_HOSTS."""
+    from app import create_app
+    c = TestClient(create_app(), base_url="https://netops.exemplo.com.br")
+    r = c.get("/api/hosts")
+    assert r.status_code == 403 and r.json()["error"] == "forbidden_host"
+    monkeypatch.setenv("NETOPS_UI_ALLOWED_HOSTS", ".exemplo.com.br")
+    assert c.get("/api/hosts").status_code == 200
+    ok = {"Origin": "https://netops.exemplo.com.br"}
+    assert c.post("/api/hosts", json={}, headers=ok).status_code != 403        # same-origin
+    assert c.post("/api/hosts", json={}, headers={"Origin": "https://evil.invalid"}).status_code == 403
+
+
 def test_read_only_blocks_writes(env):
     import deps
     from app import create_app
@@ -785,3 +810,21 @@ def test_scripts_rename(client, env, monkeypatch):
     # destino fora de extensão permitida
     assert client.post("/api/scripts/rename",
                        json={"path": "diagnostics/final.py", "to": "diagnostics/final.md"}).status_code == 422
+
+
+def test_auth_sessions_never_touch_real_install_and_survive_restart(env):
+    """Regressão 11/11/2026: a suíte gravava em /opt/netops/runs/.ui-auth-sessions.json e apagava
+    o login real. O arquivo tem que seguir o DATA_ROOT e o login sobreviver a um 'restart'."""
+    import deps
+    assert str(deps._auth_sessions_file()).startswith(str(env))
+    sid = deps.create_auth_session(3600)
+    deps.STATE.auth_sessions.clear()             # processo novo: memória vazia
+    deps.load_auth_sessions()
+    assert deps.auth_session_valid(sid)
+    # Processo com visão velha não apaga login que não conhece (merge sob lock, não dump).
+    deps.STATE.auth_sessions.clear()
+    other = deps.create_auth_session(3600)
+    deps.STATE.auth_sessions.clear()
+    assert deps.auth_session_valid(sid) and deps.auth_session_valid(other)
+    deps.drop_auth_session(sid)
+    assert not deps.auth_session_valid(sid) and deps.auth_session_valid(other)

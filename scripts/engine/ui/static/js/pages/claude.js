@@ -6,6 +6,7 @@
 // outra rota com uma conversa viva — dá p/ acompanhar o streaming, enviar e aprovar.
 // Protocolo JSON nos dois sentidos (ver scripts/engine/ui/services/claude_svc.py).
 import { html, useState, useEffect, useRef, useCallback, toast, api } from "../ui.js";
+import { useDictation, MAX_SECONDS } from "../audio-dictation.js";
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import { MarkdownView, VaultBanner, Modal, Field } from "../components.js";
@@ -13,6 +14,14 @@ import { authToken } from "../api.js";
 import { classifyClaudeError, claudeErrorDetail } from "../claude-errors.js";
 import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
   rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, claudePrefsOpen, setClaudePrefsHash, copyClaudeSessionLink } from "../claude-sessions.js";
+
+// Ctrl/Cmd+clique: abre o destino (#hash) em nova janela/aba e NÃO altera a sessão atual.
+function openInNewWindow(e, hash) {
+  if (!e || !(e.ctrlKey || e.metaKey)) return false;
+  e.preventDefault(); e.stopPropagation();
+  window.open(location.pathname + location.search + hash, "_blank", "noopener");
+  return true;
+}
 
 async function copySessionLink(id) {
   try { await copyClaudeSessionLink(id); toast.ok("Link da sessão copiado"); }
@@ -140,6 +149,7 @@ function useClaudeSession() {
     const target = id || "new";
     if (!force && activeRef.current && selectionRef.current === target) return;
     connectionRef.current++;
+    if (!id || id !== sessionIdRef.current) setLastUsage(null);   // cache é por conversa: nova/outra sessão começa sem relógio
     selectionRef.current = target;
     resumeIdRef.current = id || "";
     sessionIdRef.current = id || "";
@@ -256,7 +266,7 @@ function useClaudeSession() {
         return next;
       }
       const next = closeOpen(prev);
-      next.push({ type: kind, text, open: true });
+      next.push({ type: kind, text, open: true, ts: Date.now() });
       return next;
     });
   }, []);
@@ -476,7 +486,7 @@ function useClaudeSession() {
             break;
           }
           case "queue_dispatched":   // item da fila virou turno no servidor
-            setItems((prev) => [...closeOpen(prev), { type: "user", text: ev.text, queued: true }]);
+            setItems((prev) => [...closeOpen(prev), { type: "user", text: ev.text, queued: true, ts: Date.now() }]);
             setWorking(true);
             break;
           case "queue_restored": {   // turno interrompido/erro: a fila não roda sozinha, volta p/ a caixa
@@ -552,7 +562,7 @@ function useClaudeSession() {
     setPendingSend(null);
     if (!send({ type: "prompt", text, queue: !!queued })) { toast.err("Sem conexão"); return false; }
     if (!queued || !working) {
-      setItems((prev) => [...prev, { type: "user", text, interjected: working && !queued }]);
+      setItems((prev) => [...prev, { type: "user", text, interjected: working && !queued, ts: Date.now() }]);
       setWorking(true);
     }
     setInput(""); setAttachments([]);
@@ -736,20 +746,38 @@ function AttachThumb({ path }) {
     </div>`}`;
   return html`<span class="cc-file-chip" title=${path}>${isImg ? "🖼" : "📎"} ${name}</span>`;
 }
-function UserMsg({ text, tag }) {
+// Data/hora discreta no canto da bolha (hoje: só hora; outro dia: dd/mm hh:mm).
+function MsgTime({ ts }) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (isNaN(d)) return null;
+  const hm = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const same = d.toDateString() === new Date().toDateString();
+  const label = same ? hm : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hm}`;
+  return html`<time class="cc-time" title=${d.toLocaleString("pt-BR")}>${label}</time>`;
+}
+function UserMsg({ text, tag, ts }) {
   const refs = [...text.matchAll(UPLOAD_REF_RE)].map((m) => m[1]);
   const rest = text.replace(UPLOAD_REF_RE, "").replace(/[ \t]{2,}/g, " ").trim();
   return html`<div class="cc-msg user"><div class="cc-role">você${tag && html` · <em>${tag}</em>`}</div>
     ${refs.length > 0 && html`<div class="cc-attach-row user">${refs.map((r) => html`<${AttachThumb} key=${r} path=${r} />`)}</div>`}
-    ${(rest || !refs.length) && html`<div class="cc-usertext">${refs.length ? rest : text}</div>`}</div>`;
+    ${(rest || !refs.length) && html`<div class="cc-usertext">${refs.length ? rest : text}</div>`}
+    <${MsgTime} ts=${ts} /></div>`;
 }
 
 // Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
   const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments,
-    queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove } = useClaude();
+    queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove, sessionId } = useClaude();
   const taRef = useRef(null);
+  // Ditado: a transcrição só preenche o rascunho (acrescenta ao fim); o envio segue manual.
+  const dict = useDictation({
+    conversationId: sessionId || "new",
+    onText: (text) => { setInput((cur) => (cur.trim() ? cur.trimEnd() + " " + text : text)); setTimeout(() => taRef.current && taRef.current.focus(), 0); },
+    onError: (msg) => toast.err(msg),
+  });
+  const mmss = (n) => Math.floor(n / 60) + ":" + String(n % 60).padStart(2, "0");
   // textarea que cresce com o conteúdo: começa em 1 linha e sobe até o teto (CSS), aí rola.
   useEffect(() => {
     const el = taRef.current; if (!el) return;
@@ -820,6 +848,12 @@ function Composer() {
             onChange=${(e) => { uploadFile(e.target.files[0]); e.target.value = ""; }} />
           <button class="cc-iconbtn" disabled=${disabled} onClick=${() => fileRef.current && fileRef.current.click()}
             title="Anexar arquivo (vira @caminho) — ou cole uma imagem com Ctrl+V">+</button>
+          ${dict.phase === "starting" && html`<span class="cc-dict">Abrindo microfone…</span>`}
+          ${dict.phase === "recording" && html`<span class="cc-dict rec"><i class="cc-dict-dot"></i>Gravando ${mmss(dict.elapsed)} / ${mmss(MAX_SECONDS)}
+            <button class="sm primary" onClick=${dict.stop}>Parar</button>
+            <button class="sm" onClick=${dict.cancel}>Cancelar</button></span>`}
+          ${dict.phase === "transcribing" && html`<span class="cc-dict">Transcrevendo áudio…
+            <button class="sm" onClick=${dict.cancel}>Cancelar</button></span>`}
           <${CacheClock} usage=${lastUsage} />
           <${ContextRing} ctx=${ctxUse} />
           <${Popover} up=${true} btnClass="cc-pill" title="Modelo e esforço"
@@ -850,6 +884,9 @@ function Composer() {
               </button>`)}
               <${EffortRow} effort=${effort} changeEffort=${changeEffort} />`}
           <//>
+          ${dict.configured && dict.phase === "idle" && html`<button class="cc-iconbtn cc-mic" onClick=${dict.start}
+            title="Ditar por voz (transcreve para o campo, sem enviar)" aria-label="Ditar por voz">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>`}
           ${working && html`<button class="cc-send stop" onClick=${stop} title="Parar (Esc)" aria-label="Parar"><i class="cc-stopsq"></i></button>`}
           ${(!working || input.trim() || attachments.length > 0) && html`<button class="cc-send" disabled=${cantSend} onClick=${submit}
             title=${working ? "Enviar durante a execução — escolha: agora ou fila (Enter)" : "Enviar (Enter)"}>↑</button>`}
@@ -1073,7 +1110,8 @@ export function ClaudeTopbarControls() {
     </button>`}
     <button class="sm" onClick=${() => s.setShowPrefs(true)} title="Modelo e modo de permissão padrão p/ novas conversas">⚙ Padrões</button>
     <button class="sm" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
-    <button class="sm" onClick=${s.newSession} title="Encerra esta sessão e abre uma nova">Nova sessão</button>`;
+    <button class="sm" onClick=${(e) => { if (!openInNewWindow(e, "#claude/new")) s.newSession(); }}
+      title="Encerra esta sessão e abre uma nova (Ctrl+clique abre em nova janela)">Nova sessão</button>`;
 }
 
 export function ClaudeCodePage() {
@@ -1117,7 +1155,57 @@ function PrefsModal({ prefs, models, onSave, onClose }) {
       <button onClick=${onClose}>Cancelar</button>
       <button class="primary" onClick=${save}>Salvar</button>
     </div>
+    <${AudioSettings} />
   <//>`;
+}
+
+// Configurações → Transcrição de áudio (Cloudflare Workers AI). O token nunca volta do servidor.
+const CF_TOKEN_URL = "https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22a92d2450e05d4e7bb7d0a64968f83d11%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22bacc64e0f6c34fc0883a1223f938a104%22%2C%22type%22%3A%22edit%22%7D%5D&name=Workers%20AI%20Transcricao";
+const CF_ID_URL = "https://developers.cloudflare.com/workers-ai/get-started/rest-api/#1-get-api-token-and-account-id";
+function AudioSettings() {
+  const [cfg, setCfg] = useState(null);
+  const [aid, setAid] = useState("");
+  const [tok, setTok] = useState("");
+  const [busy, setBusy] = useState(false);
+  const hdr = () => { const h = { "Content-Type": "application/json" }; const a = authToken(); if (a) h["X-Netops-Session"] = a; return h; };
+  async function call(method, path, body) {
+    const r = await fetch("/api/audio/" + path, { method, headers: hdr(), body: body ? JSON.stringify(body) : undefined });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Falha (" + r.status + ")");
+    return d;
+  }
+  const [choices, setChoices] = useState(null);   // contas a escolher quando o token enxerga várias
+  const apply = (d) => { setChoices(null); setCfg(d); setAid(d.account_id || ""); setTok(""); window.dispatchEvent(new Event("netops-audio-config")); };
+  useEffect(() => { call("GET", "config").then((d) => { setCfg(d); setAid(d.account_id || ""); }).catch(() => setCfg({})); }, []);
+  async function run(fn, okMsg) {
+    setBusy(true);
+    try { await fn(); if (okMsg) toast.ok(okMsg); } catch (e) { toast.err(e.message); } finally { setBusy(false); }
+  }
+  const save = () => run(async () => {
+    const d = await call("PUT", "config", { account_id: aid, token: tok });
+    if (d.needs_account) { setChoices(d.accounts); setAid(d.accounts[0].id); toast.ok("Escolha a conta e salve de novo"); return; }
+    apply(d);
+  }, "");
+  const remove = () => run(async () => apply(await call("DELETE", "config")), "Configuração removida");
+  const test = () => run(() => call("POST", "test"), "Token ativo nesta conta");
+  return html`<div class="cc-audio-cfg">
+    <h4>Transcrição de áudio (ditado)</h4>
+    <${Field} label="Cloudflare API Token"
+      hint=${cfg && cfg.has_token ? "Token configurado. Deixe vazio para manter, ou cole outro para substituir." : "Só o token: o Account ID é descoberto sozinho. Permissões: Workers AI Read e Edit."}>
+      <input type="password" autocomplete="off" value=${tok} onInput=${(e) => setTok(e.target.value)}
+        placeholder=${cfg && cfg.has_token ? "Token configurado" : "Cole o token"} /><//>
+    ${choices && html`<${Field} label="Conta" hint="Este token enxerga mais de uma conta.">
+      <select value=${aid} onChange=${(e) => setAid(e.target.value)}>
+        ${choices.map((c) => html`<option key=${c.id} value=${c.id}>${c.name || c.id}</option>`)}
+      </select><//>`}
+    ${cfg && cfg.account_id && !choices && html`<div class="help">Conta: <code class="mono">${cfg.account_id}</code></div>`}
+    <div class="modal-actions" style="justify-content:flex-start;flex-wrap:wrap">
+      <a class="btn sm" href=${CF_TOKEN_URL} target="_blank" rel="noopener noreferrer">Criar token na Cloudflare</a>
+      <button class="sm primary" disabled=${busy} onClick=${save}>Salvar</button>
+      <button class="sm" disabled=${busy || !(cfg && cfg.configured)} onClick=${test}>Testar token</button>
+      <button class="sm" disabled=${busy || !(cfg && cfg.has_token)} onClick=${remove}>Remover</button>
+    </div>
+  </div>`;
 }
 
 // Aviso no topo da transcrição quando o agente está deslogado — é o que explica a aba morta.
@@ -1353,7 +1441,8 @@ function SessionsModal({ currentId, onClose, onResume }) {
       ? html`<div class="help">${term ? "Nenhuma sessão casa com a busca." : "Nenhuma sessão neste projeto ainda."}</div>`
       : html`<div class="cc-sess-list">
         ${list.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "")}
-            onClick=${() => onResume(s.id)} title="Retomar esta sessão">
+            onClick=${(e) => { if (!openInNewWindow(e, claudeSessionHash(s.id))) onResume(s.id); }}
+            title="Retomar esta sessão (Ctrl+clique abre em nova janela)">
           <div class="cc-sess-main">
             <div class="cc-sess-title"><a href=${claudeSessionHash(s.id)} onClick=${(e) => {
               e.stopPropagation();
@@ -1397,10 +1486,10 @@ function fmtTime(ms) {
 
 function Item({ it, onPermission }) {
   if (it.type === "user")
-    return html`<${UserMsg} text=${it.text} tag=${it.interjected ? "durante a execução" : it.queued ? "da fila" : ""} />`;
+    return html`<${UserMsg} text=${it.text} tag=${it.interjected ? "durante a execução" : it.queued ? "da fila" : ""} ts=${it.ts} />`;
 
   if (it.type === "assistant")
-    return html`<div class="cc-msg assistant"><div class="cc-role">claude</div><${MarkdownView} text=${it.text} /></div>`;
+    return html`<div class="cc-msg assistant"><div class="cc-role">claude</div><${MarkdownView} text=${it.text} /><${MsgTime} ts=${it.ts} /></div>`;
 
   if (it.type === "thinking")
     return html`<details class="cc-thinking"><summary>pensando…</summary><pre>${it.text}</pre></details>`;

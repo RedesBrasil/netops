@@ -898,6 +898,30 @@ def search_project_sessions(query, limit=80):
     return out
 
 
+def _transcript_timestamps(sid: str) -> dict[str, int]:
+    """uuid da mensagem -> epoch ms, lido do .jsonl (o SDK não expõe o timestamp)."""
+    out: dict[str, int] = {}
+    try:
+        base = Path(os.path.expanduser("~")) / ".claude" / "projects"
+        f = next((d / (sid + ".jsonl") for d in base.iterdir()
+                  if d.is_dir() and (d / (sid + ".jsonl")).exists()), None)
+        if f is None:
+            return out
+        with f.open(encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                if '"timestamp"' not in line or '"uuid"' not in line:
+                    continue
+                try:
+                    o = json.loads(line)
+                    ts = datetime.datetime.fromisoformat(str(o["timestamp"]).replace("Z", "+00:00"))
+                    out[o["uuid"]] = int(ts.timestamp() * 1000)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return out
+
+
 def session_items(sid: str) -> list[dict]:
     """Traduz o histórico de uma sessão para os mesmos itens da transcrição da UI."""
     if not _SDK_OK:
@@ -910,12 +934,14 @@ def session_items(sid: str) -> list[dict]:
     items: list[dict] = []
     tool_index: dict[str, dict] = {}
     ask_ids: set[str] = set()
+    stamps = _transcript_timestamps(sid)
     for sm in msgs:
         role_item = "user" if sm.type == "user" else "assistant"
+        ts = stamps.get(sm.uuid)
         content = (sm.message or {}).get("content")
         if isinstance(content, str):
             if content.strip():
-                items.append({"type": role_item, "text": content.strip()})
+                items.append({"type": role_item, "text": content.strip(), "ts": ts})
             continue
         if not isinstance(content, list):
             continue
@@ -926,7 +952,7 @@ def session_items(sid: str) -> list[dict]:
             if bt == "text":
                 t = (b.get("text") or "").strip()
                 if t:
-                    items.append({"type": role_item, "text": t})
+                    items.append({"type": role_item, "text": t, "ts": ts})
             elif bt == "thinking":
                 t = (b.get("thinking") or "").strip()
                 if t:

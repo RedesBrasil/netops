@@ -181,6 +181,10 @@ def test_map_security_gate_and_origin(client, env, monkeypatch):
     assert save(client, s['maps'][0], s).status_code == 200
     s = snapshot(client)
     body = {'map': {k: v for k, v in s['maps'][0].items() if k != 'host_ids'}, 'hosts_rev': s['hosts_rev'], 'topology_rev': s['topology']['rev']}
+    # Com login ativo o gate é a sessão (token em header, sem cookie): domínio de proxy reverso passa.
+    assert client.get('/api/maps', headers={'Host': 'proxy.exemplo.com'}).status_code == 200
+    # Sem login (console aberto) Host/Origin estranhos seguem barrados.
+    monkeypatch.setattr(deps, 'auth_required', lambda: False)
     assert client.put('/api/maps/all', json=body, headers={'If-Match': s['rev'], 'Origin': 'https://evil.invalid'}).status_code == 403
     assert client.get('/api/maps', headers={'Host': 'evil.invalid'}).status_code == 403
 

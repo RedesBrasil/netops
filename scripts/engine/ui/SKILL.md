@@ -92,7 +92,11 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
 
 - **Bind em loopback por padrão.** `--host <ip-privado>` expõe na rede e imprime um AVISO;
   use só em rede confiável. `0.0.0.0` é recusado.
-- **Host/Origin checados** em toda a `/api` e nos WebSockets (anti DNS-rebinding e anti CSRF/CSWSH).
+- **Host/Origin checados** em toda a `/api` e nos WebSockets (anti DNS-rebinding e anti CSRF/CSWSH) — política única em
+  `deps.host_origin_allowed`. **Proxy reverso / qualquer domínio:** com login ativo (cofre inicializado) aceita qualquer
+  Host/Origin, pois o gate é a sessão (token em header/query, nunca cookie). Sem login o console está aberto e Host/Origin
+  seguem estritos (loopback, IP de bind ou `NETOPS_UI_ALLOWED_HOSTS=dom.com,.outro.com,*`). O uvicorn confia em
+  `X-Forwarded-*` (`NETOPS_UI_FORWARDED_ALLOW_IPS`, default `*`). O proxy precisa repassar WebSocket (`Upgrade`/`Connection`).
 - **Login com a senha-mestra é o gate de acesso:** quando o cofre está **inicializado**, o console inteiro fica atrás de
   uma tela de login. A senha-mestra (mesmo `derive_key`+`verify_key` do cofre) emite uma **sessão de
   login** própria (sid em memória do processo, header `X-Netops-Session`, TTL deslizante); todo `/api`
@@ -108,7 +112,7 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   reutiliza a sessão; login, logout e expiração são sincronizados entre abas. Respostas
   atrasadas de uma sessão anterior não apagam um login novo. A senha não é armazenada;
   expiração no servidor ou reinício continuam exigindo novo login.
-- **Anti DNS-rebinding:** o header `Host` precisa bater com o IP de bind (senão 403).
+- **Anti DNS-rebinding:** sem login, o header `Host` precisa bater com loopback/IP de bind/`NETOPS_UI_ALLOWED_HOSTS` (senão 403 `forbidden_host`); com login ativo qualquer Host passa (ver acima).
 - **Cofre:** a UI **lê o status** (`session_status()` — não renova o TTL) e **cifra na escrita**
   (`encrypt_value` com a chave da sessão) e **nunca** devolve senha em texto puro ao navegador.
 - **Destrancar pela web:** o banner do cofre tem **"Destrancar aqui"** — a senha-mestra digitada

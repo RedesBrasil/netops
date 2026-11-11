@@ -7,8 +7,6 @@ cláusula da constituição §VII sobre ferramentas de operador efêmeras.)
 """
 from __future__ import annotations
 
-from urllib.parse import urlparse
-
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -45,6 +43,7 @@ class _NoCacheStatic(StaticFiles):
 
 import deps
 from routers import (
+    audio,
     auth,
     backups,
     catalog,
@@ -70,22 +69,15 @@ AUTH_OPEN_PATHS = {"/api/auth/login", "/api/auth/status", "/api/auth/logout", "/
 
 
 def _host_ok(host_header: str | None) -> bool:
-    """Host header (sem porta) precisa ser loopback — barra DNS-rebinding."""
-    if not host_header:
-        return False
-    hostname = host_header.rsplit(":", 1)[0].strip("[]")
-    return hostname in deps.STATE.allowed_hosts
+    """Anti DNS-rebinding — política em deps.host_origin_allowed (proxy reverso com login ativo passa)."""
+    return deps.host_origin_allowed(host_header)
 
 
-def _origin_ok(origin: str | None) -> bool:
-    """Origin ausente é ok (cliente não-browser). Presente => precisa ser loopback."""
+def _origin_ok(origin: str | None, host_header: str | None = None) -> bool:
+    """Origin ausente é ok (cliente não-browser). Presente => ver deps.host_origin_allowed."""
     if not origin:
         return True
-    try:
-        hostname = urlparse(origin).hostname or ""
-    except ValueError:
-        return False
-    return hostname in deps.STATE.allowed_hosts
+    return deps.host_origin_allowed(host_header, origin)
 
 
 def create_app() -> FastAPI:
@@ -97,9 +89,12 @@ def create_app() -> FastAPI:
     async def guard(request: Request, call_next):
         path = request.url.path
         if path.startswith("/api"):
-            # Anti DNS-rebinding: Host tem que ser loopback.
+            # Anti DNS-rebinding: sem login, Host tem que ser loopback/bind/NETOPS_UI_ALLOWED_HOSTS.
             if not _host_ok(request.headers.get("host")):
-                return JSONResponse({"error": "forbidden_host"}, status_code=403)
+                return JSONResponse({"error": "forbidden_host", "detail":
+                    "Host não autorizado e o console está sem login (cofre não inicializado). Inicialize o cofre "
+                    "(scripts/engine/vault/cli.py init) ou defina NETOPS_UI_ALLOWED_HOSTS=<dominio> e reinicie."},
+                    status_code=403)
             from services import host_migration_svc
             # Meta/status públicos continuam disponíveis antes do login para explicar
             # a manutenção; nenhum escritor nem leitor de dados observa uma mistura.
@@ -115,7 +110,7 @@ def create_app() -> FastAPI:
                     and not deps.auth_session_valid(request.headers.get("x-netops-session"))):
                 return JSONResponse({"error": "auth_required"}, status_code=401)
             if request.method in MUTATING:
-                if not _origin_ok(request.headers.get("origin")):
+                if not _origin_ok(request.headers.get("origin"), request.headers.get("host")):
                     return JSONResponse({"error": "forbidden_origin"}, status_code=403)
                 if deps.STATE.read_only:
                     return JSONResponse(
@@ -147,7 +142,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, terminal, claude, updates):
+    for mod in (audio, auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, terminal, claude, updates):
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("startup")

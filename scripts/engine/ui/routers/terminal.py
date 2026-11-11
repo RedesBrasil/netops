@@ -24,7 +24,6 @@ import pty
 import signal
 import struct
 import termios
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -70,17 +69,8 @@ def _ws_authorized(ws: WebSocket) -> bool:
     """Mesmas defesas do middleware http (que NÃO cobre WebSocket)."""
     if not deps.STATE.enable_terminal or deps.STATE.read_only:
         return False
-    host = ws.headers.get("host", "")
-    hostname = host.rsplit(":", 1)[0].strip("[]")
-    if hostname not in deps.STATE.allowed_hosts:
+    if not deps.host_origin_allowed(ws.headers.get("host"), ws.headers.get("origin")):
         return False
-    origin = ws.headers.get("origin")
-    if origin:
-        try:
-            if (urlparse(origin).hostname or "") not in deps.STATE.allowed_hosts:
-                return False
-        except ValueError:
-            return False
     # Mesmo gate de login do /api (o middleware http não cobre WebSocket): exige a sessão.
     if deps.auth_required() and not deps.auth_session_valid(ws.query_params.get("auth")):
         return False

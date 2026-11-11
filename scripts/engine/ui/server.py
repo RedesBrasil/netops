@@ -145,7 +145,12 @@ def main() -> int:
     if not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
 
-    uvicorn.run(application, host=args.host, port=port, log_level="info", access_log=False)
+    # Atrás de proxy reverso: confia em X-Forwarded-Proto/For (esquema https correto em redirects e
+    # URLs absolutas). O app não usa o IP do cliente p/ autorização, então o default é "*";
+    # restrinja com NETOPS_UI_FORWARDED_ALLOW_IPS=<ip-do-proxy> se quiser.
+    uvicorn.run(application, host=args.host, port=port, log_level="info", access_log=False,
+                proxy_headers=True,
+                forwarded_allow_ips=os.environ.get("NETOPS_UI_FORWARDED_ALLOW_IPS", "*"))
     return 0
 
 
