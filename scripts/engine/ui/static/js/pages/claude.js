@@ -132,6 +132,16 @@ function useClaudeSession() {
     setActive(true); setGen((g) => g + 1);
   }
 
+  // Ao conhecer a sessão (inclusive após F5), restaura o último cache salvo desta conversa.
+  useEffect(() => {
+    if (!sessionId) return;
+    try {
+      const u = JSON.parse(localStorage.getItem("cc-cache:" + sessionId) || "null");
+      setLastUsage((cur) => (u && u._at && !(cur && cur._sid === sessionId && cur._at >= u._at) ? { ...u, _sid: sessionId }
+        : (cur && cur._sid && cur._sid !== sessionId ? null : cur)));
+    } catch (_) {}
+  }, [sessionId]);
+
   function identifySession(id) {
     if (!validSessionId(id)) return;
     const changed = sessionIdRef.current !== id;
@@ -406,6 +416,9 @@ function useClaudeSession() {
               return next;
             });
             break;
+          case "cache_state":   // re-anexo: usa a IDADE real do último turno, não "agora"
+            if (ev.usage) setLastUsage({ ...ev.usage, _at: Date.now() - (ev.age || 0) * 1000 });
+            break;
           case "context_usage":
             setCtxUse({ total: ev.total, max: ev.max, percentage: ev.percentage });
             break;
@@ -417,7 +430,12 @@ function useClaudeSession() {
             break;
           case "result":
             setWorking(false);
-            if (ev.usage) setLastUsage({ ...ev.usage, _at: Date.now() });
+            if (ev.usage) {
+              const sid = ev.session_id || sessionIdRef.current;
+              const u = { ...ev.usage, _at: Date.now(), _sid: sid };
+              setLastUsage(u);   // sobrevive ao F5 (o TTL é do relógio real)
+              if (sid) { try { localStorage.setItem("cc-cache:" + sid, JSON.stringify(u)); } catch (_) {} }
+            }
             if (ev.session_id) identifySession(ev.session_id);
             if (ev.is_error && (ev.result || ev.errors?.length || ev.api_error_status)) handleAgentError(ev);
             setItems((prev) => {

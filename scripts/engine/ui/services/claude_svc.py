@@ -232,6 +232,7 @@ class ClaudeWebSession:
         elif not self._model and dflt["default_model"] and not self._resume:
             self._model = dflt["default_model"]
         self._mode = saved.get("mode") or (dflt["default_mode"] if not self._resume else "default")
+        self._last_turn: dict | None = None   # {t, usage, ctx} do último turno (re-anexo restaura cache/contexto)
         self.client: ClaudeSDKClient | None = None
         self._pending: dict[str, asyncio.Future] = {}   # id de permissão -> Future
         self._pending_payloads: dict[str, dict] = {}     # id -> card (p/ reemitir no re-anexo)
@@ -480,6 +481,12 @@ class ClaudeWebSession:
             await self.start()
         else:
             await self._send({"type": "reattached", "busy": self._busy})
+            lt = self._last_turn
+            if lt:   # restaura o relógio do cache (idade real) e o contexto após recarregar a página
+                await self._send({"type": "cache_state", "usage": lt["usage"],
+                                  "age": max(0.0, time.monotonic() - lt["t"])})
+                if lt.get("ctx"):
+                    await self._send(lt["ctx"])
         try:
             await self._ws_pump()
         finally:
@@ -650,11 +657,14 @@ class ClaudeWebSession:
                 "errors": getattr(msg, "errors", None),
                 "api_error_status": getattr(msg, "api_error_status", None),
             })
+            self._last_turn = {"t": time.monotonic(), "usage": msg.usage, "ctx": None}
             try:   # uso do contexto p/ o indicador discreto da UI (best-effort)
                 cu = await self.client.get_context_usage()
-                await self._send({"type": "context_usage", "total": cu.get("totalTokens"),
-                                  "max": cu.get("rawMaxTokens") or cu.get("maxTokens"),
-                                  "percentage": cu.get("percentage")})
+                ctx = {"type": "context_usage", "total": cu.get("totalTokens"),
+                       "max": cu.get("rawMaxTokens") or cu.get("maxTokens"),
+                       "percentage": cu.get("percentage")}
+                self._last_turn["ctx"] = ctx
+                await self._send(ctx)
             except Exception:
                 pass
             if self.persist:

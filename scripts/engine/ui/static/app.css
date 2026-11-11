@@ -414,7 +414,7 @@ th.sortable:hover { color: var(--text); }
 .cc-ctxring { display: inline-flex; align-items: center; color: var(--muted); cursor: default; }
 .cc-ctxring.warn { color: var(--danger); }
 .cc-pill { background: var(--surface-2); border: none; border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--text); cursor: pointer; white-space: nowrap; }
-.cc-pill:hover { filter: brightness(1.15); }
+.cc-pill:hover { background: var(--surface-2); filter: none; }
 .cc-pill em { font-style: normal; color: var(--muted); }
 .cc-popwrap { position: relative; display: inline-flex; }
 .cc-pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30; width: 340px; max-width: 86vw; padding: 6px; border-radius: 10px;
@@ -438,8 +438,9 @@ th.sortable:hover { color: var(--text); }
 .cc-dot:hover { background: var(--muted); }
 .cc-dot.on { width: 14px; height: 14px; background: var(--text); }
 .cc-send { width: 28px; height: 28px; border-radius: 8px; border: none; background: var(--accent, #c8553d); color: #fff; font-size: 15px; cursor: pointer; }
-.cc-send:disabled { opacity: .4; cursor: default; }
+.cc-send:hover:not(:disabled) { background: var(--accent, #c8553d); filter: none; }
+.cc-send:disabled, .cc-send:disabled:hover { background: var(--accent, #c8553d); opacity: .4; cursor: default; }
 .cc-send.stop { display: inline-flex; align-items: center; justify-content: center; padding: 0; background: var(--surface-2); color: var(--text);
   border: 1px solid var(--border); border-radius: 50%; }
-.cc-send.stop:hover { border-color: var(--danger); color: var(--danger); }
+.cc-send.stop:hover:not(:disabled) { background: var(--surface-2); border-color: var(--danger); color: var(--danger); }
 .cc-stopsq { width: 10px; height: 10px; border-radius: 2px; background: currentColor; display: block; }
