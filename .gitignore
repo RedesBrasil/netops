@@ -29,6 +29,10 @@ reports/*
 # Saídas brutas de execução (podem conter dados sensíveis dos dispositivos)
 runs/
 
+# Estado, snapshots privados e ambientes do atualizador. Nunca publicar.
+/.netops-update/
+/.netops-venvs/
+
 # Ambiente Python
 .venv/
 __pycache__/
@@ -44,6 +48,8 @@ scripts/engine/ui/.ui-token
 
 # Config local da IDE de IA (específico da máquina, não compartilhar)
 .claude/settings.local.json
+# Skills injetadas pelo ambiente local da IDE (links para caminhos pessoais).
+/.codex/
 
 # Cache de testes
 .pytest_cache/

@@ -9,6 +9,7 @@ export function MapsPage() {
   const [snapshot, setSnapshot] = useState(null), [Editor, setEditor] = useState(null), [error, setError] = useState(null);
   const [current, setCurrent] = useState(sessionStorage.getItem("netops_map") || "all");
   const [status, setStatus] = useState("Salvo no servidor"), [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const [hostDialog, setHostDialog] = useState(null), [linkDialog, setLinkDialog] = useState(null), [newMap, setNewMap] = useState(false), [confirm, setConfirm] = useState(null);
   const live = useRef(null), pending = useRef(new Map()), running = useRef(false), blocked = useRef(false), busy = useRef(false), mounted = useRef(true);
   const activity = useRef(0), readSequence = useRef(0);
@@ -61,7 +62,7 @@ export function MapsPage() {
   }, []);
   async function drain() {
     if (running.current || blocked.current || !pending.current.size) return;
-    running.current = true; setSaving(true); setStatus("Salvando…");
+    running.current = true; setSaving(true); setStatus("Salvando…"); setSaveError(null);
     try {
       while (pending.current.size) {
         const [id, map] = pending.current.entries().next().value;
@@ -75,7 +76,12 @@ export function MapsPage() {
       if (mounted.current) setStatus("Salvo no servidor");
     } catch (e) {
       blocked.current = true;
-      if (mounted.current) { setStatus(e.status === 409 ? "Conflito de versão" : "Falha ao salvar"); handleError(e); }
+      if (mounted.current) {
+        setStatus(e.status === 409 ? "Conflito de versão" : "Falha ao salvar");
+        const hint = e.recoveryHint || null;
+        setSaveError(hint);
+        if (hint) toast.err(hint); else handleError(e);
+      }
     } finally { running.current = false; if (mounted.current) setSaving(false); }
   }
   function save(map) {
@@ -110,7 +116,7 @@ export function MapsPage() {
   const map = snapshot.maps.find(m => m.id === current) || snapshot.maps[0];
   return html`<div class="maps-page">
     <${Editor} IconPicker=${IconPicker} map=${map} maps=${snapshot.maps} hosts=${snapshot.hosts} links=${snapshot.topology.links} readOnly=${snapshot.read_only}
-      saving=${saving || !!pending.current.size} status=${status} onSave=${save} onHost=${openHost} onLink=${openLink} onSwitch=${switchMap}
+      saving=${saving || !!pending.current.size} status=${status} saveError=${saveError} onSave=${save} onHost=${openHost} onLink=${openLink} onSwitch=${switchMap}
       onNewMap=${async () => { if (await flush()) setNewMap(true); }} onDeleteMap=${() => setConfirm({ kind: "map", id: map.id })}
       onError=${message => toast.err(message)} onBusy=${setBusy}
       onRetry=${() => { blocked.current = false; drain(); }} onReload=${() => setConfirm({ kind: "reload" })} />
@@ -125,7 +131,7 @@ export function MapsPage() {
       message=${confirm.kind === "map" ? "Excluir este mapa e suas referências? Dispositivos e enlaces do inventário serão preservados." : confirm.kind === "link" ? "Excluir o enlace da topologia e de todos os mapas?" : "Descartar os ajustes locais não salvos e carregar a versão atual do servidor?"}
       onClose=${() => setConfirm(null)} onConfirm=${async () => {
         try {
-          if (confirm.kind === "reload") { pending.current.clear(); blocked.current = false; await reload(); setStatus("Salvo no servidor"); }
+          if (confirm.kind === "reload") { pending.current.clear(); blocked.current = false; await reload(); setStatus("Salvo no servidor"); setSaveError(null); }
           else { if (!await flush()) return; if (confirm.kind === "map") { accept(await api.del(`/maps/${confirm.id}`, live.current.rev)); setCurrent("all"); }
             else { await api.del(`/topology/link/${confirm.id}`, live.current.topology.rev); await reload(); } }
         } catch (e) { handleError(e); }

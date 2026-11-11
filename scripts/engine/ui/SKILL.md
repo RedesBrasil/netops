@@ -98,6 +98,11 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   quem alcançar o endereço (só Host/Origin protegem). Inicialize o cofre
   (`scripts/engine/vault/cli.py init`) para proteger o acesso por senha. O WS do terminal/Claude usa
   o mesmo gate (`?auth=<sid>`). Sessão em memória ⇒ vale só com o servidor no ar (uvicorn single-process).
+  O navegador compartilha apenas o sid em `localStorage`, na mesma origem (protocolo, host e
+  porta), com migração automática do antigo `sessionStorage`. Abrir/recarregar outras abas
+  reutiliza a sessão; login, logout e expiração são sincronizados entre abas. Respostas
+  atrasadas de uma sessão anterior não apagam um login novo. A senha não é armazenada;
+  expiração no servidor ou reinício continuam exigindo novo login.
 - **Anti DNS-rebinding:** o header `Host` precisa bater com o IP de bind (senão 403).
 - **Cofre:** a UI **lê o status** (`session_status()` — não renova o TTL) e **cifra na escrita**
   (`encrypt_value` com a chave da sessão) e **nunca** devolve senha em texto puro ao navegador.
@@ -164,6 +169,21 @@ scripts/engine/ui/
   tests/               pytest E2E (cofre, concorrência, mascaramento, append-only, terminal WS, Claude flag, ...)
 ```
 
+## Atualizações pelas releases
+
+A topbar oferece **Verificar atualizações**, versão instalada e notas completas de todas as
+releases estáveis posteriores. A aplicação exige login no console, modo de escrita e launcher
+gerenciado. Feche sessões interativas e salve alterações antes de confirmar.
+
+`start.sh` agora mantém um supervisor com trava por instalação. O pacote é preparado com
+backup verificado; o servidor é reiniciado na mesma URL e pode exigir novo login. Falhas
+antes da confirmação restauram código e ambiente anteriores. Dados e personalizações não
+são sobrescritos. O estado privado fica em `.netops-update/`, nunca nas APIs de runs/backups.
+
+A primeira adoção requer reiniciar o console pelo launcher atualizado. O GitHub CLI precisa
+estar autenticado no usuário/HOME do servidor para acessar o repositório privado. Não envie
+nem solicite tokens pela UI. Detalhes e recuperação: `scripts/engine/update/SKILL.md`.
+
 ## Testes
 
 ```bash
@@ -171,6 +191,11 @@ scripts/engine/ui/
 ```
 
 Os testes rodam num diretório temporário isolado — **nunca** tocam nos arquivos reais.
+
+Sessão entre abas: `node --test scripts/engine/ui/tests/auth-session.test.mjs`.
+O cenário `tests/auth.browser.mjs` valida três abas em desktop/celular, login único,
+recarregamento, logout e expiração; exige console temporário em loopback via
+`NETOPS_E2E_URL`, com `PLAYWRIGHT_MODULE` e `CHROMIUM_EXECUTABLE` se necessário.
 
 
 ## Mapas de rede
@@ -312,3 +337,17 @@ Seleção e alinhamento:
 Testes: `tests/test_shape_connections.py`, testes do helper em `maps/node-state.test.mjs` e
 `tests/shapes-align.browser.mjs` (mesmas variáveis Playwright/Chromium dos demais cenários,
 sempre em `NETOPS_UI_DATA_ROOT` temporário).
+
+### Falha ao salvar ícone de forma após atualizar arquivos
+
+HTTP 422 com `extra_forbidden` em `map/objects/N/icon` indica que o backend ativo ainda
+não reconhece o campo de ícone, mesmo que o seletor já apareça na interface. Os arquivos
+estáticos são lidos do disco; os modelos Python são carregados ao iniciar o processo.
+Uma cópia de arquivos ou `git pull` sem reinício pode misturar as duas versões.
+
+Verifique que o backend e os assets pertencem à mesma versão, encerre a instância correta
+e inicie novamente por `scripts/engine/ui/start.sh`. Recarregar apenas o navegador não
+resolve um modelo antigo em memória. O reinício pode exigir novo login; registre os ajustes
+não salvos antes de sair da página. Não remova o campo `icon` nem relaxe a validação para
+contornar o erro. O aviso persistente de salvamento orienta a atualização/reinício sem
+descartar a fila; ícone inválido continua sendo tratado como erro de validação comum.

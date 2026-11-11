@@ -14,6 +14,26 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 
+class _SessionGate:
+    """Conta conexões interativas antes do handshake e bloqueia novas em manutenção."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "websocket":
+            return await self.app(scope, receive, send)
+        from services import updates_svc
+        if deps.STATE.update_pending or updates_svc.maintenance():
+            await send({"type": "websocket.close", "code": 4423})
+            return
+        deps.STATE.active_sessions += 1
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            deps.STATE.active_sessions -= 1
+
+
 class _NoCacheStatic(StaticFiles):
     """Estaticos com revalidacao obrigatoria: o browser sempre checa com o servidor
     (ETag/Last-Modified -> 304 quando nao mudou), entao nunca serve JS/CSS velho de cache."""
@@ -41,6 +61,7 @@ from routers import (
     scripts,
     terminal,
     topology,
+    updates,
 )
 
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
@@ -70,6 +91,8 @@ def _origin_ok(origin: str | None) -> bool:
 def create_app() -> FastAPI:
     app = FastAPI(title="NetOps Console", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
+    app.add_middleware(_SessionGate)
+
     @app.middleware("http")
     async def guard(request: Request, call_next):
         path = request.url.path
@@ -91,7 +114,21 @@ def create_app() -> FastAPI:
                         status_code=403,
                     )
 
-        response = await call_next(request)
+        from services import updates_svc
+        is_write = path.startswith("/api") and request.method in MUTATING and path != "/api/updates/apply"
+        allowed_during_update = path in AUTH_OPEN_PATHS or path.startswith("/api/updates/")
+        if path.startswith("/api") and not allowed_during_update and (
+                deps.STATE.update_pending or updates_svc.maintenance()):
+            return JSONResponse({"error": "maintenance", "detail": "Atualização em andamento. Aguarde o console reiniciar."}, status_code=503)
+        if is_write:
+            deps.STATE.active_writes += 1
+        deps.STATE.active_requests += 1
+        try:
+            response = await call_next(request)
+        finally:
+            deps.STATE.active_requests -= 1
+            if is_write:
+                deps.STATE.active_writes -= 1
 
         # O shell do SPA (index.html) não é cacheado: garante que o front sempre venha da rede
         # (o HTML tem ~1 KB). Os assets estáticos (js/css/vendor) seguem cacheáveis pelo ETag.
@@ -101,8 +138,24 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, terminal, claude):
+    for mod in (auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, terminal, claude, updates):
         app.include_router(mod.router, prefix="/api")
+
+    @app.on_event("startup")
+    async def _update_readiness():
+        import asyncio
+        import os
+        from update.common import STATE_DIR, read_version, write_json
+
+        async def receipt():
+            await asyncio.sleep(0.15)
+            write_json(deps.NETOPS_ROOT / STATE_DIR / "ready.json", {
+                "nonce": os.environ["NETOPS_UPDATE_NONCE"], "pid": os.getpid(),
+                "version": read_version(deps.NETOPS_ROOT),
+            })
+
+        if os.environ.get("NETOPS_UPDATE_MANAGED") == "1":
+            asyncio.create_task(receipt())
 
     @app.on_event("shutdown")
     async def _claude_shutdown():  # noqa: ANN202

@@ -55,6 +55,27 @@ Enlaces e interfaces opcionais continuam em `network/topology.yaml`, editados pe
 **Mapas**. A antiga página Topologia foi removida. A geração Mermaid por script continua
 disponível. Ver `scripts/engine/ui/SKILL.md`.
 
+## Atualizações com um clique
+
+Na barra superior do console, use **Verificar atualizações**. O painel mostra a versão instalada
+ e o changelog de cada release estável posterior. Depois de salvar formulários e encerrar trabalhos
+ativos, escolha **Atualizar para vX.Y.Z** e confirme o backup e a atualização.
+
+O launcher `scripts/engine/ui/start.sh` gerencia a aplicação, o reinício e a recuperação em falha.
+Para adotar esse launcher pela primeira vez, reinicie o console manualmente. Depois, o fluxo é pela UI.
+O repositório é privado: o GitHub CLI precisa estar autenticado no mesmo usuário/HOME do servidor
+(`gh auth login --hostname github.com`). A aplicação exige login no console e não funciona em read-only.
+
+Os pacotes não substituem inventário, credenciais, mapas, memória, configuração local, backups,
+relatórios, execuções ou personalizações. O atualizador verifica um snapshot privado antes de aplicar
+e tenta restaurar o código anterior se a nova versão não iniciar. Código do motor modificado localmente
+bloqueia a aplicação automática. Mantenha também um backup externo contra falhas do disco.
+
+Detalhes e recuperação: `scripts/engine/update/SKILL.md`. Para publicar versões, os agentes devem
+seguir `core/rules/releases.md`: consultar a última release, incrementar versão e gerar changelog.
+O workflow manual **NetOps release** valida testes/pacote antes de publicar; esta implementação
+não publica nem atualiza instalações automaticamente sem a ação do operador.
+
 ## Estrutura
 
 | Pasta | O que contém |

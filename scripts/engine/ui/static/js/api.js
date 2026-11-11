@@ -1,15 +1,37 @@
 // Cliente HTTP do NetOps Console. O acesso é autenticado pelo LOGIN (senha-mestra do cofre):
 // o sid da sessão é enviado no header X-Netops-Session em todo request.
 
-// Sessão de login (senha-mestra): sid emitido por /auth/login, enviado no header X-Netops-Session.
+// O sid é compartilhado entre abas da mesma origem; a senha nunca é armazenada.
+const AUTH_KEY = "netops_auth";
 let AUTH = "";
-try { AUTH = sessionStorage.getItem("netops_auth") || ""; } catch (e) {}
-export function authToken() { return AUTH; }
+try { AUTH = sessionStorage.getItem(AUTH_KEY) || ""; } catch (e) {}
+try {
+  const shared = localStorage.getItem(AUTH_KEY);
+  if (shared !== null) AUTH = shared;
+  else if (AUTH) localStorage.setItem(AUTH_KEY, AUTH);
+  sessionStorage.removeItem(AUTH_KEY);
+} catch (e) {}
+export function authToken() {
+  try { AUTH = localStorage.getItem(AUTH_KEY) || ""; } catch (e) {}
+  return AUTH;
+}
 export function setAuthToken(t) {
   AUTH = t || "";
-  try { t ? sessionStorage.setItem("netops_auth", t) : sessionStorage.removeItem("netops_auth"); } catch (e) {}
+  // Vazio registra logout: abas legadas não podem reimportar um sid antigo ao recarregar.
+  try { localStorage.setItem(AUTH_KEY, AUTH); } catch (e) {}
+  try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
 }
 export function clearAuthToken() { setAuthToken(""); }
+
+let _onAuthChange = null;
+export function setOnAuthChange(fn) { _onAuthChange = fn; }
+if (typeof window !== "undefined") window.addEventListener("storage", event => {
+  if (event.key !== AUTH_KEY && event.key !== null) return;
+  try { if (event.storageArea && event.storageArea !== localStorage) return; } catch (e) {}
+  try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
+  authToken();
+  if (_onAuthChange) _onAuthChange();
+});
 
 // Callback de "sessão perdida" (401 auth_required): o front volta pra tela de login.
 let _onUnauthorized = null;
@@ -20,6 +42,19 @@ export class ApiError extends Error {
 }
 export class ConflictError extends ApiError {}
 export class ValidationError extends ApiError {
+  get recoveryHint() {
+    if (!Array.isArray(this.payload?.detail)) return null;
+    const unsupportedShapeIcon = this.payload.detail.some(error => {
+      const loc = Array.isArray(error.loc) ? error.loc : [];
+      const path = loc[0] === "body" ? loc.slice(1) : loc;
+      return error.type === "extra_forbidden" && path.length === 4 &&
+        path[0] === "map" && path[1] === "objects" &&
+        Number.isInteger(path[2]) && path[2] >= 0 && path[3] === "icon";
+    });
+    return unsupportedShapeIcon
+      ? "Este servidor ainda não aceita ícones nas formas. Atualize o NetOps e reinicie o console no servidor. Seus ajustes ainda não foram salvos."
+      : null;
+  }
   get fieldErrors() {
     if (Array.isArray(this.payload?.errors)) return this.payload.errors;
     // FastAPI/Pydantic usa detail; a validação de domínio usa errors.
@@ -35,7 +70,8 @@ export class VaultLockedError extends ApiError {}
 
 async function req(method, path, { body, rev } = {}) {
   const headers = {};
-  if (AUTH) headers["X-Netops-Session"] = AUTH;
+  const sentAuth = authToken();
+  if (sentAuth) headers["X-Netops-Session"] = sentAuth;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (rev) headers["If-Match"] = rev;
   const res = await fetch("/api" + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
@@ -50,7 +86,7 @@ async function req(method, path, { body, rev } = {}) {
   if (res.status === 422) throw new ValidationError(422, payload);
   if (res.status === 423) throw new VaultLockedError(423, payload);
   // Sessão de login expirada/ausente: limpa e avisa o shell pra voltar ao login.
-  if (res.status === 401 && payload?.error === "auth_required") {
+  if (res.status === 401 && payload?.error === "auth_required" && authToken() === sentAuth) {
     clearAuthToken();
     if (_onUnauthorized) _onUnauthorized();
   }

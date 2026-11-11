@@ -75,6 +75,10 @@ VENDORS = (
 @dataclass
 class ServerState:
     read_only: bool = False
+    update_pending: bool = False
+    active_writes: int = 0
+    active_sessions: int = 0
+    active_requests: int = 0
     allow_vault_unlock: bool = True
     enable_terminal: bool = False
     enable_claude: bool = False

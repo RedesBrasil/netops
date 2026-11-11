@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+from update.common import read_version
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -103,6 +105,8 @@ def config_meta() -> dict:
             pass
     return {
         "network_name": network_name,
+        "version": read_version(deps.NETOPS_ROOT),
+        "boot_id": os.environ.get("NETOPS_UPDATE_NONCE", ""),
         "read_only": deps.STATE.read_only,
         "isolated_data": deps.DATA_ROOT != deps.NETOPS_ROOT,
         "terminal_enabled": deps.STATE.enable_terminal,

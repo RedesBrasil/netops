@@ -3,7 +3,7 @@ import { render } from "preact";
 import { html, useState, useEffect, api } from "./ui.js";
 import { ToastHost, startVaultPolling } from "./ui.js";
 import { LoginScreen } from "./components.js";
-import { setOnUnauthorized, clearAuthToken } from "./api.js";
+import { authToken, setOnAuthChange, setOnUnauthorized, clearAuthToken } from "./api.js";
 import { HostsPage, GroupsPage } from "./pages/hosts.js";
 import { CredentialsPage } from "./pages/credentials.js";
 import { MapsPage } from "./pages/maps.js";
@@ -13,6 +13,7 @@ import { WorkflowsPage, AgentsPage } from "./pages/catalog.js";
 import { ScriptsPage } from "./pages/scripts.js";
 import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
 import { BackupsPage } from "./pages/backups.js";
+import { UpdatesControl } from "./pages/updates.js";
 import { TerminalPage } from "./pages/terminal.js";
 import { ClaudeCodePage, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
 
@@ -78,7 +79,9 @@ function Shell({ onLogout, showLogout }) {
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("netops_theme", theme); }, [theme]);
 
   async function doLogout() {
+    const sid = authToken();
     try { await api.post("/auth/logout"); } catch (e) {}
+    if (authToken() !== sid) return;
     clearAuthToken();
     onLogout && onLogout();
   }
@@ -91,6 +94,7 @@ function Shell({ onLogout, showLogout }) {
       <span class="brand">NetOps Console</span>
       <span class="net">· ${meta.network_name}</span>
       <span class="spacer"></span>
+      <${UpdatesControl} />
       <button class="sm" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}>
         ${theme === "light" ? "🌙 escuro" : "☀ claro"}</button>
       ${showLogout && html`<button class="sm" onClick=${doLogout}>Sair</button>`}
@@ -109,16 +113,26 @@ function Root() {
   const [gate, setGate] = useState("loading");   // "loading" | "login" | "app"
   const [authRequired, setAuthRequired] = useState(false);
 
-  async function check() {
-    try {
-      const s = await api.get("/auth/status");
-      setAuthRequired(!!s.auth_required);
-      setGate(s.auth_required && !s.authenticated ? "login" : "app");
-    } catch (e) {
-      setGate("app");   // sem status (ex.: token inválido) — o App expõe o erro nos toasts
+  useEffect(() => {
+    let generation = 0;
+    async function check() {
+      const current = ++generation;
+      const sentAuth = authToken();
+      try {
+        const s = await api.get("/auth/status");
+        if (current !== generation) return;
+        if (sentAuth !== authToken()) return check();
+        setAuthRequired(!!s.auth_required);
+        setGate(s.auth_required && !s.authenticated ? "login" : "app");
+      } catch (e) {
+        if (current === generation) setGate("app");
+      }
     }
-  }
-  useEffect(() => { setOnUnauthorized(() => setGate("login")); check(); }, []);
+    setOnUnauthorized(() => { generation++; setGate("login"); });
+    setOnAuthChange(check);
+    check();
+    return () => { generation++; setOnAuthChange(null); setOnUnauthorized(null); };
+  }, []);
 
   if (gate === "loading") return html`<div class="boot">Carregando NetOps Console…</div>`;
   if (gate === "login") return html`<${LoginScreen} onAuthed=${() => { setAuthRequired(true); setGate("app"); }} />`;
