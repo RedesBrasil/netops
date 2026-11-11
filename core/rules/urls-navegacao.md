@@ -34,13 +34,31 @@ outra aba (ou após F5) deve reproduzir exatamente a mesma tela.
 10. **Helper único**: implemente/reuse um helper central (ex.: `useRoute()` em `js/ui.js`) que faz
     parse/serialize de `#menu/id?filtros`. Não espalhe `location.hash` manual pelas páginas.
 
-## Estado atual (auditoria 11/11/2026)
+## Estado atual (11/11/2026)
 
-- Já têm URL: menus de 1º nível, sessões Claude (`#claude/<id>`, `#claude/new`) e **Hosts** (`#hosts/<id>`, `#hosts/new`, `?q=&vendor=&role=&group=&sort=&dir=`).
-- Helper: `static/js/route.js` (`useRoute`, `navigate`, `parseRoute`, `buildRoute`); `ResourceTable` aceita `sortState`/`onSortChange` p/ ordenação na URL. Teste: `tests/route.test.mjs`.
-- **Sem URL ainda** (dívida a corrigir ao tocar a página): item aberto e filtros de `credentials`,
-  `maps`, `memory`, `knowledge` (práticas/configs/workflows/agentes), `view` (relatórios/execuções),
-  `backups`, `scripts`, `catalog`, `updates`.
+Todos os menus do console seguem a regra. Helpers: `static/js/route.js` (`useMenuRoute`, `useRoute`, `navigate`,
+`parseRoute`, `buildRoute`, `matchText`) e `FilterBar` em `components.js`; `ResourceTable` aceita `sortState`/`onSortChange`.
+
+| Menu | URL de item | Filtros / parâmetros |
+|------|-------------|----------------------|
+| Hosts | `#hosts/<id>`, `#hosts/new` | `q vendor role group sort dir` |
+| Grupos | `#groups/<nome>`, `/new` | `q vendor role` |
+| Credenciais | `#credentials/<nome>`, `/new`, `/<nome>/password`, `/<nome>/secret` | `q` |
+| Mapas | `#maps/<mapa>` (`#maps` → `#maps/all`) | `host=<id>\|new`, `link=<id>` |
+| Boas práticas / Configurações | `#practices\|configs/<vendor>/<arquivo>`, `/new` | `q vendor` |
+| Workflows / Agentes | `#workflows\|agents/<arquivo>`, `/new` | `q` |
+| Relatórios | `#reports/<arquivo>` | `q` |
+| Execuções | `#runs/<id>` | `q status` |
+| Backups | `#backups/services[/<id>\|/new]`, `#backups/storage[/<host>]` | `q run file diffa diffb` |
+| Scripts | `#scripts/<pasta>/<arquivo>`, `/new` | `q location lang sort dir doc` |
+| Configuração | `#settings/updates` (painel de atualizações) | — |
+| Claude Code | `#claude/<id>`, `#claude/new` | — |
+| Memória, Terminal | página única (sem item aberto) | — |
+
+Filtros efêmeros dentro de formulários/modais (ex.: escolher hosts ao editar um serviço de backup) não vivem na URL.
+
+**Teste obrigatório:** `scripts/engine/ui/tests/urls.browser.mjs` (ambiente isolado: `tests/e2e-env.sh up`; ver SKILL.md).
+Ao criar um menu/tela nova, adicione um caso em `CASES` desse teste.
 
 ## Checklist antes de entregar uma tela
 

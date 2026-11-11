@@ -486,3 +486,10 @@ Use `scripts/engine/restart-console.sh` (desacopla, preserva host/flags, espera 
 
 Todo item aberto e todo filtro do console tem URL própria (`#menu/<id>?filtro=valor`). Regra completa e
 checklist em `core/rules/urls-navegacao.md` — leia antes de criar ou alterar qualquer página.
+
+### Teste de URLs (navegador)
+
+`tests/e2e-env.sh up` sobe um console isolado (cópia do código + dados fictícios) em `127.0.0.1:8771`
+(`sync` recopia o código; `down` encerra). Depois:
+`PLAYWRIGHT_MODULE=... CHROMIUM_EXECUTABLE=... node tests/urls.browser.mjs [menu ...]` (sem args = todos).
+Cobre item aberto, deep link (F5), Voltar, id inexistente, filtros na URL e limpeza. Unitário: `tests/route.test.mjs`.
