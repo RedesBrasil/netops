@@ -97,6 +97,7 @@ async function scenario(mode, name, fn) {
     await page.screenshot({ path: path.join(OUT, stamp + '.png'), fullPage: true });
     results.push({ mode, name, status: 'PASS', errors, evidence: stamp + '.json', screenshot: stamp + '.png' });
   } catch (error) {
+    await fs.writeFile(path.join(OUT, stamp + '-failed-state.json'), JSON.stringify(await snapshot().catch(() => null), null, 2));
     await page.screenshot({ path: path.join(OUT, stamp + '-failed.png'), fullPage: true }).catch(() => {});
     results.push({ mode, name, status: 'FAIL', errors, failure: error.stack, screenshot: stamp + '-failed.png' });
   } finally { await context.close(); }
@@ -265,7 +266,7 @@ try {
   }
 
   await scenario('desktop', 'plain-marquee-mixed-move-and-delete', async ({ page, node, currentMap, saved, snapshot, baseline }) => {
-    const selected = ['host:rt-core-01', 'object:first-shape'];
+    const selected = ['host:rt-core-01', 'host:rt-dist-01', 'object:first-shape', 'object:second-shape'];
     const boxes = await Promise.all(selected.map(id => node(id).boundingBox()));
     const start = { x: Math.min(...boxes.map(b => b.x)) - 14, y: Math.min(...boxes.map(b => b.y)) - 14 };
     const end = { x: Math.max(...boxes.map(b => b.x + b.width)) + 14, y: Math.max(...boxes.map(b => b.y + b.height)) + 14 };
@@ -278,16 +279,23 @@ try {
     const before = structuredClone(await currentMap()), group = page.locator('.react-flow__nodesselection-rect'), r = await group.boundingBox();
     const zoom = await page.locator('.react-flow__viewport').evaluate(el => new DOMMatrix(el.style.transform).a);
     await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2); await page.mouse.down();
-    await page.mouse.move(r.x + r.width / 2 + 65, r.y + r.height / 2 + 36, { steps: 16 }); await page.mouse.up();
+    // React Flow começa a medir o delta depois de vencer o limiar inicial do gesto.
+    await page.mouse.move(r.x + r.width / 2 + 8, r.y + r.height / 2); await page.waitForTimeout(60);
+    await page.mouse.move(r.x + r.width / 2 + 73, r.y + r.height / 2 + 36, { steps: 16 }); await page.mouse.up();
     await saved(m => Math.abs(m.positions['rt-core-01'].x - before.positions['rt-core-01'].x) > 20);
     const after = await currentMap();
     const hostDelta = { x: after.positions['rt-core-01'].x - before.positions['rt-core-01'].x, y: after.positions['rt-core-01'].y - before.positions['rt-core-01'].y };
     const shapeDelta = { x: after.objects[0].position.x - before.objects[0].position.x, y: after.objects[0].position.y - before.objects[0].position.y };
-    assert.ok(Math.abs(hostDelta.x - 65 / zoom) < 1 && Math.abs(hostDelta.y - 36 / zoom) < 1);
+    const movement = { hostDelta, shapeDelta, zoom, requestedPixels: { x: 65, y: 36 }, groupBox: r, before, after };
+    await fs.writeFile(path.join(OUT, 'marquee-movement.json'), JSON.stringify(movement, null, 2));
+    assert.ok(Math.abs(hostDelta.x - 65 / zoom) < 1 && Math.abs(hostDelta.y - 36 / zoom) < 1, JSON.stringify({ hostDelta, shapeDelta, zoom }));
     assert.ok(Math.abs(hostDelta.x - shapeDelta.x) < .1 && Math.abs(hostDelta.y - shapeDelta.y) < .1);
-    assert.deepEqual(after.positions['rt-dist-01'], before.positions['rt-dist-01']); assert.deepEqual(after.objects[1], before.objects[1]);
+    for (const [a, b] of [[after.positions['rt-dist-01'], before.positions['rt-dist-01']], [after.objects[1].position, before.objects[1].position]]) {
+      assert.ok(Math.abs(a.x - b.x - hostDelta.x) < .1 && Math.abs(a.y - b.y - hostDelta.y) < .1);
+    }
+    assert.deepEqual(after.positions['sw-access-01'], before.positions['sw-access-01']); assert.deepEqual(after.positions['srv-web-01'], before.positions['srv-web-01']);
     await node('host:rt-core-01').focus(); await page.keyboard.press('Delete');
-    await saved(m => !m.members.includes('rt-core-01') && !m.objects.some(o => o.id === 'first-shape'));
+    await saved(m => !m.members.includes('rt-core-01') && !m.members.includes('rt-dist-01') && !m.objects.length);
     const final = await snapshot(); assert.deepEqual(final.hosts, baseline.hosts); assert.deepEqual(final.topology.links, baseline.topology.links);
   });
 
@@ -309,7 +317,7 @@ try {
     for (const [id, ip] of [[first, '192.0.2.101'], [second, '192.0.2.102']]) {
       const s = await snapshot();
       const response = await context.request.post(BASE + '/api/hosts', { headers: { 'If-Match': s.hosts_rev },
-        data: { id, hostname: id, mgmt_ip: ip, vendor: 'linux', role: 'other', site: 'fixture' } });
+        data: { id, hostname: id, mgmt_ip: ip, vendor: 'linux', role: 'other', site: 'fixture', credential: 'fixture-no-credentials', access: { method: 'ssh', port: 22 } } });
       assert.equal(response.status(), 201, await response.text());
     }
     const all = structuredClone((await snapshot()).maps.find(m => m.id === 'all'));

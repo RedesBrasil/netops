@@ -181,7 +181,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     if (id.startsWith('visual:')) saveLine(id, { anchors: null, route: null });
     else update(m => { const next = { ...m.edges }; delete next[id]; return { ...m, edges: next }; });
   }
-  const canvas = useRef(null);
+  const canvas = useRef(null), paneTouch = useRef(null);
   const point = () => {
     const box = canvas.current.getBoundingClientRect();
     return flow.screenToFlowPosition({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
@@ -337,7 +337,20 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       </div>
       <span className="map-sr-only" role="status" aria-live="polite">{readOnly ? 'Somente leitura' : status}</span>
     </div>
-    <div className="map-workspace"><div ref={canvas} className="map-canvas" data-testid="map-canvas" tabIndex={0} onPointerDown={event => {
+    <div className="map-workspace"><div ref={canvas} className="map-canvas" data-testid="map-canvas" tabIndex={0}
+      onPointerDownCapture={event => {
+        paneTouch.current = event.pointerType === 'touch' && event.isPrimary && event.target.classList.contains('react-flow__pane')
+          ? { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false } : null;
+      }} onPointerMoveCapture={event => {
+        const tap = paneTouch.current;
+        if (tap?.id === event.pointerId && Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > 6) tap.moved = true;
+      }} onPointerUpCapture={event => {
+        const tap = paneTouch.current; paneTouch.current = null;
+        // O React Flow suprime onPaneClick no toque quando selectionOnDrag está ativo.
+        if (tap?.id === event.pointerId && !tap.moved && Math.hypot(event.clientX - tap.x, event.clientY - tap.y) <= 6 && event.target.classList.contains('react-flow__pane')) {
+          clearSelection(); setMenu(null); setMultiSelect(false);
+        }
+      }} onPointerCancelCapture={() => { paneTouch.current = null; }} onPointerDown={event => {
       if (!event.target.closest('input, textarea, select, button, .react-flow__node')) event.currentTarget.focus({ preventScroll: true });
     }}>
       <LineEditing.Provider value={{ selected, select: selectLine, save: saveLine, disabled: readOnly || linkMode, busy: onBusy, contextMenu: (event, id, corner) => context(event, 'edge', id, corner), focus, focusCorner: (id, corner) => setFocus({ id, corner }) }}>
