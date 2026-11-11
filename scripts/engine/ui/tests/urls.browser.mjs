@@ -13,6 +13,18 @@ const CASES = {
   configs: { row: "table a[href^='#configs/']", open: ".modal", q: "zzzz-sem-resultado", qRows: 0 },
   workflows: { row: "table a[href^='#workflows/']", open: ".modal", q: "zzzz-sem-resultado", qRows: 0 },
   agents: { row: "table a[href^='#agents/']", open: ".modal", q: "zzzz-sem-resultado", qRows: 0 },
+  maps: { custom: async (page, BASE, { assert, settle, hash }) => {
+    await page.goto(`${BASE}/#maps`); await page.locator("section.netops-maps").waitFor(); await settle();
+    assert.match(hash(), /^#maps\/all/, `maps: #maps normaliza p/ #maps/<id> (${hash()})`);
+    await page.goto(`${BASE}/#maps/mapa-inexistente`); await page.locator("section.netops-maps").waitFor(); await settle();
+    assert.match(hash(), /^#maps\/all/, `maps: id inexistente cai em all (${hash()})`);
+    await page.goto(`${BASE}/#maps/all?host=1`); await page.locator(".modal").first().waitFor();
+    assert.ok((await page.locator(".modal").innerText()).includes("RT-CORE-01"), "maps: deep link do host");
+    await page.reload(); await page.locator(".modal").first().waitFor();
+    await page.goBack(); await settle(); assert.equal(await page.locator(".modal").count(), 0, "maps: Voltar fecha o host");
+    await page.goto(`${BASE}/#maps/all?host=9999`); await settle();
+    assert.equal(await page.locator(".modal").count(), 0, "maps: host inexistente não abre modal");
+  } },
   backups: { row: ".bk-svc a[href^='#backups/services/']", open: ".modal", q: "Servico B", qRows: -1, extra: [
     ["#backups/storage", "a[href^='#backups/storage/']"], ["#backups/storage/1", ".modal:has-text('Backups')"],
     ["#backups/storage/1?file=by-id%2F1%2Fa.rsc", ".modal pre"], ["#backups/services/new", ".modal"]] },
@@ -31,6 +43,7 @@ for (const menu of want) {
   const hash = () => new URL(page.url()).hash;
   const settle = () => page.waitForTimeout(300);
   try {
+    if (c.custom) { await c.custom(page, BASE, { assert, settle, hash }); assert.equal(errors.length, 0, `${menu}: erros JS ${errors}`); console.log("OK  ", menu); await ctx.close(); continue; }
     await page.goto(`${BASE}/#${menu}`); await page.locator(c.row).first().waitFor();
     // 1) itens diferentes => URLs diferentes
     const hrefs = await page.locator(c.row).evaluateAll((a) => [...new Set(a.map((x) => x.getAttribute("href")))]);

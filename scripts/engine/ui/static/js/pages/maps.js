@@ -2,13 +2,18 @@
 import { html, useState, useEffect, useRef, api, Spinner, toast, handleError, Modal, ConfirmDialog } from "../ui.js";
 import { HostForm } from "./hosts.js";
 import { LinkForm, IconPicker } from "../components.js";
+import { useMenuRoute, navigate, parseRoute } from "../route.js";
 import { snapshotToView, mapToWire, hostLabel } from "../host-identity.js";
 
 const blank = (id, name) => ({ id, name, kind: "custom", members: [], positions: {}, objects: [], edges: {}, visual_links: [] });
 const persisted = mapToWire;
 export function MapsPage() {
   const [snapshot, setSnapshot] = useState(null), [Editor, setEditor] = useState(null), [error, setError] = useState(null);
-  const [current, setCurrent] = useState(sessionStorage.getItem("netops_map") || "all");
+  // URL: #maps/<mapa>[?host=<id>|new][&link=<id>]  (core/rules/urls-navegacao.md)
+  const r = useMenuRoute("maps");
+  const current = r.segments[0] || sessionStorage.getItem("netops_map") || "all";
+  const curId = () => { const p = parseRoute(); return (p.menu === "maps" && p.segments[0]) || sessionStorage.getItem("netops_map") || "all"; };   // leitura "ao vivo" (closures antigas)
+  const setCurrent = (id, replace = false) => { sessionStorage.setItem("netops_map", id); navigate({ menu: "maps", segments: [id], params: replace ? parseRoute().params : {} }, { replace }); };
   const [status, setStatus] = useState("Salvo no servidor"), [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [deleting, setDeleting] = useState(false), deletion = useRef(false);
@@ -27,7 +32,8 @@ export function MapsPage() {
     if (mounted.current) {
       setSnapshot(previous => previous === previousServer && previous?.rev === data.rev && previous?.hosts_rev === data.hosts_rev &&
         previous?.topology.rev === data.topology.rev && previous?.read_only === data.read_only ? previous : data);
-      setCurrent(id => data.map_aliases?.[id] || (data.maps.some(m => m.id === id) ? id : "all"));
+      const cur = curId(), next = data.map_aliases?.[cur] || (data.maps.some(m => m.id === cur) ? cur : "all");
+      if (next !== parseRoute().segments[0] || parseRoute().menu !== "maps") { if (parseRoute().menu === "maps") setCurrent(next, true); }
     }
   }
   async function reload({ background = false } = {}) {
@@ -55,7 +61,7 @@ export function MapsPage() {
     addEventListener("beforeunload", leave);
     const navigate = event => {
       const link = event.target.closest?.('a[href^="#"]');
-      if (link && link.hash !== "#maps" && (running.current || pending.current.size || blocked.current || deletion.current)) {
+      if (link && link.hash.split("?")[0].split("/")[0] !== "#maps" && (running.current || pending.current.size || blocked.current || deletion.current)) {
         event.preventDefault(); event.stopPropagation();
         toast.err("Aguarde o salvamento do mapa ou resolva a falha antes de sair.");
       }
@@ -99,20 +105,28 @@ export function MapsPage() {
     if (blocked.current || pending.current.size || running.current) { toast.err("Aguarde o salvamento do mapa ou resolva o conflito antes de continuar."); return false; }
     return true;
   }
-  async function switchMap(id) { if (!await flush()) return; setCurrent(id); sessionStorage.setItem("netops_map", id); }
-  async function openHost(args) {
+  async function switchMap(id) { if (!await flush()) return; setCurrent(id); }
+  const hostParam = r.params.host || "", linkParam = r.params.link || "";
+  const hostRef = useRef(null), linkRef = useRef(null), opening = useRef(false);
+  async function openHost(args, fromUrl = false) {
     if (!await flush()) return;
+    if (!fromUrl) { opening.current = true; r.pushParams({ host: args.id != null ? String(args.id) : "new", link: "" }); }
     try {
       const h = await api.get("/hosts");
       const host = args.id ? h.hosts.find(x => x.id === args.id) : { __new: true };
+      if (!host) { toast.err("Host não encontrado"); r.setParams({ host: "" }); return; }
       setHostDialog({ host, groups: h.groups, rev: h.rev, initial: { site: args.site || "" },
         ...(args.point ? { placement: { map_id: live.current.maps.find(m => m.id === current)?.id || "all", maps_rev: live.current.rev, ...args.point } } : {}) });
     } catch (e) { handleError(e); }
+    finally { opening.current = false; }
   }
-  async function openLink(args) {
+  async function openLink(args, fromUrl = false) {
     if (!await flush()) return;
+    if (!fromUrl && args.id != null && !args.remove) { opening.current = true; r.pushParams({ link: String(args.id), host: "" }); }
     const s = live.current, link = args.id ? s.topology.links.find(l => l.id === args.id) : { ...args, __new: true };
     if (args.remove) { setConfirm({ kind: "link", id: args.id }); return; }
+    opening.current = false;
+    if (!link) { toast.err("Enlace não encontrado"); r.setParams({ link: "" }); return; }
     setLinkDialog({ link, hosts: Object.values(s.hosts).map(host => ({ ...host, label: hostLabel(host) })), rev: s.topology.rev });
   }
   async function deleteSelection(selection) {
@@ -141,6 +155,23 @@ export function MapsPage() {
       try { accept(await api.get("/maps")); } catch (refreshError) { handleError(refreshError); }
     } finally { deletion.current = false; if (mounted.current) setDeleting(false); }
   }
+  const urlMap = r.segments[0] || "";
+  useEffect(() => {   // URL com mapa inexistente/alias (digitada ou colada) → normaliza sem criar histórico
+    if (!snapshot) return;
+    const next = snapshot.map_aliases?.[urlMap || current] || (snapshot.maps.some(m => m.id === (urlMap || current)) ? (urlMap || current) : "all");
+    if (next !== urlMap) setCurrent(next, true);
+  }, [urlMap, snapshot]);
+  hostRef.current = openHost; linkRef.current = openLink;
+  useEffect(() => {   // deep link / Voltar: o parâmetro manda; fecha ou abre o diálogo para casar com a URL
+    if (!snapshot || !Editor) return;
+    if (!hostParam && hostDialog) setHostDialog(null);
+    else if (hostParam && !hostDialog && !opening.current) hostRef.current(hostParam === "new" ? {} : { id: /^\d+$/.test(hostParam) ? Number(hostParam) : hostParam }, true);
+  }, [hostParam, !!snapshot, !!Editor]);
+  useEffect(() => {
+    if (!snapshot || !Editor) return;
+    if (!linkParam && linkDialog) setLinkDialog(null);
+    else if (linkParam && !linkDialog && !opening.current) linkRef.current({ id: /^\d+$/.test(linkParam) ? Number(linkParam) : linkParam }, true);
+  }, [linkParam, !!snapshot, !!Editor]);
   if (error && (!snapshot || !Editor)) return html`<div class="card">Não foi possível abrir os mapas: ${error.message}<button onClick=${reload}>Tentar novamente</button></div>`;
   if (!snapshot || !Editor) return html`<${Spinner} />`;
   const map = snapshot.maps.find(m => m.id === current) || snapshot.maps[0];
@@ -151,9 +182,9 @@ export function MapsPage() {
       onDeleteSelection=${async selection => { if (await flush()) setConfirm({ kind: "selection", ...selection }); }}
       onError=${message => toast.err(message)} onBusy=${setBusy}
       onRetry=${() => { blocked.current = false; drain(); }} onReload=${() => setConfirm({ kind: "reload" })} />
-    ${hostDialog && html`<${HostForm} ...${hostDialog} onClose=${() => { setHostDialog(null); reload().catch(handleError); }}
-      onSaved=${() => { setHostDialog(null); reload().catch(handleError); }} />`}
-    ${linkDialog && html`<${LinkForm} ...${linkDialog} onClose=${() => setLinkDialog(null)} onSaved=${() => { setLinkDialog(null); reload().catch(handleError); }} />`}
+    ${hostDialog && html`<${HostForm} ...${hostDialog} onClose=${() => { setHostDialog(null); r.pushParams({ host: "" }); reload().catch(handleError); }}
+      onSaved=${() => { setHostDialog(null); r.pushParams({ host: "" }); reload().catch(handleError); }} />`}
+    ${linkDialog && html`<${LinkForm} ...${linkDialog} onClose=${() => { setLinkDialog(null); r.pushParams({ link: "" }); }} onSaved=${() => { setLinkDialog(null); r.pushParams({ link: "" }); reload().catch(handleError); }} />`}
     ${newMap && html`<${Modal} title="Novo mapa" onClose=${() => setNewMap(false)}><form onSubmit=${e => {
       e.preventDefault(); const name = new FormData(e.currentTarget).get("name").trim(); if (!name) return;
       const id = "map-" + (globalThis.crypto?.randomUUID?.() || Date.now()); save(blank(id, name)); setCurrent(id); setNewMap(false);
