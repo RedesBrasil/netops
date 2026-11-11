@@ -350,4 +350,32 @@ try {
       console.log('PASS: takeover e sessão removida não causam reconexões repetidas.');
     } finally { await f.close(); }
   }
+  {
+    const f = await fixture(browser);
+    try {
+      const page = await f.page();
+      await page.goto(BASE + '/#claude/' + IDS.A);
+      await waitSession(page, IDS.A);
+      await page.evaluate(() => window.__claudeMock.connections.at(-1).emit({
+        type: 'result', is_error: true, session_id: window.__claudeMock.connections.at(-1).sid,
+        result: "There's an issue with the selected model (fixture-model). It may not exist or you may not have access to it.",
+      }));
+      await page.getByText('Problema com o modelo', { exact: true }).waitFor();
+      assert.equal(await page.getByText('Limite de uso atingido (rate limit)', { exact: true }).count(), 0);
+      await page.getByRole('button', { name: 'Modelo de teste', exact: true }).click();
+      await until(() => page.evaluate(() => window.__claudeMock.connections.length === 2), 'reabrir com outro modelo');
+      const url = await page.evaluate(() => window.__claudeMock.connections.at(-1).url);
+      assert.equal(new URL(url).searchParams.get('resume'), IDS.A);
+      assert.equal(new URL(url).searchParams.get('model'), 'fixture-model');
+      await page.evaluate(() => window.__claudeMock.connections.at(-1).emit({
+        type: 'result', is_error: true, api_error_status: 429, errors: ['Limite de teste'],
+      }));
+      await page.getByText('Limite de uso atingido (rate limit)', { exact: true }).waitFor();
+      assert.match(await page.locator('.cc-transcript').innerText(), /Limite de teste/);
+      await page.evaluate(() => window.__claudeMock.connections.at(-1).close(1006));
+      await page.waitForTimeout(3250);
+      assert.equal(await page.evaluate(() => window.__claudeMock.connections.length), 2);
+      console.log('PASS: erro de modelo permite troca e retoma UUID; 429 explícito preserva detalhe sem loop.');
+    } finally { await f.close(); }
+  }
 } finally { await browser.close(); }

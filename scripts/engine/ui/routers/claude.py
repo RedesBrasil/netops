@@ -149,7 +149,7 @@ def claude_attach_ticket(request: Request, response: Response):
 
 @router.get("/claude/models")
 def claude_models_endpoint():
-    """Modelos disponíveis (lidos dinamicamente da API) + o padrão econômico.
+    """Modelos anunciados pelo CLI/provider da sessão + o padrão econômico.
     Nunca devolve token/segredo — só id e nome de exibição."""
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
@@ -159,8 +159,7 @@ def claude_models_endpoint():
 
 @router.post("/claude/models/refresh")
 def claude_models_refresh():
-    """Releitura MANUAL dos modelos (botão "Verificar modelos"). Força ir à API agora e
-    regrava o cache semanal. ⚠ usar em excesso consome cota e pode gerar rate limit (429)."""
+    """Releitura manual do catálogo do CLI, sem prompt; regrava o cache semanal."""
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     models = claude_models.list_models(force=True)

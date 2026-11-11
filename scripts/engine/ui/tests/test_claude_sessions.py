@@ -82,3 +82,123 @@ def test_takeover_uses_close_code_without_reconnect_loop(env):
         assert session.ws is new
         assert closes == [{"code": 4409, "reason": "session_superseded"}]
     asyncio.run(check())
+
+
+@pytest.fixture()
+def sdk_message_types(monkeypatch):
+    """Mensagens falsas permitem testar tradução sem instalar ou iniciar o SDK."""
+    classes = {}
+    for name in ("SystemMessage", "StreamEvent", "AssistantMessage", "UserMessage",
+                 "ResultMessage", "TextBlock", "ThinkingBlock", "ToolUseBlock", "ToolResultBlock"):
+        cls = type(name, (SimpleNamespace,), {})
+        classes[name] = cls
+        monkeypatch.setattr(claude_svc, name, cls, raising=False)
+    return SimpleNamespace(**classes)
+
+
+def _translated_events(message):
+    sent = []
+    async def check():
+        session = claude_svc.ClaudeWebSession()
+        async def capture(event):
+            sent.append(event)
+        session._send = capture
+        await session._translate(message)
+    asyncio.run(check())
+    return sent
+
+
+@pytest.mark.parametrize("error_code", ["not_found", "rate_limit", "authentication_failed"])
+def test_assistant_error_preserves_detail_without_assistant_text(sdk_message_types, error_code):
+    detail = "There is an issue with the selected model (fixture-model)."
+    msg = sdk_message_types.AssistantMessage(
+        model="fixture-model", error=error_code,
+        content=[sdk_message_types.TextBlock(text=detail)],
+    )
+    events = _translated_events(msg)
+    errors = [event for event in events if event["type"] == "error"]
+    assert len(errors) == 1
+    assert detail in errors[0]["detail"]
+    assert errors[0]["error_code"] == error_code
+    assert not any(event["type"] == "text_delta" for event in events)
+
+
+@pytest.mark.parametrize("status", [429, 529, 401, 403])
+def test_result_preserves_structured_api_failure(sdk_message_types, status):
+    msg = sdk_message_types.ResultMessage(
+        session_id=A, total_cost_usd=0, usage={}, is_error=True,
+        result=None, errors=["Falha simulada da API"], api_error_status=status,
+    )
+    events = _translated_events(msg)
+    result = next(event for event in events if event["type"] == "result")
+    assert result["is_error"] is True
+    assert result["result"] is None
+    assert result["errors"] == ["Falha simulada da API"]
+    assert result["api_error_status"] == status
+
+
+def test_result_remains_compatible_with_sdk_without_error_metadata(sdk_message_types):
+    msg = sdk_message_types.ResultMessage(
+        session_id=A, total_cost_usd=0, usage={}, is_error=False, result="Resposta simulada",
+    )
+    events = _translated_events(msg)
+    result = next(event for event in events if event["type"] == "result")
+    assert result["result"] == "Resposta simulada"
+    assert result.get("errors") is None
+    assert result.get("api_error_status") is None
+
+
+def test_start_with_cold_cache_discovers_model_outside_websocket_loop(env, monkeypatch):
+    """A descoberta síncrona possui seu próprio loop e precisa ocorrer em outra thread."""
+    import threading
+    from services import claude_models
+
+    thread_id = threading.get_ident()
+    discovered = []
+    clients = []
+    expected = "claude-sonnet-5-5[1m]"
+
+    async def discover():
+        assert threading.get_ident() != thread_id
+        discovered.append(True)
+        return [{"id": expected, "name": "Sonnet fictício"}]
+
+    class Client:
+        def __init__(self, *, options):
+            self.options = options
+            self.connected = False
+            self.disconnected = False
+            clients.append(self)
+
+        async def connect(self, prompt=None):
+            assert prompt is None
+            self.connected = True
+
+        async def disconnect(self):
+            self.disconnected = True
+
+        async def receive_messages(self):
+            if False:
+                yield None
+
+    monkeypatch.setattr(claude_models, "_cache", {"at": 0.0, "models": None})
+    monkeypatch.setattr(claude_models, "_retry_after", 0.0)
+    monkeypatch.setattr(claude_models, "_load_disk", lambda: None)
+    monkeypatch.setattr(claude_models, "_save_disk", lambda *args: None)
+    monkeypatch.setattr(claude_models, "_fetch_cli", discover)
+    monkeypatch.setattr(claude_svc, "ClaudeSDKClient", Client, raising=False)
+
+    async def check():
+        session = claude_svc.ClaudeWebSession()
+        monkeypatch.setattr(session, "_options", lambda: SimpleNamespace(model=session._model))
+        try:
+            await session.start()
+            assert discovered == [True]
+            assert clients[0].options.model == expected
+            assert clients[0].connected
+            assert claude_models._retry_after == 0.0
+        finally:
+            await session.teardown()
+        assert clients[0].disconnected
+
+    asyncio.run(check())

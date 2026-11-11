@@ -10,6 +10,7 @@ import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import { MarkdownView, VaultBanner, Modal } from "../components.js";
 import { authToken } from "../api.js";
+import { classifyClaudeError, claudeErrorDetail } from "../claude-errors.js";
 import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
   rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, copyClaudeSessionLink } from "../claude-sessions.js";
 
@@ -34,37 +35,11 @@ const MODES = [
   { value: "bypassPermissions", label: "Bypass — full-auto ⚠" },
 ];
 
-// Modelos oferecidos no seletor. Sonnet é o padrão econômico (ver claude_svc._options): o
-// lançamento força "sonnet" p/ não herdar um alias quebrado do store. Trocar aqui aplica na
-// sessão viva (set_model) e passa em ?model= no próximo (re)lançamento.
-// Rede de segurança se GET /claude/models falhar (o servidor também tem fallback próprio).
-// Formato {id, name} — o mesmo do endpoint. A lista REAL vem dinâmica da API (claude_models.py).
+// Catálogo anunciado pelo mesmo CLI/provider que executa a conversa. Se indisponível,
+// o CLI resolve seu próprio padrão; a UI não presume versões ou acesso da conta.
 const MODELS_FALLBACK = [
-  { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
-  { id: "claude-opus-4-8", name: "Claude Opus 4.8" },
-  { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
+  { id: "default", name: "Padrão do Claude Code" },
 ];
-
-// O erro de modelo do CLI vem em inglês ("issue with the selected model … may not exist …").
-// Detecta p/ abrir o modal de troca em vez de só cuspir o erro na transcrição.
-function isModelError(detail) {
-  const d = String(detail || "");
-  return /model|modelo/i.test(d) && /(exist|access|selected|not found|unavailable|inv[aá]lid|dispon)/i.test(d);
-}
-
-// A CLI mascara rate limit (HTTP 429) como "issue with the selected model (X)". Se X é um
-// modelo que a conta TEM (está na lista), o problema real é LIMITE DE USO — trocar de modelo
-// não adianta (o 429 bloqueia todos). Detecta p/ mostrar o aviso certo, sem chamada extra.
-function looksRateLimited(detail, models) {
-  const d = String(detail || "");
-  if (/rate.?limit|429|too many|overloaded|usage limit/i.test(d)) return true;
-  const m = /selected model \(([^)]+)\)/i.exec(d);
-  if (m && Array.isArray(models)) {
-    const id = m[1].trim();
-    return models.some((x) => x.id === id);
-  }
-  return false;
-}
 
 // Fecha o último item "aberto" (bolha em streaming) antes de empurrar outro tipo.
 function closeOpen(arr) {
@@ -112,7 +87,6 @@ function useClaudeSession() {
   const fileRef = useRef(null);
   const sessionIdRef = useRef("");      // sid vigente (p/ retomar na reconexao automatica)
   const modelRef = useRef("");          // modelo vigente (vai no ?model=; vazio => default do servidor)
-  const modelsRef = useRef(MODELS_FALLBACK); // espelho da lista (p/ detectar 429 disfarçado no onmessage)
   const noReconnectRef = useRef(false); // erro terminal (rate limit/modelo): NÃO reconectar em loop
   const failCountRef = useRef(0);       // quedas seguidas sem conectar (circuit breaker anti-tempestade)
   const resumeIdRef = useRef("");       // alvo de retomada explicita (Sessoes / Nova sessao)
@@ -134,6 +108,7 @@ function useClaudeSession() {
     sessionIdRef.current = id || "";
     activeRef.current = true;
     setInput(""); setShowSessions(false);
+    setShowModelPick(false); setShowRateLimit(false);
     setSessionId(id || ""); setItems([]); setWorking(false); setStatus("conectando");
     setActive(true); setGen((g) => g + 1);
   }
@@ -240,20 +215,39 @@ function useClaudeSession() {
   // automático é no máx. 1x/semana). Devolve {models, default} p/ o chamador avisar/atualizar.
   const refreshModels = useCallback(async () => {
     const d = await api.post("/claude/models/refresh");
-    if (Array.isArray(d.models) && d.models.length) { setModels(d.models); modelsRef.current = d.models; }
+    if (Array.isArray(d.models) && d.models.length) setModels(d.models);
     if (d.default && !modelRef.current) { setModelSel(d.default); modelRef.current = d.default; }
     return d;
   }, []);
   useEffect(() => { if (active) refreshAuth(); }, [active, gen]);
 
-  // Modelos disponíveis: lidos dinamicamente do servidor (que lê da API — sem hard-code).
+  // Modelos disponíveis: catálogo do CLI, sem inferência nem acesso direto a credenciais.
   // Popula o seletor e define o padrão econômico; o init depois ajusta p/ o modelo real vigente.
   useEffect(() => {
     api.get("/claude/models").then((d) => {
-      if (Array.isArray(d.models) && d.models.length) { setModels(d.models); modelsRef.current = d.models; }
+      if (Array.isArray(d.models) && d.models.length) setModels(d.models);
       if (d.default && !modelRef.current) { setModelSel(d.default); modelRef.current = d.default; }
     }).catch(() => {});
   }, []);
+
+  function handleAgentError(ev) {
+    const detail = claudeErrorDetail(ev);
+    const kind = classifyClaudeError(ev);
+    setShowModelPick(kind === "model");
+    setShowRateLimit(kind === "rate_limit");
+    setWorking(false);
+    setItems((prev) => {
+      const next = closeOpen(prev);
+      if (next[next.length - 1]?.type !== "error" || next[next.length - 1].detail !== detail)
+        next.push({ type: "error", detail });
+      return next;
+    });
+    if (kind === "rate_limit" || kind === "model") {
+      noReconnectRef.current = true;
+      if (kind === "rate_limit") { setRateLimitDetail(detail); setShowRateLimit(true); }
+      else { setModelErr(detail); setShowModelPick(true); }
+    }
+  }
 
   // ---- ciclo de vida do WebSocket: conecta enquanto `active` e RECONECTA sozinho ----
   // Só desliga em troca de sessão (gen) ou ao encerrar (active=false). Trocar de ROTA não
@@ -371,6 +365,7 @@ function useClaudeSession() {
           case "result":
             setWorking(false);
             if (ev.session_id) identifySession(ev.session_id);
+            if (ev.is_error && (ev.result || ev.errors?.length || ev.api_error_status)) handleAgentError(ev);
             setItems((prev) => {
               const next = closeOpen(prev);
               next.push({ type: "result", cost: ev.cost_usd, usage: ev.usage, isError: ev.is_error });
@@ -384,9 +379,7 @@ function useClaudeSession() {
               setItems((prev) => [...closeOpen(prev), { type: "error", detail: "Muitas sessões Claude abertas — feche alguma e tente de novo." }]);
               break;
             }
-            setItems((prev) => [...closeOpen(prev), { type: "error", detail: ev.detail }]);
-            if (looksRateLimited(ev.detail, modelsRef.current)) { noReconnectRef.current = true; setRateLimitDetail(ev.detail); setShowRateLimit(true); }  // 429: não reconectar em loop
-            else if (isModelError(ev.detail)) { noReconnectRef.current = true; setModelErr(ev.detail); setShowModelPick(true); }  // modelo inválido: para e oferece troca
+            handleAgentError(ev);
             refreshAuth();   // credencial expirada aparece como erro genérico; confirma no servidor
             break;
         }
@@ -658,8 +651,7 @@ function LoginBanner({ auth, onLogin }) {
 // você abre no SEU navegador, cola o código de volta. Ver services/claude_auth.py.
 function LoginModal({ auth, onClose, onChanged, onRelaunch, onVerifyModels }) {
   const [phase, setPhase] = useState("idle");   // idle|starting|url|done|error
-  const [modelChecks, setModelChecks] = useState(0);   // cliques em "Verificar modelos"
-  const [modelWarn, setModelWarn] = useState(false);   // aviso de uso excessivo (3+ cliques)
+  const [checkingModels, setCheckingModels] = useState(false);
   const [url, setUrl] = useState("");
   const [code, setCode] = useState("");
   const [log, setLog] = useState([]);
@@ -709,17 +701,17 @@ function LoginModal({ auth, onClose, onChanged, onRelaunch, onVerifyModels }) {
     catch (_) { toast.err("Falha ao deslogar"); }
   }
 
-  // "Verificar modelos": relê a lista da API na hora. No 3º clique (e além) mostra o aviso
-  // de que verificar em excesso pode estourar o rate limit (429) e travar o Claude.
+  // Redescobre o catálogo do CLI sem enviar prompt ao modelo.
   async function verifyModels() {
-    const n = modelChecks + 1;
-    setModelChecks(n);
-    if (n >= 3) setModelWarn(true);
+    if (checkingModels) return;
+    setCheckingModels(true);
     try {
       const d = onVerifyModels && (await onVerifyModels());
       toast.ok("Modelos atualizados: " + ((d && d.models && d.models.length) || 0));
     } catch (_) {
       toast.err("Falha ao verificar modelos");
+    } finally {
+      setCheckingModels(false);
     }
   }
 
@@ -738,15 +730,9 @@ function LoginModal({ auth, onClose, onChanged, onRelaunch, onVerifyModels }) {
     </div>`}
 
     ${phase === "idle" && html`<div>
-      ${modelWarn && html`<div class="card cc-model-warn">
-        ⚠ <b>Verificar modelos em excesso</b> consome a cota da conta e pode gerar
-        <b>bloqueio temporário (rate limit / HTTP 429)</b>, que trava TODO o Claude Code.
-        A lista já é relida automaticamente no máximo <b>uma vez por semana</b> — use este
-        botão só quando realmente precisar.
-      </div>`}
       <div class="modal-actions">
-        ${cur.loggedIn && html`<button class="sm" onClick=${verifyModels}
-          title="Relê os modelos disponíveis da API (no automático, no máx. 1x/semana)">Verificar modelos</button>`}
+        ${cur.loggedIn && html`<button class="sm" onClick=${verifyModels} disabled=${checkingModels}
+          title="Relê o catálogo do Claude Code instalado, sem enviar mensagem">${checkingModels ? "Verificando…" : "Verificar modelos"}</button>`}
         ${cur.loggedIn && html`<button class="sm danger" onClick=${doLogout}>Sair da conta</button>`}
         <button class="sm" onClick=${() => start("console")} title="Cobrança por uso da API (Anthropic Console)">Entrar com API (Console)</button>
         <button class="primary" onClick=${() => start("claudeai")}>Entrar com assinatura Claude</button>
@@ -785,21 +771,16 @@ function LoginModal({ auth, onClose, onChanged, onRelaunch, onVerifyModels }) {
   <//>`;
 }
 
-// Modal que aparece quando o modelo escolhido falha (ex.: alias inexistente): mostra a
-// mensagem do CLI e deixa escolher outro modelo, relançando a sessão.
-// Modal de limite de uso: aparece quando o erro "de modelo" é, na verdade, um 429 disfarçado
-// (o modelo é válido). Explica que é cota da conta e que trocar de modelo não resolve.
+// Limite exige evidência explícita do SDK/API. Erro genérico de modelo permite troca.
 function RateLimitModal({ detail, onClose }) {
   return html`<${Modal} title="Limite de uso atingido (rate limit)" onClose=${onClose}>
     <div class="cc-model-pick">
       <div class="card cc-model-warn">
-        A conta atingiu um <b>limite temporário de uso (HTTP 429)</b>. A API rejeita
-        <b>todos os modelos</b> por um tempo — por isso trocar de modelo não resolve, e a
-        mensagem "issue with the selected model" da CLI é enganosa: o problema é a cota.
+        O serviço informou um <b>limite temporário de uso</b> para esta solicitação.
+        Aguarde antes de tentar novamente.
       </div>
-      <p class="help">A API não informa o horário exato de liberação. Costuma liberar em
-        minutos até ~1h (rajada) ou até ~5h (teto do plano). Aguarde e tente de novo — evite
-        reenviar em sequência, pois isso realimenta o bloqueio.</p>
+      <p class="help">Consulte o detalhe abaixo para orientações de liberação.
+        O erro não comprova bloqueio dos demais modelos.</p>
       ${detail && html`<p class="cc-model-msg mono">${detail}</p>`}
     </div>
   <//>`;

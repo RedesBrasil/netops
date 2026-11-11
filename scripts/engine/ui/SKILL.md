@@ -199,6 +199,27 @@ recarregamento, logout e expiração; exige console temporário em loopback via
 
 ## Links e reabertura das sessões Claude Code
 
+### Catálogo e erros de modelo
+
+`GET /api/claude/models` descobre modelos pelo handshake do mesmo CLI, HOME, diretório
+e configurações usados pela conversa. Não envia prompt nem lê tokens diretamente.
+Isso respeita gateways/provedores locais; consultar o catálogo público da Anthropic
+não comprova acesso pelo provedor que executa a aba. O padrão é o Sonnet mais recente
+anunciado pelo CLI, com fallback no padrão do próprio Claude Code, sem versões fixas.
+O cache semanal usa `source: claude-cli-v1` e ignora o antigo cache da API; uma falha
+preserva o último catálogo e limita tentativas automáticas por 60 segundos.
+**Verificar modelos** força nova descoberta sem inferência.
+
+O SDK preserva `AssistantMessage.error`, `ResultMessage.errors` e `api_error_status`.
+Um erro genérico “issue with the selected model” abre a escolha de outro modelo e
+mantém o UUID da conversa. Só evidência explícita de limite (HTTP 429/código `rate_limit`)
+abre o aviso de uso; constar no catálogo não comprova cota esgotada. HTTP 529 indica
+sobrecarga, não 429. Ambos os casos de modelo/limite impedem reconexão automática em loop.
+
+Testes: `tests/test_claude_models.py`, `tests/test_claude_sessions.py`,
+`node --test scripts/engine/ui/tests/claude-errors.test.mjs` e
+`tests/claude-sessions.browser.mjs` com WebSockets fictícios.
+
 Cada conversa tem a URL `/#claude/<UUID>`. **Copiar link**, no cabeçalho ou na lista
 **Sessões**, permite referenciá-la separadamente. O título da conversa na lista também
 é um link que pode ser aberto em outra aba. O link exige o login normal do console;
