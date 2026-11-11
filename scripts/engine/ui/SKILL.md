@@ -481,3 +481,8 @@ descartar a fila; ícone inválido continua sendo tratado como erro de validaç�
 ## Reiniciar o console
 
 Use `scripts/engine/restart-console.sh` (desacopla, preserva host/flags, espera o lock, valida HTTP, log em `/tmp/netops-restart.log`). Nunca `kill` + `start.sh` manual.
+
+## URLs de navegação (regra)
+
+Todo item aberto e todo filtro do console tem URL própria (`#menu/<id>?filtro=valor`). Regra completa e
+checklist em `core/rules/urls-navegacao.md` — leia antes de criar ou alterar qualquer página.

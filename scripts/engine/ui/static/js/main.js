@@ -39,7 +39,7 @@ const ORDER = ["Inventário", "Conhecimento", "Saída", "Sistema"];
 
 function useHash() {
   const readHash = () => {
-    const value = location.hash.slice(1) || "hosts";
+    const value = location.hash.slice(1).split("?")[0] || "hosts";
     if (value !== "topology") return value;
     // Links antigos abrem Mapas, sem carregar a página removida.
     history.replaceState(null, "", "#maps");
@@ -72,7 +72,7 @@ function App({ onLogout, showLogout }) {
 
 function Shell({ onLogout, showLogout }) {
   const hash = useHash();
-  const route = hash.startsWith("claude/") ? "claude" : hash;
+  const route = hash.split("/")[0];
   const claude = useClaude();
   const [meta, setMeta] = useState({ network_name: "NetOps" });
   const [navOpen, setNavOpen] = useState(false);     // gaveta de navegação (mobile)

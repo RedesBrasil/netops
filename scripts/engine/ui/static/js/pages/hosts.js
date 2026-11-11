@@ -2,12 +2,16 @@
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
 import { ResourceTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog, RenameCascadeHint, IconPicker as HostIconPicker } from "../components.js";
 import { Modal, ConflictDialog } from "../ui.js";
+import { useRoute, navigate } from "../route.js";
 
 const INHERIT = ["vendor", "role", "credential"];
 
 export function HostsPage() {
   const res = useResource("/hosts");
-  const [editing, setEditing] = useState(null); // host object or {__new:true}
+  // URL: #hosts[/<id>|/new][?q=&vendor=&role=&group=&sort=&dir=]  (core/rules/urls-navegacao.md)
+  const route = useRoute();
+  const { q = "", vendor = "", role = "", group = "", sort = "", dir = "asc" } = route.params;
+  const setParams = (patch) => navigate({ menu: "hosts", segments: route.segments, params: { ...route.params, ...patch } }, { replace: true });
   const [confirm, setConfirm] = useState(null);
   const [deleteRefs, setDeleteRefs] = useState(null);
   useEffect(() => {
@@ -16,10 +20,18 @@ export function HostsPage() {
   }, [confirm]);
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
-  const { hosts, rev, groups } = res.data;
+  const { hosts: allHosts, rev, groups } = res.data;
+  const seg = route.segments[0];
+  const editing = seg === "new" ? { __new: true } : seg ? allHosts.find((h) => String(h.id) === seg) || null : null;
+  const setEditing = (h) => navigate({ menu: "hosts", segments: h ? [h.__new ? "new" : String(h.id)] : [], params: route.params });
+  const opts = (f) => [...new Set(allHosts.map(f).filter(Boolean))].sort();
+  const needle = q.trim().toLowerCase();
+  const hosts = allHosts.filter((h) =>
+    (!vendor || h.effective.vendor === vendor) && (!role || h.effective.role === role) && (!group || h.explicit.group === group) &&
+    (!needle || [h.explicit.hostname, h.explicit.mgmt_ip].some((v) => String(v || "").toLowerCase().includes(needle))));
 
   const cols = [
-    { key: "hostname", label: "Nome do host", sort: (r) => r.explicit.hostname || "", render: (r) => html`<b>${r.explicit.hostname}</b>` },
+    { key: "hostname", label: "Nome do host", sort: (r) => r.explicit.hostname || "", render: (r) => html`<a href=${"#hosts/" + encodeURIComponent(r.id)} onClick=${(e) => e.stopPropagation()}><b>${r.explicit.hostname}</b></a>` },
     { key: "mgmt_ip", label: "IP", sort: (r) => r.explicit.mgmt_ip || "", render: (r) => html`<span class="mono">${r.explicit.mgmt_ip}</span>` },
     { key: "vendor", label: "Vendor", sort: (r) => r.effective.vendor || "", render: (r) => html`<${Badge} kind="accent">${r.effective.vendor || "?"}<//>` },
     { key: "role", label: "Role", sort: (r) => r.effective.role || "", render: (r) => r.effective.role || "—" },
@@ -31,7 +43,16 @@ export function HostsPage() {
   return html`<div>
     <div class="page-title"><h1>Hosts</h1><span class="spacer"></span>
       <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Novo host</button></div>
+    <div class="toolbar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <input type="search" placeholder="Buscar nome ou IP" value=${q} onInput=${(e) => setParams({ q: e.target.value })} />
+      ${[["vendor", "Vendor", vendor, (h) => h.effective.vendor], ["role", "Role", role, (h) => h.effective.role], ["group", "Grupo", group, (h) => h.explicit.group]].map(([k, l, v, f]) => html`
+        <select key=${k} aria-label=${l} value=${v} onChange=${(e) => setParams({ [k]: e.target.value })}>
+          <option value="">${l}: todos</option>${opts(f).map((o) => html`<option value=${o}>${o}</option>`)}</select>`)}
+      ${(q || vendor || role || group) && html`<button class="sm" onClick=${() => setParams({ q: "", vendor: "", role: "", group: "" })}>Limpar filtros</button>`}
+    </div>
+    ${seg && seg !== "new" && !editing && html`<div class="card">Host '${seg}' não encontrado. <a href="#hosts">Voltar aos hosts</a></div>`}
     <${ResourceTable} columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
+      sortState=${{ key: sort || null, dir }} onSortChange=${(n) => setParams({ sort: n.key || "", dir: n.dir === "desc" ? "desc" : "" })}
       onRowClick=${(r) => setEditing(r)}
       actions=${(r) => html`<button class="sm danger" onClick=${() => setConfirm(r.id)}>Excluir</button>`}
       empty="Nenhum host. Clique em + Novo host." />

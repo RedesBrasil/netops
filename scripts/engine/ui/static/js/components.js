@@ -168,7 +168,10 @@ export function IconPicker({ value, onChange, error, title = "Ícone do host", d
 /* --------------------------- ResourceTable ------------------------------ */
 export function ResourceTable({ columns, rows, onRowClick, actions, empty, sortState, onSortChange }) {
   // Ordenação opt-in: colunas que definem `sort: (row) => valor` ficam clicáveis.
-  const [sort, setSort] = useState({ key: null, dir: "asc" });
+  // `sortState`/`onSortChange` opcionais: ordenação controlada de fora (ex.: na URL).
+  const [localSort, setLocalSort] = useState({ key: null, dir: "asc" });
+  const sort = sortState || localSort;
+  const setSort = (f) => { const n = typeof f === "function" ? f(sort) : f; (onSortChange || setLocalSort)(n); };
   if (!rows || rows.length === 0) return html`<div class="card"><div class="empty">${empty || "Nada aqui ainda."}</div></div>`;
 
   const activeCol = sort.key && columns.find((c) => c.key === sort.key && c.sort);
