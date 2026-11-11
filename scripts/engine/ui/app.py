@@ -157,12 +157,17 @@ def create_app() -> FastAPI:
         from update.common import STATE_DIR, read_version, write_json
         from services import host_migration_svc
 
-        prepared_hashes = await host_migration_svc.prepare()
-        app.state.host_migration_task = host_migration_svc.start(prepared_hashes)
-        if app.state.host_migration_task and os.environ.get("NETOPS_UPDATE_RECOVERING") != "1":
-            # Na abertura normal não há commit de código pendente. Termina a
-            # recuperação/conversão antes de aceitar as primeiras requisições.
-            await app.state.host_migration_task
+        try:
+            prepared_hashes = await host_migration_svc.prepare()
+            app.state.host_migration_task = host_migration_svc.start(prepared_hashes)
+            if app.state.host_migration_task and os.environ.get("NETOPS_UPDATE_RECOVERING") != "1":
+                # Na abertura normal não há commit de código pendente. Termina a
+                # recuperação/conversão antes de aceitar as primeiras requisições.
+                await app.state.host_migration_task
+        except Exception:
+            # Migração falhou mas não deve impedir o startup. O estado de erro
+            # é registrado pelo host_migration_svc e será exibido na UI.
+            pass
 
         async def receipt():
             await asyncio.sleep(0.15)

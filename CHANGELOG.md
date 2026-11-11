@@ -1,5 +1,11 @@
 # Changelog do NetOps
 
+## [2.0.1] - 2026-11-11
+
+### Correções
+
+- Startup do console agora é resiliente a erros de pré-validação da migração de hosts, permitindo que o servidor suba mesmo quando há referências inválidas nos dados. O estado de erro é exibido na UI sem bloquear o acesso.
+
 ## [2.0.0] - 2026-11-11
 
 ### Novidades

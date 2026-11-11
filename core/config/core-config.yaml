@@ -3,7 +3,7 @@
 
 metadata:
   name: "NetOps"
-  version: "2.0.0"
+  version: "2.0.1"
   description: "Framework multi-agente para operações de redes e infraestrutura."
   created: "2026-05-18"
 
