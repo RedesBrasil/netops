@@ -16,6 +16,19 @@ if str(UI_DIR) not in sys.path:
     sys.path.insert(0, str(UI_DIR))
 
 
+@pytest.fixture(autouse=True)
+def _isolated_vault_session(tmp_path_factory, monkeypatch):
+    """Cache de sessão do cofre privado por teste.
+
+    Sem isto, vault_session usa $XDG_RUNTIME_DIR ou /run/user/<uid>, isto é, a sessão REAL do
+    operador: um clear_session() de teste trancava o cofre do console em produção, e testes em
+    paralelo (xdist) disputavam o mesmo session.key. Subprocessos herdam a variável.
+    """
+    runtime = tmp_path_factory.mktemp("xdg-runtime")
+    runtime.chmod(0o700)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+
+
 @pytest.fixture()
 def env(tmp_path, monkeypatch):
     """Monta um NetOps mínimo em tmp e reaponta os caminhos de deps."""

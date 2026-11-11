@@ -12,6 +12,7 @@
 
 - O login do console não é mais perdido ao reiniciar: a suíte de testes sobrescrevia o arquivo real de sessões; agora o caminho é resolvido na hora e as gravações fazem merge sob trava.
 - O relógio de cache da aba Claude começa limpo ao abrir uma conversa nova ou outra.
+- Suíte de testes: o cache de sessão do cofre agora é isolado por teste (antes um teste podia trancar o cofre real do console); o teste de atualização a partir de tags antigas não depende mais de rede quando o `requirements.txt` muda; a release roda os testes em paralelo, com limite por teste e falha imediata quando a atualização simulada já falhou.
 
 ### Compatibilidade
 

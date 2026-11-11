@@ -63,6 +63,14 @@ def auto_candidate(tmp_path_factory):
                  for rel, info in manifest['files'].items()}
     else:
         files = _files_from_working_tree()
+        # A instalação fictícia roda offline (PIP_NO_INDEX) e compartilha o venv do teste,
+        # que já tem as dependências atuais. Se o requirements.txt diferir das tags antigas,
+        # o atualizador legado tentaria montar um venv novo pelo PyPI e o teste viraria
+        # timeout de rede, não de migração. A troca de dependências tem teste próprio
+        # (failure='dependencies').
+        legacy = engine.git_files(PROJECT, 'v1.3.0')['requirements.txt']
+        files['requirements.txt'] = {**files['requirements.txt'], 'raw': legacy['raw'],
+                                     'sha256': legacy['sha256'], 'size': legacy['size']}
         package = base / 'candidate.tar.gz'
         build_package(files, VERSION, package)
     with __import__('tarfile').open(package, 'r:gz') as archive:
@@ -73,8 +81,9 @@ def auto_candidate(tmp_path_factory):
 
 
 class LegacyConsole:
-    def __init__(self, base, tag, package, *, external=True, dangling=False):
+    def __init__(self, base, tag, package, *, external=True, dangling=False, expect_failure=False):
         self.base, self.tag = base, tag
+        self.expect_failure = expect_failure
         self.root = base / 'installation'
         self.root.mkdir()
         self.data = base / 'external-data' if external else self.root
@@ -195,6 +204,15 @@ sys.stdout.buffer.write((base / ('release.tar.gz' if '/releases/assets/' in argu
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             assert self.process.poll() is None, 'Launcher fictício encerrou; veja ' + str(self.base / 'console.log')
+            if not self.expect_failure:
+                # Falha terminal inesperada: aborta já com o motivo, sem esperar o timeout.
+                try:
+                    job = json.loads((self.state / 'job.json').read_text())
+                except (OSError, ValueError):
+                    job = {}
+                if job.get('phase') in ('failed', 'rolled_back'):
+                    raise AssertionError(f"Atualização terminou em {job['phase']}: {job.get('detail')} "
+                                         f"(log: {self.base / 'console.log'})")
             try:
                 result = predicate()
                 if result:
@@ -363,7 +381,8 @@ def test_failed_candidate_keeps_v1_readable_by_old_supervisor(tmp_path, auto_can
         bad[rel].update(raw=raw, size=len(raw), sha256=hashlib.sha256(raw).hexdigest())
         broken = tmp_path / 'broken.tar.gz'
         build_package(bad, VERSION, broken)
-    with LegacyConsole(tmp_path, 'v1.3.0', broken, dangling=failure == 'invalid-references') as console:
+    with LegacyConsole(tmp_path, 'v1.3.0', broken, dangling=failure == 'invalid-references',
+                       expect_failure=True) as console:
         console.apply()
         expected = 'failed' if failure == 'dependencies' else 'rolled_back'
         console.wait(lambda: console.terminal_phase() == expected)

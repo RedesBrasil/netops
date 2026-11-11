@@ -14,6 +14,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
       REQUESTED_VERSION: ${{ inputs.version }}
@@ -24,6 +25,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Conferir versão solicitada e branch
         run: |
           test "$GITHUB_REF" = refs/heads/main
@@ -37,10 +40,12 @@ jobs:
           assert requested == read_version(Path.cwd()), 'Versão solicitada difere do código'
           PY
       - name: Instalar dependências de testes
-        run: python -m pip install -r requirements.txt pytest httpx
+        run: python -m pip install -r requirements.txt pytest pytest-xdist pytest-timeout
       - name: Testar
+        # Paralelo (xdist), teto de 5 min por teste (trava vira falha com traceback, não
+        # job de 30 min) e os 10 mais lentos no log para enxergar regressão de tempo.
         run: |
-          python -m pytest scripts/engine/ui/tests/ -q
+          python -m pytest scripts/engine/ui/tests/ -q -n auto --timeout=300 --durations=10 -p no:warnings
           node --test scripts/engine/ui/tests/*.test.mjs
           node scripts/engine/ui/maps/test-geometry.mjs
           node --test scripts/engine/ui/maps/node-state.test.mjs
