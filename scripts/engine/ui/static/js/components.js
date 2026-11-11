@@ -130,18 +130,35 @@ export function IconPicker({ value, onChange, error, title = "Ícone do host", d
   const [icons, setIcons] = useState([]);
   const [loadError, setLoadError] = useState(false);
   useEffect(() => { api.get("/meta/icons").then(data => setIcons(data.icons)).catch(() => setLoadError(true)); }, []);
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = e => { if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false); };
+    const esc = e => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
   const chosen = icons.find(icon => icon.id === value);
+  const pick = id => { onChange(id); setOpen(false); };
+  const label = chosen ? chosen.name : value ? value : defaultLabel;
   return html`<fieldset class="host-icon-picker">
     <legend>${title}</legend>
-    <p class="help">${chosen ? `Selecionado: ${chosen.name}` : value ? `Selecionado: ${value}` : defaultHint}</p>
-    <div class="host-icon-options" role="group" aria-label=${`Escolher ${title.toLowerCase()}`}>
-      <button type="button" class=${"host-icon-option" + (!value ? " selected" : "")} aria-pressed=${!value} onClick=${() => onChange("")}>
-        <span class="host-icon-default" aria-hidden="true">▤</span><span>${defaultLabel}</span></button>
-      ${icons.map(icon => html`<button key=${icon.id} type="button" class=${"host-icon-option" + (value === icon.id ? " selected" : "")}
-        aria-label=${`Ícone ${icon.name}`} aria-pressed=${value === icon.id} onClick=${() => onChange(icon.id)}>
-        <img src=${icon.url} alt="" width="48" height="48" loading="lazy" decoding="async" draggable=false /><span>${icon.name}</span>
-      </button>`)}
+    <div class="icon-dd" ref=${rootRef}>
+      <button type="button" class="icon-dd-btn" aria-haspopup="listbox" aria-expanded=${open} onClick=${() => setOpen(!open)}>
+        ${chosen ? html`<img src=${chosen.url} alt="" width="28" height="28" />` : html`<span class="host-icon-default" aria-hidden="true">▤</span>`}
+        <span class="icon-dd-label">${label}</span><span aria-hidden="true">▾</span>
+      </button>
+      ${open && html`<div class="icon-dd-menu" role="listbox" aria-label=${`Escolher ${title.toLowerCase()}`}>
+        <button type="button" role="option" aria-selected=${!value} class=${"icon-dd-item" + (!value ? " selected" : "")} onClick=${() => pick("")}>
+          <span class="host-icon-default" aria-hidden="true">▤</span><span>${defaultLabel}</span></button>
+        ${icons.map(icon => html`<button key=${icon.id} type="button" role="option" aria-selected=${value === icon.id}
+          class=${"icon-dd-item" + (value === icon.id ? " selected" : "")} onClick=${() => pick(icon.id)}>
+          <img src=${icon.url} alt="" width="28" height="28" loading="lazy" decoding="async" draggable=false /><span>${icon.name}</span>
+        </button>`)}
+      </div>`}
     </div>
+    <p class="help">${value ? "" : defaultHint}</p>
     ${loadError && html`<p class="help" role="status">Não foi possível carregar a biblioteca de ícones. A seleção atual será mantida.</p>`}
     ${error && html`<p class="err" role="alert">${error}</p>`}
   </fieldset>`;
@@ -149,7 +166,7 @@ export function IconPicker({ value, onChange, error, title = "Ícone do host", d
 
 
 /* --------------------------- ResourceTable ------------------------------ */
-export function ResourceTable({ columns, rows, onRowClick, actions, empty }) {
+export function ResourceTable({ columns, rows, onRowClick, actions, empty, sortState, onSortChange }) {
   // Ordenação opt-in: colunas que definem `sort: (row) => valor` ficam clicáveis.
   const [sort, setSort] = useState({ key: null, dir: "asc" });
   if (!rows || rows.length === 0) return html`<div class="card"><div class="empty">${empty || "Nada aqui ainda."}</div></div>`;
