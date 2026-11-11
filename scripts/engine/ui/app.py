@@ -151,6 +151,10 @@ def create_app() -> FastAPI:
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("startup")
+    async def _restore_logins():
+        deps.load_auth_sessions()  # logins válidos (7 dias) sobrevivem ao restart
+
+    @app.on_event("startup")
     async def _update_readiness():
         import asyncio
         import os

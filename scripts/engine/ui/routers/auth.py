@@ -47,10 +47,9 @@ def auth_login(body: VaultUnlock):
         vault.verify_key(key, meta)
     except vault.VaultWrongKey:
         return JSONResponse({"error": "bad_password", "detail": "Senha mestra incorreta."}, status_code=401)
-    ttl = body.ttl or vault_session.default_ttl()
-    sid = deps.create_auth_session(ttl)
+    sid = deps.create_auth_session()  # login: 7 dias, persistido (sobrevive a restart)
     if deps.STATE.allow_vault_unlock:
-        vault_session.set_session_key(key, ttl)  # mesma sessão da CLI/agentes
+        vault_session.set_session_key(key, body.ttl or vault_session.default_ttl())  # mesma sessão da CLI/agentes
     return {"auth_token": sid}
 
 

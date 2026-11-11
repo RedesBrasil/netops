@@ -10,9 +10,11 @@
 - Pré-visualização de imagens anexadas no chat e persistência dos padrões por conversa.
 - Mapas: ordem de camada (z-index) das ligações e melhorias no editor de nós.
 
+- O login do console agora vale 7 dias (configurável em `ui.login_ttl_seconds`) e sobrevive ao reinício do servidor. Os logins são gravados apenas como hash SHA-256, com permissão 0600, em `runs/` (fora do Git).
+
 ### Compatibilidade
 
-- Sem mudança de formato de dados; o atualizador preserva dados e personalizações.
+- Sem mudança de formato de dados; o atualizador preserva dados e personalizações. Quem estiver logado precisa entrar uma vez após a atualização, e os logins passam a ser persistentes a partir daí.
 
 ## [2.0.1] - 2026-11-11
 

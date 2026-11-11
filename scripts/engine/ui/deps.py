@@ -7,6 +7,8 @@ outros scripts do NetOps: cli.py, inventory.py).
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import sys
 import time
@@ -103,34 +105,78 @@ STATE = ServerState()
 # Sessão de login (senha-mestra -> sid). Token de transporte (acima) e login são
 # camadas independentes: o sid só é emitido por routers/auth.py após verificar a senha.
 # --------------------------------------------------------------------------- #
-def create_auth_session(ttl: int) -> str:
-    """Emite um sid aleatório com expiração agora+ttl (TTL deslizante em auth_session_valid)."""
+AUTH_LOGIN_TTL_DEFAULT = 7 * 86400   # login vale 7 dias (absoluto), sobrevive a restart do backend
+AUTH_SESSIONS_FILE = DATA_ROOT / "runs" / ".ui-auth-sessions.json"   # runs/ é git-ignorado
+
+
+def _sid_key(sid: str) -> str:
+    return hashlib.sha256(sid.encode("utf-8")).hexdigest()
+
+
+def login_ttl() -> int:
+    """TTL do login do console (project-config.yaml -> ui.login_ttl_seconds; default 7 dias)."""
+    try:
+        import yaml  # noqa: PLC0415
+        cfg = yaml.safe_load(PROJECT_CONFIG.read_text(encoding="utf-8")) or {}
+        ttl = (cfg.get("ui") or {}).get("login_ttl_seconds")
+        if isinstance(ttl, int) and ttl > 0:
+            return ttl
+    except Exception:
+        pass
+    return AUTH_LOGIN_TTL_DEFAULT
+
+
+def _save_auth_sessions() -> None:
+    """Grava só o SHA-256 dos sids (nunca o sid) + expiração; 0600, atômico."""
+    try:
+        AUTH_SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = AUTH_SESSIONS_FILE.with_suffix(f".tmp.{os.getpid()}")
+        fd = os.open(str(tmp), os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(STATE.auth_sessions, f)
+        os.replace(tmp, AUTH_SESSIONS_FILE)
+    except OSError:
+        pass
+
+
+def load_auth_sessions() -> None:
+    """Recarrega os logins ainda válidos (chamado no arranque do servidor)."""
+    try:
+        data = json.loads(AUTH_SESSIONS_FILE.read_text(encoding="utf-8"))
+        now = time.time()
+        STATE.auth_sessions.update({k: v for k, v in data.items()
+                                    if isinstance(v, dict) and v.get("exp", 0) > now})
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
+def create_auth_session(ttl: int | None = None) -> str:
+    """Emite um sid aleatório que expira em agora+ttl (absoluto) e persiste em disco."""
     sid = os.urandom(24).hex()
-    STATE.auth_sessions[sid] = {"exp": time.time() + ttl, "ttl": ttl}
+    STATE.auth_sessions[_sid_key(sid)] = {"exp": time.time() + (ttl or login_ttl())}
+    _save_auth_sessions()
     return sid
 
 
 def auth_session_valid(sid: str | None) -> bool:
-    """True se o sid existe e não expirou; renova a janela (TTL deslizante). Limpa expirados."""
+    """True se o sid existe e não expirou. Limpa expirados."""
     now = time.time()
-    for k in [k for k, v in STATE.auth_sessions.items() if v["exp"] <= now]:
+    expired = [k for k, v in STATE.auth_sessions.items() if v["exp"] <= now]
+    for k in expired:
         STATE.auth_sessions.pop(k, None)
-    if not sid:
-        return False
-    sess = STATE.auth_sessions.get(sid)
-    if not sess:
-        return False
-    sess["exp"] = now + sess["ttl"]
-    return True
+    if expired:
+        _save_auth_sessions()
+    return bool(sid) and _sid_key(sid) in STATE.auth_sessions
 
 
 def drop_auth_session(sid: str | None) -> None:
-    if sid:
-        STATE.auth_sessions.pop(sid, None)
+    if sid and STATE.auth_sessions.pop(_sid_key(sid), None) is not None:
+        _save_auth_sessions()
 
 
 def clear_auth_sessions() -> None:
     STATE.auth_sessions.clear()
+    _save_auth_sessions()
 
 
 _vault_init_cache: dict = {}
