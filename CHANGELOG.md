@@ -1,5 +1,27 @@
 # Changelog do NetOps
 
+## [2.2.0] - 2026-11-11
+
+### Novidades
+
+- Aba Claude Code: dá para enviar mensagens enquanto o agente trabalha. Ao enviar, a aba pergunta: **Enviar agora** (o agente incorpora na tarefa em andamento) ou **Colocar na fila** (só roda quando a tarefa termina). A fila aparece acima da caixa: arraste pela alça ⠿ para reordenar (mouse, toque ou ↑/↓ no teclado), ⚡ envia um item na hora e × o remove. Interromper ou um erro não disparam a fila: as mensagens voltam para a caixa.
+- A fila sobrevive ao recarregamento da página e à aba fechada (com a persistência ligada). Uma cópia fica no navegador e é devolvida se o servidor perder a fila; os itens restaurados não disparam sozinhos.
+- Aba Claude Code adaptada para celular; esforço, cache e uso de contexto na barra da caixa de mensagem.
+- Todas as telas do console passaram a ter URL própria por item aberto e por filtro/busca/ordenação (Hosts, Grupos, Credenciais, Mapas, Backups, Scripts, Relatórios, Execuções, Workflows, Agentes, Boas práticas, Configurações), com deep link e Voltar funcionando. Busca e filtros em barra única, com contador.
+- Painel de atualizações em `#settings/updates`.
+- Mapas: qualquer mapa, inclusive os de localidade, pode ser excluído (🗑 na barra). A exclusão é suave e o mapa da localidade não é recriado automaticamente; a Rede geral continua não excluível.
+- Acesso: sessão SSH/Telnet persistente (1 login, N comandos) em `scripts/tools/access/`.
+- Seletor de ícones do host em dropdown.
+
+### Correções
+
+- Depois de reiniciar o console, a reconexão automática da aba Claude reaproveitava a autorização do processo antigo e a conversa perdia a persistência sem aviso. Um F5 encerrava o turno em andamento. A reconexão agora renova essa autorização.
+- O relógio do cache da aba Claude sobrevive ao F5.
+
+### Compatibilidade
+
+- Sem migração de dados. `maps.yaml` ganha o campo opcional `deleted` nos mapas excluídos; versões anteriores ignoram o campo e voltariam a exibir esses mapas. O atualizador preserva dados e personalizações. A fila da aba Claude fica só na memória do servidor e no `localStorage` do navegador, sem gravar nada no projeto.
+
 ## [2.1.0] - 2026-11-11
 
 ### Novidades
