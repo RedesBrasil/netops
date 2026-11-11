@@ -23,7 +23,12 @@ o comportamento é o original (vida do agente = vida do socket). Ver o diário d
 
 Protocolo (JSON nos dois sentidos) — ver scripts/engine/ui/static/js/pages/claude.js:
   cliente -> servidor:
-    {"type":"prompt","text":...}                      turno do usuário (inclui /slash)
+    {"type":"prompt","text":...,"queue":bool}         turno do usuário (inclui /slash). Com turno
+                                                      em andamento: queue=false (padrão) manda JÁ —
+                                                      o CLI absorve no turno atual; queue=true guarda
+                                                      na FILA e só envia quando o turno terminar
+    {"type":"queue_remove","id":...}                  tira um item da fila
+    {"type":"queue_send_now","id":...}                tira da fila e manda imediatamente
     {"type":"set_mode","mode":...}                    troca o permission_mode em tempo real
     {"type":"set_model","model":...}                  troca o modelo (None = padrão)
     {"type":"permission","id":...,"decision":"allow|deny","updated_input":{...},"message":...}
@@ -40,6 +45,10 @@ Protocolo (JSON nos dois sentidos) — ver scripts/engine/ui/static/js/pages/cla
     {"type":"permission_request","id":..,"tool":..,"input":{...},"context":{...}}
     {"type":"mode_changed","mode":...}
     {"type":"reattached","busy":bool}                  re-anexou a uma sessão viva (persist)
+    {"type":"queue","items":[{"id":..,"text":..}]}     estado da fila (a cada mudança e no re-anexo)
+    {"type":"queue_dispatched","id":..,"text":..}      item da fila virou turno (UI mostra a bolha)
+    {"type":"queue_restored","items":[...]}            turno interrompido/com erro: a fila NÃO roda
+                                                      sozinha — os textos voltam p/ a caixa
     {"type":"result","session_id":..,"cost_usd":..,"usage":{...},"is_error":bool,"result":..}
     {"type":"error","detail":...}
 """
@@ -206,6 +215,7 @@ async def shutdown_all() -> None:
 
 
 VALID_EFFORT = ("low", "medium", "high", "xhigh", "max")
+MAX_QUEUE = 20   # teto de mensagens na fila por sessão (estático)
 
 
 class ClaudeWebSession:
@@ -246,6 +256,14 @@ class ClaudeWebSession:
         self._sdk_task: asyncio.Task | None = None
         self._grace_handle = None        # timer de teardown (desanexado + ocioso)
         self._ask_timers: dict[str, object] = {}  # id -> TimerHandle (timeout de pergunta)
+        # FILA de prompts: guardados enquanto há turno rodando e enviados, um por vez, quando o
+        # turno termina (ResultMessage). Vive na SESSÃO (não no socket) -> com persist, roda
+        # mesmo com a aba fechada. Mensagem "imediata" não passa por aqui: vai direto p/ o CLI,
+        # que a absorve no turno corrente (medido: um único ResultMessage p/ os dois textos).
+        self._queue: list[dict] = []
+        self._queue_seq = 0
+        self._interrupted = False        # interrupt durante o turno -> não despacha a fila no fim
+        self._restore_pending: list[dict] = []  # itens a devolver p/ a caixa quando reanexar
 
     # ------------------------------------------------------------------ envio
     async def _send(self, obj: dict) -> None:
@@ -481,6 +499,10 @@ class ClaudeWebSession:
             await self.start()
         else:
             await self._send({"type": "reattached", "busy": self._busy})
+            await self._send_queue()
+            if self._restore_pending:
+                items, self._restore_pending = self._restore_pending, []
+                await self._send({"type": "queue_restored", "items": items})
             lt = self._last_turn
             if lt:   # restaura o relógio do cache (idade real) e o contexto após recarregar a página
                 await self._send({"type": "cache_state", "usage": lt["usage"],
@@ -536,8 +558,24 @@ class ClaudeWebSession:
             if kind == "prompt":
                 text = (raw.get("text") or "").strip()
                 if text:
-                    self._busy = True
-                    await self.client.query(text)
+                    if raw.get("queue") and self._busy:
+                        await self._enqueue(text)
+                    elif raw.get("queue"):
+                        # Pediu fila mas o turno acabou no caminho: roda já e avisa a UI (que,
+                        # por ter escolhido "fila", ainda não desenhou a bolha).
+                        await self._send({"type": "queue_dispatched", "id": None, "text": text})
+                        await self._query(text)
+                    else:
+                        await self._query(text)
+            elif kind == "queue_remove":
+                if self._pop_queued(raw.get("id")) is not None:
+                    await self._send_queue()
+            elif kind == "queue_send_now":
+                item = self._pop_queued(raw.get("id"))
+                if item is not None:
+                    await self._send_queue()
+                    await self._send({"type": "queue_dispatched", **item})
+                    await self._query(item["text"])
             elif kind == "bye":
                 # Fechamento DELIBERADO (encerrar / trocar de sessão): mata a sessão viva.
                 # Um drop por standby NÃO manda "bye" — por isso lá a gente só desanexa.
@@ -565,6 +603,8 @@ class ClaudeWebSession:
                 eff = raw.get("effort")
                 self._effort = eff if eff in VALID_EFFORT else None
             elif kind == "interrupt":
+                if self._busy:
+                    self._interrupted = True   # o turno acaba, mas a fila NÃO deve disparar sozinha
                 try:
                     await self.client.interrupt()
                 except Exception as e:
@@ -573,6 +613,47 @@ class ClaudeWebSession:
                 fut = self._pending.get(raw.get("id"))
                 if fut and not fut.done():
                     fut.set_result(raw)
+
+    # ------------------------------------------------------------------ fila
+    async def _query(self, text: str) -> None:
+        self._busy = True
+        await self.client.query(text)
+
+    async def _send_queue(self) -> None:
+        await self._send({"type": "queue", "items": list(self._queue)})
+
+    async def _enqueue(self, text: str) -> None:
+        if len(self._queue) >= MAX_QUEUE:
+            await self._send({"type": "error", "detail": f"Fila cheia ({MAX_QUEUE} mensagens)."})
+            return
+        self._queue_seq += 1
+        self._queue.append({"id": f"q{self._queue_seq}", "text": text})
+        await self._send_queue()
+
+    def _pop_queued(self, qid) -> dict | None:
+        for i, it in enumerate(self._queue):
+            if it["id"] == qid:
+                return self._queue.pop(i)
+        return None
+
+    async def _after_turn(self, is_error: bool) -> None:
+        """Fim de turno: despacha o próximo da fila — ou, se o turno foi interrompido/deu erro,
+        devolve a fila p/ a caixa (não sai executando sozinho o que foi pensado p/ outro contexto)."""
+        interrupted, self._interrupted = self._interrupted, False
+        if not self._queue:
+            return
+        if interrupted or is_error:
+            items, self._queue = self._queue, []
+            if self.ws is None:          # aba fechada: devolve quando ela re-anexar
+                self._restore_pending.extend(items)
+            else:
+                await self._send({"type": "queue_restored", "items": items})
+            await self._send_queue()
+            return
+        item = self._queue.pop(0)
+        await self._send_queue()
+        await self._send({"type": "queue_dispatched", **item})
+        await self._query(item["text"])
 
     async def _sdk_pump(self) -> None:
         try:
@@ -667,6 +748,10 @@ class ClaudeWebSession:
                 await self._send(ctx)
             except Exception:
                 pass
+            try:
+                await self._after_turn(bool(msg.is_error))
+            except Exception as e:
+                await self._send({"type": "error", "detail": f"fila: {e}"})
             if self.persist:
                 # Turno acabou. Se a aba está dormindo (desanexado), começa a contar a carência
                 # até o teardown — a resposta já foi gravada no disco.

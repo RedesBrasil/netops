@@ -67,6 +67,8 @@ function useClaudeSession() {
   const [status, setStatus] = useState("conectando"); // conectando|pronto|desconectado|desabilitado|erro
   const [items, setItems] = useState([]);             // transcript ordenado
   const [working, setWorking] = useState(false);      // turno em andamento
+  const [queue, setQueue] = useState([]);             // fila do SERVIDOR [{id,text}] (roda ao fim do turno)
+  const [pendingSend, setPendingSend] = useState(null); // {text} aguardando a escolha "agora" x "fila"
   const [mode, setMode] = useState("default");
   const [effort, setEffort] = useState(() => { try { return localStorage.getItem("cc-effort") || ""; } catch (_) { return ""; } });
   const effortRef = useRef(effort);
@@ -321,6 +323,7 @@ function useClaudeSession() {
       if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
       const resume = reconnect ? sessionIdRef.current : rid;
       setStatus("conectando");
+      setQueue([]); setPendingSend(null);   // a fila é do servidor: o re-anexo reenvia o estado real
       // Carrega antes de abrir o socket: uma leitura atrasada não apaga streaming/permissões.
       if (resume && !reconnect) {   // volta no ÚLTIMO modelo/modo desta conversa
         try {
@@ -428,6 +431,23 @@ function useClaudeSession() {
           case "reattached":
             setWorking(!!ev.busy);   // re-anexou a uma sessão viva: reflete se há turno rodando
             break;
+          case "queue":
+            setQueue(Array.isArray(ev.items) ? ev.items : []);
+            break;
+          case "queue_dispatched":   // item da fila virou turno no servidor
+            setItems((prev) => [...closeOpen(prev), { type: "user", text: ev.text, queued: true }]);
+            setWorking(true);
+            break;
+          case "queue_restored": {   // turno interrompido/erro: a fila não roda sozinha, volta p/ a caixa
+            const texts = (ev.items || []).map((x) => x.text).filter(Boolean);
+            if (texts.length) {
+              setInput((cur) => [...texts, cur].filter((t) => t && t.trim()).join("\n\n"));
+              toast.info(texts.length === 1
+                ? "Turno interrompido: a mensagem da fila voltou para a caixa."
+                : `Turno interrompido: ${texts.length} mensagens da fila voltaram para a caixa.`);
+            }
+            break;
+          }
           case "result":
             setWorking(false);
             if (ev.usage) {
@@ -479,12 +499,28 @@ function useClaudeSession() {
     // /login, /logout, /auth são resolvidos AQUI (o SDK não os conhece) e funcionam mesmo
     // com a sessão caída — que é exatamente quando você precisa deles.
     if (LOCAL_SLASH_RE.test(text)) { setInput(""); setShowAuth(true); return; }
-    if (status !== "pronto" || working) return;
-    if (!send({ type: "prompt", text })) { toast.err("Sem conexão"); return; }
-    setItems((prev) => [...prev, { type: "user", text }]);
-    setInput(""); setAttachments([]);
-    setWorking(true);
+    if (status !== "pronto") return;
+    // Agente ocupado: pergunta se a mensagem vai JÁ (absorvida no turno atual) ou para a FILA.
+    if (working) { setPendingSend({ text }); return; }
+    dispatch(text, false);
   }
+
+  // `queued`: guarda na fila do servidor (só roda quando o turno inteiro terminar).
+  // Sem `queued`, vai direto: com turno rodando, o agente lê e incorpora no que está fazendo.
+  function dispatch(text, queued) {
+    setPendingSend(null);
+    if (!send({ type: "prompt", text, queue: !!queued })) { toast.err("Sem conexão"); return false; }
+    if (!queued || !working) {
+      setItems((prev) => [...prev, { type: "user", text, interjected: working && !queued }]);
+      setWorking(true);
+    }
+    setInput(""); setAttachments([]);
+    return true;
+  }
+  const choosePending = (queued) => { if (pendingSend) dispatch(pendingSend.text, queued); };
+  const cancelPending = () => setPendingSend(null);
+  const queueRemove = (id) => send({ type: "queue_remove", id });
+  const queueSendNow = (id) => send({ type: "queue_send_now", id });
 
   function stop() {
     if (send({ type: "interrupt" })) toast.info("Interrompendo…");
@@ -584,6 +620,7 @@ function useClaudeSession() {
 
   return {
     effort, changeEffort, ctxUse, lastUsage,
+    queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow,
     status, items, working, mode, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
@@ -648,10 +685,10 @@ function AttachThumb({ path }) {
     </div>`}`;
   return html`<span class="cc-file-chip" title=${path}>${isImg ? "🖼" : "📎"} ${name}</span>`;
 }
-function UserMsg({ text }) {
+function UserMsg({ text, tag }) {
   const refs = [...text.matchAll(UPLOAD_REF_RE)].map((m) => m[1]);
   const rest = text.replace(UPLOAD_REF_RE, "").replace(/[ \t]{2,}/g, " ").trim();
-  return html`<div class="cc-msg user"><div class="cc-role">você</div>
+  return html`<div class="cc-msg user"><div class="cc-role">você${tag && html` · <em>${tag}</em>`}</div>
     ${refs.length > 0 && html`<div class="cc-attach-row user">${refs.map((r) => html`<${AttachThumb} key=${r} path=${r} />`)}</div>`}
     ${(rest || !refs.length) && html`<div class="cc-usertext">${refs.length ? rest : text}</div>`}</div>`;
 }
@@ -659,7 +696,8 @@ function UserMsg({ text }) {
 // Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
-  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments } = useClaude();
+  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments,
+    queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow } = useClaude();
   const taRef = useRef(null);
   // textarea que cresce com o conteúdo: começa em 1 linha e sobe até o teto (CSS), aí rola.
   useEffect(() => {
@@ -702,6 +740,10 @@ function Composer() {
   const cantSend = (disabled && !isLocal) || (!input.trim() && !attachments.length);
 
   return html`<div class="cc-composer-wrap">
+    ${queue.length > 0 && html`<${QueueList} queue=${queue} working=${working} disabled=${disabled}
+      onRemove=${queueRemove} onSendNow=${queueSendNow} />`}
+    ${pendingSend && html`<${SendChoice} text=${pendingSend.text} onChoose=${choosePending}
+      onCancel=${() => { cancelPending(); taRef.current && taRef.current.focus(); }} />`}
     ${slashMatches.length > 0 && html`<div class="cc-slash-menu">
       ${slashMatches.map((c) => html`<button key=${c} class="cc-slash" onClick=${() => setInput("/" + c + " ")}>/${c}</button>`)}
     </div>`}
@@ -754,12 +796,51 @@ function Composer() {
               </button>`)}
               <${EffortRow} effort=${effort} changeEffort=${changeEffort} />`}
           <//>
-          ${working
-            ? html`<button class="cc-send stop" onClick=${stop} title="Parar (Esc)" aria-label="Parar"><i class="cc-stopsq"></i></button>`
-            : html`<button class="cc-send" disabled=${cantSend} onClick=${submit} title="Enviar (Enter)">↑</button>`}
+          ${working && html`<button class="cc-send stop" onClick=${stop} title="Parar (Esc)" aria-label="Parar"><i class="cc-stopsq"></i></button>`}
+          ${(!working || input.trim() || attachments.length > 0) && html`<button class="cc-send" disabled=${cantSend} onClick=${submit}
+            title=${working ? "Enviar durante a execução — escolha: agora ou fila (Enter)" : "Enviar (Enter)"}>↑</button>`}
         </div>
       </div>
     </div>
+  </div>`;
+}
+
+// Escolha ao enviar com o agente ocupado. Enter/A = agora · F = fila · Esc = cancelar.
+function SendChoice({ text, onChoose, onCancel }) {
+  // Foco no commit (ref callback), não num useEffect pós-paint: senão a tecla digitada logo
+  // após o Enter ainda cai no textarea (corrida pega pelo teste de navegador).
+  const focused = useRef(false);
+  const nowRef = (el) => { if (el && !focused.current) { focused.current = true; el.focus(); } };
+  function onKey(e) {
+    const k = e.key.toLowerCase();
+    if (k === "escape") { e.preventDefault(); e.stopPropagation(); onCancel(); }
+    else if (k === "a") { e.preventDefault(); onChoose(false); }
+    else if (k === "f") { e.preventDefault(); onChoose(true); }
+  }
+  const preview = text.length > 140 ? text.slice(0, 140) + "…" : text;
+  return html`<div class="cc-sendchoice" role="dialog" aria-label="Como enviar a mensagem" onKeyDown=${onKey}>
+    <div class="cc-sendchoice-q">O agente está trabalhando. Como enviar esta mensagem?</div>
+    <div class="cc-sendchoice-text">${preview}</div>
+    <div class="cc-sendchoice-opts">
+      <button ref=${nowRef} class="sm primary" onClick=${() => onChoose(false)}
+        title="O agente lê e incorpora no que está fazendo agora (atalho: A)"><b>Enviar agora</b><small>incorpora na tarefa atual</small></button>
+      <button class="sm" onClick=${() => onChoose(true)}
+        title="Só executa depois que a tarefa atual terminar por completo (atalho: F)"><b>Colocar na fila</b><small>roda quando a tarefa terminar</small></button>
+      <button class="sm ghost" onClick=${onCancel} title="Voltar a editar (Esc)">Cancelar</button>
+    </div>
+  </div>`;
+}
+
+// Mensagens na fila do servidor: rodam uma por vez, cada uma quando o turno anterior termina.
+function QueueList({ queue, working, disabled, onRemove, onSendNow }) {
+  return html`<div class="cc-queue">
+    <div class="cc-queue-head">Na fila (${queue.length}) — ${working ? "roda quando a tarefa atual terminar" : "aguardando"}</div>
+    ${queue.map((q, i) => html`<div class="cc-queue-item" key=${q.id}>
+      <span class="cc-queue-n">${i + 1}</span>
+      <span class="cc-queue-text" title=${q.text}>${q.text}</span>
+      <button class="cc-iconbtn" disabled=${disabled} title="Enviar agora (o agente incorpora na tarefa atual)" onClick=${() => onSendNow(q.id)}>⚡</button>
+      <button class="cc-iconbtn" disabled=${disabled} title="Tirar da fila" onClick=${() => onRemove(q.id)}>×</button>
+    </div>`)}
   </div>`;
 }
 
@@ -1180,7 +1261,7 @@ function fmtTime(ms) {
 
 function Item({ it, onPermission }) {
   if (it.type === "user")
-    return html`<${UserMsg} text=${it.text} />`;
+    return html`<${UserMsg} text=${it.text} tag=${it.interjected ? "durante a execução" : it.queued ? "da fila" : ""} />`;
 
   if (it.type === "assistant")
     return html`<div class="cc-msg assistant"><div class="cc-role">claude</div><${MarkdownView} text=${it.text} /></div>`;

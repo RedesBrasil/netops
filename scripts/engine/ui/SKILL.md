@@ -264,6 +264,30 @@ e `tests/claude-sessions.browser.mjs`. O cenário de navegador usa APIs e WebSoc
 fictícios, em console temporário; não inicia o agente real nem acessa conversas pessoais.
 
 
+## Enviar mensagem com o agente trabalhando (agora × fila)
+
+Com um turno em andamento, a caixa de mensagem continua aceitando texto. Ao enviar (Enter ou ↑),
+a aba **pergunta** o que fazer:
+
+- **Enviar agora** (Enter ou `A`): vai direto ao agente, que **incorpora no turno atual** e leva
+  em conta no que está fazendo (comportamento nativo do CLI, medido: ele responde aos dois textos
+  num único `result`). A bolha leva a etiqueta "durante a execução".
+- **Colocar na fila** (`F`): a mensagem fica na **fila do servidor** e só vira turno quando a
+  tarefa atual **terminar por completo** (`ResultMessage`). Vários itens rodam em ordem, um turno
+  cada. A fila aparece acima da caixa: ⚡ manda um item já, × tira da fila. A bolha leva a etiqueta "da fila".
+- **Cancelar** (Esc): volta a editar sem interromper o agente.
+
+Regras: a fila é **por sessão** e vive no servidor (`ClaudeWebSession._queue`, teto `MAX_QUEUE`=20).
+Com `--enable-claude-persist`, ela **continua andando com a aba fechada** e o estado volta no
+re-anexo. Em modo clássico, ela morre junto com o socket. **Interromper** ou um turno com **erro** não
+dispara a fila sozinha: os textos voltam para a caixa (`queue_restored`) para você decidir o que fazer,
+inclusive quando a aba estava fechada nesse momento. Protocolo: `prompt{queue:bool}`, `queue_remove`,
+`queue_send_now` → `queue`, `queue_dispatched`, `queue_restored` (ver docstring de `services/claude_svc.py`).
+Se o turno termina entre a escolha "fila" e a chegada ao servidor, a mensagem roda na hora.
+
+Testes: `tests/test_claude_queue.py` (pytest, client/WebSocket fictícios) e
+`tests/claude-queue.browser.mjs` (Playwright, desktop + celular, WebSocket fictício).
+
 ## Mapas de rede
 
 ### Identidade inteira dos hosts
