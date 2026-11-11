@@ -165,6 +165,18 @@ export function IconPicker({ value, onChange, error, title = "Ícone do host", d
 }
 
 
+/* ---------------------------- FilterBar --------------------------------- */
+// Filtros que vivem na URL: o chamador passa valores e `onChange(patch)` (useMenuRoute().setParams).
+export function FilterBar({ q = "", selects = [], onChange, placeholder = "Buscar" }) {
+  const active = q || selects.some((s) => s.value);
+  return html`<div class="toolbar filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+    <input type="search" aria-label=${placeholder} placeholder=${placeholder} value=${q} onInput=${(e) => onChange({ q: e.target.value })} />
+    ${selects.map((s) => html`<select key=${s.key} aria-label=${s.label} value=${s.value || ""} onChange=${(e) => onChange({ [s.key]: e.target.value })}>
+      <option value="">${s.label}: todos</option>${s.options.map((o) => html`<option key=${o} value=${o}>${o}</option>`)}</select>`)}
+    ${active && html`<button class="sm" onClick=${() => onChange({ q: "", ...Object.fromEntries(selects.map((s) => [s.key, ""])) })}>Limpar filtros</button>`}
+  </div>`;
+}
+
 /* --------------------------- ResourceTable ------------------------------ */
 export function ResourceTable({ columns, rows, onRowClick, actions, empty, sortState, onSortChange }) {
   // Ordenação opt-in: colunas que definem `sort: (row) => valor` ficam clicáveis.

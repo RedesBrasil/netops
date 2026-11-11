@@ -37,3 +37,23 @@ export function useRoute() {
   }, []);
   return route;
 }
+
+// Hook por menu: segmentos (item aberto) + params (filtros) lidos/gravados na URL.
+// open(segs) = navegação com histórico; setParams(patch) = replace (filtros); close() volta à lista mantendo filtros.
+export function useMenuRoute(menu) {
+  const route = useRoute();
+  const params = route.params;
+  const segments = route.menu === menu ? route.segments : [];
+  const go = (segs, p, replace) => navigate({ menu, segments: segs, params: p }, { replace });
+  return {
+    segments, params,
+    open: (segs) => go([].concat(segs), params, false),
+    close: () => go([], params, false),
+    setParams: (patch) => go(segments, { ...params, ...patch }, true),
+  };
+}
+
+export function matchText(q, ...values) {
+  const n = String(q || "").trim().toLowerCase();
+  return !n || values.some((v) => String(v ?? "").toLowerCase().includes(n));
+}
