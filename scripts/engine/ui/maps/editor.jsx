@@ -208,8 +208,8 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     const kind = selectedDevices().length > 1 ? 'selection' : selected ? nodes.some(n => n.id === selected) ? 'node' : 'edge' : 'pane';
     setMenu({ kind, id: selected, x: box.right, y: box.bottom + 4, point: point() });
   }
-  function startConnection(id = null) { setMultiSelect(false); clearSelection(); setLinkMode(true); setOrigin(id); }
-  function startMultiSelection() { setLinkMode(false); clearSelection(); setMultiSelect(true); }
+  function startConnection(id = null) { setMultiSelect(false); clearSelection(); setLinkMode(true); setOrigin(id); canvas.current?.focus({ preventScroll: true }); }
+  function startMultiSelection() { setLinkMode(false); clearSelection(); setMultiSelect(true); canvas.current?.focus({ preventScroll: true }); }
   function align(direction) {
     if (readOnly) return;
     try {

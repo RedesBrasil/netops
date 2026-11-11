@@ -262,6 +262,18 @@ try {
       assert.equal((await currentMap()).visual_links.length, 0);
       const after = await snapshot(); assert.deepEqual(after.hosts, baseline.hosts); assert.deepEqual(after.topology.links, baseline.topology.links);
       assert.ok(after.maps.find(m => m.id === 'all').host_ids.includes('rt-core-01'));
+      if (mode === 'mobile') {
+        await actions.pane('Selecionar vários'); await click(node('host:rt-dist-01')); await click(node('object:second-shape'));
+        await page.waitForFunction(() => document.querySelectorAll('.react-flow__node.selected').length === 2);
+        assert.equal(await page.locator('.react-flow__node.selected').count(), 2);
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.querySelectorAll('.react-flow__node.selected').length === 0);
+        assert.equal(await page.locator('.react-flow__node.selected').count(), 0, 'Escape chega ao mapa após toques sem foco manual');
+        assert.equal(await page.locator('.connect-banner').count(), 0);
+        await actions.on(node('host:rt-dist-01'), 'Ligar a outro dispositivo');
+        await page.keyboard.press('Escape'); await page.locator('.connect-banner').waitFor({ state: 'detached' });
+        assert.equal(await page.locator('.connect-banner').count(), 0);
+      }
     });
   }
 
