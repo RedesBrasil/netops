@@ -1,32 +1,37 @@
 // Scripts operacionais (scripts/tools/) — tabela única ordenável/pesquisável + CRUD. Sem execução.
 import { html, useState, useEffect, useMemo, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
-import { Field, Modal, ConfirmDialog, CodeTextEditor, MarkdownPanel } from "../components.js";
+import { useMenuRoute } from "../route.js";
+import { FilterBar, Field, Modal, ConfirmDialog, CodeTextEditor, MarkdownPanel } from "../components.js";
 
 const LANG_ICON = { python: "🐍", shell: "🐚" };
 
+// URL: #scripts[/<pasta>/<arquivo>|/new][?q=&location=&lang=&sort=&dir=&doc=<doc.md>]  (core/rules/urls-navegacao.md)
 export function ScriptsPage() {
   const res = useResource("/scripts");
-  const [q, setQ] = useState("");
-  const [sort, setSort] = useState({ key: "name", dir: 1 });
-  const [open, setOpen] = useState(null);     // path em edição
-  const [doc, setDoc] = useState(null);       // path de doc (.md) em visualização
-  const [creating, setCreating] = useState(false);
+  const r = useMenuRoute("scripts");
+  const { q = "", location = "", lang = "", sort: sortKey = "name", dir: sortDir = "asc", doc = null } = r.params;
+  const sort = { key: sortKey, dir: sortDir === "desc" ? -1 : 1 };
+  const creating = r.segments[0] === "new";
+  const open = r.segments.length && !creating ? r.segments.join("/") : null;
+  const setOpen = (p) => (p ? r.open(p.split("/")) : r.close());
+  const setDoc = (d) => r.setParams({ doc: d || "" });
+  const setCreating = (v) => (v ? r.open("new") : r.close());
   const [confirm, setConfirm] = useState(null);
 
   const all = res.data?.scripts || [];
   const locations = res.data?.locations || [];
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const filtered = !needle ? all : all.filter((s) =>
-      [s.name, s.path, s.location, s.lang, s.desc].some((v) => (v || "").toLowerCase().includes(needle)));
+    const filtered = all.filter((s) => (!location || s.location === location) && (!lang || s.lang === lang) && (!needle ||
+      [s.name, s.path, s.location, s.lang, s.desc].some((v) => (v || "").toLowerCase().includes(needle))));
     const k = sort.key;
     return [...filtered].sort((a, b) => String(a[k] || "").localeCompare(String(b[k] || ""), "pt", { numeric: true }) * sort.dir);
-  }, [all, q, sort]);
+  }, [all, q, location, lang, sortKey, sortDir]);
 
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
 
-  const th = (key, label) => html`<th class="clickable" onClick=${() => setSort((s) => ({ key, dir: s.key === key ? -s.dir : 1 }))}>
+  const th = (key, label) => html`<th class="clickable" onClick=${() => r.setParams(sort.key === key ? { sort: key, dir: sort.dir > 0 ? "desc" : "" } : { sort: key, dir: "" })}>
     ${label}${sort.key === key ? (sort.dir > 0 ? " ▲" : " ▼") : ""}</th>`;
 
   return html`<div>
@@ -34,11 +39,10 @@ export function ScriptsPage() {
       <button class="primary" onClick=${() => setCreating(true)}>+ Novo</button></div>
     <div class="help">Scripts operacionais em <span class="mono">scripts/tools/</span> (Python/Shell) — acesso, diagnóstico, análise. O motor do NetOps não aparece aqui. Execução: Terminal/Claude.</div>
 
-    <div class="toolbar" style="margin:12px 0">
-      <input type="search" placeholder="🔎 pesquisar nome, pasta, descrição…" value=${q}
-        onInput=${(e) => setQ(e.target.value)} style="width:100%;max-width:420px" />
-      <span class="help" style="margin-left:8px">${rows.length}/${all.length}</span>
-    </div>
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Pesquisar nome, pasta, descrição…"
+      selects=${[{ key: "location", label: "Pasta", value: location, options: locations.filter((l) => l !== "(raiz)") }, { key: "lang", label: "Tipo", value: lang, options: [...new Set(all.map((s) => s.lang).filter(Boolean))].sort() }]} />
+    <div class="help" style="margin-bottom:8px">${rows.length}/${all.length}</div>
+    ${open && res.data && !all.some((s) => s.path === open) && html`<div class="card">Script '${open}' não encontrado. <a href="#scripts">Voltar aos scripts</a></div>`}
 
     ${rows.length === 0 ? html`<div class="card"><div class="empty">Nenhum script.</div></div>` : html`
     <table>
@@ -51,7 +55,7 @@ export function ScriptsPage() {
       </tr></thead>
       <tbody>
         ${rows.map((s) => html`<tr key=${s.path} class="clickable" onClick=${() => setOpen(s.path)}>
-          <td><b>${s.name}</b>${s.doc ? html` <span title="Ver documentação" class="doc-icon"
+          <td><a href=${"#scripts/" + s.path.split("/").map(encodeURIComponent).join("/")} onClick=${(e) => e.stopPropagation()}><b>${s.name}</b></a>${s.doc ? html` <span title="Ver documentação" class="doc-icon"
               onClick=${(e) => { e.stopPropagation(); setDoc(s.doc); }} style="cursor:pointer">📄</span>` : ""}
             <div class="help mono">${s.path}</div></td>
           <td><${Badge}>${s.location}<//></td>
@@ -63,8 +67,8 @@ export function ScriptsPage() {
       </tbody>
     </table>`}
 
-    ${open && html`<${Editor} path=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}
-    ${doc && html`<${DocViewer} path=${doc} onClose=${() => setDoc(null)} />`}
+    ${open && all.some((s) => s.path === open) && html`<${Editor} key=${open} path=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}
+    ${doc && html`<${DocViewer} key=${doc} path=${doc} onClose=${() => setDoc(null)} />`}
     ${creating && html`<${Creator} locations=${locations} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); res.reload(); }} />`}
     ${confirm && html`<${ConfirmDialog} title="Excluir script" danger=${true}
       message=${`Remover '${confirm}'? Esta ação não pode ser desfeita.`}

@@ -13,6 +13,7 @@ const CASES = {
   configs: { row: "table a[href^='#configs/']", open: ".modal", q: "zzzz-sem-resultado", qRows: 0 },
   workflows: { row: "table a[href^='#workflows/']", open: ".modal", q: "zzzz-sem-resultado", qRows: 0 },
   agents: { row: "table a[href^='#agents/']", open: ".modal", q: "zzzz-sem-resultado", qRows: 0 },
+  scripts: { row: "table a[href^='#scripts/']", open: ".modal", q: "ssh", qRows: -1, deep: ["#scripts?sort=location&dir=desc", "th:has-text('Pasta'):has-text('▼')"] },
   credentials: { row: "table a[href^='#credentials/']", open: ".modal", q: "demo", qRows: 1, deep: ["#credentials/cred_demo/password", ".modal:has-text('Definir password')"] },
   reports: { row: "table a[href^='#reports/']", open: ".modal", q: "b.md", qRows: 1 },
   runs: { row: "table a[href^='#runs/']", open: ".modal", q: "run-b", qRows: 1 },
