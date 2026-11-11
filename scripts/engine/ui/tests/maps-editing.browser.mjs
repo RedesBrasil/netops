@@ -275,6 +275,67 @@ try {
         assert.equal(await page.locator('.connect-banner').count(), 0);
       }
     });
+
+    await scenario(mode, 'edge-selection-replaces-node-selection', async ({ page, actions, node, edge, click, selectMany, saved, snapshot, currentMap, putMap, reload, baseline }) => {
+      const visualId = 'selection-edge';
+      async function restoreVisual() {
+        const map = structuredClone(await currentMap());
+        map.visual_links = [{ id: visualId, source: 'object:first-shape', target: 'host:rt-dist-01', label: 'Alvo visual' }];
+        await putMap(map); await reload();
+      }
+      await restoreVisual();
+      await click(node('object:second-shape'));
+      await page.waitForFunction(() => document.querySelector('[data-id="object:second-shape"]')?.classList.contains('selected'));
+      const before = structuredClone(await currentMap());
+      await click(edge('visual:' + visualId));
+      await page.locator(`[data-line-id="visual:${visualId}"].line-label-active`).waitFor();
+      const residual = await page.locator('.react-flow__node.selected').evaluateAll(ns => ns.map(n => n.dataset.id));
+      await page.keyboard.press('Delete');
+      await saved(m => !m.visual_links.some(l => l.id === visualId) || m.objects.length !== before.objects.length);
+      const after = await currentMap();
+      await fs.writeFile(path.join(OUT, `${mode}-edge-selection-before-after.json`), JSON.stringify({ before, residualSelectedNodesAfterLineClick: residual, after }, null, 2));
+      assert.deepEqual(after.objects, before.objects, 'Delete após selecionar linha preserva a forma previamente selecionada');
+      assert.equal(after.visual_links.length, 0, 'Delete remove somente a linha visual selecionada');
+      assert.deepEqual(residual, [], 'linha substitui a seleção anterior de nós');
+
+      await restoreVisual(); await selectMany(['host:rt-core-01', 'object:second-shape']);
+      await actions.item(edge('visual:' + visualId));
+      assert.equal(await page.getByRole('menuitem', { name: 'Alinhar horizontalmente', exact: true }).count(), 0, 'contexto da linha não é contexto do grupo anterior');
+      await page.getByRole('menuitem', { name: 'Editar', exact: true }).waitFor();
+      await page.waitForFunction(() => document.querySelectorAll('.react-flow__node.selected').length === 0);
+      assert.equal(await page.locator('.react-flow__node.selected').count(), 0);
+      await actions.choose('Remover do mapa');
+      await saved(m => !m.visual_links.some(l => l.id === visualId));
+      assert.deepEqual((await currentMap()).objects, before.objects); assert.deepEqual((await currentMap()).members, before.members);
+
+      await restoreVisual(); await selectMany(['host:rt-core-01', 'object:second-shape']);
+      await edge('visual:' + visualId).focus(); await page.keyboard.press('Shift+F10');
+      await page.getByRole('menuitem', { name: 'Editar', exact: true }).waitFor();
+      assert.equal(await page.getByRole('menuitem', { name: 'Alinhar horizontalmente', exact: true }).count(), 0, 'Shift+F10 usa a linha focada');
+      await page.waitForFunction(() => document.querySelectorAll('.react-flow__node.selected').length === 0);
+      assert.equal(await page.locator('.react-flow__node.selected').count(), 0);
+      await actions.choose('Remover do mapa');
+      await saved(m => !m.visual_links.some(l => l.id === visualId));
+      assert.deepEqual((await currentMap()).objects, before.objects); assert.deepEqual((await currentMap()).members, before.members);
+
+      await actions.on(node('host:rt-core-01'), 'Ligar a outro dispositivo'); await click(node('host:rt-dist-01'));
+      const description = 'Alvo físico ' + mode + ' ' + Date.now();
+      await page.locator('#link-desc').fill(description);
+      await click(page.locator('.modal').getByRole('button', { name: 'Salvar', exact: true }));
+      await page.locator('.modal').waitFor({ state: 'detached' });
+      const withPhysical = await saved((m, s) => s.topology.links.some(l => l.desc === description));
+      const physical = withPhysical.topology.links.find(l => l.desc === description);
+      await click(node('object:second-shape')); await click(edge(physical.id));
+      await page.locator(`[data-line-id="${physical.id}"].line-label-active`).waitFor();
+      await page.keyboard.press('Delete');
+      await page.locator('.modal').getByText('Excluir o enlace da topologia e de todos os mapas?', { exact: true }).waitFor();
+      assert.deepEqual((await currentMap()).objects, before.objects);
+      await click(page.locator('.modal').getByRole('button', { name: 'Cancelar', exact: true }));
+      const final = await snapshot();
+      assert.ok(final.topology.links.some(l => l.id === physical.id));
+      assert.deepEqual(final.maps.find(m => m.id === before.id).objects, before.objects);
+      assert.deepEqual(final.hosts, baseline.hosts);
+    });
   }
 
   await scenario('desktop', 'plain-marquee-mixed-move-and-delete', async ({ page, node, currentMap, saved, snapshot, baseline }) => {

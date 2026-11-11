@@ -169,3 +169,8 @@ reconhece um toque curto no fundo por `pointerId` e deslocamento máximo de 6px 
 a seleção; arrastes continuam sendo pan e a seleção por mouse permanece disponível também
 em dispositivos híbridos. Seleção múltipla, conexão e duplicação devolvem o foco ao canvas,
 permitindo Escape/Delete imediatamente após fechar o menu.
+
+Escolher uma ligação por clique, botão direito ou Shift+F10 limpa a seleção anterior de
+nós antes de disponibilizar Delete. Assim a exclusão atua somente na ligação escolhida
+(enlace físico com confirmação), preservando as formas/hosts anteriormente selecionados.
+O menu aberto num nó que integra uma seleção múltipla mantém o grupo selecionado.

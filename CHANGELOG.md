@@ -12,6 +12,11 @@
 - Clique e arraste no fundo do mapa seleciona hosts e formas por retângulo, permitindo mover, alinhar e remover a seleção. Espaço + arraste ou botão do meio move a visão do mapa.
 - A seleção em mapas adicionais remove apenas suas associações visuais. Em mapas automáticos, excluir hosts exige confirmação explícita do impacto no inventário, enlaces e demais mapas.
 
+### Correções
+
+- Selecionar uma ligação por clique, botão direito ou teclado substitui a seleção anterior de hosts/formas; Delete atua sobre a ligação escolhida.
+- Tocar no fundo limpa a seleção e permite abrir as ações do mapa. Escape e Delete ficam disponíveis imediatamente após os menus de conexão, seleção múltipla e duplicação.
+
 ### Preservação e compatibilidade
 
 - Camadas e cores são campos opcionais de apresentação em `maps.yaml`; mapas existentes continuam válidos sem migração destrutiva. Textos já informados são preservados.

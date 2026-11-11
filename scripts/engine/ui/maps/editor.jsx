@@ -160,6 +160,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       : { ...m, edges: { ...m.edges, [id]: { ...m.edges[id], ...patch } } });
   }
   function selectLine(id) {
+    clearSelection();
     setSelected(id);
     if (innerWidth < 760 && (selected !== id || flow.getZoom() < .7)) {
       const e = edges.find(e => e.id === id);
@@ -197,7 +198,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     const nextKind = (kind === 'selection' || kind === 'node' && group.some(n => n.id === id)) && group.length > 1 ? 'selection' : kind;
     if (kind === 'node' && nextKind !== 'selection') {
       visualNodes(applyNodeChanges(nodesRef.current.map(n => ({ id: n.id, type: 'select', selected: n.id === id })), nodesRef.current));
-    }
+    } else if (kind === 'edge') clearSelection();
     setSelected(nextKind === 'selection' ? null : id);
     if (corner !== undefined) setFocus({ id, corner });
     setMenu({ kind: nextKind, id, x: event.clientX, y: event.clientY,
@@ -325,6 +326,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       const target = event.target.closest('[data-line-id], .react-flow__node');
       const id = target?.dataset.lineId || target?.dataset.id || selected;
       const box = (target || canvas.current).getBoundingClientRect();
+      if (edges.some(edge => edge.id === id)) clearSelection();
       if (id) setSelected(id);
       setMenu({ kind: selectedDevices().length > 1 ? 'selection' : id ? nodes.some(n => n.id === id) ? 'node' : 'edge' : 'pane', id,
         x: box.x + Math.min(box.width, 180), y: box.y + Math.min(box.height, 80), point: point() });
