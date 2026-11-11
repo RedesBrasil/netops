@@ -8,6 +8,10 @@ sync_code() {
   mkdir -p "$E/code" && cd "$ROOT"
   rm -rf "$E/code"; mkdir -p "$E/code"
   tar -c --exclude=__pycache__ --exclude='*.bak*' --exclude='*.orig' --exclude=console.log scripts core agents workflows best-practices config-examples memory | tar -x -C "$E/code"
+  # reports/ e runs/ moram na raiz do código (NETOPS_ROOT), não no DATA_ROOT
+  mkdir -p "$E/code/reports" "$E/code/runs/run-a" "$E/code/runs/run-b"
+  echo '# Relatório A' > "$E/code/reports/a.md"; echo '# Relatório B' > "$E/code/reports/b.md"
+  echo '{"status":"completed"}' > "$E/code/runs/run-a/state.json"; echo '{"status":"failed"}' > "$E/code/runs/run-b/state.json"
 }
 case "${1:-up}" in
   sync) sync_code ;;
@@ -29,9 +33,6 @@ Y
     printf 'version: 1\ncredentials:\n  cred_demo: {username: demo}\n' > "$D/network/credentials.yaml"
     printf 'version: 1\nnodes: []\nlinks: []\n' > "$D/network/topology.yaml"
     printf 'project:\n  network_name: Teste\n' > "$D/core/config/project-config.yaml"
-    mkdir -p "$D/reports" "$D/runs/run-a" "$D/runs/run-b"
-    echo '# Relatório A' > "$D/reports/a.md"; echo '# Relatório B' > "$D/reports/b.md"
-    echo '{"status":"completed"}' > "$D/runs/run-a/state.json"; echo '{"status":"failed"}' > "$D/runs/run-b/state.json"
     cd "$E/code"
     NETOPS_UI_DATA_ROOT="$D" NETOPS_UI_HOST=127.0.0.1 NETOPS_UI_PORT=$PORT NETOPS_UI_CLAUDE=0 NETOPS_UI_TERMINAL=0 \
       nohup "$PY" scripts/engine/ui/server.py --host 127.0.0.1 --port "$PORT" --no-browser > "$E/server.log" 2>&1 &

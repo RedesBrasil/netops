@@ -1,22 +1,28 @@
 // Reports (read-only), Runs (read-only) e Settings (project-config.yaml).
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
 import { UpdatesControl } from "./updates.js";
-import { ResourceTable, Field, Modal, MarkdownPanel, CodeTextEditor } from "../components.js";
+import { useMenuRoute, matchText } from "../route.js";
+import { FilterBar, ResourceTable, Field, Modal, MarkdownPanel, CodeTextEditor } from "../components.js";
 
+// URL: #reports[/<arquivo>][?q=]  (core/rules/urls-navegacao.md)
 export function ReportsPage() {
   const res = useResource("/reports");
-  const [open, setOpen] = useState(null);
+  const r = useMenuRoute("reports");
+  const q = r.params.q || "";
+  const open = r.segments[0] || null;
+  const setOpen = (f) => (f ? r.open(f) : r.close());
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
   const cols = [
-    { key: "file", label: "Relatório", render: (r) => html`<b>${r.file}</b>` },
+    { key: "file", label: "Relatório", render: (x) => html`<a href=${"#reports/" + encodeURIComponent(x.file)} onClick=${(e) => e.stopPropagation()}><b>${x.file}</b></a>` },
     { key: "size", label: "Tamanho", render: (r) => `${r.size} B` },
   ];
   return html`<div>
     <div class="page-title"><h1>Relatórios</h1></div>
-    <${ResourceTable} columns=${cols} rows=${res.data.reports.map((r) => ({ ...r, _key: r.file }))}
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar relatório" />
+    <${ResourceTable} columns=${cols} rows=${res.data.reports.filter((x) => matchText(q, x.file)).map((x) => ({ ...x, _key: x.file }))}
       onRowClick=${(r) => setOpen(r.file)} empty="Nenhum relatório em reports/." />
-    ${open && html`<${ReportView} file=${open} onClose=${() => setOpen(null)} />`}
+    ${open && html`<${ReportView} key=${open} file=${open} onClose=${() => setOpen(null)} />`}
   </div>`;
 }
 function ReportView({ file, onClose }) {
@@ -28,21 +34,27 @@ function ReportView({ file, onClose }) {
   <//>`;
 }
 
+// URL: #runs[/<id>][?q=&status=]  (core/rules/urls-navegacao.md)
 export function RunsPage() {
   const res = useResource("/runs");
-  const [open, setOpen] = useState(null);
+  const r = useMenuRoute("runs");
+  const { q = "", status = "" } = r.params;
+  const open = r.segments[0] || null;
+  const setOpen = (id) => (id ? r.open(id) : r.close());
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
   const dot = (s) => ({ completed: "var(--ok)", failed: "var(--danger)", in_progress: "var(--warn)" }[s] || "var(--muted)");
   const cols = [
-    { key: "id", label: "Execução", render: (r) => html`<b>${r.id}</b>` },
-    { key: "status", label: "Status", render: (r) => html`<span class="statedot" style=${`background:${dot(r.status)}`}></span>${r.status || "—"}` },
+    { key: "id", label: "Execução", render: (x) => html`<a href=${"#runs/" + encodeURIComponent(x.id)} onClick=${(e) => e.stopPropagation()}><b>${x.id}</b></a>` },
+    { key: "status", label: "Status", render: (x) => html`<span class="statedot" style=${`background:${dot(x.status)}`}></span>${x.status || "—"}` },
   ];
   return html`<div>
     <div class="page-title"><h1>Execuções</h1></div>
-    <${ResourceTable} columns=${cols} rows=${res.data.runs.map((r) => ({ ...r, _key: r.id }))}
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar execução"
+      selects=${[{ key: "status", label: "Status", value: status, options: [...new Set(res.data.runs.map((x) => x.status).filter(Boolean))].sort() }]} />
+    <${ResourceTable} columns=${cols} rows=${res.data.runs.filter((x) => (!status || x.status === status) && matchText(q, x.id)).map((x) => ({ ...x, _key: x.id }))}
       onRowClick=${(r) => setOpen(r.id)} empty="Nenhuma execução em runs/ (criadas durante workflows)." />
-    ${open && html`<${RunView} id=${open} onClose=${() => setOpen(null)} />`}
+    ${open && html`<${RunView} key=${open} id=${open} onClose=${() => setOpen(null)} />`}
   </div>`;
 }
 function RunView({ id, onClose }) {
