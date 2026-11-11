@@ -167,13 +167,27 @@ export function IconPicker({ value, onChange, error, title = "Ícone do host", d
 
 /* ---------------------------- FilterBar --------------------------------- */
 // Filtros que vivem na URL: o chamador passa valores e `onChange(patch)` (useMenuRoute().setParams).
-export function FilterBar({ q = "", selects = [], onChange, placeholder = "Buscar" }) {
+export function FilterBar({ q = "", selects = [], onChange, placeholder = "Buscar", pretty = false, count = null, total = null }) {
   const active = q || selects.some((s) => s.value);
+  const clear = () => onChange({ q: "", ...Object.fromEntries(selects.map((s) => [s.key, ""])) });
+  if (pretty) return html`<div class="fb" role="search">
+    <label class="fb-search">
+      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M13 13l4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      <input type="search" aria-label=${placeholder} placeholder=${placeholder} value=${q} onInput=${(e) => onChange({ q: e.target.value })} />
+    </label>
+    ${selects.map((s) => html`<label key=${s.key} class=${"fb-select" + (s.value ? " on" : "")}>
+      <span class="fb-label">${s.label}</span>
+      <select aria-label=${s.label} value=${s.value || ""} onChange=${(e) => onChange({ [s.key]: e.target.value })}>
+        <option value="">Todos</option>${s.options.map((o) => html`<option key=${o} value=${o}>${o}</option>`)}</select>
+    </label>`)}
+    ${active && html`<button type="button" class="fb-clear" onClick=${clear}>✕ Limpar filtros</button>`}
+    ${count != null && html`<span class="fb-count">${count}${total != null ? " de " + total : ""}</span>`}
+  </div>`;
   return html`<div class="toolbar filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
     <input type="search" aria-label=${placeholder} placeholder=${placeholder} value=${q} onInput=${(e) => onChange({ q: e.target.value })} />
     ${selects.map((s) => html`<select key=${s.key} aria-label=${s.label} value=${s.value || ""} onChange=${(e) => onChange({ [s.key]: e.target.value })}>
       <option value="">${s.label}: todos</option>${s.options.map((o) => html`<option key=${o} value=${o}>${o}</option>`)}</select>`)}
-    ${active && html`<button class="sm" onClick=${() => onChange({ q: "", ...Object.fromEntries(selects.map((s) => [s.key, ""])) })}>Limpar filtros</button>`}
+    ${active && html`<button class="sm" onClick=${clear}>Limpar filtros</button>`}
   </div>`;
 }
 

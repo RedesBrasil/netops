@@ -93,7 +93,7 @@ for (const menu of want) {
     await page.reload(); await settle();
     assert.equal(await page.locator("input[type=search]").inputValue(), c.q, `${menu}: q restaurado`);
     if (c.qRows >= 1) assert.equal(await page.locator("table tbody tr").count(), c.qRows, `${menu}: linhas filtradas`);
-    await page.getByRole("button", { name: "Limpar filtros" }).click(); await settle();
+    await page.getByRole("button", { name: /Limpar filtros/ }).click(); await settle();
     assert.equal(hash(), `#${menu}`, `${menu}: limpar filtros limpa URL`);
     // 8) filtro select na URL (primeiro select com opções)
     const sel = page.locator(".filter-bar select, .toolbar select").first();

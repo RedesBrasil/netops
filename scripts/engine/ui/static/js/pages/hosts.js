@@ -43,13 +43,10 @@ export function HostsPage() {
   return html`<div>
     <div class="page-title"><h1>Hosts</h1><span class="spacer"></span>
       <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Novo host</button></div>
-    <div class="toolbar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      <input type="search" placeholder="Buscar nome ou IP" value=${q} onInput=${(e) => setParams({ q: e.target.value })} />
-      ${[["vendor", "Vendor", vendor, (h) => h.effective.vendor], ["role", "Role", role, (h) => h.effective.role], ["group", "Grupo", group, (h) => h.explicit.group]].map(([k, l, v, f]) => html`
-        <select key=${k} aria-label=${l} value=${v} onChange=${(e) => setParams({ [k]: e.target.value })}>
-          <option value="">${l}: todos</option>${opts(f).map((o) => html`<option value=${o}>${o}</option>`)}</select>`)}
-      ${(q || vendor || role || group) && html`<button class="sm" onClick=${() => setParams({ q: "", vendor: "", role: "", group: "" })}>Limpar filtros</button>`}
-    </div>
+    <${FilterBar} pretty=${true} q=${q} onChange=${setParams} placeholder="Buscar por nome ou IP" count=${hosts.length} total=${allHosts.length}
+      selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: opts((h) => h.effective.vendor) },
+                 { key: "role", label: "Role", value: role, options: opts((h) => h.effective.role) },
+                 { key: "group", label: "Grupo", value: group, options: opts((h) => h.explicit.group) }]} />
     ${seg && seg !== "new" && !editing && html`<div class="card">Host '${seg}' não encontrado. <a href="#hosts">Voltar aos hosts</a></div>`}
     <${ResourceTable} columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
       sortState=${{ key: sort || null, dir }} onSortChange=${(n) => setParams({ sort: n.key || "", dir: n.dir === "desc" ? "desc" : "" })}
