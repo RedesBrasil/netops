@@ -101,3 +101,66 @@ def test_shape_changes_are_blocked_in_read_only(client, monkeypatch):
     m = _map(client)
     monkeypatch.setattr(deps.STATE, 'read_only', True)
     assert _save(client, m).status_code == 403
+
+
+def test_empty_shape_and_visual_label_preserve_custom_colors_and_layers(client, env):
+    m = _map(client)
+    m['objects'][0].update(label='', color='#12abEF', stroke='#654321', z_index=3)
+    m['objects'][1].pop('label')
+    m['positions']['rt-core-01'] = {'x': 30, 'y': 70, 'z_index': 2}
+    m['visual_links'] = [{'id': 'blank', 'source': 'host:rt-core-01', 'target': 'object:cloud'}]
+    response = _save(client, m)
+    assert response.status_code == 200, response.text
+    saved = _snapshot(client)['maps'][0]
+    assert saved['objects'][0]['label'] == saved['objects'][1]['label'] == ''
+    assert saved['objects'][0]['color'] == '#12abEF'
+    assert saved['objects'][0]['stroke'] == '#654321'
+    assert saved['objects'][0]['z_index'] == 3
+    assert saved['positions']['rt-core-01'] == {'x': 30, 'y': 70, 'z_index': 2}
+    assert saved['visual_links'][0]['label'] == ''
+    raw = yaml.safe_load((env / 'network/maps.yaml').read_text())['maps'][0]
+    assert raw['objects'][0]['color'] == '#12abEF'
+    assert raw['positions']['rt-core-01']['z_index'] == 2
+
+
+@pytest.mark.parametrize('field,value', [
+    ('color', 'red'), ('color', '#fff'), ('color', '#12345678'),
+    ('color', 'url(https://example.test/color)'), ('stroke', 'var(--color)'),
+    ('stroke', '#ggffff'), ('z_index', 100001), ('z_index', -100001),
+    ('z_index', 1.5), ('z_index', True), ('z_index', '4'),
+])
+def test_invalid_shape_style_is_rejected_without_writing(client, env, field, value):
+    m = _map(client)
+    m['objects'][0][field] = value
+    response = _save(client, m)
+    assert response.status_code == 422, response.text
+    assert not (env / 'network/maps.yaml').exists()
+
+
+@pytest.mark.parametrize('value', [100001, -100001, 1.5, True, '4'])
+def test_invalid_host_layer_is_rejected_without_writing(client, env, value):
+    m = _map(client)
+    m['positions']['rt-core-01'] = {'x': 10, 'y': 20, 'z_index': value}
+    response = _save(client, m)
+    assert response.status_code == 422, response.text
+    assert not (env / 'network/maps.yaml').exists()
+
+
+def test_host_layer_survives_rename_and_is_removed_with_host(client):
+    m = _map(client)
+    m['positions']['rt-core-01'] = {'x': 30, 'y': 70, 'z_index': 2}
+    assert _save(client, m).status_code == 200
+    host_response = client.get('/api/hosts/rt-core-01')
+    assert host_response.status_code == 200
+    payload = host_response.json()
+    # Reutiliza a edição canônica: apresentação deve acompanhar a identidade do host.
+    rename = client.post('/api/hosts/rt-core-01/rename', headers={'If-Match': payload['rev']},
+                         json={'to': 'renamed-core'})
+    assert rename.status_code == 200, rename.text
+    saved = _snapshot(client)['maps'][0]
+    assert 'rt-core-01' not in saved['positions']
+    assert saved['positions']['renamed-core'] == {'x': 30, 'y': 70, 'z_index': 2}
+    host_response = client.get('/api/hosts/renamed-core')
+    removed = client.delete('/api/hosts/renamed-core', headers={'If-Match': host_response.json()['rev']})
+    assert removed.status_code == 200, removed.text
+    assert 'renamed-core' not in _snapshot(client)['maps'][0]['positions']

@@ -189,6 +189,9 @@ class MapPoint(BaseModel):
     x: FiniteFloat = Field(ge=-1000000, le=1000000)
     y: FiniteFloat = Field(ge=-1000000, le=1000000)
 
+class MapNodePosition(MapPoint):
+    z_index: Optional[int] = Field(default=None, strict=True, ge=-100000, le=100000)
+
 class MapAnchor(BaseModel):
     model_config = {"extra": "forbid"}
     side: Literal["left", "right", "top", "bottom"]
@@ -218,6 +221,9 @@ class MapObject(BaseModel):
     form: Literal["rect", "ellipse"] = "rect"
     width: FiniteFloat = Field(default=320, ge=100, le=10000)
     height: FiniteFloat = Field(default=200, ge=60, le=10000)
+    z_index: Optional[int] = Field(default=None, strict=True, ge=-100000, le=100000)
+    color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    stroke: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     icon: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     map_id: Optional[str] = Field(default=None, max_length=100)
 
@@ -249,7 +255,7 @@ class NetworkMap(BaseModel):
     kind: Literal["all", "site", "custom"] = "custom"
     site: Optional[str] = Field(default=None, max_length=200)
     members: list[str] = Field(default_factory=list, max_length=5000)
-    positions: dict[str, MapPoint] = Field(default_factory=dict, max_length=5000)
+    positions: dict[str, MapNodePosition] = Field(default_factory=dict, max_length=5000)
     objects: list[MapObject] = Field(default_factory=list, max_length=1000)
     edges: dict[str, MapEdgeLayout] = Field(default_factory=dict, max_length=10000)
     visual_links: list[MapVisualLink] = Field(default_factory=list, max_length=2000)

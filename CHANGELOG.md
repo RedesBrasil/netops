@@ -1,5 +1,23 @@
 # Changelog do NetOps
 
+## [1.3.0] - 2026-11-11
+
+### Novidades
+
+- Ligações entre hosts, formas e referências começam sem texto. A descrição do enlace e o texto da ligação visual são opcionais e podem ser incluídos, alterados ou apagados depois.
+- Formas podem ser criadas e editadas sem texto, inclusive com ícones da biblioteca local.
+- Botão direito em hosts e formas oferece **Enviar para frente** e **Enviar para trás**, movendo uma camada por clique e preservando a ordem entre todos os itens ao reabrir o mapa.
+- Preenchimento e contorno das formas aceitam qualquer cor pelo seletor de cores, com código HEX editável, botão de copiar e prévia das duas cores.
+- **Duplicar** no menu da forma cria uma cópia independente com o mesmo formato, tamanho, ícone, texto e cores. **Delete** remove a forma selecionada.
+- Clique e arraste no fundo do mapa seleciona hosts e formas por retângulo, permitindo mover, alinhar e remover a seleção. Espaço + arraste ou botão do meio move a visão do mapa.
+- A seleção em mapas adicionais remove apenas suas associações visuais. Em mapas automáticos, excluir hosts exige confirmação explícita do impacto no inventário, enlaces e demais mapas.
+
+### Preservação e compatibilidade
+
+- Camadas e cores são campos opcionais de apresentação em `maps.yaml`; mapas existentes continuam válidos sem migração destrutiva. Textos já informados são preservados.
+- Dados locais, credenciais, backups, personalizações e conversas continuam preservados pelo atualizador. Nenhum teste usa o inventário real.
+- O pacote inclui os assets reconstruídos: não é necessário instalar Node/npm para atualizar. Reinicie pelo launcher após a atualização para carregar o schema compatível.
+
 ## [1.2.1] - 2026-11-11
 
 ### Correções

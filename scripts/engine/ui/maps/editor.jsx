@@ -5,7 +5,7 @@ import './editor.css';
 import { separateEdges, nodeRect, straightGeometry } from './parallel-edges.js';
 import { addBend, removeBend, orientRoute } from './orthogonal-route.js';
 import { LineEditing, StraightEdge } from './straight-edges.jsx';
-import { reconcileNodes, alignNodes } from './node-state.js';
+import { reconcileNodes, alignNodes, defaultHostPosition, orderedNodeIds, moveLayer, duplicateShape, removeMapNodes, contrastingText } from './node-state.js';
 import iconCatalog from '../static/icons/network/catalog.json';
 const iconFiles = new Map(iconCatalog.map(icon => [icon.id, '/icons/network/thumbnails/' + icon.file]));
 
@@ -38,7 +38,8 @@ function Shape({ data, selected }) {
   const [failed, setFailed] = useState(false), image = iconFiles.get(data.icon);
   useEffect(() => setFailed(false), [image]);
   return <><NodeResizer isVisible={selected && !data.readOnly} minWidth={100} minHeight={60} />
-    <div className={`map-shape ${data.form === 'ellipse' ? 'ellipse' : ''} ${selected ? 'chosen' : ''} ${image && !failed ? 'with-icon' : ''}`}>
+    <div className={`map-shape ${data.form === 'ellipse' ? 'ellipse' : ''} ${selected ? 'chosen' : ''} ${image && !failed ? 'with-icon' : ''}`}
+      style={{ background: data.color, borderColor: data.stroke, color: contrastingText(data.color), opacity: data.color || data.stroke ? 1 : undefined }}>
       {image && !failed && <img className="shape-icon-image" src={image} alt="" draggable={false} onError={() => setFailed(true)} />}
       <span>{data.label}</span>
     </div><NodeHandles /></>;
@@ -46,11 +47,12 @@ function Shape({ data, selected }) {
 const nodeTypes = { device: Device, note: Note, shape: Shape };
 const edgeTypes = { editableStraight: StraightEdge };
 function makeNodes(map, hosts, readOnly) {
+  const layers = new Map(orderedNodeIds(map).map((id, index) => [id, index]));
   const nodes = map.host_ids.map((id, index) => ({ id: hostId(id), type: 'device',
-    position: map.positions[id] || { x: 70 + index % 3 * 300, y: 90 + Math.floor(index / 3) * 220 + index % 2 * 75 },
+    position: { x: map.positions[id]?.x ?? defaultHostPosition(index).x, y: map.positions[id]?.y ?? defaultHostPosition(index).y }, zIndex: layers.get(hostId(id)),
     data: { hostId: id, label: hosts[id]?.hostname || id, ip: hosts[id]?.mgmt_ip || '', role: hosts[id]?.role, icon: hosts[id]?.icon } }));
   for (const o of map.objects) nodes.push({ id: objectId(o.id), type: o.type === 'reference' ? 'device' : o.type,
-    position: o.position, ...(o.type === 'shape' ? { style: { width: o.width, height: o.height }, zIndex: -1 } : {}),
+    position: o.position, zIndex: layers.get(objectId(o.id)), ...(o.type === 'shape' ? { style: { width: o.width, height: o.height } } : {}),
     data: { ...o, mapId: o.map_id, ip: o.type === 'reference' ? 'Toque para abrir' : '', readOnly } });
   return nodes;
 }
@@ -58,15 +60,34 @@ function makeEdges(map, links) {
   const ids = new Set(map.host_ids);
   const physical = links.filter(l => ids.has(l.a.host) && ids.has(l.b.host)).map(l => ({
     id: l.id, source: hostId(l.a.host), target: hostId(l.b.host), sourceHandle: 'bottom', targetHandle: 'top',
-    label: l.speed || l.media || 'Enlace', data: { speed: l.speed, ...map.edges[l.id] },
+    label: l.desc || '', data: { speed: l.speed, ...map.edges[l.id] },
     style: { stroke: speedStyle(l.speed).color, strokeDasharray: speedStyle(l.speed).dash },
   }));
   const nodeIds = new Set([...map.host_ids.map(hostId), ...map.objects.map(o => objectId(o.id))]);
   const visual = map.visual_links.filter(l => nodeIds.has(l.source) && nodeIds.has(l.target)).map(l => ({
-    id: 'visual:' + l.id, source: l.source, target: l.target, sourceHandle: 'bottom', targetHandle: 'top', label: l.label || 'Referência',
+    id: 'visual:' + l.id, source: l.source, target: l.target, sourceHandle: 'bottom', targetHandle: 'top', label: l.label || '',
     data: { speed: l.speed, anchors: l.anchors, route: l.route, visual: true }, style: { stroke: speedStyle(l.speed).color, strokeDasharray: '7 5' },
   }));
   return separateEdges([...physical, ...visual]);
+}
+function ColorField({ name, label, value, onChange, onError }) {
+  const valid = /^#[0-9a-f]{6}$/i.test(value), input = useRef(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => setCopied(false), [value]);
+  async function copy() {
+    if (!valid) { input.current?.focus(); return; }
+    try {
+      if (navigator.clipboard?.writeText && globalThis.isSecureContext) await navigator.clipboard.writeText(value);
+      else { input.current.select(); if (!document.execCommand('copy')) throw new Error('Selecione o código HEX e use Ctrl+C para copiar.'); }
+      setCopied(true);
+    } catch (error) { onError(error.message || 'Selecione o código HEX e use Ctrl+C para copiar.'); }
+  }
+  const description = name === 'color' ? 'cor de preenchimento' : 'cor do contorno';
+  return <div className="map-color-field"><label htmlFor={'shape-' + name}>{label} (HEX)</label><div className="map-color-controls">
+    <input type="color" aria-label={'Selecionar ' + description} value={valid ? value : '#000000'} onInput={e => onChange(e.currentTarget.value)} />
+    <input ref={input} id={'shape-' + name} name={name} value={value} onInput={e => onChange(e.currentTarget.value)} pattern="#[0-9a-fA-F]{6}" required maxLength={7} spellCheck={false} aria-label={label + ' (HEX)'} />
+    <button type="button" aria-label={'Copiar ' + description} onClick={copy}>{copied ? 'Copiado' : 'Copiar'}</button>
+  </div></div>;
 }
 function MapContextMenu({ menu, onClose, children }) {
   const ref = useRef(null);
@@ -103,7 +124,7 @@ function MapContextMenu({ menu, onClose, children }) {
     style={{ left: menu.x, top: menu.y }} onKeyDown={keyboard} onContextMenu={event => event.preventDefault()}>{children}</div>;
 }
 export function MapEditor(props) { return <ReactFlowProvider><Editor {...props} /></ReactFlowProvider>; }
-function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, onSave, onHost, onLink, onSwitch, onNewMap, onDeleteMap, onError, onRetry, onReload, onBusy, IconPicker }) {
+function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, onSave, onHost, onLink, onSwitch, onNewMap, onDeleteMap, onDeleteSelection, onError, onRetry, onReload, onBusy, IconPicker }) {
   const [layout, setLayout] = useState(map), [nodes, setNodes] = useState(() => makeNodes(map, hosts, readOnly));
   const layoutRef = useRef(map), nodesRef = useRef(nodes), gesture = useRef(false), ignoreDoubleClick = useRef(0);
   function visualNodes(value) { nodesRef.current = value; setNodes(value); }
@@ -112,6 +133,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
   const [dialog, setDialog] = useState(null), [menu, setMenu] = useState(null);
   const [linkMode, setLinkMode] = useState(false), [origin, setOrigin] = useState(null);
   const [shapeIcon, setShapeIcon] = useState('');
+  const [shapeColor, setShapeColor] = useState('#dbeafe'), [shapeStroke, setShapeStroke] = useState('#2563eb');
   const [multiSelect, setMultiSelect] = useState(false);
   const speed = '10G';
   const flow = useReactFlow();
@@ -193,14 +215,18 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     try {
       const positions = alignNodes(selectedDevices(), direction);
       if (Object.keys(positions).length < 2) return;
-      update(m => ({ ...m, positions: { ...m.positions, ...Object.fromEntries(Object.entries(positions).filter(([id]) => id.startsWith('host:')).map(([id, pos]) => [id.slice(5), pos])) },
+      update(m => ({ ...m, positions: { ...m.positions, ...Object.fromEntries(Object.entries(positions).filter(([id]) => id.startsWith('host:')).map(([id, pos]) => [id.slice(5), { ...m.positions[id.slice(5)], ...pos }])) },
         objects: m.objects.map(o => positions[objectId(o.id)] ? { ...o, position: positions[objectId(o.id)] } : o) }));
       setMultiSelect(false);
     } catch (error) { onError(error.message); }
   }
   function editEdge(edge) { if (edge.data.visual) open('visual', edge); else onLink({ id: edge.id }); }
 
-  function open(kind, object, pos) { setMenu(null); if (kind === 'shape') setShapeIcon(object?.data.icon || ''); setDialog({ kind, object, position: pos || point() }); }
+  function open(kind, object, pos) {
+    setMenu(null);
+    if (kind === 'shape') { setShapeIcon(object?.data.icon || ''); setShapeColor(object?.data.color || '#dbeafe'); setShapeStroke(object?.data.stroke || '#2563eb'); }
+    setDialog({ kind, object, position: pos || point() });
+  }
   function edit(n) { setMenu(null); if (n?.data.hostId) onHost({ id: n.data.hostId }); else if (n?.data.mapId) open('reference', n); else if (n) open(n.type, n); }
   function connect(n) {
     ignoreDoubleClick.current = Date.now() + 500;
@@ -208,7 +234,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     if (origin === n.id) return;
     setLinkMode(false); setOrigin(null);
     if (origin.startsWith('host:') && n.id.startsWith('host:')) onLink({ a: { host: origin.slice(5) }, b: { host: n.id.slice(5) }, speed });
-    else update(m => ({ ...m, visual_links: [...m.visual_links, { id: uid(), source: origin, target: n.id, speed, label: nodesRef.current.find(node => node.id === origin)?.type === 'shape' || n.type === 'shape' ? 'Ligação visual' : 'Referência' }] }));
+    else update(m => ({ ...m, visual_links: [...m.visual_links, { id: uid(), source: origin, target: n.id, speed, label: '' }] }));
   }
   function nodeClick(e, n) {
     setMenu(null);
@@ -232,7 +258,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       for (const c of edits) {
         const node = nextNodes.find(n => n.id === c.id);
         if (!node) continue;
-        if (c.id.startsWith('host:') && c.position) positions[c.id.slice(5)] = { ...node.position };
+        if (c.id.startsWith('host:') && c.position) positions[c.id.slice(5)] = { ...positions[c.id.slice(5)], ...node.position };
         const obj = objects.find(o => objectId(o.id) === c.id);
         if (obj) obj.position = { ...node.position };
         if (obj && c.dimensions) { obj.width = c.dimensions.width; obj.height = c.dimensions.height; }
@@ -242,25 +268,42 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     if (cs.some(c => c.dragging === false || c.resizing === false)) nodeGesture(false);
   }
   function saveObject(e) {
-    e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)); const old = dialog.object?.data;
+    e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget));
+    const old = layoutRef.current.objects.find(o => objectId(o.id) === dialog.object?.id);
     if (dialog.kind === 'existing') {
       update(m => ({ ...m, members: [...new Set([...m.members, f.host])], host_ids: [...new Set([...m.host_ids, f.host])], positions: { ...m.positions, [f.host]: dialog.position } }));
     } else {
-      const o = { id: old?.id || uid(), type: dialog.kind, position: old ? nodes.find(n => n.id === dialog.object.id)?.position || old.position : dialog.position,
+      const o = { ...old, id: old?.id || uid(), type: dialog.kind, position: old ? nodes.find(n => n.id === dialog.object.id)?.position || old.position : dialog.position,
         label: f.label || maps.find(m => m.id === f.map_id)?.name || '', form: f.form || old?.form || 'rect', width: old?.width || 320, height: old?.height || 200,
-        ...(f.map_id ? { map_id: f.map_id } : {}), ...(dialog.kind === 'shape' && shapeIcon ? { icon: shapeIcon } : {}) };
+        ...(f.map_id ? { map_id: f.map_id } : {}), ...(dialog.kind === 'shape' ? { icon: shapeIcon || null, color: f.color, stroke: f.stroke } : {}) };
       update(m => ({ ...m, objects: old ? m.objects.map(item => item.id === old.id ? o : item) : [...m.objects, o] }));
     }
     setDialog(null);
   }
+  function duplicate(id) {
+    const newId = uid();
+    update(m => duplicateShape(m, id, newId));
+    visualNodes(applyNodeChanges(nodesRef.current.map(n => ({ id: n.id, type: 'select', selected: n.id === objectId(newId) })), nodesRef.current));
+    setSelected(objectId(newId));
+    canvas.current?.focus({ preventScroll: true });
+  }
+  function removeSelection() {
+    if (readOnly) return;
+    const ids = nodesRef.current.filter(n => n.selected).map(n => n.id);
+    if (!ids.length) { if (selected) removeVisual(selected); return; }
+    if (ids.some(id => id.startsWith('host:')) && layoutRef.current.kind !== 'custom') {
+      setMenu(null); onDeleteSelection({ mapId: layoutRef.current.id, hostIds: ids.filter(id => id.startsWith('host:')).map(id => id.slice(5)),
+        objectIds: ids.filter(id => id.startsWith('object:')).map(id => id.slice(7)) }); return;
+    }
+    update(m => removeMapNodes(m, ids));
+    setSelected(null); setMultiSelect(false); setMenu(null);
+  }
   function removeVisual(id = selected) {
     const node = nodes.find(n => n.id === id), edge = edges.find(e => e.id === id);
     if (node?.data.hostId) {
-      if (layout.kind !== 'custom') return onError('Este mapa acompanha o inventário. Para excluir o dispositivo, use a lista de Hosts.');
-      const host = node.data.hostId;
-      update(m => { const positions = { ...m.positions }; delete positions[host]; return { ...m, members: m.members.filter(h => h !== host), host_ids: m.host_ids.filter(h => h !== host), positions,
-        visual_links: m.visual_links.filter(l => l.source !== id && l.target !== id) }; });
-    } else if (node) update(m => ({ ...m, objects: m.objects.filter(o => objectId(o.id) !== id), visual_links: m.visual_links.filter(l => l.source !== id && l.target !== id) }));
+      if (layout.kind !== 'custom') return onDeleteSelection({ mapId: layout.id, hostIds: [node.data.hostId], objectIds: [] });
+      update(m => removeMapNodes(m, [id]));
+    } else if (node) update(m => removeMapNodes(m, [id]));
     else if (edge?.data.visual) update(m => ({ ...m, visual_links: m.visual_links.filter(l => 'visual:' + l.id !== id) }));
     else if (edge) { onLink({ id: edge.id, remove: true }); return; }
     setSelected(null);
@@ -273,6 +316,9 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
   const action = (label, fn, danger = false) => <button type="button" role="menuitem" className={danger ? 'danger' : ''}
     onClick={() => { setMenu(null); fn(); }}>{label}</button>;
   return <section className="netops-maps" aria-label="Mapa de rede" onKeyDown={event => {
+    if (event.key === 'Delete' && !dialog && !readOnly && !event.target.closest('input, textarea, select, [contenteditable="true"]')) {
+      event.preventDefault(); event.stopPropagation(); removeSelection(); return;
+    }
     if (event.key === 'Escape') { setMenu(null); setLinkMode(false); setMultiSelect(false); clearSelection(); }
     if (event.key === 'F10' && event.shiftKey) {
       event.preventDefault(); event.stopPropagation();
@@ -291,7 +337,9 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       </div>
       <span className="map-sr-only" role="status" aria-live="polite">{readOnly ? 'Somente leitura' : status}</span>
     </div>
-    <div className="map-workspace"><div ref={canvas} className="map-canvas" data-testid="map-canvas">
+    <div className="map-workspace"><div ref={canvas} className="map-canvas" data-testid="map-canvas" tabIndex={0} onPointerDown={event => {
+      if (!event.target.closest('input, textarea, select, button, .react-flow__node')) event.currentTarget.focus({ preventScroll: true });
+    }}>
       <LineEditing.Provider value={{ selected, select: selectLine, save: saveLine, disabled: readOnly || linkMode, busy: onBusy, contextMenu: (event, id, corner) => context(event, 'edge', id, corner), focus, focusCorner: (id, corner) => setFocus({ id, corner }) }}>
         <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={changes} nodesDraggable={!readOnly && !multiSelect && !linkMode} selectNodesOnDrag={!multiSelect && !linkMode} elementsSelectable={!multiSelect && !linkMode} nodesConnectable={false} connectionMode={ConnectionMode.Loose}
           onNodeClick={nodeClick} onNodeDoubleClick={(e, n) => { if (!multiSelect && !linkMode && Date.now() > ignoreDoubleClick.current) { if (n.data.mapId) onSwitch(n.data.mapId); else if (!readOnly) edit(n); } }}
@@ -300,7 +348,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           onSelectionContextMenu={event => context(event, 'selection')} onSelectionStart={() => nodeGesture(true)} onSelectionEnd={() => nodeGesture(false)}
           onPaneContextMenu={event => context(event)} onMoveStart={() => setMenu(null)}
           onNodeDragStart={() => nodeGesture(true)} onNodeDragStop={() => nodeGesture(false)}
-          fitView fitViewOptions={{ padding: .2, maxZoom: 1.05 }} minZoom={.15} maxZoom={2} nodeDragThreshold={3} deleteKeyCode={null} preventScrolling selectionOnDrag={false} selectionKeyCode="Shift" multiSelectionKeyCode={multiSelectionKeys}>
+          fitView fitViewOptions={{ padding: .2, maxZoom: 1.05 }} minZoom={.15} maxZoom={2} nodeDragThreshold={3} deleteKeyCode={null} preventScrolling selectionOnDrag={!linkMode && !multiSelect} panOnDrag={[1]} selectionKeyCode="Shift" multiSelectionKeyCode={multiSelectionKeys} elevateNodesOnSelect={false}>
           <Background gap={24} size={1} color="var(--border)" /><Controls showInteractive={false} /><MiniMap className="map-overview" pannable zoomable />
         </ReactFlow>
       </LineEditing.Provider>
@@ -316,7 +364,8 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     </div>}
     {menu && <MapContextMenu menu={menu} onClose={() => setMenu(null)}>
       {menu.kind === 'selection' ? <>
-        {!readOnly && <>{action('Alinhar horizontalmente', () => align('horizontal'))}{action('Alinhar verticalmente', () => align('vertical'))}</>}
+        {!readOnly && <>{action('Alinhar horizontalmente', () => align('horizontal'))}{action('Alinhar verticalmente', () => align('vertical'))}
+          {action(layout.kind === 'custom' ? 'Remover seleção do mapa' : 'Excluir seleção', removeSelection, true)}</>}
         {action('Limpar seleção', () => { clearSelection(); setMultiSelect(false); })}
       </> : menu.kind === 'pane' ? <>
         {!readOnly && <>
@@ -335,7 +384,10 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
         {!readOnly && <>
           {action('Editar', () => edit(menuNode))}
           {connectable(menuNode) && action('Ligar a outro dispositivo', () => startConnection(menuNode.id))}
-          {(!menuNode.data.hostId || layout.kind === 'custom') && action('Remover do mapa', () => removeVisual(menuNode.id), true)}
+          {action('Enviar para frente', () => update(m => moveLayer(m, menuNode.id, 'forward')))}
+          {action('Enviar para trás', () => update(m => moveLayer(m, menuNode.id, 'backward')))}
+          {menuNode.type === 'shape' && action('Duplicar', () => duplicate(menuNode.id))}
+          {action(menuNode.data.hostId && layout.kind !== 'custom' ? 'Excluir host' : 'Remover do mapa', () => removeVisual(menuNode.id), true)}
         </>}
         {menuNode.data.hostId && action('Abrir inventário de hosts', () => { location.hash = 'hosts'; })}
       </> : menuEdge ? <>
@@ -354,9 +406,12 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       <button className="map-close" aria-label="Fechar" onClick={() => setDialog(null)}>×</button>
       {dialog.kind === 'rename' ? <form onSubmit={e => { e.preventDefault(); const name = new FormData(e.currentTarget).get('name'); update(m => ({ ...m, name })); setDialog(null); }}><label>Nome do mapa<input name="name" defaultValue={layout.name} required maxLength={100} /></label><button className="primary">Salvar</button></form> : dialog.kind === 'visual' ? <form onSubmit={e => { e.preventDefault(); const label = new FormData(e.currentTarget).get('label'); update(m => ({ ...m, visual_links: m.visual_links.map(v => 'visual:' + v.id === dialog.object.id ? { ...v, label } : v) })); setDialog(null); }}><label>Descrição da referência<input name="label" defaultValue={dialog.object.label} maxLength={200} /></label><button className="primary">Salvar</button></form> : <form onSubmit={saveObject}>
         <h2>{{ note: 'Texto', shape: 'Forma', reference: 'Referência a mapa', existing: 'Adicionar host existente' }[dialog.kind]}</h2>
-        {dialog.kind === 'existing' ? <label>Host<select name="host" required><option value="">Selecione</option>{Object.keys(hosts).filter(id => !layout.host_ids.includes(id)).map(id => <option value={id}>{id}</option>)}</select></label> : <label>{dialog.kind === 'reference' ? 'Rótulo (opcional)' : 'Texto'}<textarea name="label" required={dialog.kind !== 'reference'} maxLength={4000} defaultValue={dialog.object?.data.label || ''} /></label>}
+        {dialog.kind === 'existing' ? <label>Host<select name="host" required><option value="">Selecione</option>{Object.keys(hosts).filter(id => !layout.host_ids.includes(id)).map(id => <option value={id}>{id}</option>)}</select></label> : <label>{dialog.kind === 'reference' ? 'Rótulo (opcional)' : dialog.kind === 'shape' ? 'Texto (opcional)' : 'Texto'}<textarea name="label" required={dialog.kind === 'note'} maxLength={4000} defaultValue={dialog.object?.data.label || ''} /></label>}
         {dialog.kind === 'reference' && <label>Mapa de destino<select name="map_id" required defaultValue={dialog.object?.data.map_id || ''}><option value="">Selecione</option>{maps.filter(m => m.id !== layout.id).map(m => <option value={m.id}>{m.name}</option>)}</select></label>}
-        {dialog.kind === 'shape' && <><IconPicker title="Ícone da forma" defaultLabel="Sem ícone" defaultHint="Sem ícone: manter somente o formato e o texto." value={shapeIcon} onChange={setShapeIcon} /><label>Formato<select name="form" defaultValue={dialog.object?.data.form || 'rect'}><option value="rect">Retângulo</option><option value="ellipse">Elipse</option></select></label></>}
+        {dialog.kind === 'shape' && <><IconPicker title="Ícone da forma" defaultLabel="Sem ícone" defaultHint="Sem ícone: manter somente o formato e o texto." value={shapeIcon} onChange={setShapeIcon} /><label>Formato<select name="form" defaultValue={dialog.object?.data.form || 'rect'}><option value="rect">Retângulo</option><option value="ellipse">Elipse</option></select></label>
+          <ColorField name="color" label="Preenchimento" value={shapeColor} onChange={setShapeColor} onError={onError} />
+          <ColorField name="stroke" label="Contorno" value={shapeStroke} onChange={setShapeStroke} onError={onError} />
+          <div className="map-color-preview" aria-label="Prévia das cores" style={{ background: shapeColor, borderColor: shapeStroke, color: contrastingText(shapeColor) }}>Prévia</div></>}
         <div className="modal-actions"><button type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="primary">Salvar</button></div>
       </form>}
     </section></div>}

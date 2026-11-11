@@ -123,7 +123,9 @@ formas como origem/destino e reutiliza `visual_links`; não cria hosts sem IP. O
 como prop, sem duplicar componentes/API/Preact no bundle.
 
 A seleção múltipla usa `node.selected` do React Flow, seus modificadores Ctrl/Meta e seleção
-por retângulo com Shift. O menu de grupo e a alternativa por toque chamam `alignNodes` em
+por retângulo com botão esquerdo no fundo, sem modificadores (Shift também funciona).
+O retângulo seleciona itens inteiramente contidos; o botão central ou Espaço permitem mover
+o mapa, e o gesto de arraste com toque continua navegando. O menu de grupo e a alternativa por toque chamam `alignNodes` em
 `node-state.js`, função pura que retorna posições por ID, ordenadas no eixo e separadas por
 24 unidades entre bordas. O editor aplica posições de hosts e objetos numa única gravação.
 A reconciliação mantém medidas/seleção e nenhuma rota é reiniciada pelo alinhamento.
@@ -132,3 +134,32 @@ A reconciliação mantém medidas/seleção e nenhuma rota é reiniciada pelo al
 seleção de quatro hosts, grupo misto, espaçamento igual e dispositivos não selecionados
 intactos. Executar em uma fixture isolada exclusiva, sem cenários concorrentes alterando
 o mesmo arquivo de mapas.
+
+## Texto opcional, cores e camadas
+
+Enlaces reais exibem somente `desc`, editável no cadastro do enlace. Ligações visuais usam
+`label` e nascem com texto vazio; nem velocidade nem nomes genéricos geram rótulos. Formas
+também podem ter texto vazio. O traço continua selecionável para ajustar/editar a ligação.
+
+O formulário de forma oferece seletores nativos de preenchimento e contorno, campos HEX
+editáveis/copiáveis e prévia. `color` e `stroke` opcionais usam `#RRGGBB` em `maps.yaml`.
+O texto da forma e da prévia usa preto ou branco conforme a luminância do preenchimento,
+conservando contraste independentemente do tema do console.
+Objetos antigos sem esses campos conservam as cores do tema até serem editados.
+
+Hosts e objetos compartilham a mesma ordem visual, salva em `positions.<host>.z_index` e
+`objects[].z_index`. Enviar para frente/trás troca exatamente com o vizinho, sem salto ao
+extremo. A seleção não altera a camada; mapas antigos mantêm as formas atrás dos hosts.
+Mover/alinha um host preserva sua camada. Duplicar cria outra forma com ID próprio, mesmas
+cores/ícone/tamanho/texto, deslocada 32 unidades e uma camada acima da original.
+
+Delete remove objetos selecionados e suas ligações visuais. Em mapas adicionais, hosts
+selecionados são apenas removidos do mapa. Em mapas automáticos, a seleção com hosts abre
+confirmação explícita de exclusão do inventário e dos enlaces/referências em todos os mapas.
+A operação usa revisões por exclusão e interrompe na primeira falha, informando quantos
+hosts já foram removidos; não é uma transação única para todo o grupo. O mapa fica somente
+leitura durante a sequência. Delete em campos de texto mantém a edição normal.
+
+`node-state.test.mjs` cobre a pilha mista, limites, duplicação e limpeza de grupos sem mutar
+o snapshot anterior. `tests/maps-editing.browser.mjs` verifica os recursos no navegador
+com dados fictícios isolados.
