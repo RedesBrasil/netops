@@ -23,6 +23,9 @@ import json
 import sys
 from pathlib import Path
 
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 NETOPS_ROOT = Path(__file__).resolve().parents[3]
 HOSTS_FILE = NETOPS_ROOT / "network" / "hosts.yaml"
 CREDS_FILE = NETOPS_ROOT / "network" / "credentials.yaml"
@@ -56,24 +59,28 @@ def resolve_secret(value):
     return decrypt_value(get_session_key(), value)  # get_session_key levanta VaultLocked
 
 
-def load_inventory() -> tuple[dict, dict]:
+def load_inventory(*, include_credentials: bool = True) -> tuple[dict, dict]:
     """Lê hosts.yaml e credentials.yaml. credentials.yaml ausente => credenciais vazias."""
     yaml = _require_yaml()
-    if not HOSTS_FILE.exists():
-        sys.exit(f"ERRO: inventário não encontrado: {HOSTS_FILE}")
-    hosts_data = yaml.safe_load(HOSTS_FILE.read_text(encoding="utf-8")) or {}
-    creds_data = {}
-    if CREDS_FILE.exists():
-        creds_data = yaml.safe_load(CREDS_FILE.read_text(encoding="utf-8")) or {}
+    from lib.inventory_lock import ensure_migration_complete, inventory_lock
+    with inventory_lock(HOSTS_FILE.parent):
+        ensure_migration_complete(HOSTS_FILE.parent)
+        if not HOSTS_FILE.exists():
+            sys.exit(f"ERRO: inventário não encontrado: {HOSTS_FILE}")
+        hosts_data = yaml.safe_load(HOSTS_FILE.read_text(encoding="utf-8")) or {}
+        creds_data = {}
+        if include_credentials and CREDS_FILE.exists():
+            creds_data = yaml.safe_load(CREDS_FILE.read_text(encoding="utf-8")) or {}
     return hosts_data, creds_data
 
 
-def list_hosts(hosts_data: dict) -> list[str]:
-    """Nomes de todos os hosts do inventário."""
-    return sorted((hosts_data.get("hosts") or {}).keys())
+def list_hosts(hosts_data: dict) -> list[int | str]:
+    """IDs inteiros no v2; chaves legadas durante leitura de inventário v1."""
+    from lib.host_identity import host_index
+    return sorted(host_index(hosts_data))
 
 
-def resolve_host(name: str, hosts_data: dict, creds_data: dict, decrypt: bool = True) -> tuple[dict, dict]:
+def resolve_host(name: int | str, hosts_data: dict, creds_data: dict, decrypt: bool = True) -> tuple[dict, dict]:
     """Retorna (host_resolvido, credencial_resolvida).
 
     O host herda os campos do seu 'group'; campos definidos no host vencem.
@@ -83,11 +90,9 @@ def resolve_host(name: str, hosts_data: dict, creds_data: dict, decrypt: bool = 
     decrypt=False: não descriptografa (deixa os valores como estão) — usado por operações
         que não conectam (--validate / --list / --show), para funcionarem com o cofre trancado.
     """
-    hosts = hosts_data.get("hosts") or {}
-    if name not in hosts:
-        raise KeyError(f"host '{name}' não está em network/hosts.yaml")
-
-    host = dict(hosts[name])
+    from lib.host_identity import host_index, resolve_reference
+    canonical = resolve_reference(name, hosts_data)
+    host = dict(host_index(hosts_data)[canonical])
     group_name = host.get("group")
     group = (hosts_data.get("groups") or {}).get(group_name, {}) if group_name else {}
 
@@ -95,7 +100,9 @@ def resolve_host(name: str, hosts_data: dict, creds_data: dict, decrypt: bool = 
     # 'access' é aninhado: mescla chave a chave (host vence).
     if group.get("access") or host.get("access"):
         merged["access"] = {**(group.get("access") or {}), **(host.get("access") or {})}
-    merged["name"] = name
+    merged["name"] = canonical
+    if hosts_data.get("version") == 2:
+        merged["id"] = canonical
 
     cred_name = merged.get("credential")
     cred_raw = (creds_data.get("credentials") or {}).get(cred_name, {}) if cred_name else {}
@@ -119,17 +126,20 @@ def validate() -> tuple[bool, list[str]]:
     if not SCHEMA_FILE.exists():
         return False, [f"schema não encontrado: {SCHEMA_FILE}"]
 
-    hosts_data = yaml.safe_load(HOSTS_FILE.read_text(encoding="utf-8")) or {}
+    hosts_data, _ = load_inventory(include_credentials=False)
     schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
     validator = jsonschema.Draft202012Validator(schema)
     for err in sorted(validator.iter_errors(hosts_data), key=str):
         loc = "/".join(str(p) for p in err.absolute_path) or "(raiz)"
         errors.append(f"{loc}: {err.message}")
 
-    # Checagem pós-herança: cada host precisa de vendor + access + credential resolvidos.
+    from lib.host_identity import identity_errors
+    identity = identity_errors(hosts_data)
+    errors.extend(f"{error['loc']}: {error['msg']}" for error in identity)
+    if identity:
+        return False, errors
+    # Validação de metadados não precisa abrir o arquivo de credenciais.
     creds_data = {}
-    if CREDS_FILE.exists():
-        creds_data = yaml.safe_load(CREDS_FILE.read_text(encoding="utf-8")) or {}
     for name in list_hosts(hosts_data):
         try:
             host, _ = resolve_host(name, hosts_data, creds_data, decrypt=False)
@@ -150,6 +160,7 @@ def main() -> int:
     parser.add_argument("--validate", action="store_true", help="Valida hosts.yaml contra o schema")
     parser.add_argument("--list", action="store_true", help="Lista os hosts do inventário")
     parser.add_argument("--show", metavar="HOST", help="Mostra um host resolvido (sem senha)")
+    parser.add_argument("--show-id", type=int, metavar="ID", help="Mostra um host pelo ID inteiro")
     args = parser.parse_args()
 
     if args.validate:
@@ -162,18 +173,19 @@ def main() -> int:
             print(f"  - {e}")
         return 1
 
-    hosts_data, creds_data = load_inventory()
+    hosts_data, creds_data = load_inventory(include_credentials=False)
 
     if args.list:
         for name in list_hosts(hosts_data):
             host, _ = resolve_host(name, hosts_data, creds_data, decrypt=False)
             acc = host.get("access", {})
-            print(f"  {name:16s} {host.get('mgmt_ip',''):16s} "
+            print(f"  {str(name):16s} {host.get('mgmt_ip',''):16s} "
                   f"{host.get('vendor',''):10s} {acc.get('method','')}:{acc.get('port','')}")
         return 0
 
-    if args.show:
-        host, cred = resolve_host(args.show, hosts_data, creds_data, decrypt=False)
+    if args.show or args.show_id is not None:
+        reference = args.show_id if args.show_id is not None else args.show
+        host, cred = resolve_host(reference, hosts_data, creds_data, decrypt=False)
         safe_cred = {
             k: ("***" if k in ("password", "secret") or (isinstance(v, str) and v.startswith("enc.v1:")) else v)
             for k, v in cred.items()

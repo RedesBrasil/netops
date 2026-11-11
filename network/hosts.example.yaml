@@ -9,7 +9,8 @@
 # Schema validável em: core/schemas/inventory.schema.json
 # ============================================================================
 
-version: 1
+version: 2
+next_host_id: 5
 
 # --- Grupos: defaults herdados pelos hosts ---
 groups:
@@ -37,19 +38,19 @@ groups:
 
 # --- Hosts (exemplos — substitua pelos seus) ---
 hosts:
-  rt-core-01:
+  - id: 1
     hostname: RT-CORE-01
     mgmt_ip: 10.0.0.1
     group: mikrotik-core
     site: matriz
 
-  rt-dist-01:
+  - id: 2
     hostname: RT-DIST-01
     mgmt_ip: 10.0.0.2
     group: mikrotik-dist
     site: matriz
 
-  sw-access-01:
+  - id: 4
     hostname: SW-ACCESS-01
     mgmt_ip: 10.0.0.3
     vendor: cisco
@@ -60,9 +61,16 @@ hosts:
     credential: cred_cisco_admin
     site: matriz
 
-  srv-web-01:
+  - id: 3
     hostname: SRV-WEB-01
     mgmt_ip: 10.0.20.10
     group: linux-servers
     site: matriz
     notes: Servidor web de exemplo
+
+# Compatibilidade de nomes anteriores; a identidade canônica é o inteiro acima.
+legacy_aliases:
+  - {alias: rt-core-01, host_id: 1}
+  - {alias: rt-dist-01, host_id: 2}
+  - {alias: srv-web-01, host_id: 3}
+  - {alias: sw-access-01, host_id: 4}

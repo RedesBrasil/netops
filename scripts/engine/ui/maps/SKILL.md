@@ -35,6 +35,28 @@ Os dados ficam em YAML no servidor, compartilhados entre navegadores. Host no ma
 referência ao inventário, nunca uma cópia do cadastro. As conexões entre hosts usam enlaces
 reais, com interfaces opcionais. Referências entre mapas são objetos visuais, não hosts fictícios.
 
+### Identidade inteira e formato v2
+
+Os IDs dos hosts são inteiros internos, automáticos e imutáveis. O cadastro pede somente o
+nome editável e os demais dados; seletores de host mostram nome/IP. As APIs usam inteiros
+em `members`, `host_ids` e `topology.links[].a.host`/`b.host`. O snapshot fornece `hosts` como
+lista de registros com `id`, e as posições são uma lista de `{host_id, x, y, z_index?}`.
+As pontas de `visual_links` usam `{kind: host, host_id: 42}` ou
+`{kind: object, object_id: forma}`. `maps.yaml` e `topology.yaml` usam `version: 2`.
+
+`static/js/host-identity.js` adapta essa representação para o editor: índices de posição
+efêmeros e IDs de nós React Flow como `host:42` existem só na apresentação. Toda gravação
+e exportação v2 reconverte para listas e referências tipadas com IDs inteiros. O backend
+recusa identidade textual/booleana, posição de host duplicada e host fora do inventário.
+Inventário v1 continua visível em modo somente leitura, sem migração implícita por GET.
+
+`node --test scripts/engine/ui/tests/host-identity.test.mjs` verifica essa fronteira;
+`tests/test_maps_identity.py` cobre validação estrita e leitura legada sem escrita.
+`tests/integer-hosts.browser.mjs` valida desktop/toque: cadastro por Hosts/Mapas sem campo
+de ID, seletores nome/IP, enlace inteiro, ligação visual tipada e edição do nome preservando
+ID, ícone, posição e enlace. Usa as mesmas variáveis Playwright e a exigência de fixture
+isolada dos cenários abaixo. O cenário principal `tests/maps.browser.mjs` também usa o v2.
+
 Não restaurar o afastamento automático ou outra alteração de movimento livre removida
 na avaliação da demo. Os quatro handles do React Flow existem internamente, mas são invisíveis.
 
@@ -123,7 +145,9 @@ formas como origem/destino e reutiliza `visual_links`; não cria hosts sem IP. O
 como prop, sem duplicar componentes/API/Preact no bundle.
 
 A seleção múltipla usa `node.selected` do React Flow, seus modificadores Ctrl/Meta e seleção
-por retângulo com Shift. O menu de grupo e a alternativa por toque chamam `alignNodes` em
+por retângulo com botão esquerdo no fundo, sem modificadores (Shift também funciona).
+O retângulo seleciona itens inteiramente contidos; o botão central ou Espaço permitem mover
+o mapa, e o gesto de arraste com toque continua navegando. O menu de grupo e a alternativa por toque chamam `alignNodes` em
 `node-state.js`, função pura que retorna posições por ID, ordenadas no eixo e separadas por
 24 unidades entre bordas. O editor aplica posições de hosts e objetos numa única gravação.
 A reconciliação mantém medidas/seleção e nenhuma rota é reiniciada pelo alinhamento.
@@ -132,3 +156,44 @@ A reconciliação mantém medidas/seleção e nenhuma rota é reiniciada pelo al
 seleção de quatro hosts, grupo misto, espaçamento igual e dispositivos não selecionados
 intactos. Executar em uma fixture isolada exclusiva, sem cenários concorrentes alterando
 o mesmo arquivo de mapas.
+
+## Texto opcional, cores e camadas
+
+Enlaces reais exibem somente `desc`, editável no cadastro do enlace. Ligações visuais usam
+`label` e nascem com texto vazio; nem velocidade nem nomes genéricos geram rótulos. Formas
+também podem ter texto vazio. O traço continua selecionável para ajustar/editar a ligação.
+
+O formulário de forma oferece seletores nativos de preenchimento e contorno, campos HEX
+editáveis/copiáveis e prévia. `color` e `stroke` opcionais usam `#RRGGBB` em `maps.yaml`.
+O texto da forma e da prévia usa preto ou branco conforme a luminância do preenchimento,
+conservando contraste independentemente do tema do console.
+Objetos antigos sem esses campos conservam as cores do tema até serem editados.
+
+Hosts e objetos compartilham a mesma ordem visual, salva em `positions[].z_index`
+(associada pelo inteiro `positions[].host_id`) e
+`objects[].z_index`. Enviar para frente/trás troca exatamente com o vizinho, sem salto ao
+extremo. A seleção não altera a camada; mapas antigos mantêm as formas atrás dos hosts.
+Mover/alinha um host preserva sua camada. Duplicar cria outra forma com ID próprio, mesmas
+cores/ícone/tamanho/texto, deslocada 32 unidades e uma camada acima da original.
+
+Delete remove objetos selecionados e suas ligações visuais. Em mapas adicionais, hosts
+selecionados são apenas removidos do mapa. Em mapas automáticos, a seleção com hosts abre
+confirmação explícita de exclusão do inventário e dos enlaces/referências em todos os mapas.
+A operação usa revisões por exclusão e interrompe na primeira falha, informando quantos
+hosts já foram removidos; não é uma transação única para todo o grupo. O mapa fica somente
+leitura durante a sequência. Delete em campos de texto mantém a edição normal.
+
+`node-state.test.mjs` cobre a pilha mista, limites, duplicação e limpeza de grupos sem mutar
+o snapshot anterior. `tests/maps-editing.browser.mjs` verifica os recursos no navegador
+com dados fictícios isolados.
+
+O React Flow omite `onPaneClick` no toque quando `selectionOnDrag` está ativo. O canvas
+reconhece um toque curto no fundo por `pointerId` e deslocamento máximo de 6px para limpar
+a seleção; arrastes continuam sendo pan e a seleção por mouse permanece disponível também
+em dispositivos híbridos. Seleção múltipla, conexão e duplicação devolvem o foco ao canvas,
+permitindo Escape/Delete imediatamente após fechar o menu.
+
+Escolher uma ligação por clique, botão direito ou Shift+F10 limpa a seleção anterior de
+nós antes de disponibilizar Delete. Assim a exclusão atua somente na ligação escolhida
+(enlace físico com confirmação), preservando as formas/hosts anteriormente selecionados.
+O menu aberto num nó que integra uma seleção múltipla mantém o grupo selecionado.

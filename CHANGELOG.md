@@ -1,5 +1,65 @@
 # Changelog do NetOps
 
+## [2.0.0] - 2026-11-11
+
+### Novidades
+
+- Hosts passam a usar IDs inteiros gerados automaticamente, imutáveis e separados do nome editável. O cadastro não exige informar um ID.
+- Atualização pelo botão do console converte automaticamente inventários legados, com manutenção durante a conversão, pré-validação, baseline privado, hashes e journal de recuperação. O pacote continua aceito pelos atualizadores publicados nas versões 1.2.1 e 1.3.0.
+- Nomes de identificação antigos ficam reservados como aliases. Os scripts aceitam `--host-id <inteiro>` e continuam aceitando `--host <hostname-ou-alias>` quando o nome é único.
+- Mapas, posições, ligações físicas e visuais e alvos de backup usam a mesma identidade inteira. Alterar o nome do host mantém seus vínculos.
+- Novos backups usam `backups/by-id/<id>/`; o histórico legado permanece no lugar, com associação explícita ao host correto.
+
+### Correções
+
+- Excluir um host remove seus enlaces físicos e conexões visuais de todos os mapas, incluindo os dois sentidos, e preserva formas, rotas e ligações não afetadas. Novos testes cobrem a API e o navegador em desktop e toque.
+- Backups e seu runner respeitam a mesma raiz de dados alternativa do inventário.
+- O catálogo de modelos do Claude é descoberto pelo CLI do provedor utilizado. Erros de modelo preservam a conversa e não são confundidos automaticamente com limite HTTP 429.
+
+### Migração e compatibilidade
+
+- Mudança de contrato: inventário, topologia e mapas usam formato v2, com IDs inteiros na API; a configuração de backups usa v3. Integrações que manipulam os YAMLs ou a API diretamente precisam aceitar esses formatos.
+- Com um supervisor antigo, a conversão dos dados só começa depois da confirmação do código, evitando que um rollback de código deixe a versão anterior sobre dados novos. O console permanece bloqueado até concluir a conversão.
+- Referências inválidas bloqueiam a migração com erro explícito, sem apagar ligações, inventar hosts ou aplicar uma conversão parcial. Os dados originais e o baseline são preservados para correção e recuperação.
+- Inventários já migrados não recebem novos IDs ao atualizar ou reiniciar. Credenciais, nomes, IPs, ícones, posições, formas, ligações válidas e históricos são preservados.
+- Personalizações locais continuam protegidas pelo atualizador. Código do motor modificado localmente ainda exige revisão antes da aplicação automática.
+
+## [1.3.0] - 2026-11-11
+
+### Novidades
+
+- Ligações entre hosts, formas e referências começam sem texto. A descrição do enlace e o texto da ligação visual são opcionais e podem ser incluídos, alterados ou apagados depois.
+- Formas podem ser criadas e editadas sem texto, inclusive com ícones da biblioteca local.
+- Botão direito em hosts e formas oferece **Enviar para frente** e **Enviar para trás**, movendo uma camada por clique e preservando a ordem entre todos os itens ao reabrir o mapa.
+- Preenchimento e contorno das formas aceitam qualquer cor pelo seletor de cores, com código HEX editável, botão de copiar e prévia das duas cores.
+- **Duplicar** no menu da forma cria uma cópia independente com o mesmo formato, tamanho, ícone, texto e cores. **Delete** remove a forma selecionada.
+- Clique e arraste no fundo do mapa seleciona hosts e formas por retângulo, permitindo mover, alinhar e remover a seleção. Espaço + arraste ou botão do meio move a visão do mapa.
+- A seleção em mapas adicionais remove apenas suas associações visuais. Em mapas automáticos, excluir hosts exige confirmação explícita do impacto no inventário, enlaces e demais mapas.
+
+### Correções
+
+- Selecionar uma ligação por clique, botão direito ou teclado substitui a seleção anterior de hosts/formas; Delete atua sobre a ligação escolhida.
+- Tocar no fundo limpa a seleção e permite abrir as ações do mapa. Escape e Delete ficam disponíveis imediatamente após os menus de conexão, seleção múltipla e duplicação.
+
+### Preservação e compatibilidade
+
+- Camadas e cores são campos opcionais de apresentação em `maps.yaml`; mapas existentes continuam válidos sem migração destrutiva. Textos já informados são preservados.
+- Dados locais, credenciais, backups, personalizações e conversas continuam preservados pelo atualizador. Nenhum teste usa o inventário real.
+- O pacote inclui os assets reconstruídos: não é necessário instalar Node/npm para atualizar. Reinicie pelo launcher após a atualização para carregar o schema compatível.
+
+## [1.2.1] - 2026-11-11
+
+### Correções
+
+- Atualização pelo console não é mais recusada com "encerre: terminal ou sessão interativa aberta" quando nenhuma sessão está visível. A conexão da aba Claude Code fica ativa em todas as páginas e era contada como sessão aberta.
+- Terminal web e sessões do agente abertos não bloqueiam a atualização: são encerrados no reinício. Backup de equipamento e workflow em execução continuam impedindo a atualização até terminarem.
+- Aviso de confirmação e documentação do atualizador refletem a nova regra.
+
+### Preservação e compatibilidade
+
+- Sem migração de dados. Conversas do Claude Code ficam no transcript em disco e podem ser retomadas após o reinício.
+- Instalações em versão anterior ainda aplicam a barreira antiga: para chegar à 1.2.1, encerre a aba Claude Code em todos os navegadores e feche o terminal web antes de clicar em Atualizar.
+
 ## [1.2.0] - 2026-11-11
 
 ### Novidades

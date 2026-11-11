@@ -2,7 +2,8 @@
 """Config de backups (network/backups.yaml): serviços de backup (quem + quando)
 e acesso aos configs já coletados.
 
-Modelo v2: uma LISTA de serviços nomeados (estilo jobs do Proxmox). Cada serviço
+Modelo v3: uma LISTA de serviços nomeados com alvos inteiros e histórico legado.
+Cada serviço
 tem id, nome, agendamento e alvos (hosts/grupos). Contrato dos outros serviços da
 UI: leitura devolve (config, rev sha256); escrita usa concorrência otimista.
 
@@ -17,6 +18,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 import zipfile
 from pathlib import Path
@@ -25,12 +27,14 @@ from ruamel.yaml import YAML
 
 import deps
 from services import inventory_svc, yaml_io
+from lib.host_identity import host_index, require_host_id, resolve_reference
+from lib.inventory_lock import ensure_migration_complete
 
 _DEF_SCHEDULE = {"frequency": "daily", "time": "03:00", "weekday": "sun"}
 
 
 def _default() -> dict:
-    return {"version": 2, "services": []}
+    return {"version": 3, "services": [], "legacy_sources": []}
 
 
 def _normalize_service(svc: dict) -> dict:
@@ -59,6 +63,7 @@ def _migrate(data: dict) -> dict:
     return _default()
 
 
+@yaml_io.serialized
 def load() -> dict:
     """Retorna {config, rev}. Arquivo ausente/vazio => esqueleto default."""
     import yaml  # noqa: PLC0415
@@ -76,6 +81,7 @@ def candidates() -> dict:
     hosts = [
         {
             "id": h["id"],
+            "hostname": h["effective"].get("hostname"),
             "vendor": h["effective"].get("vendor"),
             "role": h["effective"].get("role"),
             "group": h["explicit"].get("group"),
@@ -90,8 +96,10 @@ def candidates() -> dict:
     return {"hosts": hosts, "groups": groups}
 
 
+@yaml_io.serialized
 def save(config: dict, rev: str | None) -> dict:
     """Valida os serviços (ids únicos + alvos existentes) e grava. Retorna {rev}."""
+    ensure_migration_complete(deps.HOSTS_FILE.parent)
     services = config.get("services")
     if not isinstance(services, list):
         raise deps.ValidationFailed([{"loc": "services", "msg": "lista de serviços ausente"}])
@@ -109,13 +117,23 @@ def save(config: dict, rev: str | None) -> dict:
         seen.add(sid)
         tgt = s.get("targets") or {}
         for hid in tgt.get("hosts") or []:
+            try:
+                require_host_id(hid)
+            except (TypeError, ValueError):
+                errors.append({"loc": f"services/{sid}/hosts", "msg": "ID de host deve ser inteiro positivo"})
+                continue
             if hid not in valid_hosts:
                 errors.append({"loc": f"services/{sid}/hosts/{hid}", "msg": "host inexistente no inventário"})
         for g in tgt.get("groups") or []:
             if g not in valid_groups:
                 errors.append({"loc": f"services/{sid}/groups/{g}", "msg": "grupo inexistente no inventário"})
+    current_sources = load()["config"].get("legacy_sources") or []
+    if config.get("legacy_sources", []) != current_sources:
+        errors.append({"loc": "legacy_sources", "msg": "associações do histórico são internas e imutáveis"})
     if errors:
         raise deps.ValidationFailed(errors)
+    config["version"] = 3
+    config["legacy_sources"] = current_sources
 
     # Força aspas em 'time' p/ não ser interpretado como sexagesimal (YAML 1.1).
     from ruamel.yaml.scalarstring import DoubleQuotedScalarString  # noqa: PLC0415
@@ -127,6 +145,28 @@ def save(config: dict, rev: str | None) -> dict:
     y = YAML()
     new_rev = yaml_io.write_rt(deps.BACKUPS_FILE, y, config, expected=rev, backup=True)
     return {"rev": new_rev}
+
+
+def cascade_host_delete(host_id: int, writes: list, checks: list) -> None:
+    """Inclui a remoção dos alvos na transação de exclusão do inventário.
+
+    O histórico e suas associações são preservados: IDs excluídos nunca são reutilizados.
+    """
+    require_host_id(host_id)
+    data, rev, y = yaml_io.load_rt(deps.BACKUPS_FILE)
+    if data is None:
+        return
+    changed = False
+    services = data.get("services") or ([data] if "targets" in data else [])
+    for service in services:
+        targets = service.get("targets") or {}
+        hosts = targets.get("hosts") or []
+        if host_id in hosts:
+            targets["hosts"] = [hid for hid in hosts if hid != host_id]
+            changed = True
+    if changed:
+        writes.append((deps.BACKUPS_FILE, yaml_io.dump_rt(y, data), 0o644))
+        checks.append((deps.BACKUPS_FILE, rev))
 
 
 # --------------------------------------------------------------------------- #
@@ -214,11 +254,13 @@ def _write_run(run_id: str, status: dict) -> None:
 def _expand_targets(service: dict) -> list:
     """IDs de host do serviço: hosts explícitos + expansão dos grupos (sem duplicar)."""
     data, _ = inventory_svc.load_hosts()
-    hosts = data.get("hosts") or {}
+    hosts = host_index(data)
     tgt = service.get("targets") or {}
     picked, seen = [], set()
-    for hid in tgt.get("hosts") or []:
-        if hid in hosts and hid not in seen:
+    for ref in tgt.get("hosts") or []:
+        # Formato legado só é aceito quando ainda resolve para um host cadastrado.
+        hid = resolve_reference(ref, data)
+        if hid not in seen:
             seen.add(hid); picked.append(hid)
     for g in tgt.get("groups") or []:
         for hid, hv in hosts.items():
@@ -227,8 +269,10 @@ def _expand_targets(service: dict) -> list:
     return picked
 
 
+@yaml_io.serialized
 def start_run(service_id: str) -> dict:
     """Dispara um job de backup para o serviço. Retorna {run_id}. Exige cofre destrancado."""
+    ensure_migration_complete(deps.HOSTS_FILE.parent)
     cfg = load()["config"]
     service = next((s for s in cfg.get("services") or [] if s.get("id") == service_id), None)
     if not service:
@@ -239,6 +283,8 @@ def start_run(service_id: str) -> dict:
     get_session_key()
 
     targets = _expand_targets(service)
+    hosts_data, _ = inventory_svc.load_hosts()
+    records = host_index(hosts_data)
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + os.urandom(3).hex()
     status = {
         "run_id": run_id,
@@ -248,17 +294,18 @@ def start_run(service_id: str) -> dict:
         "started_at": int(time.time()),
         "finished_at": None,
         "note": "Piloto: coleta apenas MikroTik via SSH.",
-        "hosts": [{"id": h, "state": "pending", "detail": ""} for h in targets],
+        "hosts": [{"id": h, "hostname": records[h].get("hostname"), "state": "pending", "detail": ""}
+                  for h in targets],
     }
     _write_run(run_id, status)
 
     deps.BACKUPS_RUNS.mkdir(parents=True, exist_ok=True)
-    log = open(deps.BACKUPS_RUNS / f"{run_id}.log", "ab")
     runner = str(Path(deps.__file__).resolve().parent / "backup_runner.py")
-    subprocess.Popen(
-        ["/opt/netops/.venv/bin/python3", runner, "--run-id", run_id],
-        stdout=log, stderr=log, start_new_session=True, close_fds=True,
-    )
+    with (deps.BACKUPS_RUNS / f"{run_id}.log").open("ab") as log:
+        subprocess.Popen(
+            [sys.executable, runner, "--data-root", str(deps.DATA_ROOT), "--run-id", run_id],
+            stdout=log, stderr=log, start_new_session=True, close_fds=True,
+        )
     return {"run_id": run_id}
 
 
@@ -299,29 +346,50 @@ def list_latest_runs() -> dict:
 # --------------------------------------------------------------------------- #
 # Backups agrupados por host + download em lote (zip)
 # --------------------------------------------------------------------------- #
+@yaml_io.serialized
 def list_hosts_with_backups() -> dict:
-    """Só hosts que TÊM backup. Cada host: contagem, tamanho total, mais recente e a lista."""
+    """Agrupa pelo ID canônico; diretórios legados são associados explicitamente.
+
+    Diretórios sem dono permanecem disponíveis, mas não viram hosts fictícios.
+    """
     root = deps.BACKUPS_STORE
-    try:
-        inv, _ = inventory_svc.load_hosts()
-        hostnames = {hid: (hv or {}).get("hostname") for hid, hv in (inv.get("hosts") or {}).items()}
-    except Exception:  # noqa: BLE001
-        hostnames = {}
+    inv, _ = inventory_svc.load_hosts()
+    records = host_index(inv)
+    sources = {}
+    for source in load()["config"].get("legacy_sources") or []:
+        sources[source["directory"]] = source["host_id"]
     by_host = {}
     if root.exists():
         for p in sorted(root.rglob("*")):
             if p.is_file():
                 rel = p.relative_to(root)
-                host = rel.parts[0] if len(rel.parts) > 1 else "(raiz)"
+                directory = rel.parts[0] if len(rel.parts) > 1 else "(raiz)"
+                host_id = None
+                if directory == "by-id" and len(rel.parts) >= 3:
+                    try:
+                        host_id = require_host_id(int(rel.parts[1]))
+                    except (TypeError, ValueError):
+                        pass
+                elif directory in sources:
+                    host_id = sources[directory]
+                elif inv.get("version", 1) == 1 and directory in records:
+                    host_id = directory
+                if directory == "by-id" and len(rel.parts) >= 3:
+                    directory = "/".join(rel.parts[:2])
+                if host_id not in records:
+                    host_id = None
+                key = (host_id, None if host_id is not None else directory)
                 st = p.stat()
-                by_host.setdefault(host, []).append(
+                by_host.setdefault(key, []).append(
                     {"path": str(rel), "name": p.name, "size": st.st_size, "mtime": int(st.st_mtime)})
     hosts = []
-    for host in sorted(by_host):
-        backups = sorted(by_host[host], key=lambda b: b["mtime"], reverse=True)
+    for (host_id, directory), items in sorted(by_host.items(), key=lambda item: str(item[0])):
+        backups = sorted(items, key=lambda b: b["mtime"], reverse=True)
         hosts.append({
-            "host": host,
-            "hostname": hostnames.get(host),
+            "host": host_id,
+            "hostname": (records.get(host_id) or {}).get("hostname"),
+            "directory": directory,
+            "assigned": host_id is not None,
             "count": len(backups),
             "total_size": sum(b["size"] for b in backups),
             "latest_mtime": max(b["mtime"] for b in backups),

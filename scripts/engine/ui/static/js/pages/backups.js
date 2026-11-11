@@ -13,6 +13,7 @@ const WD = Object.fromEntries(WEEKDAYS);
 const uniq = (xs) => [...new Set(xs.filter(Boolean))].sort();
 const fmtSize = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
 const fmtDate = (s) => new Date(s * 1000).toLocaleString();
+const hostLabel = (host) => host.hostname || (host.host != null ? "Host " + host.host : "Sem vínculo · " + host.directory);
 
 function slugify(s) {
   const base = (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -74,7 +75,7 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
     (!groupFilter || h.group === groupFilter) &&
     (!vendorFilter || h.vendor === vendorFilter) &&
     (!roleFilter || h.role === roleFilter) &&
-    (!filter || h.id.toLowerCase().includes(filter.toLowerCase())));
+    (!filter || [h.hostname, h.mgmt_ip].some((v) => String(v || "").toLowerCase().includes(filter.toLowerCase()))));
   const allShownOn = shown.length > 0 && shown.every((h) => hosts.includes(h.id));
   const hasFilter = filter || groupFilter || vendorFilter || roleFilter;
   function clearFilters() { setFilter(""); setGroupFilter(""); setVendorFilter(""); setRoleFilter(""); }
@@ -164,7 +165,7 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
 
       <h3>Hosts individuais</h3>
       <div class="bk-toolbar">
-        <input type="text" placeholder="filtrar por id…" value=${filter} onInput=${(e) => setFilter(e.target.value)} />
+        <input type="text" placeholder="filtrar por nome ou IP…" value=${filter} onInput=${(e) => setFilter(e.target.value)} />
         <select value=${groupFilter} onChange=${(e) => setGroupFilter(e.target.value)}>
           <option value="">grupo: todos</option>
           ${allGroups.map((g) => html`<option key=${g.name} value=${g.name}>${g.name}</option>`)}
@@ -185,7 +186,7 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
           <thead><tr>
             <th class="bk-col-check"><input type="checkbox" title="selecionar todos os visíveis"
               checked=${allShownOn} onChange=${toggleAllShown} /></th>
-            <th>ID</th><th>Vendor</th><th>Função</th><th>Grupo</th><th>IP</th>
+            <th>Host</th><th>Vendor</th><th>Função</th><th>Grupo</th><th>IP</th>
           </tr></thead>
           <tbody>
             ${shown.length === 0 && html`<tr><td colspan="6" class="help" style="padding:12px">Nenhum host com esses filtros.</td></tr>`}
@@ -194,7 +195,7 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
               return html`<tr key=${h.id} class=${on ? "on" : ""} onClick=${() => toggle(hosts, setHosts, h.id)}>
                 <td class="bk-col-check"><input type="checkbox" checked=${on}
                   onClick=${(e) => e.stopPropagation()} onChange=${() => toggle(hosts, setHosts, h.id)} /></td>
-                <td class="bk-id">${h.id}</td>
+                <td>${h.hostname || h.mgmt_ip || "Host " + h.id}</td>
                 <td>${h.vendor || ""}</td>
                 <td>${h.role || ""}</td>
                 <td>${h.group || ""}</td>
@@ -244,7 +245,7 @@ function RunModal({ runId, onClose, onDone }) {
             ${hosts.length === 0 && html`<tr><td colspan="4" class="help" style="padding:12px">Serviço sem alvos.</td></tr>`}
             ${hosts.map((h) => html`<tr key=${h.id}>
               <td class=${"bk-run-" + h.state} style="text-align:center; font-weight:700">${ic(h.state)}</td>
-              <td class="bk-id">${h.id}</td>
+              <td>${h.hostname || "Host " + h.id}</td>
               <td class=${"bk-run-" + h.state}>${h.state}</td>
               <td class="help">${h.detail || ""}</td>
             </tr>`)}
@@ -305,7 +306,7 @@ function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, 
     const ok = await onDelete(sel);
     if (ok) { setItems(items.filter((b) => !sel.includes(b.path))); setSel([]); }
   }
-  return html`<${Modal} title=${"Backups · " + (host.hostname || host.host)} wide onClose=${onClose}>
+  return html`<${Modal} title=${"Backups · " + hostLabel(host)} wide onClose=${onClose}>
     <div class="bk-toolbar" style="margin-bottom:10px">
       <label class=${"bk-chip" + (allOn ? " on" : "")}>
         <input type="checkbox" checked=${allOn} onChange=${toggleAll} /> Todos
@@ -315,7 +316,7 @@ function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, 
       <input ref=${anchorRef} class="bk-vanchor" tabindex="-1" aria-hidden="true" />
       <button class="sm" onClick=${doDiff}>Diff</button>
       <button class="btn-ok" disabled=${sel.length === 0}
-        onClick=${() => onDownloadZip(sel, host.host + "-selecionados")}>Baixar (${sel.length})</button>
+        onClick=${() => onDownloadZip(sel, hostLabel(host) + "-selecionados")}>Baixar (${sel.length})</button>
       <button class="danger" disabled=${sel.length === 0}
         onClick=${() => setConfirming(true)}>Apagar (${sel.length})</button>
     </div>
@@ -346,7 +347,7 @@ function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, 
     <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>Fechar</button></div>
     ${confirming && html`<${ConfirmDialog}
       title="Apagar backups selecionados?"
-      message=${"Isto vai apagar " + sel.length + " backup(s) de " + (host.hostname || host.host) + ". Esta ação é permanente — não será possível reaver os backups apagados."}
+      message=${"Isto vai apagar " + sel.length + " backup(s) de " + hostLabel(host) + ". Esta ação é permanente — não será possível reaver os backups apagados."}
       danger onConfirm=${doDelete} onClose=${() => setConfirming(false)} />`}
   <//>`;
 }
@@ -385,7 +386,8 @@ export function BackupsPage() {
 
   async function persist(next) {
     try {
-      const r = await api.put("/backups", { version: 2, services: next }, rev);
+      const legacy_sources = (cfgRes.data && cfgRes.data.config && cfgRes.data.config.legacy_sources) || [];
+      const r = await api.put("/backups", { version: 3, services: next, legacy_sources }, rev);
       setServices(next); setRev(r.rev); toast.ok("Serviços salvos"); return true;
     } catch (e) { handleError(e); return false; }
   }
@@ -500,16 +502,14 @@ export function BackupsPage() {
             <table>
               <thead><tr><th>Host</th><th>Backups</th><th>Último</th><th>Tamanho</th><th style="text-align:right">Ações</th></tr></thead>
               <tbody>
-                ${backupHosts.map((h) => html`<tr key=${h.host}>
-                  <td>${h.hostname
-                    ? html`<b>${h.hostname}</b> <span class="help" style="font-size:11px">(${h.host})</span>`
-                    : html`<span class="bk-id">${h.host}</span>`}</td>
+                ${backupHosts.map((h) => html`<tr key=${h.host != null ? h.host : "unassigned:" + h.directory}>
+                  <td>${hostLabel(h)}</td>
                   <td>${h.count}</td>
                   <td>${fmtDate(h.latest_mtime)}</td>
                   <td>${fmtSize(h.total_size)}</td>
                   <td><div class="bk-actions">
                     <button class="sm" onClick=${() => setHostModal(h)}>Ver Backups</button>
-                    <button class="sm btn-ok" onClick=${() => downloadZip(h.backups.map((b) => b.path), h.host + "-backups")}>Baixar todos</button>
+                    <button class="sm btn-ok" onClick=${() => downloadZip(h.backups.map((b) => b.path), hostLabel(h) + "-backups")}>Baixar todos</button>
                   </div></td>
                 </tr>`)}
               </tbody>

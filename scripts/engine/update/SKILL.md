@@ -2,7 +2,7 @@
 
 ## Uso
 
-Inicie sempre por `scripts/engine/ui/start.sh`. Na barra superior, clique em **Verificar atualizações**, leia as notas de todas as versões posteriores e escolha **Atualizar para vX.Y.Z**. Salve formulários e encerre terminais, agentes e backups em execução antes de confirmar.
+Inicie sempre por `scripts/engine/ui/start.sh`. Na barra superior, clique em **Verificar atualizações**, leia as notas de todas as versões posteriores e escolha **Atualizar para vX.Y.Z**. Salve formulários antes de confirmar. Terminais e sessões do agente abertos não bloqueiam: são encerrados no reinício (as conversas do Claude ficam salvas e podem ser retomadas). Só backup de equipamento ou workflow em execução impede a atualização até terminar.
 
 O repositório oficial é `RedesBrasil/netops`, atualmente privado. Instale GitHub CLI e rode `gh auth login --hostname github.com` como o mesmo usuário e HOME do servidor. Não passe tokens pela interface. O atualizador usa `gh api`; não imprime nem exporta credenciais.
 
@@ -10,12 +10,42 @@ A aplicação exige login com a senha-mestra, mesmo em instalações em que o re
 
 ## O que é preservado
 
-- Inventário, credenciais cifradas, mapas, topologia, backups de equipamentos, relatórios e execuções.
+- Inventário, credenciais cifradas, mapas, topologia, backups de equipamentos, relatórios e execuções;
+  formatos de identidade antigos são convertidos pelo protocolo descrito abaixo, não substituídos
+  por exemplos do pacote.
 - Configuração local do projeto, memória, arquivos desconhecidos, ambientes e históricos pessoais.
 - Personalizações de agentes, workflows, conhecimento e scripts operacionais. Edições e exclusões locais não são substituídas por versões da distribuição.
 - `.git/` e HOME externo ao projeto não são alterados. O atualizador não faz checkout, reset, clean, pull nem stash.
 
 Código do motor modificado localmente ou novos caminhos colidindo com arquivos existentes impedem a atualização automática. A referência inicial de um clone legado é o conteúdo de `HEAD`; depois, é o manifesto privado `.netops-update/installed.json`. Por isso, após instalar um pacote, `git status` pode mostrar mudanças de distribuição: o atualizador não usa o working tree como referência de instalação.
+
+## Migração automática dos IDs de host
+
+A versão 2 converte `hosts.yaml`, `topology.yaml` e `maps.yaml` para v2 e a configuração
+de backups para v3, mantendo nomes, atributos, layouts, IDs dos enlaces e o histórico.
+IDs antigos viram aliases; novas coletas usam `backups/by-id/<id>/`. Não há acesso a
+equipamentos nem leitura do cofre nessa conversão.
+
+O candidato primeiro faz uma pré-validação sem modificar os documentos. Dados inválidos,
+como ligações para hosts inexistentes, impedem a prontidão da nova versão: o supervisor
+anterior restaura o código e os dados antigos permanecem intactos. O diagnóstico fica
+privado em `.netops-update/host-migration-preflight.json`. Nenhuma ligação é descartada
+automaticamente; a correção exige uma decisão do operador.
+
+Com os dados válidos, o candidato aguarda a confirmação do código e a publicação de sua
+identidade pelo supervisor. Só depois converte os quatro documentos sob a trava de
+inventário, com hashes esperados, baseline e journal próprios. Isso mantém compatibilidade
+com supervisores de releases anteriores, que sabem restaurar código, mas não desfazer
+uma conversão de dados. O pacote continua no protocolo 1, sem scripts pós-instalação.
+
+Até terminar, a interface mostra a preparação e as APIs e WebSockets ficam bloqueados,
+exceto as consultas mínimas de estado. `host_migration` nos metadados informa a fase e
+se há bloqueio. O status público usa `migrating` ou `migration_failed` e não anuncia a
+atualização como concluída enquanto os dados estiverem bloqueados.
+
+Uma abertura normal pelo launcher também recupera/converte inventários legados antes
+de liberar o console. `--read-only` nunca executa essa escrita. Inventários já convertidos
+não recebem novos IDs; instalações sem inventário não criam equipamentos.
 
 ## Backup e limites
 
@@ -32,7 +62,17 @@ Pacotes são limitados a 256 MiB comprimidos, 512 MiB descomprimidos e 10 mil ar
 
 O supervisor roda a partir de uma cópia privada do atualizador. Primeiro prepara pacote, snapshot e dependências enquanto o console informa progresso em manutenção. Depois encerra somente seu processo, aplica o código e inicia a versão candidata na mesma porta. Só confirma a instalação depois de receber uma resposta HTTP com versão e identidade de inicialização corretas.
 
-Falha de inicialização restaura código e ambiente anteriores automaticamente. Não restaura dados vivos por cima dos existentes, pois a aplicação não os modifica. O login do console pode ser solicitado novamente após reinício.
+Falha de inicialização, inclusive na pré-validação da conversão, restaura código e ambiente
+anteriores automaticamente, antes de alterar os dados de identidade. O login do console
+pode ser solicitado novamente após reinício.
+
+Falha durante a conversão posterior à confirmação mantém o código novo e bloqueia o console
+com **Migração de IDs bloqueada**. A transação de dados tenta restaurar seu próprio baseline;
+baseline e journal ficam preservados. Não há retorno automático do código nessa etapa.
+Um novo início pelo launcher recupera uma aplicação interrompida e tenta a conversão novamente.
+Referências inválidas devem ser corrigidas após um `dry-run`; edições externas ou baseline
+corrompido exigem comparação humana e não são sobrescritos para forçar a abertura.
+Procedimentos e comandos: `scripts/engine/lib/SKILL.md`.
 
 Após interrupção inesperada, execute novamente `scripts/engine/ui/start.sh`: journals não confirmados são revertidos antes de abrir o console. Se o processo anterior ainda estiver vivo, o launcher recusa a recuperação até o operador encerrá-lo; não mata processos por PID reutilizado. Se o status for `recovery_failed`, o launcher recusa iniciar para não esconder uma recuperação incompleta. Não apague o journal nem o snapshot. Com os processos parados, um operador deve verificar os arquivos listados em `journal.json`, recuperar os originais de `jobs/<id>/backup/installation/` respeitando as permissões de `snapshot.json`, e restaurar a seleção de `.venv` se necessário. Só depois de validar toda a instalação pode encerrar manualmente o incidente. Conflito de arquivo alterado externamente exige comparação humana, nunca sobrescrita forçada.
 

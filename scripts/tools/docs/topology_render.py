@@ -14,6 +14,12 @@ import argparse
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from html import escape
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))
+from lib.host_identity import host_index, resolve_reference  # noqa: E402
+from lib.inventory import resolve_host  # noqa: E402
+from lib.inventory_lock import ensure_migration_complete, inventory_lock  # noqa: E402
 
 NETOPS_ROOT = Path(__file__).resolve().parents[3]
 HOSTS_FILE = NETOPS_ROOT / "network" / "hosts.yaml"
@@ -21,13 +27,12 @@ TOPO_FILE = NETOPS_ROOT / "network" / "topology.yaml"
 OUT_FILE = NETOPS_ROOT / "network" / "topology.md"
 
 
-def _resolved_hosts(hosts_data: dict) -> dict[str, dict]:
+def _resolved_hosts(hosts_data: dict) -> dict[int | str, dict]:
     """Resolve cada host com a herança de grupo (vendor/role podem vir do grupo)."""
-    groups = hosts_data.get("groups") or {}
     out = {}
-    for name, host in (hosts_data.get("hosts") or {}).items():
-        group = groups.get(host.get("group"), {})
-        out[name] = {**group, **host}
+    for host_id in host_index(hosts_data):
+        host, _ = resolve_host(host_id, hosts_data, {}, decrypt=False)
+        out[host_id] = host
     return out
 
 
@@ -35,6 +40,8 @@ def render(hosts_data: dict, topo_data: dict) -> str:
     hosts = _resolved_hosts(hosts_data)
     links = topo_data.get("links") or []
     segments = topo_data.get("segments") or []
+    node_ids = {hid: f"host_{hid}" if isinstance(hid, int) else f"legacy_{str(hid).encode().hex()}"
+                for hid in hosts}
 
     lines = [
         "# Topologia da Rede",
@@ -45,16 +52,32 @@ def render(hosts_data: dict, topo_data: dict) -> str:
         "graph TD",
     ]
     # Nós
-    for name, host in sorted(hosts.items()):
+    for host_id, host in hosts.items():
         vendor = host.get("vendor", "?")
         role = host.get("role", "?")
-        lines.append(f'    {name}["{name}<br/>{vendor} · {role}"]')
+        label = escape(str(host.get("hostname") or host_id), quote=True)
+        details = escape(f"{vendor} · {role}", quote=True)
+        lines.append(f'    {node_ids[host_id]}["{label}<br/>{details}"]')
     lines.append("")
     # Arestas
+    missing = set()
+
+    def endpoint_node(reference):
+        try:
+            return node_ids[resolve_reference(reference, hosts_data)]
+        except (KeyError, ValueError):
+            # Um enlace inconsistente continua visível para diagnóstico, sem cadastrar host.
+            node_id = "missing_" + f"{type(reference).__name__}:{reference}".encode().hex()
+            if node_id not in missing:
+                label = escape(str(reference if reference is not None else "?"), quote=True)
+                lines.append(f'    {node_id}["{label}<br/>host ausente"]')
+                missing.add(node_id)
+            return node_id
+
     for link in links:
-        a = (link.get("a") or {}).get("host", "?")
-        b = (link.get("b") or {}).get("host", "?")
-        label = " ".join(str(x) for x in (link.get("speed"), link.get("media")) if x)
+        a = endpoint_node((link.get("a") or {}).get("host"))
+        b = endpoint_node((link.get("b") or {}).get("host"))
+        label = escape(" ".join(str(x) for x in (link.get("speed"), link.get("media")) if x), quote=True)
         if label:
             lines.append(f'    {a} ---|"{label}"| {b}')
         else:
@@ -89,8 +112,10 @@ def main() -> int:
         print("ERRO: network/hosts.yaml e/ou network/topology.yaml não encontrados.", file=sys.stderr)
         return 1
 
-    hosts_data = yaml.safe_load(HOSTS_FILE.read_text(encoding="utf-8")) or {}
-    topo_data = yaml.safe_load(TOPO_FILE.read_text(encoding="utf-8")) or {}
+    with inventory_lock(HOSTS_FILE.parent):
+        ensure_migration_complete(HOSTS_FILE.parent)
+        hosts_data = yaml.safe_load(HOSTS_FILE.read_text(encoding="utf-8")) or {}
+        topo_data = yaml.safe_load(TOPO_FILE.read_text(encoding="utf-8")) or {}
     content = render(hosts_data, topo_data)
 
     if args.stdout:

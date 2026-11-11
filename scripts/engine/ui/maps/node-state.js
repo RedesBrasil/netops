@@ -44,3 +44,50 @@ export function alignNodes(nodes, direction, gap = 24) {
   }
   return result;
 }
+
+// Hosts e objetos compartilham a mesma pilha; mapas antigos mantêm as formas no fundo.
+export function orderedNodeIds(map) {
+  return [...map.host_ids.map(id => ({ id: 'host:' + id, z: map.positions[id]?.z_index ?? 0 })),
+    ...map.objects.map(o => ({ id: 'object:' + o.id, z: o.z_index ?? (o.type === 'shape' ? -1 : 0) }))]
+    .sort((a, b) => a.z - b.z).map(n => n.id);
+}
+export function applyLayerOrder(map, order) {
+  const layers = new Map(order.map((id, index) => [id, index]));
+  return { ...map, positions: Object.fromEntries(map.host_ids.map((id, index) => [id,
+    { ...(map.positions[id] || defaultHostPosition(index)), z_index: layers.get('host:' + id) }])),
+    objects: map.objects.map(o => ({ ...o, z_index: layers.get('object:' + o.id) })) };
+}
+export const defaultHostPosition = index => ({ x: 70 + index % 3 * 300, y: 90 + Math.floor(index / 3) * 220 + index % 2 * 75 });
+// Escolhe o texto com maior contraste sobre qualquer preenchimento HEX válido.
+export function contrastingText(hex) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return undefined;
+  const channels = [1, 3, 5].map(offset => parseInt(hex.slice(offset, offset + 2), 16) / 255)
+    .map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
+  const luminance = channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+  return luminance > .179 ? '#000000' : '#ffffff';
+}
+export function moveLayer(map, id, direction) {
+  if (!['forward', 'backward'].includes(direction)) throw new Error('Direção de camada inválida');
+  const order = orderedNodeIds(map), index = order.indexOf(id), next = index + (direction === 'forward' ? 1 : -1);
+  if (index < 0 || next < 0 || next >= order.length) return map;
+  [order[index], order[next]] = [order[next], order[index]];
+  return applyLayerOrder(map, order);
+}
+
+// Remover do mapa nunca remove o cadastro canônico de um host.
+export function removeMapNodes(map, ids) {
+  const removable = new Set(ids.filter(id => id.startsWith('object:') || map.kind === 'custom' && id.startsWith('host:')));
+  const positions = Object.fromEntries(Object.entries(map.positions).filter(([id]) => !removable.has('host:' + id)));
+  return { ...map, positions, members: map.members.filter(id => !removable.has('host:' + id)),
+    host_ids: map.host_ids.filter(id => !removable.has('host:' + id)),
+    objects: map.objects.filter(o => !removable.has('object:' + o.id)),
+    visual_links: map.visual_links.filter(l => !removable.has(l.source) && !removable.has(l.target)) };
+}
+
+export function duplicateShape(map, id, newId) {
+  const source = map.objects.find(o => 'object:' + o.id === id && o.type === 'shape');
+  if (!source) return map;
+  const copy = { ...source, id: newId, position: { x: Math.min(1000000, source.position.x + 32), y: Math.min(1000000, source.position.y + 32) } };
+  const order = orderedNodeIds(map); order.splice(order.indexOf(id) + 1, 0, 'object:' + newId);
+  return applyLayerOrder({ ...map, objects: [...map.objects, copy] }, order);
+}

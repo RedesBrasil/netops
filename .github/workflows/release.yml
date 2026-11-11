@@ -42,6 +42,8 @@ jobs:
         run: |
           python -m pytest scripts/engine/ui/tests/ -q
           node --test scripts/engine/ui/tests/*.test.mjs
+          node scripts/engine/ui/maps/test-geometry.mjs
+          node --test scripts/engine/ui/maps/node-state.test.mjs
       - name: Consultar releases atuais e preparar pacote
         run: python scripts/engine/update/release.py --output "$RUNNER_TEMP/netops-release"
       - name: Validar extração e versão do pacote

@@ -42,7 +42,11 @@ export function RefSelect({ value, options, onChange, placeholder, allowEmpty = 
   return html`<select id=${id} required=${required} aria-invalid=${invalid || undefined} aria-describedby=${describedBy} class=${invalid ? "invalid" : ""} value=${value ?? ""}
       onChange=${(e) => onChange(e.target.value || null)}>
     ${allowEmpty && html`<option value="">${placeholder || "—"}</option>`}
-    ${(options || []).map((o) => html`<option key=${o} value=${o} selected=${o === value}>${o}</option>`)}
+    ${(options || []).map((o) => {
+      const id = typeof o === "object" ? o.id : o;
+      const label = typeof o === "object" ? o.label || o.hostname || o.id : o;
+      return html`<option key=${id} value=${id} selected=${String(id) === String(value)}>${label}</option>`;
+    })}
   </select>`;
 }
 
@@ -50,7 +54,7 @@ export function RefSelect({ value, options, onChange, placeholder, allowEmpty = 
 export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
   const isNew = !!link.__new;
   const [f, setF] = useState({
-    ah: link.a?.host || "", ap: link.a?.port || "", bh: link.b?.host || "", bp: link.b?.port || "",
+    ah: String(link.a?.host ?? ""), ap: link.a?.port || "", bh: String(link.b?.host ?? ""), bp: link.b?.port || "",
     media: link.media ?? null, speed: link.speed || "", desc: link.desc || "",
   });
   const [errors, setErrors] = useState({});
@@ -64,7 +68,7 @@ export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
   async function save(event) {
     event.preventDefault();
     if (saving) return;
-    const required = Object.fromEntries(Object.entries(fields).filter(([k]) => !f[k]?.trim())
+    const required = Object.fromEntries(Object.entries(fields).filter(([k]) => !f[k] || !/^[1-9]\d*$/.test(f[k]) || !Number.isSafeInteger(Number(f[k])))
       .map(([k, label]) => [k, `Informe ${label.toLowerCase()}.`]));
     setErrors(required);
     if (Object.keys(required).length) {
@@ -72,7 +76,7 @@ export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
       form.current?.querySelector(`#link-${Object.keys(required)[0]}`)?.focus();
       return;
     }
-    const body = { a: { host: f.ah.trim() }, b: { host: f.bh.trim() } };
+    const body = { a: { host: Number(f.ah) }, b: { host: Number(f.bh) } };
     if (f.ap.trim()) body.a.port = f.ap.trim();
     if (f.bp.trim()) body.b.port = f.bp.trim();
     if (f.media) body.media = f.media;
@@ -97,7 +101,7 @@ export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
       <div class="row">
         <${Field} label="Host A *" htmlFor="link-ah" error=${errors.ah} errorId="link-ah-error">
           <${RefSelect} id="link-ah" required=true invalid=${!!errors.ah} describedBy=${errors.ah ? "link-ah-error" : undefined}
-            value=${f.ah} options=${hosts} onChange=${v => set("ah", v)} /><//>
+            value=${f.ah} options=${hosts} onChange=${v => set("ah", v || "")} /><//>
         <${Field} label="Porta A (opcional)" htmlFor="link-ap" error=${errors.ap} errorId="link-ap-error">
           <input id="link-ap" value=${f.ap} aria-invalid=${!!errors.ap || undefined} aria-describedby=${errors.ap ? "link-ap-error" : undefined}
             class=${errors.ap ? "invalid" : ""} placeholder="ex.: ether2" onInput=${e => set("ap", e.target.value)} /><//>
@@ -105,7 +109,7 @@ export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
       <div class="row">
         <${Field} label="Host B *" htmlFor="link-bh" error=${errors.bh} errorId="link-bh-error">
           <${RefSelect} id="link-bh" required=true invalid=${!!errors.bh} describedBy=${errors.bh ? "link-bh-error" : undefined}
-            value=${f.bh} options=${hosts} onChange=${v => set("bh", v)} /><//>
+            value=${f.bh} options=${hosts} onChange=${v => set("bh", v || "")} /><//>
         <${Field} label="Porta B (opcional)" htmlFor="link-bp" error=${errors.bp} errorId="link-bp-error">
           <input id="link-bp" value=${f.bp} aria-invalid=${!!errors.bp || undefined} aria-describedby=${errors.bp ? "link-bp-error" : undefined}
             class=${errors.bp ? "invalid" : ""} placeholder="ex.: ether1" onInput=${e => set("bp", e.target.value)} /><//>

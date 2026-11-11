@@ -96,6 +96,7 @@ def vault_lock():
 def config_meta() -> dict:
     """Infos leves p/ o topo da UI: nome da rede + modo do servidor."""
     import yaml  # noqa: PLC0415
+    from services import host_migration_svc
     network_name = "NetOps"
     if deps.PROJECT_CONFIG.exists():
         try:
@@ -111,4 +112,5 @@ def config_meta() -> dict:
         "isolated_data": deps.DATA_ROOT != deps.NETOPS_ROOT,
         "terminal_enabled": deps.STATE.enable_terminal,
         "claude_enabled": deps.STATE.enable_claude,
+        "host_migration": host_migration_svc.status(),
     }

@@ -38,6 +38,14 @@ mudanças, testam e geram relatórios.
    `network/topology.example.yaml`). Esse arquivo e o `topology.md` gerado são git-ignorados.
 6. **Abra o framework na sua IDE de IA e peça o que precisar.**
 
+Hosts usam IDs inteiros gerados pelo console, permanentes e separados do hostname.
+Os scripts aceitam `--host-id 1`; `--host <hostname-ou-alias>` continua disponível para
+nomes únicos e automações anteriores. Ao editar o nome, o ID e seus vínculos são mantidos.
+Inventários antigos são convertidos automaticamente ao atualizar ou iniciar a versão 2
+em modo de escrita, com pré-validação, baseline e recuperação. Referências inválidas
+bloqueiam a conversão sem apagar ligações nem inventar hosts. Para conferir os dados
+antes ou recuperar uma interrupção, ver `scripts/engine/lib/SKILL.md`.
+
 ## Mapas de rede no console
 
 ```bash
@@ -66,10 +74,14 @@ Para adotar esse launcher pela primeira vez, reinicie o console manualmente. Dep
 O repositório é privado: o GitHub CLI precisa estar autenticado no mesmo usuário/HOME do servidor
 (`gh auth login --hostname github.com`). A aplicação exige login no console e não funciona em read-only.
 
-Os pacotes não substituem inventário, credenciais, mapas, memória, configuração local, backups,
-relatórios, execuções ou personalizações. O atualizador verifica um snapshot privado antes de aplicar
-e tenta restaurar o código anterior se a nova versão não iniciar. Código do motor modificado localmente
-bloqueia a aplicação automática. Mantenha também um backup externo contra falhas do disco.
+Os pacotes não substituem os dados locais por exemplos da distribuição. Inventário, credenciais,
+mapas, memória, configuração local, backups, relatórios, execuções e personalizações são preservados;
+a versão 2 converte somente os formatos e referências de identidade necessários. O atualizador
+verifica um snapshot privado antes de aplicar e tenta restaurar o código anterior se a nova versão
+não iniciar. A conversão dos dados só começa depois da confirmação do código pelo launcher.
+Se essa etapa posterior falhar, o código novo permanece e a interface bloqueia as operações com
+orientação de recuperação. Código do motor modificado localmente bloqueia a aplicação automática.
+Mantenha também um backup externo contra falhas do disco.
 
 Detalhes e recuperação: `scripts/engine/update/SKILL.md`. Para publicar versões, os agentes devem
 seguir `core/rules/releases.md`: consultar a última release, incrementar versão e gerar changelog.

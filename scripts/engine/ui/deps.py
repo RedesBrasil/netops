@@ -35,8 +35,8 @@ TOPOLOGY_FILE = NETWORK_DIR / "topology.yaml"
 MAPS_FILE = NETWORK_DIR / "maps.yaml"
 TOPOLOGY_MD = NETWORK_DIR / "topology.md"
 BACKUPS_FILE = NETWORK_DIR / "backups.yaml"
-BACKUPS_STORE = NETOPS_ROOT / "backups"   # configs coletados (populado pelo runner)
-BACKUPS_RUNS = NETOPS_ROOT / "runs" / "backups"   # status/log das execucoes (Run)
+BACKUPS_STORE = DATA_ROOT / "backups"   # mesmo inventário, inclusive em ambiente isolado
+BACKUPS_RUNS = DATA_ROOT / "runs" / "backups"   # status/log das execucoes (Run)
 
 CORE_DIR = NETOPS_ROOT / "core"
 SCHEMA_FILE = CORE_DIR / "schemas" / "inventory.schema.json"
@@ -76,6 +76,7 @@ VENDORS = (
 class ServerState:
     read_only: bool = False
     update_pending: bool = False
+    host_migration: dict = field(default_factory=lambda: {"phase": "not_checked", "required": False})
     active_writes: int = 0
     active_sessions: int = 0
     active_requests: int = 0

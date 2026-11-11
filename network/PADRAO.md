@@ -19,10 +19,26 @@ Esta pasta é a **fonte da verdade da rede**. O agente só conhece equipamentos 
 Estrutura: `groups` (defaults herdados) + `hosts`. Um host herda os campos do seu `group`
 e pode sobrescrever qualquer um.
 
+O inventário v2 usa `hosts` como lista de registros com `id` inteiro positivo e imutável.
+`next_host_id` é incrementado na mesma gravação de criação e nunca diminui, mesmo após
+exclusões. O console gera o ID; o operador informa somente o hostname e os demais campos.
+`legacy_aliases` associa nomes anteriores ao inteiro para compatibilidade dos scripts,
+inclusive reservando aliases de hosts excluídos. IDs são valores numéricos no YAML/JSON.
+Arquivos v1 permanecem legíveis, mas precisam de migração explícita antes de editar.
+
+Enlaces v2 usam inteiros em `a.host`/`b.host`. Mapas v2 usam membros inteiros, posições
+como lista de `{host_id, x, y, z_index?}` e pontas visuais tipadas por `kind`.
+A configuração de backups v3 usa `targets.hosts` com inteiros e `legacy_sources` para
+associar pastas históricas ao cadastro. Novas coletas ficam em `backups/by-id/<id>/`.
+O inventário continua sendo a única fonte dos equipamentos; arquivos históricos não
+criam hosts. A trava `.inventory.lock` e o journal `.host-id-migration.json` são privados
+e git-ignorados; não contêm credenciais.
+
 Campos de um host:
 
 | Campo | Obrigatório | Valores |
 |-------|-------------|---------|
+| `id` | sim, gerado | Inteiro positivo, único, permanente; não editável pela UI/API |
 | `hostname` | sim | FQDN ou nome |
 | `mgmt_ip` | sim | IP de gerência |
 | `vendor` | sim (host ou grupo) | `mikrotik`, `unifi`, `ubiquiti`, `cisco`, `huawei`, `proxmox`, `vmware`, `datacom`, `linux`, `fiberhome`, `intelbras` |

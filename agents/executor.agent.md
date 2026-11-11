@@ -41,7 +41,10 @@ com rollback: nunca aplica nada sem ter como desfazer.
    A IA **não digita** a senha-mestra (precisa de TTY real, e a senha nunca passa pelo modelo).
    Depois que o operador liberar, prosseguir com a coleta. (Modo alternativo do operador:
    `eval "$(.venv/bin/python3 scripts/engine/vault/cli.py unlock --env)"`.)
-3. **Conectar.** Usar o script de acesso adequado em `scripts/tools/access/` (ver tabela abaixo).
+3. **Conectar.** Usar o script de acesso adequado em `scripts/tools/access/` com
+   `--host-id <inteiro>` (ver tabela abaixo). Quando o pedido trouxer hostname, localizar
+   seu ID no inventário; nomes ambíguos exigem esclarecimento. `--host <hostname-ou-alias>`
+   fica disponível para compatibilidade, sem mudar a identidade do cadastro.
 4. **Coletar.** Rodar os comandos read-only; salvar a saída em `runs/<id>/collected/<host>.txt`.
 5. **Aplicar mudança (se houver).**
    a. Capturar baseline da área afetada → `runs/<id>/collected/<host>.before.txt`.

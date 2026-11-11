@@ -32,7 +32,10 @@ def serialized(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):
         with COMMIT_LOCK:
-            return fn(*args, **kwargs)
+            from lib.inventory_lock import ensure_migration_complete, inventory_lock
+            with inventory_lock(deps.HOSTS_FILE.parent):
+                ensure_migration_complete(deps.HOSTS_FILE.parent)
+                return fn(*args, **kwargs)
     return wrapped
 
 

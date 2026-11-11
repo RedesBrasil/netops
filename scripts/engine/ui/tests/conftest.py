@@ -36,6 +36,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(deps, "NETOPS_ROOT", tmp_path)
     monkeypatch.setattr(deps, "DATA_ROOT", tmp_path)
     monkeypatch.setattr(deps, "BACKUPS_RUNS", tmp_path / "runs" / "backups")
+    monkeypatch.setattr(deps, "BACKUPS_FILE", tmp_path / "network" / "backups.yaml")
+    monkeypatch.setattr(deps, "BACKUPS_STORE", tmp_path / "backups")
+    monkeypatch.setattr(deps, "NETWORK_DIR", tmp_path / "network")
     cp("core/config/core-config.yaml")
     deps.STATE.update_pending = False
     deps.STATE.active_writes = 0

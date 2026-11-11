@@ -80,6 +80,8 @@ backups/*
 !backups/exemplo/
 # Config de serviços de backup (referencia hosts reais) — runtime, como hosts.yaml.
 network/backups.yaml
+network/.inventory.lock
+network/.host-id-migration.json
 
 # Mapas reais e ferramentas de build (assets finais são versionados).
 network/maps.yaml

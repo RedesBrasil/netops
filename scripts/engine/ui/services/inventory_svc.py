@@ -15,13 +15,14 @@ import json
 import re
 
 import deps
+from lib.host_identity import MAX_HOST_ID, host_index, identity_errors, require_host_id
 from services import yaml_io
 
-# Padrão de ID válido (espelha models.HostCreate/GroupCreate).
+# Grupos continuam identificados por nome; hosts usam inteiro imutável.
 ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 # Ordem de chaves p/ hosts/grupos novos (legibilidade do YAML).
-HOST_KEY_ORDER = ["hostname", "mgmt_ip", "group", "vendor", "role", "icon", "model", "site", "access", "credential", "notes"]
+HOST_KEY_ORDER = ["id", "hostname", "mgmt_ip", "group", "vendor", "role", "icon", "model", "site", "access", "credential", "notes"]
 GROUP_KEY_ORDER = ["vendor", "role", "access", "credential", "model", "site", "notes"]
 OPTIONAL_STR = {"model", "site", "notes", "icon"}
 
@@ -29,6 +30,7 @@ OPTIONAL_STR = {"model", "site", "notes", "icon"}
 # --------------------------------------------------------------------------- #
 # Leitura
 # --------------------------------------------------------------------------- #
+@yaml_io.serialized
 def load_hosts() -> tuple[dict, str]:
     import yaml  # noqa: PLC0415
     text, rev, _ = yaml_io.read_text_meta(deps.HOSTS_FILE)
@@ -40,7 +42,7 @@ def load_hosts() -> tuple[dict, str]:
 def list_hosts_detailed() -> dict:
     from lib.inventory import resolve_host  # noqa: PLC0415
     data, rev = load_hosts()
-    hosts = data.get("hosts") or {}
+    hosts = host_index(data)
     out = []
     for name in sorted(hosts.keys()):
         explicit = dict(hosts[name])
@@ -54,10 +56,10 @@ def list_hosts_detailed() -> dict:
 
 
 @yaml_io.serialized
-def get_host(name: str) -> dict:
+def get_host(name: int | str) -> dict:
     from lib.inventory import resolve_host  # noqa: PLC0415
     data, rev = load_hosts()
-    hosts = data.get("hosts") or {}
+    hosts = host_index(data)
     if name not in hosts:
         raise KeyError(f"host '{name}' não existe")
     effective, _ = resolve_host(name, data, {}, decrypt=False)
@@ -68,7 +70,7 @@ def get_host(name: str) -> dict:
 def list_groups() -> dict:
     data, rev = load_hosts()
     groups = data.get("groups") or {}
-    hosts = data.get("hosts") or {}
+    hosts = host_index(data)
     usage = {}
     for h in hosts.values():
         g = h.get("group")
@@ -92,6 +94,11 @@ def validate_data(hosts_data: dict) -> list[dict]:
         loc = "/".join(str(p) for p in err.absolute_path) or "(raiz)"
         errors.append({"loc": loc, "msg": err.message})
 
+    identity = identity_errors(hosts_data)
+    errors.extend(identity)
+    if identity:
+        return errors
+
     for name in list_hosts(hosts_data):
         try:
             host, _ = resolve_host(name, hosts_data, {}, decrypt=False)
@@ -109,6 +116,9 @@ def validate_data(hosts_data: dict) -> list[dict]:
 
 def _gate(before: dict, after: dict) -> None:
     """Levanta ValidationFailed se `after` tem erros que `before` não tinha (delta)."""
+    identity = identity_errors(after)
+    if identity:
+        raise deps.ValidationFailed(identity)
     before_errs = {(e["loc"], e["msg"]) for e in validate_data(before)}
     new = [e for e in validate_data(after) if (e["loc"], e["msg"]) not in before_errs]
     if new:
@@ -184,13 +194,17 @@ def _clean_new(fields: dict, order: list[str]) -> dict:
 # CRUD de hosts
 # --------------------------------------------------------------------------- #
 @yaml_io.serialized
-def create_host(host_id: str, fields: dict, rev: str | None, *, placement: dict | None = None) -> dict:
+def create_host(fields: dict, rev: str | None, *, placement: dict | None = None) -> dict:
+    if "id" in fields:
+        raise deps.ValidationFailed([{"loc": "id", "msg": "ID é gerado automaticamente"}])
     data, doc, y = _load_doc()
-    hosts = data.setdefault("hosts", {})
-    if host_id in hosts:
-        raise deps.ValidationFailed([{"loc": "id", "msg": f"host '{host_id}' já existe"}])
+    hosts = data.setdefault("hosts", [])
+    host_id = require_host_id(data["next_host_id"])
+    if host_id == MAX_HOST_ID:
+        raise deps.ValidationFailed([{"loc": "id", "msg": "espaço de IDs esgotado"}])
     before = _plain(data)
-    hosts[host_id] = _clean_new(fields, HOST_KEY_ORDER)
+    hosts.append(_clean_new({"id": host_id, **fields}, HOST_KEY_ORDER))
+    data["next_host_id"] = host_id + 1
     _gate(before, _plain(data))
     if placement:
         from services import maps_svc
@@ -206,9 +220,12 @@ def create_host(host_id: str, fields: dict, rev: str | None, *, placement: dict 
 
 
 @yaml_io.serialized
-def update_host(host_id: str, fields: dict, rev: str | None, *, partial: bool) -> dict:
+def update_host(host_id: int, fields: dict, rev: str | None, *, partial: bool) -> dict:
+    if "id" in fields:
+        raise deps.ValidationFailed([{"loc": "id", "msg": "ID é permanente e não pode ser editado"}])
     data, doc, y = _load_doc()
-    hosts = data.get("hosts") or {}
+    require_host_id(host_id)
+    hosts = host_index(data)
     if host_id not in hosts:
         raise KeyError(f"host '{host_id}' não existe")
     before = _plain(data)
@@ -219,13 +236,14 @@ def update_host(host_id: str, fields: dict, rev: str | None, *, partial: bool) -
 
 
 @yaml_io.serialized
-def delete_host(host_id: str, rev: str | None) -> dict:
+def delete_host(host_id: int, rev: str | None) -> dict:
     data, doc, y = _load_doc()
-    hosts = data.get("hosts") or {}
+    require_host_id(host_id)
+    hosts = host_index(data)
     if host_id not in hosts:
         raise KeyError(f"host '{host_id}' não existe")
-    del hosts[host_id]
-    from services import maps_svc, topology_svc
+    data["hosts"].remove(hosts[host_id])
+    from services import maps_svc, topology_svc, backups_svc
     writes = [(deps.HOSTS_FILE, yaml_io.dump_rt(y, data), 0o644)]
     checks = [(deps.HOSTS_FILE, rev)]
     topo, tr, ty = yaml_io.load_rt(deps.TOPOLOGY_FILE)
@@ -239,6 +257,7 @@ def delete_host(host_id: str, rev: str | None) -> dict:
             writes.append((deps.TOPOLOGY_FILE, yaml_io.dump_rt(ty, topo), 0o644))
             checks.append((deps.TOPOLOGY_FILE, tr))
     maps_svc.cascade_host(host_id, None, removed, writes, checks)
+    backups_svc.cascade_host_delete(host_id, writes, checks)
     new_rev = yaml_io.write_many(writes, checks=checks)[deps.HOSTS_FILE]
     return {"deleted": host_id, "rev": new_rev}
 
@@ -246,7 +265,7 @@ def delete_host(host_id: str, rev: str | None) -> dict:
 # --------------------------------------------------------------------------- #
 # Renomear host (cascade: topology.yaml links)
 # --------------------------------------------------------------------------- #
-def _topology_host_refs(host_id: str) -> list[dict]:
+def _topology_host_refs(host_id: int | str) -> list[dict]:
     """Enlaces em topology.yaml que apontam para `host_id` (preview do cascade)."""
     import yaml  # noqa: PLC0415
     if not deps.TOPOLOGY_FILE.exists():
@@ -264,9 +283,9 @@ def _topology_host_refs(host_id: str) -> list[dict]:
 
 
 @yaml_io.serialized
-def host_references(host_id: str) -> dict:
+def host_references(host_id: int | str) -> dict:
     data, _ = load_hosts()
-    if host_id not in (data.get("hosts") or {}):
+    if host_id not in host_index(data):
         raise KeyError(f"host '{host_id}' não existe")
     from services import maps_svc
     refs = _topology_host_refs(host_id) + maps_svc.host_references(host_id)
@@ -275,42 +294,8 @@ def host_references(host_id: str) -> dict:
 
 @yaml_io.serialized
 def rename_host(old: str, new: str, rev: str | None) -> dict:
-    """Renomeia a chave do host e atualiza as pontas de enlace em topology.yaml,
-    numa transação atômica (write_many)."""
-    if not ID_RE.match(new):
-        raise deps.ValidationFailed([{"loc": "to", "msg": "use a-z, 0-9, ponto, hífen ou underline"}])
-    data, _, y = _load_doc()
-    hosts = data.get("hosts") or {}
-    if old not in hosts:
-        raise KeyError(f"host '{old}' não existe")
-    if new == old:
-        raise deps.ValidationFailed([{"loc": "to", "msg": "o novo ID é igual ao atual"}])
-    if new in hosts:
-        raise deps.ValidationFailed([{"loc": "to", "msg": f"host '{new}' já existe"}])
-
-    yaml_io.rename_key(hosts, old, new)
-    writes = [(deps.HOSTS_FILE, yaml_io.dump_rt(y, data), 0o644)]
-    checks: list[tuple] = [(deps.HOSTS_FILE, rev)]
-
-    topo, topo_rev, ty = yaml_io.load_rt(deps.TOPOLOGY_FILE)
-    updated: list[dict] = []
-    if topo is not None:
-        from services import topology_svc
-        topology_svc.ensure_link_ids(topo)
-        for i, lk in enumerate(topo.get("links") or []):
-            for end in ("a", "b"):
-                e = (lk or {}).get(end)
-                if e and e.get("host") == old:
-                    e["host"] = new
-                    updated.append({"kind": "topology-link", "index": i, "field": f"{end}.host"})
-        if updated:
-            writes.append((deps.TOPOLOGY_FILE, yaml_io.dump_rt(ty, topo), 0o644))
-            checks.append((deps.TOPOLOGY_FILE, topo_rev))
-
-    from services import maps_svc
-    maps_svc.cascade_host(old, new, set(), writes, checks)
-    revs = yaml_io.write_many(writes, checks=checks)
-    return {"renamed": {"from": old, "to": new}, "updated": updated, "rev": revs[deps.HOSTS_FILE]}
+    """Compatibilidade de rota: nenhuma chamada pode alterar identidade permanente."""
+    raise deps.ValidationFailed([{"loc": "id", "msg": "ID é permanente; edite somente hostname"}])
 
 
 # --------------------------------------------------------------------------- #
@@ -322,8 +307,8 @@ def create_group(name: str, fields: dict, rev: str | None) -> dict:
     groups = data.setdefault("groups", {})
     if name in groups:
         raise deps.ValidationFailed([{"loc": "name", "msg": f"grupo '{name}' já existe"}])
-    groups[name] = _clean_new(fields, GROUP_KEY_ORDER)
     before = _plain(data)
+    groups[name] = _clean_new(fields, GROUP_KEY_ORDER)
     _gate(before, _plain(data))  # grupos não têm requisito próprio; valida que não quebrou hosts
     new_rev = yaml_io.write_rt(deps.HOSTS_FILE, y, data, expected=rev, backup=True)
     return {"name": name, "fields": fields, "rev": new_rev}
@@ -348,10 +333,10 @@ def delete_group(name: str, rev: str | None, *, force: bool) -> dict:
     groups = data.get("groups") or {}
     if name not in groups:
         raise KeyError(f"grupo '{name}' não existe")
-    used = [h for h, v in (data.get("hosts") or {}).items() if v.get("group") == name]
+    used = [h for h, v in host_index(data).items() if v.get("group") == name]
     if used and not force:
         raise deps.ConflictError(yaml_io.file_rev(deps.HOSTS_FILE),
-                                 detail=f"grupo em uso por {len(used)} host(s): {', '.join(used)}")
+                                 detail=f"grupo em uso por {len(used)} host(s): {', '.join(map(str, used))}")
     del groups[name]
     new_rev = yaml_io.write_rt(deps.HOSTS_FILE, y, data, expected=rev, backup=True)
     return {"deleted": name, "rev": new_rev}
@@ -365,7 +350,7 @@ def group_references(name: str) -> dict:
     if name not in (data.get("groups") or {}):
         raise KeyError(f"grupo '{name}' não existe")
     refs = [{"kind": "host", "id": h, "field": "group", "label": f"host {h}"}
-            for h, v in (data.get("hosts") or {}).items() if (v or {}).get("group") == name]
+            for h, v in host_index(data).items() if (v or {}).get("group") == name]
     return {"name": name, "references": refs, "count": len(refs)}
 
 
@@ -384,7 +369,7 @@ def rename_group(old: str, new: str, rev: str | None) -> dict:
 
     yaml_io.rename_key(groups, old, new)
     updated = []
-    for hid, h in (data.get("hosts") or {}).items():
+    for hid, h in host_index(data).items():
         if h and h.get("group") == old:
             h["group"] = new
             updated.append({"kind": "host", "id": hid, "field": "group"})
@@ -398,7 +383,12 @@ def rename_group(old: str, new: str, rev: str | None) -> dict:
 def _load_doc():
     data, rev, y = yaml_io.load_rt(deps.HOSTS_FILE)
     if data is None:
-        data = {"version": 1, "hosts": {}}
+        data = {"version": 2, "next_host_id": 1, "groups": {}, "hosts": [], "legacy_aliases": []}
+    if data.get("version") != 2:
+        raise deps.ValidationFailed([{"loc": "version", "msg": "inventário legado: execute a migração de IDs antes de editar"}])
+    identity = identity_errors(data)
+    if identity:
+        raise deps.ValidationFailed(identity)
     return data, data, y
 
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, Field, FiniteFloat, model_validator, field_validator
+from pydantic import BaseModel, Field, FiniteFloat, StrictInt, model_validator, field_validator
 
 Vendor = Literal[
     "mikrotik", "unifi", "ubiquiti", "cisco", "huawei", "proxmox",
@@ -15,6 +15,7 @@ Vendor = Literal[
 Role = Literal["core", "distribution", "access", "firewall", "wireless", "server", "other"]
 Method = Literal["ssh", "telnet", "api", "winbox"]
 Port = Annotated[int, Field(ge=1, le=65535)]
+HostId = Annotated[StrictInt, Field(ge=1, le=2**53 - 1)]
 
 
 class Access(BaseModel):
@@ -57,7 +58,6 @@ class MapPlacement(BaseModel):
     y: FiniteFloat = Field(default=0, ge=-1000000, le=1000000)
 
 class HostCreate(HostUpsert):
-    id: str = Field(min_length=1, pattern=r"^[a-zA-Z0-9._-]+$")
     hostname: str = Field(min_length=1)
     mgmt_ip: str = Field(min_length=1)
     placement: Optional[MapPlacement] = None
@@ -113,7 +113,7 @@ class VaultUnlock(BaseModel):
 # --------------------------------------------------------------------------- #
 class LinkEnd(BaseModel):
     model_config = {"extra": "forbid"}
-    host: str = Field(min_length=1)
+    host: HostId
     port: Optional[str] = None
 
 
@@ -149,7 +149,7 @@ class BackupSchedule(BaseModel):
 
 class BackupTargets(BaseModel):
     model_config = {"extra": "forbid"}
-    hosts: list[str] = Field(default_factory=list)
+    hosts: list[HostId] = Field(default_factory=list)
     groups: list[str] = Field(default_factory=list)
 
 
@@ -172,10 +172,24 @@ class BackupService(BaseModel):
     retention: BackupRetention = Field(default_factory=BackupRetention)
 
 
+class BackupLegacySource(BaseModel):
+    model_config = {"extra": "forbid"}
+    host_id: HostId
+    directory: str = Field(min_length=1)
+
+    @field_validator("directory")
+    @classmethod
+    def safe_directory(cls, value):
+        if value in (".", "..") or "/" in value or "\\" in value:
+            raise ValueError("diretório de histórico inválido")
+        return value
+
+
 class BackupsConfig(BaseModel):
     model_config = {"extra": "forbid"}
-    version: int = 2
+    version: Literal[3] = 3
     services: list[BackupService] = Field(default_factory=list)
+    legacy_sources: list[BackupLegacySource] = Field(default_factory=list)
 
 
 class BackupDeleteRequest(BaseModel):
@@ -188,6 +202,13 @@ class MapPoint(BaseModel):
     model_config = {"extra": "forbid"}
     x: FiniteFloat = Field(ge=-1000000, le=1000000)
     y: FiniteFloat = Field(ge=-1000000, le=1000000)
+
+class MapNodePosition(MapPoint):
+    z_index: Optional[int] = Field(default=None, strict=True, ge=-100000, le=100000)
+
+
+class MapHostPosition(MapNodePosition):
+    host_id: HostId
 
 class MapAnchor(BaseModel):
     model_config = {"extra": "forbid"}
@@ -218,6 +239,9 @@ class MapObject(BaseModel):
     form: Literal["rect", "ellipse"] = "rect"
     width: FiniteFloat = Field(default=320, ge=100, le=10000)
     height: FiniteFloat = Field(default=200, ge=60, le=10000)
+    z_index: Optional[int] = Field(default=None, strict=True, ge=-100000, le=100000)
+    color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    stroke: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     icon: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     map_id: Optional[str] = Field(default=None, max_length=100)
 
@@ -235,10 +259,25 @@ class MapObject(BaseModel):
             raise ValueError("referência precisa de um mapa de destino")
         return self
 
+class HostEndpoint(BaseModel):
+    model_config = {"extra": "forbid"}
+    kind: Literal["host"]
+    host_id: HostId
+
+
+class ObjectEndpoint(BaseModel):
+    model_config = {"extra": "forbid"}
+    kind: Literal["object"]
+    object_id: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9._-]+$")
+
+
+MapEndpoint = Annotated[HostEndpoint | ObjectEndpoint, Field(discriminator="kind")]
+
+
 class MapVisualLink(MapEdgeLayout):
     id: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9._-]+$")
-    source: str = Field(min_length=1, max_length=200)
-    target: str = Field(min_length=1, max_length=200)
+    source: MapEndpoint
+    target: MapEndpoint
     label: str = Field(default="", max_length=200)
     speed: str = Field(default="WAN", max_length=40)
 
@@ -248,14 +287,19 @@ class NetworkMap(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     kind: Literal["all", "site", "custom"] = "custom"
     site: Optional[str] = Field(default=None, max_length=200)
-    members: list[str] = Field(default_factory=list, max_length=5000)
-    positions: dict[str, MapPoint] = Field(default_factory=dict, max_length=5000)
+    members: list[HostId] = Field(default_factory=list, max_length=5000)
+    positions: list[MapHostPosition] = Field(default_factory=list, max_length=5000)
     objects: list[MapObject] = Field(default_factory=list, max_length=1000)
     edges: dict[str, MapEdgeLayout] = Field(default_factory=dict, max_length=10000)
     visual_links: list[MapVisualLink] = Field(default_factory=list, max_length=2000)
 
     @model_validator(mode="after")
     def map_rule(self):
+        position_ids = [position.host_id for position in self.positions]
+        if len(position_ids) != len(set(position_ids)):
+            raise ValueError("posições de host duplicadas")
+        if len(self.members) != len(set(self.members)):
+            raise ValueError("membros de host duplicados")
         if self.kind == "site" and not self.site:
             raise ValueError("mapa por localidade precisa de site")
         if self.kind == "all" and self.id != "all":

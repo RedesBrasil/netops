@@ -27,12 +27,14 @@ exposição de serviços — sem precisar logar no equipamento.
 ## Como usar
 
 ```bash
-python scripts/tools/diagnostics/portscan.py --host rt-core-01
+python scripts/tools/diagnostics/portscan.py --host-id 1
 python scripts/tools/diagnostics/ping_advanced.py --target 8.8.8.8 --count 20
-python scripts/tools/diagnostics/traceroute_advanced.py --host srv-web-01
+python scripts/tools/diagnostics/traceroute_advanced.py --host-id 3
 ```
 
-Todos aceitam `--host` (nome no inventário) ou `--target` (IP/nome direto).
+Todos aceitam uma opção exclusiva: `--host-id` (ID inteiro), `--host` (nome único ou
+alias legado) ou `--target` (IP/nome direto). Resolver o cadastro para obter o IP não lê
+credenciais nem precisa destrancar o cofre.
 
 ## Setup
 

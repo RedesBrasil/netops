@@ -19,8 +19,7 @@ export function HostsPage() {
   const { hosts, rev, groups } = res.data;
 
   const cols = [
-    { key: "id", label: "ID", sort: (r) => r.id || "", render: (r) => html`<b>${r.id}</b>` },
-    { key: "hostname", label: "Hostname", sort: (r) => r.explicit.hostname || "", render: (r) => r.explicit.hostname },
+    { key: "hostname", label: "Nome do host", sort: (r) => r.explicit.hostname || "", render: (r) => html`<b>${r.explicit.hostname}</b>` },
     { key: "mgmt_ip", label: "IP", sort: (r) => r.explicit.mgmt_ip || "", render: (r) => html`<span class="mono">${r.explicit.mgmt_ip}</span>` },
     { key: "vendor", label: "Vendor", sort: (r) => r.effective.vendor || "", render: (r) => html`<${Badge} kind="accent">${r.effective.vendor || "?"}<//>` },
     { key: "role", label: "Role", sort: (r) => r.effective.role || "", render: (r) => r.effective.role || "—" },
@@ -40,7 +39,7 @@ export function HostsPage() {
     ${editing && html`<${HostForm} host=${editing} groups=${groups} rev=${rev}
         onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
     ${confirm && html`<${ConfirmDialog} title="Excluir host" danger=true
-        message=${`Remover o host '${confirm}' do inventário? Seus enlaces e referências nos mapas também serão removidos. ${deleteRefs ? `${deleteRefs.count} referência(s) afetada(s): ${deleteRefs.references.map(r => r.label).join(', ') || 'nenhuma'}.` : 'Verificando referências…'}`}
+        message=${`Remover o host '${hosts.find(h => h.id === confirm)?.explicit.hostname || "selecionado"}' do inventário? Seus enlaces e referências nos mapas também serão removidos. ${deleteRefs ? `${deleteRefs.count} referência(s) afetada(s): ${deleteRefs.references.map(r => r.label).join(', ') || 'nenhuma'}.` : 'Verificando referências…'}`}
         onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
           try { await api.del(`/hosts/${confirm}`, rev); toast.ok("Host removido"); res.reload(); }
@@ -60,7 +59,6 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   const [mapChoice, setMapChoice] = useState("");
   const explicit = isNew ? initial : host.explicit;
   const [form, setForm] = useState({
-    id: isNew ? "" : host.id,
     hostname: explicit.hostname || "", mgmt_ip: explicit.mgmt_ip || "",
     group: explicit.group || "", vendor: explicit.vendor ?? null, role: explicit.role ?? null,
     model: explicit.model || "", site: explicit.site || "", notes: explicit.notes || "", icon: explicit.icon || "",
@@ -92,7 +90,6 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     setSaving(true);
     setErrors({});
     const payload = {};
-    if (isNew) { payload.id = form.id; }
     // obrigatórios
     payload.hostname = form.hostname; payload.mgmt_ip = form.mgmt_ip;
     if (form.group) payload.group = form.group; else if (!isNew) payload.group = null;
@@ -103,19 +100,17 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     if (form.port !== "" && form.port != null) acc.port = Number(form.port);
     payload.access = Object.keys(acc).length ? acc : null;
     try {
+      let savedId = host.id;
       if (isNew) {
         if (placement) payload.placement = placement;
         else if (mapChoice && mapOptions) payload.placement = { map_id: mapChoice, maps_rev: mapOptions.rev, x: 80, y: 80 };
-        await api.post("/hosts", payload, rev);
+        const created = await api.post("/hosts", payload, rev);
+        savedId = created.id;
       } else {
-        let curRev = rev;
-        if (form.id !== host.id) {                          // renomeia primeiro (cascade)
-          curRev = (await api.post(`/hosts/${host.id}/rename`, { to: form.id }, curRev)).rev;
-        }
-        await api.patch(`/hosts/${form.id}`, payload, curRev);
+        await api.patch(`/hosts/${host.id}`, payload, rev);
       }
       toast.ok(isNew ? "Host criado" : "Host atualizado");
-      onSaved(form.id);
+      onSaved(savedId);
     } catch (e) {
       if (e.name === "ConflictError" || e.constructor?.name === "ConflictError") return setConflict(true);
       const fe = handleError(e);
@@ -125,13 +120,9 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   }
   const errFor = (suffix) => Object.entries(errors).find(([k]) => k.endsWith(suffix))?.[1];
 
-  return html`<${Modal} title=${isNew ? "Novo host" : `Editar ${host.id}`} onClose=${onClose}>
-    <${Field} label=${isNew ? "ID (identificador único)" : "ID (alterar = renomear, atualiza referências)"}
-        error=${errFor("/id") || errors.id || errors.to}>
-      <input value=${form.id} placeholder="ex.: rt-core-01" onInput=${(e) => set("id", e.target.value)} /><//>
-    ${!isNew && html`<${RenameCascadeHint} refsPath=${`/hosts/${host.id}/references`} changed=${form.id !== host.id} />`}
+  return html`<${Modal} title=${isNew ? "Novo host" : `Editar ${explicit.hostname}`} onClose=${onClose}>
     <div class="row">
-      <${Field} label="Hostname" error=${errFor("/hostname")}>
+      <${Field} label="Nome do host" error=${errFor("/hostname")}>
         <input value=${form.hostname} onInput=${(e) => set("hostname", e.target.value)} /><//>
       <${Field} label="IP de gerência" error=${errFor("/mgmt_ip")}>
         <input value=${form.mgmt_ip} onInput=${(e) => set("mgmt_ip", e.target.value)} /><//>

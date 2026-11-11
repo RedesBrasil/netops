@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { reconcileNodes } from './node-state.js';
+import { reconcileNodes, orderedNodeIds, moveLayer, removeMapNodes, duplicateShape, contrastingText } from './node-state.js';
 
 const host = () => ({ id: 'host:a', type: 'device', position: { x: 10, y: 20 }, data: { label: 'A' } });
 const measured = () => ({ ...host(), measured: { width: 198, height: 91 }, selected: true, dragging: false });
@@ -85,4 +85,60 @@ test('alinhamento rejeita dimensões/coordenadas inválidas sem resultado parcia
   assert.throws(() => alignNodes(nodes, 'vertical'));
   nodes[0].position.x = 0; nodes[0].measured.width = 0;
   assert.throws(() => alignNodes(nodes, 'vertical'));
+});
+
+const stackedMap = () => ({ id: 'test', kind: 'custom', members: ['a', 'b'], host_ids: ['a', 'b'],
+  positions: { a: { x: 1, y: 2 }, b: { x: 3, y: 4 } },
+  objects: [{ id: 'area', type: 'shape', label: '', form: 'ellipse', position: { x: 10, y: 20 }, width: 320, height: 200, color: '#123456', stroke: '#abcdef', icon: 'router' },
+    { id: 'note', type: 'note', position: { x: 30, y: 40 }, label: 'Nota' }],
+  edges: { real: { route: { axis: 'x', tracks: [120] } } },
+  visual_links: [{ id: 'visual', source: 'host:a', target: 'object:area' }, { id: 'other', source: 'host:b', target: 'object:note' }] });
+test('texto da forma e prévia contrastam com cores claras/escuras em qualquer tema', () => {
+  for (const hex of ['#ffffff', '#DBEAFE', '#00ff00', '#ffff00']) assert.equal(contrastingText(hex), '#000000');
+  for (const hex of ['#000000', '#123456', '#0000ff']) assert.equal(contrastingText(hex), '#ffffff');
+  for (const invalid of [null, undefined, '', 'red', '#abc', '#12345z']) assert.equal(contrastingText(invalid), undefined);
+});
+test('pilha legada conserva formas atrás de hosts e demais objetos', () => {
+  assert.deepEqual(orderedNodeIds(stackedMap()), ['object:area', 'host:a', 'host:b', 'object:note']);
+});
+test('avançar/recuar troca exatamente uma camada mista e preserva posições/rotas', () => {
+  const map = stackedMap(), before = structuredClone(map);
+  let next = moveLayer(map, 'object:area', 'forward');
+  assert.deepEqual(orderedNodeIds(next), ['host:a', 'object:area', 'host:b', 'object:note']);
+  assert.equal(next.positions.a.z_index, 0); assert.equal(next.objects[0].z_index, 1);
+  next = moveLayer(next, 'object:area', 'forward');
+  assert.deepEqual(orderedNodeIds(next), ['host:a', 'host:b', 'object:area', 'object:note']);
+  next = moveLayer(next, 'object:area', 'backward');
+  assert.deepEqual(orderedNodeIds(next), ['host:a', 'object:area', 'host:b', 'object:note']);
+  assert.deepEqual(next.edges, map.edges); assert.equal(next.positions.a.x, 1);
+  assert.deepEqual(map, before); assert.deepEqual(orderedNodeIds(structuredClone(next)), orderedNodeIds(next));
+});
+test('pilha respeita limites e inicializa posições de hosts automáticos', () => {
+  const map = stackedMap(); delete map.positions.b;
+  assert.equal(moveLayer(map, 'object:area', 'backward'), map);
+  assert.equal(moveLayer(map, 'object:note', 'forward'), map);
+  assert.equal(moveLayer(map, 'missing', 'forward'), map);
+  const next = moveLayer(map, 'object:area', 'forward');
+  assert.deepEqual(next.positions.b, { x: 370, y: 165, z_index: 2 });
+  assert.throws(() => moveLayer(map, 'host:a', 'invalid'));
+});
+test('duplicar forma preserva estilo/tamanho/ícone, desloca e insere uma camada acima', () => {
+  const map = stackedMap(), next = duplicateShape(map, 'object:area', 'copy'), copy = next.objects.at(-1);
+  assert.deepEqual(copy, { ...map.objects[0], id: 'copy', position: { x: 42, y: 52 }, z_index: 1 });
+  assert.deepEqual(orderedNodeIds(next), ['object:area', 'object:copy', 'host:a', 'host:b', 'object:note']);
+  assert.notEqual(copy.position, map.objects[0].position);
+  assert.equal(next.visual_links, map.visual_links); assert.equal(map.objects.length, 2);
+  assert.equal(duplicateShape(map, 'object:note', 'copy'), map);
+});
+test('remover grupo misto limpa somente membros/objetos/linhas visuais envolvidos', () => {
+  const map = stackedMap(), next = removeMapNodes(map, ['host:a', 'object:area']);
+  assert.deepEqual(next.host_ids, ['b']); assert.deepEqual(next.members, ['b']);
+  assert.deepEqual(Object.keys(next.positions), ['b']); assert.deepEqual(next.objects.map(o => o.id), ['note']);
+  assert.deepEqual(next.visual_links.map(l => l.id), ['other']); assert.equal(next.edges, map.edges);
+  assert.equal(map.host_ids.length, 2);
+});
+test('mapa automático protege hosts enquanto permite excluir formas selecionadas', () => {
+  const map = { ...stackedMap(), kind: 'all' }, next = removeMapNodes(map, ['host:a', 'object:area']);
+  assert.deepEqual(next.host_ids, map.host_ids); assert.deepEqual(next.members, map.members);
+  assert.deepEqual(next.positions, map.positions); assert.deepEqual(next.objects.map(o => o.id), ['note']);
 });
