@@ -106,4 +106,3 @@ def test_delete_host_cleans_both_physical_and_visual_ends_in_every_map(client, e
     stored_links = yaml.safe_load((env / 'network/topology.yaml').read_text())['links']
     assert {link['id']: link for link in stored_links} == kept_disk
     assert client.get('/api/hosts/2').status_code == 404
-

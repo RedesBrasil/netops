@@ -377,4 +377,3 @@ def test_failed_candidate_keeps_v1_readable_by_old_supervisor(tmp_path, auto_can
         assert not (console.data / 'network/.host-id-migration.json').exists()
         if failure == 'invalid-references':
             assert (console.state / 'host-migration-preflight.json').is_file()
-
