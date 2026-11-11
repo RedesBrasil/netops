@@ -49,6 +49,9 @@ seguem a separação de engine, não aparecem como scripts operacionais e nunca 
 - `argparse` com `--help` claro. Funciona offline (imports de rede são preguiçosos).
 - Lê o inventário sempre via `from lib.inventory import …` (o motor em `engine/lib/`,
   posto no `sys.path` pelo bootstrap do script) — nunca recebe credencial por argumento.
+- Seleciona identidade numérica por `--host-id <inteiro>`; `--host <hostname-ou-alias>`
+  mantém compatibilidade por nome único. Diagnósticos usam `include_credentials=False`
+  e `resolve_host(..., {}, decrypt=False)`, sem ler ou decifrar credenciais.
 - Saída em JSON ou texto; quando salva, salva em `runs/<id>/`.
 - Cada família tem um `SKILL.md` ao lado descrevendo o uso (formato do OpenSquad); ele
   aparece como ícone 📄 ao lado dos scripts da família na UI.

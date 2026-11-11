@@ -25,15 +25,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scrip
 DEFAULT_PORTS = [21, 22, 23, 25, 53, 80, 161, 443, 445, 2000, 3389, 8080, 8291, 8728, 8729]
 
 
-def resolve_target(host: str | None, target: str | None) -> str:
+def resolve_target(host: int | str | None, target: str | None) -> str:
     if target:
         return target
     if host:
         from lib.inventory import load_inventory, resolve_host
-        hosts_data, creds_data = load_inventory()
-        resolved, _ = resolve_host(host, hosts_data, creds_data)
+        hosts_data, _ = load_inventory(include_credentials=False)
+        resolved, _ = resolve_host(host, hosts_data, {}, decrypt=False)
         return resolved.get("mgmt_ip") or resolved.get("hostname")
-    raise SystemExit("informe --host ou --target")
+    raise SystemExit("informe --host-id, --host ou --target")
 
 
 def scan_nmap(target: str, ports: list[int]) -> dict:
@@ -69,12 +69,14 @@ def scan_socket(target: str, ports: list[int]) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Scan de portas TCP de um host.")
-    parser.add_argument("--host", help="Nome do host em network/hosts.yaml")
-    parser.add_argument("--target", help="IP ou nome direto (alternativa a --host)")
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--host-id", type=int, help="ID inteiro do host no inventário")
+    selection.add_argument("--host", help="Nome único ou alias legado do host")
+    selection.add_argument("--target", help="IP ou nome direto")
     parser.add_argument("--ports", help="Portas separadas por vírgula (padrão: portas comuns)")
     args = parser.parse_args()
 
-    target = resolve_target(args.host, args.target)
+    target = resolve_target(args.host_id if args.host_id is not None else args.host, args.target)
     ports = [int(p) for p in args.ports.split(",")] if args.ports else DEFAULT_PORTS
 
     try:

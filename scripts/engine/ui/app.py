@@ -100,6 +100,15 @@ def create_app() -> FastAPI:
             # Anti DNS-rebinding: Host tem que ser loopback.
             if not _host_ok(request.headers.get("host")):
                 return JSONResponse({"error": "forbidden_host"}, status_code=403)
+            from services import host_migration_svc
+            # Meta/status públicos continuam disponíveis antes do login para explicar
+            # a manutenção; nenhum escritor nem leitor de dados observa uma mistura.
+            migration_open = request.method in {"GET", "HEAD"} and path in {
+                "/api/config/meta", "/api/auth/status", "/api/updates/status"}
+            if host_migration_svc.blocking() and not migration_open:
+                migration = host_migration_svc.status()
+                return JSONResponse({"error": "host_migration", "detail": migration["detail"],
+                                     "migration": migration}, status_code=503)
             # Gate de login: com cofre inicializado, todo /api exige sessão (senha-mestra),
             # exceto a allow-list de bootstrap (login/status/logout/meta).
             if (deps.auth_required() and path not in AUTH_OPEN_PATHS
@@ -146,6 +155,19 @@ def create_app() -> FastAPI:
         import asyncio
         import os
         from update.common import STATE_DIR, read_version, write_json
+        from services import host_migration_svc
+
+        try:
+            prepared_hashes = await host_migration_svc.prepare()
+            app.state.host_migration_task = host_migration_svc.start(prepared_hashes)
+            if app.state.host_migration_task and os.environ.get("NETOPS_UPDATE_RECOVERING") != "1":
+                # Na abertura normal não há commit de código pendente. Termina a
+                # recuperação/conversão antes de aceitar as primeiras requisições.
+                await app.state.host_migration_task
+        except Exception:
+            # Migração falhou mas não deve impedir o startup. O estado de erro
+            # é registrado pelo host_migration_svc e será exibido na UI.
+            pass
 
         async def receipt():
             await asyncio.sleep(0.15)
@@ -172,6 +194,15 @@ def create_app() -> FastAPI:
 
 def _register_error_handlers(app: FastAPI) -> None:
     from lib.vault import VaultLocked, VaultNotInitialized, VaultWrongKey
+    from lib.inventory_lock import MigrationIncomplete
+
+    @app.exception_handler(MigrationIncomplete)
+    async def _migration_incomplete(_request, exc: MigrationIncomplete):
+        return JSONResponse(
+            {"error": "migration_incomplete", "detail": str(exc),
+             "action": ".venv/bin/python scripts/engine/lib/host_id_migration.py recover"},
+            status_code=503,
+        )
 
     @app.exception_handler(deps.ConflictError)
     async def _conflict(_request, exc: deps.ConflictError):

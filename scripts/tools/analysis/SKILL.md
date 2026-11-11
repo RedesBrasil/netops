@@ -28,14 +28,18 @@ Scripts de análise que o agente `tester` usa para auditar e comparar.
 python scripts/tools/analysis/security_assessment.py --all
 
 # Avaliação com checagens de configuração (precisa da config coletada)
-python scripts/tools/analysis/security_assessment.py --host rt-core-01 \
-  --config-file runs/2026-05-18-1430-security-audit/collected/rt-core-01.txt
+python scripts/tools/analysis/security_assessment.py --host-id 1 \
+  --config-file runs/2026-05-18-1430-security-audit/collected/1.txt
 
 # Diff de configuração
 python scripts/tools/analysis/config_diff.py --before baseline.txt --after proposta.txt
 ```
 
 ## Setup
+
+`--host-id` seleciona o ID inteiro; `--host` aceita nome único ou alias legado. Cada
+execução escolhe exatamente um entre `--host-id`, `--host` e `--all`. Os achados usam
+o ID canônico numérico e a resolução de inventário não carrega nem descriptografa credenciais.
 
 `pip install -r requirements.txt` (pyyaml). Para o scan completo: `sudo apt install nmap`.
 O catálogo de checagens fica em `scripts/tools/analysis/checks.yaml` — adicione checagens lá.

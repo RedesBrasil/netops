@@ -24,7 +24,7 @@ def test_map_state_is_saved_as_utf8_yaml_and_reloaded(client, env):
     s = client.get('/api/maps').json()
     m = s['maps'][0]
     m.pop('host_ids', None)
-    m['positions'] = {'rt-core-01': {'x': 123, 'y': 456}}
+    m['positions'] = [{'host_id': 1, 'x': 123, 'y': 456}]
     m['objects'] = [{'id': 'note', 'type': 'note', 'position': {'x': 40, 'y': 60}, 'label': 'Rede e documentação'}]
     r = client.put('/api/maps/all', json={'map': m, 'hosts_rev': s['hosts_rev'], 'topology_rev': s['topology']['rev']},
                    headers={'If-Match': s['rev']})
@@ -32,9 +32,9 @@ def test_map_state_is_saved_as_utf8_yaml_and_reloaded(client, env):
     path = env / 'network/maps.yaml'
     text = path.read_bytes().decode('utf-8')
     data = yaml.safe_load(text)
-    assert data['version'] == 1
+    assert data['version'] == 2
     stored = next(m for m in data['maps'] if m['id'] == 'all')
-    assert stored['positions']['rt-core-01'] == {'x': 123, 'y': 456}
+    assert stored['positions'] == [{'host_id': 1, 'x': 123, 'y': 456}]
     assert stored['objects'][0]['label'] == 'Rede e documentação'
     # Outra instância da aplicação lê o mesmo disco, sem estado anterior em RAM.
     fresh = TestClient(create_app(), base_url='http://127.0.0.1', headers=client.headers)

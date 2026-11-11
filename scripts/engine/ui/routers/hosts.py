@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
+from fastapi import HTTPException
 
 from models import GroupCreate, HostCreate, HostUpsert, NodeUpsert, RenameBody
 from services import inventory_svc
@@ -12,6 +13,20 @@ router = APIRouter(tags=["inventory"])
 
 def _rev(request: Request) -> str | None:
     return request.headers.get("if-match") or request.query_params.get("rev")
+
+
+def _host_key(value: str):
+    """Converte apenas a fronteira URL; leitura v1 permanece disponível para migrar."""
+    data, _ = inventory_svc.load_hosts()
+    if data.get("version", 1) == 1:
+        return value
+    from lib.host_identity import require_host_id
+    try:
+        if not value.isascii() or not value.isdigit():
+            raise ValueError("ID inválido")
+        return require_host_id(int(value))
+    except ValueError:
+        raise HTTPException(422, "ID de host precisa ser um inteiro positivo") from None
 
 
 # --------------------------------------------------------------------------- #
@@ -31,41 +46,41 @@ def validate_hosts():
 
 @router.get("/hosts/{host_id}")
 def get_host(host_id: str):
-    return inventory_svc.get_host(host_id)
+    return inventory_svc.get_host(_host_key(host_id))
 
 
 @router.post("/hosts", status_code=201)
 def create_host(body: HostCreate, request: Request):
-    fields = body.model_dump(exclude={"id", "placement"}, exclude_unset=True)
-    return inventory_svc.create_host(body.id, fields, _rev(request), placement=body.placement.model_dump() if body.placement else None)
+    fields = body.model_dump(exclude={"placement"}, exclude_unset=True)
+    return inventory_svc.create_host(fields, _rev(request), placement=body.placement.model_dump() if body.placement else None)
 
 
 @router.put("/hosts/{host_id}")
 def replace_host(host_id: str, body: HostUpsert, request: Request):
     fields = body.model_dump(exclude_unset=True)
-    return inventory_svc.update_host(host_id, fields, _rev(request), partial=False)
+    return inventory_svc.update_host(_host_key(host_id), fields, _rev(request), partial=False)
 
 
 @router.patch("/hosts/{host_id}")
 def patch_host(host_id: str, body: HostUpsert, request: Request):
     fields = body.model_dump(exclude_unset=True)
-    return inventory_svc.update_host(host_id, fields, _rev(request), partial=True)
+    return inventory_svc.update_host(_host_key(host_id), fields, _rev(request), partial=True)
 
 
 @router.delete("/hosts/{host_id}")
 def delete_host(host_id: str, request: Request):
-    return inventory_svc.delete_host(host_id, _rev(request))
+    return inventory_svc.delete_host(_host_key(host_id), _rev(request))
 
 
 @router.get("/hosts/{host_id}/references")
 def host_references(host_id: str):
     """Onde o host é referenciado (preview do cascade do rename)."""
-    return inventory_svc.host_references(host_id)
+    return inventory_svc.host_references(_host_key(host_id))
 
 
 @router.post("/hosts/{host_id}/rename")
 def rename_host(host_id: str, body: RenameBody, request: Request):
-    """Renomeia o ID do host e atualiza as referências em topology.yaml (atômico)."""
+    """Rota antiga recusa alteração de identidade permanente."""
     return inventory_svc.rename_host(host_id, body.to, _rev(request))
 
 

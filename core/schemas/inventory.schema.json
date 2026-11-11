@@ -7,31 +7,52 @@
   "required": ["version", "hosts"],
   "additionalProperties": false,
   "properties": {
-    "version": { "type": "integer", "enum": [1] },
+    "version": { "type": "integer", "enum": [1, 2] },
+    "next_host_id": { "$ref": "#/$defs/hostId" },
+    "legacy_aliases": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["alias", "host_id"],
+        "properties": {
+          "alias": { "type": "string", "minLength": 1 },
+          "host_id": { "$ref": "#/$defs/hostId" }
+        }
+      }
+    },
     "groups": {
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/nodeFields" }
     },
-    "hosts": {
-      "type": "object",
-      "minProperties": 1,
-      "additionalProperties": {
-        "allOf": [
-          { "$ref": "#/$defs/nodeFields" },
-          {
-            "type": "object",
-            "required": ["hostname", "mgmt_ip"],
-            "properties": {
-              "hostname": { "type": "string", "minLength": 1 },
-              "mgmt_ip": { "type": "string", "minLength": 1 },
-              "group": { "type": "string" }
-            }
-          }
-        ]
-      }
-    }
+    "hosts": {}
   },
+  "allOf": [{
+    "if": {"properties": {"version": {"const": 2}}, "required": ["version"]},
+    "then": {
+      "required": ["next_host_id", "groups", "legacy_aliases"],
+      "properties": {"hosts": {"type": "array", "items": {
+        "allOf": [{"$ref": "#/$defs/hostFields"}, {
+          "required": ["id"], "properties": {"id": {"$ref": "#/$defs/hostId"}}
+        }]
+      }}}
+    },
+    "else": {
+      "properties": {"hosts": {"type": "object", "additionalProperties": {"$ref": "#/$defs/hostFields"}}},
+      "not": {"anyOf": [{"required": ["next_host_id"]}, {"required": ["legacy_aliases"]}]}
+    }
+  }],
   "$defs": {
+    "hostId": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "hostFields": {
+      "allOf": [{"$ref": "#/$defs/nodeFields"}, {
+        "type": "object", "required": ["hostname", "mgmt_ip"],
+        "properties": {
+          "hostname": {"type": "string", "minLength": 1},
+          "mgmt_ip": {"type": "string", "minLength": 1},
+          "group": {"type": "string"}
+        }
+      }]
+    },
     "nodeFields": {
       "type": "object",
       "additionalProperties": true,

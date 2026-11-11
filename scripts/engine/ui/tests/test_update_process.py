@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 
 import deps
-from update.common import PROTOCOL, REPOSITORY, STATE_DIR, distributed, private_dir, write_json
+from update.common import PROTOCOL, REPOSITORY, STATE_DIR, distributed, private_dir, read_version, write_json
 from update.release import build_package
 
 PROJECT = Path(__file__).resolve().parents[4]
@@ -55,7 +55,7 @@ def test_launcher_update_then_failed_release_rolls_back(tmp_path):
             continue
         content = source.read_bytes()
         if rel == "core/config/core-config.yaml":
-            content = content.replace(b'  version: "1.1.0"', b'  version: "1.0.0"')
+            content = content.replace(f'  version: "{read_version(PROJECT)}"'.encode(), b'  version: "1.0.0"')
         mode = 0o755 if source.stat().st_mode & 0o111 else 0o644
         files[rel] = {"raw": content, "sha256": hashlib.sha256(content).hexdigest(), "size": len(content), "mode": mode}
         dest = root / rel

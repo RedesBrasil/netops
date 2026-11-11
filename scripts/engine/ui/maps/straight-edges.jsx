@@ -20,7 +20,7 @@ export function StraightEdge(props) {
   const geometry = route ? routeGeometry(base, route) : base;
   const active = editing.selected === props.id;
   const { index, count } = props.data.lane;
-  const label = count > 1 ? `${index + 1}: ${props.label}` : props.label;
+  const label = props.label ? count > 1 ? `${index + 1}: ${props.label}` : props.label : '';
 
   function change(state, part, control, point, delta) {
     const { geometry, a, b, route } = state;
@@ -86,7 +86,7 @@ export function StraightEdge(props) {
       <BaseEdge id={props.id} path={geometry.path} style={{ ...props.style, strokeWidth: active ? 3 : 2, strokeLinejoin: 'miter' }} interactionWidth={28} markerStart={props.markerStart} markerEnd={props.markerEnd} />
     </g>
     <EdgeLabelRenderer>
-      <button className={`nodrag nopan line-label ${active ? 'line-label-active' : ''}`} style={position(labelX, labelY)}
+      <button className={`nodrag nopan line-label ${active ? 'line-label-active' : ''} ${!label && !active ? 'line-label-empty' : ''}`} style={position(labelX, labelY)}
         data-line-id={props.id} data-line-part="line" aria-label={`Mover ligação ${index + 1}: ${props.label}`}
         title={route ? 'Arraste para mover os trechos internos' : 'Arraste para deslocar esta linha'} {...events('line')}>{active && <span aria-hidden="true">↔ </span>}{label}</button>
       {active && <>

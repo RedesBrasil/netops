@@ -45,7 +45,8 @@ o valor de um campo `password`/`secret` e **proibido** — mesmo com o cofre des
 "para conferir" ou "por transparencia". Quem descriptografa sao **exclusivamente** os scripts de
 acesso (`scripts/tools/access/*`), no instante de conectar.
 
-- Para conectar/coletar/mudar, **invoque o script de acesso** com `--host <nome>`. Ele resolve a
+- Para conectar/coletar/mudar, **invoque o script de acesso** com `--host-id <inteiro>`
+  (ou `--host <hostname-ou-alias>` para compatibilidade). Ele resolve a
   credencial internamente e usa o segredo sem devolvê-lo — você recebe a SAÍDA do comando, nunca
   a senha.
 - **Nunca** escreva código que chame `resolve_host(decrypt=True)`, `resolve_secret()` ou

@@ -39,3 +39,6 @@ Após cadastrar novos hosts e enlaces, regenere o diagrama:
 python scripts/tools/docs/topology_render.py
 ```
 O `network/topology.md` resultante renderiza o grafo direto na IDE e no GitHub.
+No inventário v2, os enlaces referenciam IDs inteiros e os rótulos mostram `hostname`.
+Renomear um host preserva o identificador do nó Mermaid e suas ligações. O gerador também
+lê o inventário legado v1 e nunca carrega credenciais.

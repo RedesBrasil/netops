@@ -107,34 +107,35 @@ def test_enums_from_schema(client):
 
 def test_create_host_ok_and_inheritance(client):
     rev = client.get("/api/hosts").json()["rev"]
-    r = client.post("/api/hosts", json={"id": "rt-new", "hostname": "N", "mgmt_ip": "10.0.0.9",
+    r = client.post("/api/hosts", json={"hostname": "N", "mgmt_ip": "10.0.0.9",
                                         "group": "mikrotik-dist"}, headers={"If-Match": rev})
     assert r.status_code == 201, r.text
-    h = client.get("/api/hosts/rt-new").json()
+    assert type(r.json()["id"]) is int
+    h = client.get(f"/api/hosts/{r.json()['id']}").json()
     assert h["explicit"].get("vendor") is None          # não materializou herança
     assert h["effective"]["vendor"] == "mikrotik"        # herdou do grupo
     assert h["effective"]["access"]["method"] == "ssh"
 
 
 def test_pydantic_rejects_bad_vendor(client):
-    r = client.post("/api/hosts", json={"id": "b", "hostname": "h", "mgmt_ip": "1.1.1.1", "vendor": "juniper"})
+    r = client.post("/api/hosts", json={"hostname": "h", "mgmt_ip": "1.1.1.1", "vendor": "juniper"})
     assert r.status_code == 422
 
 
 def test_delta_validation_missing_credential(client):
     """Host sem credential resolvível => 422; mas NÃO barra por nulls pré-existentes."""
     rev = client.get("/api/hosts").json()["rev"]
-    r = client.post("/api/hosts", json={"id": "nc", "hostname": "h", "mgmt_ip": "1.1.1.1",
+    r = client.post("/api/hosts", json={"hostname": "h", "mgmt_ip": "1.1.1.1",
                                         "vendor": "linux"}, headers={"If-Match": rev})
     assert r.status_code == 422
     locs = {e["loc"] for e in r.json()["errors"]}
-    assert "hosts/nc/credential" in locs
+    assert any(loc.startswith("hosts/") and loc.endswith("/credential") for loc in locs)
     # e o erro pré-existente (model null nos hosts do seed) NÃO aparece como novo:
     assert not any("model" in loc for loc in locs)
 
 
 def test_optimistic_concurrency_conflict(client):
-    r = client.post("/api/hosts", json={"id": "z", "hostname": "h", "mgmt_ip": "1.1.1.1",
+    r = client.post("/api/hosts", json={"hostname": "h", "mgmt_ip": "1.1.1.1",
                                         "group": "mikrotik-dist"}, headers={"If-Match": "stale"})
     assert r.status_code == 409
 
@@ -150,11 +151,28 @@ def test_comments_preserved_on_edit(client, env):
 
 
 def test_delete_host_then_validate(client):
-    _seed_host(client, "rt-dist-03")
+    hid = _seed_host(client, "rt-dist-03")
     rev = client.get("/api/hosts").json()["rev"]
-    r = client.delete("/api/hosts/rt-dist-03", headers={"If-Match": rev})
+    r = client.delete(f"/api/hosts/{hid}", headers={"If-Match": rev})
     assert r.status_code == 200
-    assert "rt-dist-03" not in [h["id"] for h in client.get("/api/hosts").json()["hosts"]]
+    assert hid not in [h["id"] for h in client.get("/api/hosts").json()["hosts"]]
+
+
+def test_interrupted_identity_migration_returns_recovery_action(client, env):
+    path = env / "network/.host-id-migration.json"
+    before = (env / "network/hosts.yaml").read_bytes()
+    path.write_text(json.dumps({"version": 1, "status": "applying"}))
+    response = client.get("/api/hosts")
+    assert response.status_code == 503
+    assert response.json()["error"] == "migration_incomplete"
+    assert "recover" in response.json()["action"]
+    response = client.post("/api/hosts", json={
+        "hostname": "Fixture", "mgmt_ip": "192.0.2.1", "group": "linux-servers",
+    })
+    assert response.status_code == 503
+    assert (env / "network/hosts.yaml").read_bytes() == before
+    path.write_text(json.dumps({"version": 1, "status": "rolled_back"}))
+    assert client.get("/api/hosts").status_code == 200
 
 
 # --------------------------------------------------------------------------- #
@@ -506,9 +524,12 @@ def test_claude_login_never_echoes_the_pasted_code():
 # --------------------------------------------------------------------------- #
 # Topologia
 # --------------------------------------------------------------------------- #
-def test_topology_dangling_and_render(client):
-    t = client.get("/api/topology").json()
-    _seed_link(client, "host-inexistente", "outro-inexistente")
+def test_topology_dangling_and_render(client, env):
+    import yaml
+    path = env / "network/topology.yaml"
+    document = yaml.safe_load(path.read_text())
+    document["links"].append({"a": {"host": 900}, "b": {"host": 901}})
+    path.write_text(yaml.safe_dump(document))
     t = client.get("/api/topology").json()
     assert any(lk["dangling"] for lk in t["links"])
     r = client.post("/api/topology/render")
@@ -544,14 +565,15 @@ def _seed_host(client, hid, **fields):
     """Cria um host válido e AUTOSSUFICIENTE (não depende dos nomes do seed real, que o
     operador pode renomear pela própria UI). `fields` sobrescreve os defaults."""
     rev = client.get("/api/hosts").json()["rev"]
-    body = {"id": hid, "hostname": hid.upper().replace("-", "_"), "mgmt_ip": "10.99.0.9",
+    body = {"hostname": hid.upper().replace("-", "_"), "mgmt_ip": "10.99.0.9",
             "vendor": "linux", "credential": "cred_seed", "access": {"method": "ssh", "port": 22}}
     body.update(fields)
     r = client.post("/api/hosts", json=body, headers={"If-Match": rev})
     assert r.status_code == 201, r.text
+    return r.json()["id"]
 
 
-def _seed_link(client, ah, bh="t-peer", ap="e1", bp="e2"):
+def _seed_link(client, ah, bh=1, ap="e1", bp="e2"):
     rev = client.get("/api/topology").json()["rev"]
     r = client.post("/api/topology/links",
                     json={"a": {"host": ah, "port": ap}, "b": {"host": bh, "port": bp}},
@@ -560,56 +582,54 @@ def _seed_link(client, ah, bh="t-peer", ap="e1", bp="e2"):
 
 
 def test_host_references_lists_topology(client):
-    _seed_host(client, "t-ref")
-    _seed_link(client, "t-ref")
-    refs = client.get("/api/hosts/t-ref/references").json()
+    hid = _seed_host(client, "t-ref")
+    _seed_link(client, hid)
+    refs = client.get(f"/api/hosts/{hid}/references").json()
     assert refs["count"] >= 1
     assert any(x["kind"] == "topology-link" for x in refs["references"])
 
 
-def test_rename_host_cascades_topology(client, env):
+def test_edit_hostname_preserves_host_id_and_topology(client, env):
     import yaml
-    _seed_host(client, "t-old")
-    _seed_link(client, "t-old")
+    hid = _seed_host(client, "t-old")
+    _seed_link(client, hid)
     rev = client.get("/api/hosts").json()["rev"]
-    r = client.post("/api/hosts/t-old/rename", json={"to": "t-new"}, headers={"If-Match": rev})
+    r = client.patch(f"/api/hosts/{hid}", json={"hostname": "t-new"}, headers={"If-Match": rev})
     assert r.status_code == 200, r.text
-    assert r.json()["renamed"] == {"from": "t-old", "to": "t-new"}
-    assert r.json()["updated"], "deveria ter atualizado ao menos um enlace"
+    assert r.json()["id"] == hid
     hosts = _hosts_yaml(env)["hosts"]
-    assert "t-new" in hosts and "t-old" not in hosts
+    assert next(host for host in hosts if host["id"] == hid)["hostname"] == "t-new"
     topo = yaml.safe_load((env / "network" / "topology.yaml").read_text())
     ends = [e.get("host") for lk in topo["links"] for e in (lk.get("a"), lk.get("b")) if e]
-    assert "t-old" not in ends and "t-new" in ends
+    assert hid in ends and all(type(value) is int for value in ends)
 
 
-def test_rename_host_preserves_comments(client, env):
-    _seed_host(client, "t-cmt")
+def test_edit_host_preserves_comments(client, env):
+    hid = _seed_host(client, "t-cmt")
     rev = client.get("/api/hosts").json()["rev"]
-    client.post("/api/hosts/t-cmt/rename", json={"to": "t-cmt2"}, headers={"If-Match": rev})
+    assert client.patch(f"/api/hosts/{hid}", json={"hostname": "t-cmt2"}, headers={"If-Match": rev}).status_code == 200
     text = (env / "network" / "hosts.yaml").read_text()
     assert text.startswith("# NetOps")          # cabeçalho preservado
     assert "API RouterOS" in text               # comentário inline (em outro bloco) intacto
 
 
-def test_rename_host_collision_422(client):
-    _seed_host(client, "t-a")
-    _seed_host(client, "t-b", mgmt_ip="10.99.0.10")
+def test_host_id_cannot_be_reassigned(client):
+    hid = _seed_host(client, "t-a")
+    peer = _seed_host(client, "t-b", mgmt_ip="10.99.0.10")
     rev = client.get("/api/hosts").json()["rev"]
-    r = client.post("/api/hosts/t-a/rename", json={"to": "t-b"}, headers={"If-Match": rev})
+    r = client.patch(f"/api/hosts/{hid}", json={"id": peer}, headers={"If-Match": rev})
     assert r.status_code == 422
 
 
-def test_rename_host_conflict_409(client):
-    _seed_host(client, "t-c")
-    r = client.post("/api/hosts/t-c/rename", json={"to": "t-c2"}, headers={"If-Match": "stale"})
+def test_edit_host_conflict_409(client):
+    hid = _seed_host(client, "t-c")
+    r = client.patch(f"/api/hosts/{hid}", json={"hostname": "t-c2"}, headers={"If-Match": "stale"})
     assert r.status_code == 409
 
 
-def test_rename_host_bad_slug_422(client):
-    _seed_host(client, "t-slug")
+def test_create_host_rejects_user_supplied_id(client):
     rev = client.get("/api/hosts").json()["rev"]
-    r = client.post("/api/hosts/t-slug/rename", json={"to": "nome com espaço"}, headers={"If-Match": rev})
+    r = client.post("/api/hosts", json={"id": 42, "hostname": "h", "mgmt_ip": "192.0.2.1", "group": "linux-servers"}, headers={"If-Match": rev})
     assert r.status_code == 422
 
 
@@ -618,21 +638,22 @@ def test_rename_group_cascades_hosts(client, env):
     assert client.post("/api/groups", json={"name": "grp-x", "vendor": "linux", "role": "server",
                                             "credential": "cred_seed", "access": {"method": "ssh", "port": 22}},
                        headers={"If-Match": grev}).status_code == 201
-    _seed_host(client, "t-g1", group="grp-x")
-    _seed_host(client, "t-g2", group="grp-x", mgmt_ip="10.99.0.10")
+    h1 = _seed_host(client, "t-g1", group="grp-x")
+    h2 = _seed_host(client, "t-g2", group="grp-x", mgmt_ip="10.99.0.10")
     rev = client.get("/api/hosts").json()["rev"]
     r = client.post("/api/groups/grp-x/rename", json={"to": "grp-y"}, headers={"If-Match": rev})
     assert r.status_code == 200, r.text
     data = _hosts_yaml(env)
     assert "grp-y" in data["groups"] and "grp-x" not in data["groups"]
-    assert data["hosts"]["t-g1"]["group"] == "grp-y"
-    assert data["hosts"]["t-g2"]["group"] == "grp-y"
+    hosts = {host["id"]: host for host in data["hosts"]}
+    assert hosts[h1]["group"] == "grp-y"
+    assert hosts[h2]["group"] == "grp-y"
 
 
 def test_rename_credential_cascades_and_keeps_mode(client, env):
     import yaml
     client.post("/api/credentials", json={"name": "cred_t", "username": "admin"})
-    _seed_host(client, "t-cred", credential="cred_t")
+    hid = _seed_host(client, "t-cred", credential="cred_t")
     refs = client.get("/api/credentials/cred_t/references").json()
     assert refs["count"] >= 1
     rev = client.get("/api/credentials").json()["rev"]
@@ -640,7 +661,7 @@ def test_rename_credential_cascades_and_keeps_mode(client, env):
     assert r.status_code == 200, r.text
     creds = yaml.safe_load((env / "network" / "credentials.yaml").read_text())["credentials"]
     assert "cred_t2" in creds and "cred_t" not in creds
-    assert _hosts_yaml(env)["hosts"]["t-cred"]["credential"] == "cred_t2"
+    assert next(host for host in _hosts_yaml(env)["hosts"] if host["id"] == hid)["credential"] == "cred_t2"
     mode = stat.S_IMODE(os.stat(env / "network" / "credentials.yaml").st_mode)
     assert mode == 0o600
 

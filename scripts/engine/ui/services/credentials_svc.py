@@ -78,6 +78,7 @@ def _clean_fields(fields: dict) -> dict:
     return out
 
 
+@yaml_io.serialized
 def create_credential(name: str, fields: dict, rev: str | None) -> dict:
     data, y = _load_doc()
     creds = data.setdefault("credentials", {})
@@ -88,6 +89,7 @@ def create_credential(name: str, fields: dict, rev: str | None) -> dict:
     return get_credential(name) | {"rev": new_rev}
 
 
+@yaml_io.serialized
 def update_credential(name: str, fields: dict, rev: str | None, *, partial: bool) -> dict:
     data, y = _load_doc()
     creds = data.get("credentials") or {}
@@ -106,6 +108,7 @@ def update_credential(name: str, fields: dict, rev: str | None, *, partial: bool
     return get_credential(name) | {"rev": new_rev}
 
 
+@yaml_io.serialized
 def delete_credential(name: str, rev: str | None, *, force: bool) -> dict:
     data, y = _load_doc()
     creds = data.get("credentials") or {}
@@ -131,7 +134,8 @@ def _credential_refs(cred_name: str) -> list[dict]:
         return []
     data = yaml.safe_load(deps.HOSTS_FILE.read_text(encoding="utf-8")) or {}
     refs = []
-    for n, h in (data.get("hosts") or {}).items():
+    from lib.host_identity import host_index
+    for n, h in host_index(data).items():
         if (h or {}).get("credential") == cred_name:
             refs.append({"kind": "host", "id": n, "field": "credential", "label": f"host {n}"})
     for n, g in (data.get("groups") or {}).items():
@@ -175,7 +179,9 @@ def rename_credential(old: str, new: str, rev: str | None) -> dict:
     updated: list[dict] = []
     if hosts_data is not None:
         for section, kind in (("hosts", "host"), ("groups", "group")):
-            for node_id, node in (hosts_data.get(section) or {}).items():
+            from lib.host_identity import host_index
+            nodes = host_index(hosts_data) if section == "hosts" else (hosts_data.get(section) or {})
+            for node_id, node in nodes.items():
                 if node and node.get("credential") == old:
                     node["credential"] = new
                     updated.append({"kind": kind, "id": node_id, "field": "credential"})
@@ -190,6 +196,7 @@ def rename_credential(old: str, new: str, rev: str | None) -> dict:
 # --------------------------------------------------------------------------- #
 # Set/rotacionar segredo (encrypt-on-write; reusa o cofre)
 # --------------------------------------------------------------------------- #
+@yaml_io.serialized
 def set_secret(name: str, field: str, value: str, rev: str | None) -> dict:
     """Encripta `value` com a chave da sessão e grava via substituição textual.
 

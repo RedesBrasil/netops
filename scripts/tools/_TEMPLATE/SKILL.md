@@ -23,7 +23,8 @@ python scripts/<familia>/<script>.py --opcao valor
 
 | Argumento | Obrigatório | Descrição |
 |-----------|-------------|-----------|
-| `--host`  | sim         | Nome do host em `network/hosts.yaml` |
+| `--host-id` | um dos dois | ID inteiro em `network/hosts.yaml` |
+| `--host` | um dos dois | Hostname único ou alias legado |
 
 ## Setup
 
@@ -32,5 +33,5 @@ Dependências (já em `requirements.txt`) e binários externos, se houver.
 ## Exemplos
 
 ```bash
-python scripts/<familia>/<script>.py --host rt-core-01
+python scripts/tools/<familia>/<script>.py --host-id 1
 ```

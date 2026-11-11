@@ -9,12 +9,12 @@ import yaml
 def test_create_link_without_interfaces(client, env, a, b):
     topo = client.get('/api/topology').json()
     response = client.post('/api/topology/links', json={
-        'a': {'host': 'rt-core-01', **a}, 'b': {'host': 'rt-dist-01', **b}, 'speed': '10G',
+        'a': {'host': 1, **a}, 'b': {'host': 2, **b}, 'speed': '10G',
     }, headers={'If-Match': topo['rev']})
     assert response.status_code == 200, response.text
     link = response.json()['links'][-1]
-    assert link['a'] == {'host': 'rt-core-01'}
-    assert link['b'] == {'host': 'rt-dist-01'}
+    assert link['a'] == {'host': 1}
+    assert link['b'] == {'host': 2}
     stored = yaml.safe_load((env / 'network/topology.yaml').read_text())['links'][-1]
     assert 'port' not in stored['a'] and 'port' not in stored['b']
     maps = client.get('/api/maps').json()
@@ -26,7 +26,7 @@ def test_create_link_without_interfaces(client, env, a, b):
 
 @pytest.mark.parametrize('side', ['a', 'b'])
 def test_only_one_interface_is_enough(client, env, side):
-    body = {'a': {'host': 'rt-core-01'}, 'b': {'host': 'rt-dist-01'}}
+    body = {'a': {'host': 1}, 'b': {'host': 2}}
     body[side]['port'] = ' sfp1 '
     response = client.post('/api/topology/links', json=body)
     assert response.status_code == 200, response.text
@@ -52,9 +52,9 @@ def test_clear_interfaces_on_existing_link(client, env, by_id):
     assert 'port' not in stored['a'] and 'port' not in stored['b']
 
 
-@pytest.mark.parametrize('a,b', [({}, {'host': 'rt-dist-01'}),
-                               ({'host': 'rt-core-01'}, {}),
-                               ({'host': ''}, {'host': 'rt-dist-01'})])
+@pytest.mark.parametrize('a,b', [({}, {'host': 2}),
+                               ({'host': 1}, {}),
+                               ({'host': ''}, {'host': 2})])
 def test_hosts_remain_required(client, env, a, b):
     before = (env / 'network/topology.yaml').read_bytes()
     response = client.post('/api/topology/links', json={'a': a, 'b': b})

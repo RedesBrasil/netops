@@ -71,7 +71,8 @@ function App({ onLogout, showLogout }) {
 }
 
 function Shell({ onLogout, showLogout }) {
-  const route = useHash();
+  const hash = useHash();
+  const route = hash.startsWith("claude/") ? "claude" : hash;
   const claude = useClaude();
   const [meta, setMeta] = useState({ network_name: "NetOps" });
   const [theme, setTheme] = useState(localStorage.getItem("netops_theme") || "light");
@@ -112,13 +113,24 @@ function Shell({ onLogout, showLogout }) {
 function Root() {
   const [gate, setGate] = useState("loading");   // "loading" | "login" | "app"
   const [authRequired, setAuthRequired] = useState(false);
+  const [migration, setMigration] = useState(null);
 
   useEffect(() => {
     let generation = 0;
+    let retry;
     async function check() {
+      clearTimeout(retry);
       const current = ++generation;
       const sentAuth = authToken();
       try {
+        const meta = await api.get("/config/meta");
+        if (current !== generation) return;
+        if (meta.host_migration?.blocking) {
+          setMigration({ ...meta.host_migration, version: meta.version });
+          retry = setTimeout(check, 1000);
+          return;
+        }
+        setMigration(null);
         const s = await api.get("/auth/status");
         if (current !== generation) return;
         if (sentAuth !== authToken()) return check();
@@ -131,9 +143,15 @@ function Root() {
     setOnUnauthorized(() => { generation++; setGate("login"); });
     setOnAuthChange(check);
     check();
-    return () => { generation++; setOnAuthChange(null); setOnUnauthorized(null); };
+    return () => { generation++; clearTimeout(retry); setOnAuthChange(null); setOnUnauthorized(null); };
   }, []);
 
+  if (migration) return html`<div class="boot"><section role=${migration.phase === "failed" ? "alert" : "status"} aria-live="polite">
+    <h1>${migration.phase === "failed" ? "Migração de IDs bloqueada" : "Preparando o NetOps"}</h1>
+    <p>Versão instalada: v${migration.version}</p><p>${migration.detail}</p>
+    ${migration.phase === "failed" && html`<p>O código instalado foi mantido. Os dados não serão descartados nem substituídos para contornar o erro.</p>`}
+    <button onClick=${() => location.reload()}>Verificar novamente</button>
+  </section></div>`;
   if (gate === "loading") return html`<div class="boot">Carregando NetOps Console…</div>`;
   if (gate === "login") return html`<${LoginScreen} onAuthed=${() => { setAuthRequired(true); setGate("app"); }} />`;
   return html`<${App} onLogout=${() => setGate("login")} showLogout=${authRequired} />`;

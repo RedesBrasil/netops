@@ -67,6 +67,12 @@ async def claude_ws(ws: WebSocket):
     if not _ws_authorized(ws):
         await ws.close(code=4403)
         return
+    resume = ws.query_params.get("resume") or None
+    if resume and not claude_svc.project_session_exists(resume):
+        # Nunca passar um UUID ausente/de outro projeto ou caminho arbitrário ao agente.
+        await ws.accept()
+        await ws.close(code=4404, reason="session_not_found")
+        return
     # Modo clássico (persist OFF): vida do agente = vida do socket, como sempre.
     if not deps.STATE.claude_persist:
         await ws.accept()
@@ -80,7 +86,6 @@ async def claude_ws(ws: WebSocket):
         await ws.accept()
         await claude_svc.ClaudeWebSession(ws).run()
         return
-    resume = ws.query_params.get("resume") or None
     model = ws.query_params.get("model") or None
     session, how = claude_svc.attach_or_create(owner=owner, resume=resume, model=model)
     if how == "too_many":
@@ -144,7 +149,7 @@ def claude_attach_ticket(request: Request, response: Response):
 
 @router.get("/claude/models")
 def claude_models_endpoint():
-    """Modelos disponíveis (lidos dinamicamente da API) + o padrão econômico.
+    """Modelos anunciados pelo CLI/provider da sessão + o padrão econômico.
     Nunca devolve token/segredo — só id e nome de exibição."""
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
@@ -154,8 +159,7 @@ def claude_models_endpoint():
 
 @router.post("/claude/models/refresh")
 def claude_models_refresh():
-    """Releitura MANUAL dos modelos (botão "Verificar modelos"). Força ir à API agora e
-    regrava o cache semanal. ⚠ usar em excesso consome cota e pode gerar rate limit (429)."""
+    """Releitura manual do catálogo do CLI, sem prompt; regrava o cache semanal."""
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     models = claude_models.list_models(force=True)
@@ -184,6 +188,16 @@ def claude_session_messages(sid: str):
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     return {"items": claude_svc.session_items(sid)}
+
+
+@router.get("/claude/sessions/{sid}")
+def claude_session_info(sid: str):
+    """Lookup individual: links antigos funcionam além do limite da lista recente."""
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    if not claude_svc.project_session_exists(sid):
+        return JSONResponse({"error": "session_not_found"}, status_code=404)
+    return {"id": sid}
 
 
 @router.delete("/claude/sessions/{sid}", status_code=204)

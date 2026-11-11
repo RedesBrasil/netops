@@ -21,16 +21,24 @@ def managed() -> bool:
 
 
 def maintenance() -> bool:
+    from services import host_migration_svc
     job = read_json(_directory() / "job.json", {})
-    return bool(job and job.get("phase") not in TERMINAL_STATES) or job.get("phase") == "recovery_failed"
+    return (host_migration_svc.blocking() or bool(job and job.get("phase") not in TERMINAL_STATES)
+            or job.get("phase") == "recovery_failed")
 
 
 def local_status() -> dict:
+    from services import host_migration_svc
     job = read_json(_directory() / "job.json", {})
+    migration = host_migration_svc.status()
+    if job.get("phase") == "completed" and migration["blocking"]:
+        job = {**job, "phase": "migration_failed" if migration["phase"] == "failed" else "migrating",
+               "detail": migration["detail"]}
     allowed = ("id", "phase", "version", "from_version", "detail", "updated_at", "preserved", "backup")
     return {"current_version": read_version(deps.NETOPS_ROOT), "managed": managed(),
             "requires_setup": not deps.auth_required(),
-            "read_only": deps.STATE.read_only, "job": {key: job[key] for key in allowed if key in job}}
+            "read_only": deps.STATE.read_only, "host_migration": migration,
+            "job": {key: job[key] for key in allowed if key in job}}
 
 
 def check() -> dict:
@@ -40,17 +48,17 @@ def check() -> dict:
     result.update(releases=newer, latest=stable[0] if stable else None,
                   no_releases=not stable, can_apply=bool(newer and newer[0]["installable"]
                                                       and result["managed"] and not result["requires_setup"]
-                                                      and not deps.STATE.read_only))
+                                                      and not deps.STATE.read_only and not maintenance()))
     return result
 
 
 def activity() -> list[str]:
-    from services import claude_svc
     active = []
-    if deps.STATE.active_sessions:
-        active.append("terminal ou sessão interativa aberta")
-    if any(not session._closing_done for session in claude_svc._LIVE.values()):
-        active.append("sessão persistente do agente (inclusive desanexada)")
+    # Sessões abertas (terminal web, aba Claude — conectada, desanexada ou em turno) NÃO
+    # bloqueiam: o socket da aba Claude fica aberto em todas as páginas e reconecta sozinho,
+    # o que travava a atualização sem nenhuma sessão visível. O reinício encerra as sessões;
+    # as conversas do agente estão no transcript em disco e são retomadas depois.
+    # Só bloqueia trabalho que gravaria dados pela metade (backup/workflow em execução).
     if deps.BACKUPS_RUNS.exists():
         for path in deps.BACKUPS_RUNS.glob("*.json"):
             try:
@@ -78,7 +86,7 @@ def request_update(release_id: int) -> dict:
         raise UpdateError("busy", "Já existe uma atualização ou recuperação pendente.")
     busy = activity()
     if busy:
-        raise UpdateError("active_sessions", "Antes de atualizar, encerre: " + "; ".join(busy) + ".")
+        raise UpdateError("active_work", "Antes de atualizar, aguarde: " + "; ".join(busy) + ".")
     stable = releases.stable_releases()
     if not stable or stable[0]["id"] != release_id:
         raise UpdateError("release_changed", "A release mais recente mudou. Verifique atualizações novamente.")

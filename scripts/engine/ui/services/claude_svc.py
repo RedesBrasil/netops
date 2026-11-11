@@ -246,9 +246,7 @@ class ClaudeWebSession:
 
     def _options(self) -> "ClaudeAgentOptions":
         resume = self._resume  # retomar sessão passada
-        # Modelo econômico por padrão (Sonnet). O default herdado do store pode apontar p/ um alias
-        # inexistente (ex.: "sonnet-failover[1m]") e IMPEDIR o início da conversa; forçamos aqui.
-        # A UI troca em runtime (set_model) e passa ?model= no (re)lançamento.
+        # Escolha explícita ou Sonnet anunciado pelo MESMO CLI/provider da sessão.
         model = self._model or claude_models.default_model()
         return ClaudeAgentOptions(
             cwd=str(deps.NETOPS_ROOT),
@@ -370,7 +368,7 @@ class ClaudeWebSession:
         self.ws = ws
         if old is not None and old is not ws:   # supersede (ex.: nova aba) — fecha o antigo
             try:
-                asyncio.create_task(old.close())
+                asyncio.create_task(old.close(code=4409, reason="session_superseded"))
             except Exception:
                 pass
         self._cancel_grace()
@@ -439,6 +437,9 @@ class ClaudeWebSession:
         if self._started:
             return
         self._started = True
+        if not self._model:
+            # Descoberta usa um loop próprio; não pode bloquear/nestar o loop do WebSocket.
+            self._model = await asyncio.to_thread(claude_models.default_model)
         self.client = ClaudeSDKClient(options=self._options())
         await self.client.connect()  # sem prompt: modo streaming, pronto p/ query()
         self._sdk_task = asyncio.create_task(self._sdk_pump())
@@ -573,6 +574,11 @@ class ClaudeWebSession:
                     await self._send({"type": "thinking_delta", "text": delta.get("thinking", "")})
 
         elif isinstance(msg, AssistantMessage):
+            error = getattr(msg, "error", None)
+            if error:
+                detail = "\n".join(b.text for b in msg.content if isinstance(b, TextBlock))
+                await self._send({"type": "error", "detail": detail or str(error),
+                                  "error_code": error})
             # Texto/pensamento já foram streamados via StreamEvent; aqui emitimos os
             # tool_use finalizados (não dá p/ montar bem o JSON parcial) e fechamos a msg.
             for b in msg.content:
@@ -607,6 +613,8 @@ class ClaudeWebSession:
                 "usage": msg.usage,
                 "is_error": msg.is_error,
                 "result": msg.result,
+                "errors": getattr(msg, "errors", None),
+                "api_error_status": getattr(msg, "api_error_status", None),
             })
             if self.persist:
                 # Turno acabou. Se a aba está dormindo (desanexado), começa a contar a carência
@@ -617,7 +625,26 @@ class ClaudeWebSession:
 # --------------------------------------------------------------------------- #
 # Sessões passadas (retomar) — lê os transcripts em ~/.claude/projects/<projeto>.
 # --------------------------------------------------------------------------- #
-def list_project_sessions(limit: int = 60) -> list[dict]:
+def project_session_exists(sid: str) -> bool:
+    """Confere UUID e pertencimento ao projeto, sem iniciar o agente nem ler mensagens."""
+    if not re.fullmatch(r"[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}", sid):
+        return False
+    live = _LIVE.get(sid)
+    if live is not None and not live._closing_done:
+        return True
+    if not _SDK_OK:
+        return False
+    try:
+        from claude_agent_sdk import get_session_info  # noqa: PLC0415
+        return get_session_info(sid, directory=str(deps.NETOPS_ROOT)) is not None
+    except ImportError:
+        # SDKs anteriores ao lookup individual ainda oferecem list_sessions.
+        return any(s["id"] == sid for s in list_project_sessions(limit=None))
+    except Exception:
+        return False
+
+
+def list_project_sessions(limit: int | None = 60) -> list[dict]:
     """Sessões Claude Code deste projeto (cwd=NETOPS_ROOT), mais recentes primeiro."""
     if not _SDK_OK:
         return []

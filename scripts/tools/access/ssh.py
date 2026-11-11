@@ -23,7 +23,8 @@ from lib.inventory import NETOPS_ROOT, load_inventory, resolve_host  # noqa: E40
 from lib.transport import open_cli  # noqa: E402
 
 
-def run_commands(host_name: str, commands: list[str], force_method: str = "ssh") -> dict[str, str]:
+def run_commands(host_name: int | str, commands: list[str], force_method: str = "ssh",
+                 *, read_timeout: int = 30) -> dict[str, str]:
     """Conecta no host via CLI e executa os comandos. Retorna {comando: saída}."""
     hosts_data, creds_data = load_inventory()
     host, cred = resolve_host(host_name, hosts_data, creds_data)
@@ -38,17 +39,25 @@ def run_commands(host_name: str, commands: list[str], force_method: str = "ssh")
             except Exception:  # noqa: BLE001  — nem todo device tem modo enable
                 pass
         for cmd in commands:
-            results[cmd] = conn.send_command(cmd, read_timeout=30)
+            results[cmd] = conn.send_command(cmd, read_timeout=read_timeout)
     finally:
         conn.disconnect()
     return results
 
 
-def _save(host_name: str, results: dict[str, str]) -> Path:
+def _canonical_host_id(host_name: int | str) -> int | str:
+    """Resolve aliases sem ler credenciais; arquivos novos usam a identidade canônica."""
+    hosts_data, _ = load_inventory(include_credentials=False)
+    host, _ = resolve_host(host_name, hosts_data, {}, decrypt=False)
+    return host.get("id", host["name"])
+
+
+def _save(host_name: int | str, results: dict[str, str]) -> Path:
+    host_id = _canonical_host_id(host_name)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
     out_dir = NETOPS_ROOT / "runs" / f"{ts}-ssh-collect" / "collected"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{host_name}.txt"
+    out_file = out_dir / f"{host_id}.txt"
     with out_file.open("w", encoding="utf-8") as fh:
         for cmd, output in results.items():
             fh.write(f"### {cmd}\n{output}\n\n")
@@ -57,11 +66,14 @@ def _save(host_name: str, results: dict[str, str]) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Roda comandos SSH num host do inventário.")
-    parser.add_argument("--host", required=True, help="Nome do host em network/hosts.yaml")
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--host-id", type=int, help="ID inteiro do host no inventário")
+    selection.add_argument("--host", help="Nome único ou alias legado do host")
     parser.add_argument("--command", action="append", default=[], help="Comando (pode repetir)")
     parser.add_argument("--commands-file", help="Arquivo com um comando por linha")
     parser.add_argument("--save", action="store_true", help="Salva a saída em runs/<id>/collected/")
     args = parser.parse_args()
+    host_ref = args.host_id if args.host_id is not None else args.host
 
     commands = list(args.command)
     if args.commands_file:
@@ -70,15 +82,16 @@ def main() -> int:
         parser.error("informe ao menos um --command ou --commands-file")
 
     try:
-        results = run_commands(args.host, commands)
+        host_ref = _canonical_host_id(host_ref)
+        results = run_commands(host_ref, commands)
     except Exception as exc:  # noqa: BLE001
-        print(f"FALHA ao conectar/coletar em '{args.host}': {exc}", file=sys.stderr)
+        print(f"FALHA ao conectar/coletar em '{host_ref}': {exc}", file=sys.stderr)
         return 1
 
     for cmd, output in results.items():
         print(f"### {cmd}\n{output}\n")
     if args.save:
-        print(f"[salvo] {_save(args.host, results)}")
+        print(f"[salvo] {_save(host_ref, results)}")
     return 0
 
 

@@ -27,9 +27,9 @@ def _map(client):
     return m
 
 
-@pytest.mark.parametrize('source,target', [('host:rt-core-01', 'object:cloud'),
-                                         ('object:cloud', 'host:rt-core-01'),
-                                         ('object:cloud', 'object:switch')])
+@pytest.mark.parametrize('source,target', [({'kind': 'host', 'host_id': 1}, {'kind': 'object', 'object_id': 'cloud'}),
+                                         ({'kind': 'object', 'object_id': 'cloud'}, {'kind': 'host', 'host_id': 1}),
+                                         ({'kind': 'object', 'object_id': 'cloud'}, {'kind': 'object', 'object_id': 'switch'})])
 def test_shape_links_roundtrip_without_inventory_mutation(client, env, source, target):
     files = {name: (env / 'network' / name).read_bytes() for name in ('hosts.yaml', 'topology.yaml')}
     m = _map(client)
@@ -70,9 +70,9 @@ def test_shape_icon_invalid_is_rejected(client, env, icon):
     assert not (env / 'network/maps.yaml').exists()
 
 
-@pytest.mark.parametrize('source,target', [('object:cloud', 'object:cloud'),
-                                         ('host:rt-core-01', 'object:unknown'),
-                                         ('host:rt-core-01', 'host:rt-dist-01')])
+@pytest.mark.parametrize('source,target', [({'kind': 'object', 'object_id': 'cloud'}, {'kind': 'object', 'object_id': 'cloud'}),
+                                         ({'kind': 'host', 'host_id': 1}, {'kind': 'object', 'object_id': 'unknown'}),
+                                         ({'kind': 'host', 'host_id': 1}, {'kind': 'host', 'host_id': 2})])
 def test_invalid_visual_link_does_not_write(client, env, source, target):
     m = _map(client)
     m['objects'].append({'id': 'note', 'type': 'note', 'label': 'Texto apenas', 'position': {'x': 0, 'y': 0}})
@@ -84,12 +84,12 @@ def test_invalid_visual_link_does_not_write(client, env, source, target):
 
 def test_alignment_saves_host_and_shape_positions_together(client):
     m = _map(client)
-    m['positions'] = {'rt-core-01': {'x': 100, 'y': 100}, 'rt-dist-01': {'x': 322, 'y': 100}}
+    m['positions'] = [{'host_id': 1, 'x': 100, 'y': 100}, {'host_id': 2, 'x': 322, 'y': 100}]
     m['objects'][0]['position'] = {'x': 544, 'y': 100}
     r = _save(client, m)
     assert r.status_code == 200, r.text
     stored = r.json()['maps'][0]
-    assert stored['positions']['rt-core-01'] == {'x': 100, 'y': 100}
+    assert stored['positions'][0] == {'host_id': 1, 'x': 100, 'y': 100}
     assert stored['objects'][0]['position'] == {'x': 544, 'y': 100}
     assert stored['objects'][0]['icon'] == 'cloud'
     old = _save(client, m, {'rev': '0' * 64, 'hosts_rev': r.json()['hosts_rev'], 'topology': r.json()['topology']})
@@ -101,3 +101,65 @@ def test_shape_changes_are_blocked_in_read_only(client, monkeypatch):
     m = _map(client)
     monkeypatch.setattr(deps.STATE, 'read_only', True)
     assert _save(client, m).status_code == 403
+
+
+def test_empty_shape_and_visual_label_preserve_custom_colors_and_layers(client, env):
+    m = _map(client)
+    m['objects'][0].update(label='', color='#12abEF', stroke='#654321', z_index=3)
+    m['objects'][1].pop('label')
+    m['positions'] = [{'host_id': 1, 'x': 30, 'y': 70, 'z_index': 2}]
+    m['visual_links'] = [{'id': 'blank', 'source': {'kind': 'host', 'host_id': 1}, 'target': {'kind': 'object', 'object_id': 'cloud'}}]
+    response = _save(client, m)
+    assert response.status_code == 200, response.text
+    saved = _snapshot(client)['maps'][0]
+    assert saved['objects'][0]['label'] == saved['objects'][1]['label'] == ''
+    assert saved['objects'][0]['color'] == '#12abEF'
+    assert saved['objects'][0]['stroke'] == '#654321'
+    assert saved['objects'][0]['z_index'] == 3
+    assert saved['positions'] == [{'host_id': 1, 'x': 30, 'y': 70, 'z_index': 2}]
+    assert saved['visual_links'][0]['label'] == ''
+    raw = yaml.safe_load((env / 'network/maps.yaml').read_text())['maps'][0]
+    assert raw['objects'][0]['color'] == '#12abEF'
+    assert raw['positions'][0]['z_index'] == 2
+
+
+@pytest.mark.parametrize('field,value', [
+    ('color', 'red'), ('color', '#fff'), ('color', '#12345678'),
+    ('color', 'url(https://example.test/color)'), ('stroke', 'var(--color)'),
+    ('stroke', '#ggffff'), ('z_index', 100001), ('z_index', -100001),
+    ('z_index', 1.5), ('z_index', True), ('z_index', '4'),
+])
+def test_invalid_shape_style_is_rejected_without_writing(client, env, field, value):
+    m = _map(client)
+    m['objects'][0][field] = value
+    response = _save(client, m)
+    assert response.status_code == 422, response.text
+    assert not (env / 'network/maps.yaml').exists()
+
+
+@pytest.mark.parametrize('value', [100001, -100001, 1.5, True, '4'])
+def test_invalid_host_layer_is_rejected_without_writing(client, env, value):
+    m = _map(client)
+    m['positions'] = [{'host_id': 1, 'x': 10, 'y': 20, 'z_index': value}]
+    response = _save(client, m)
+    assert response.status_code == 422, response.text
+    assert not (env / 'network/maps.yaml').exists()
+
+
+def test_host_layer_survives_rename_and_is_removed_with_host(client):
+    m = _map(client)
+    m['positions'] = [{'host_id': 1, 'x': 30, 'y': 70, 'z_index': 2}]
+    assert _save(client, m).status_code == 200
+    host_response = client.get('/api/hosts/1')
+    assert host_response.status_code == 200
+    payload = host_response.json()
+    # Reutiliza a edição canônica: apresentação deve acompanhar a identidade do host.
+    rename = client.patch('/api/hosts/1', headers={'If-Match': payload['rev']},
+                          json={'hostname': 'renamed-core'})
+    assert rename.status_code == 200, rename.text
+    saved = _snapshot(client)['maps'][0]
+    assert saved['positions'] == [{'host_id': 1, 'x': 30, 'y': 70, 'z_index': 2}]
+    host_response = client.get('/api/hosts/1')
+    removed = client.delete('/api/hosts/1', headers={'If-Match': host_response.json()['rev']})
+    assert removed.status_code == 200, removed.text
+    assert not _snapshot(client)['maps'][0]['positions']

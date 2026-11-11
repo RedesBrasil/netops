@@ -7,12 +7,16 @@ arquivos do NetOps: hosts, grupos, credenciais, topologia, memória, boas práti
 de config, workflows, agentes e a configuração do projeto. Também **visualiza** (read-only)
 relatórios e execuções.
 
-Dá pra **renomear o ID/nome** de hosts, grupos, credenciais e padrões da memória, além de
+Hosts usam **IDs inteiros gerados automaticamente e imutáveis**. O campo não aparece no
+cadastro; o hostname é editável e as telas mostram nome/IP. Alterar o nome preserva todos
+os vínculos. A API rejeita IDs enviados no POST/PATCH/PUT e a antiga rota de rename de ID.
+
+Dá pra **renomear o nome** de grupos e credenciais, além de
 arquivos de conhecimento/workflows/agentes. O campo de ID/nome é **editável no próprio
 formulário de edição** do item (não há botão "Renomear" à parte): ao **Salvar**, se o ID mudou,
 o servidor renomeia **com cascade** — renomear um grupo atualiza o campo `group` dos hosts que o
-usam; uma credencial atualiza `credential` em hosts/grupos; um host atualiza as pontas de enlace
-em `topology.yaml`. Enquanto o campo está alterado, o form mostra **quantas referências** serão
+usam; uma credencial atualiza `credential` em hosts/grupos. Enquanto o campo está alterado,
+o form mostra **quantas referências** serão
 atualizadas. Os segmentos continuam nos arquivos canônicos e na API; lições não se
 renomeiam (append-only, constituição §II).
 
@@ -38,7 +42,8 @@ O script imprime a URL (`http://<ip>:<porta>/`). O acesso é protegido pelo **lo
 do cofre** (ver "Segurança"); não há token de transporte na URL.
 
 > Por baixo o script chama `scripts/engine/ui/server.py` (flags: `--host/--port/--read-only/`
-> `--no-vault-unlock/--enable-terminal/--enable-claude/--no-browser`). Use o server.py direto só para depurar.
+> `--no-vault-unlock/--enable-terminal/--enable-claude/--no-browser`). A entrada operacional,
+> inclusive durante testes, continua sendo o launcher; não inicie o servidor diretamente.
 
 ## Não aparece uma aba? (leia antes de "sumiu"/"quebrou")
 
@@ -173,12 +178,22 @@ scripts/engine/ui/
 
 A topbar oferece **Verificar atualizações**, versão instalada e notas completas de todas as
 releases estáveis posteriores. A aplicação exige login no console, modo de escrita e launcher
-gerenciado. Feche sessões interativas e salve alterações antes de confirmar.
+gerenciado. Salve alterações antes de confirmar. Sessões interativas abertas não bloqueiam:
+o reinício as encerra, preservando os transcripts das conversas para retomada. Backups de
+equipamento e workflows em execução precisam terminar antes da aplicação.
 
 `start.sh` agora mantém um supervisor com trava por instalação. O pacote é preparado com
 backup verificado; o servidor é reiniciado na mesma URL e pode exigir novo login. Falhas
-antes da confirmação restauram código e ambiente anteriores. Dados e personalizações não
-são sobrescritos. O estado privado fica em `.netops-update/`, nunca nas APIs de runs/backups.
+antes da confirmação restauram código e ambiente anteriores. Os exemplos do pacote não
+substituem dados e personalizações. A versão 2 converte os formatos de identidade necessários
+com uma transação própria, somente após a confirmação do código pelo supervisor.
+
+Enquanto essa conversão estiver pendente, **Preparando o NetOps** impede abrir os editores
+ou conexões interativas; `GET /api/config/meta` informa `host_migration`. Falha na pré-validação
+do candidato preserva os dados legados e aciona o retorno do código anterior. Falha posterior
+mantém o código novo e mostra **Migração de IDs bloqueada**, sem anunciar sucesso ou liberar
+escritas. A recuperação no próximo início usa o baseline/journal; conflitos externos exigem
+revisão humana. O estado privado fica em `.netops-update/`, nunca nas APIs de runs/backups.
 
 A primeira adoção requer reiniciar o console pelo launcher atualizado. O GitHub CLI precisa
 estar autenticado no usuário/HOME do servidor para acessar o repositório privado. Não envie
@@ -197,8 +212,82 @@ O cenário `tests/auth.browser.mjs` valida três abas em desktop/celular, login 
 recarregamento, logout e expiração; exige console temporário em loopback via
 `NETOPS_E2E_URL`, com `PLAYWRIGHT_MODULE` e `CHROMIUM_EXECUTABLE` se necessário.
 
+## Links e reabertura das sessões Claude Code
+
+### Catálogo e erros de modelo
+
+`GET /api/claude/models` descobre modelos pelo handshake do mesmo CLI, HOME, diretório
+e configurações usados pela conversa. Não envia prompt nem lê tokens diretamente.
+Isso respeita gateways/provedores locais; consultar o catálogo público da Anthropic
+não comprova acesso pelo provedor que executa a aba. O padrão é o Sonnet mais recente
+anunciado pelo CLI, com fallback no padrão do próprio Claude Code, sem versões fixas.
+O cache semanal usa `source: claude-cli-v1` e ignora o antigo cache da API; uma falha
+preserva o último catálogo e limita tentativas automáticas por 60 segundos.
+**Verificar modelos** força nova descoberta sem inferência.
+
+O SDK preserva `AssistantMessage.error`, `ResultMessage.errors` e `api_error_status`.
+Um erro genérico “issue with the selected model” abre a escolha de outro modelo e
+mantém o UUID da conversa. Só evidência explícita de limite (HTTP 429/código `rate_limit`)
+abre o aviso de uso; constar no catálogo não comprova cota esgotada. HTTP 529 indica
+sobrecarga, não 429. Ambos os casos de modelo/limite impedem reconexão automática em loop.
+
+Testes: `tests/test_claude_models.py`, `tests/test_claude_sessions.py`,
+`node --test scripts/engine/ui/tests/claude-errors.test.mjs` e
+`tests/claude-sessions.browser.mjs` com WebSockets fictícios.
+
+Cada conversa tem a URL `/#claude/<UUID>`. **Copiar link**, no cabeçalho ou na lista
+**Sessões**, permite referenciá-la separadamente. O título da conversa na lista também
+é um link que pode ser aberto em outra aba. O link exige o login normal do console;
+contém apenas a referência da conversa, sem credenciais de autenticação.
+
+Abrir **Claude Code** (`/#claude`) retoma a última conversa selecionada nesse navegador.
+Somente o UUID fica em `localStorage` (`netops_claude_last_session`); mensagens continuam
+nos transcripts do Claude Code no servidor. Sem preferência salva, ou após a exclusão da
+conversa preferida, abre a mais recente do projeto. Sem conversas, inicia uma nova.
+Um link explícito tem prioridade sobre a preferência. **Nova sessão** (`/#claude/new`)
+continua abrindo uma conversa vazia e recebe seu UUID quando o agente o informar.
+
+Recarregar, voltar/avançar e alternar entre o dock e a página cheia preservam a referência
+selecionada. Cada aba mantém sua própria conversa; alterar a última seleção salva não
+troca automaticamente a conversa nas outras abas. Com persistência ligada, abrir a mesma
+conversa em outra aba transfere o socket para ela; a anterior informa a transferência e
+para de reconectar. Para retomá-la na aba anterior, recarregue.
+
+O lookup `GET /api/claude/sessions/<UUID>` verifica a existência no projeto, inclusive para
+conversas mais antigas que a lista recente. Links inválidos/removidos mostram orientação
+para escolher outra conversa ou criar uma nova. UUIDs inválidos ou ausentes são recusados
+antes de iniciar o agente. Respostas HTTP e eventos de sockets antigos não podem substituir
+a conversa selecionada; o histórico é carregado antes de iniciar o streaming.
+
+Testes: `node --test scripts/engine/ui/tests/*.test.mjs`, `tests/test_claude_sessions.py`
+e `tests/claude-sessions.browser.mjs`. O cenário de navegador usa APIs e WebSockets
+fictícios, em console temporário; não inicia o agente real nem acessa conversas pessoais.
+
 
 ## Mapas de rede
+
+### Identidade inteira dos hosts
+
+`hosts.yaml` v2 contém uma lista de registros com `id` inteiro positivo, `next_host_id`
+persistente e aliases antigos reservados. O campo não é editável. Inventário v1 continua
+legível; o início/atualização em modo de escrita converte o legado antes de liberar as
+operações. `--read-only` não migra. Referências inválidas bloqueiam a conversão sem apagar
+ligações; conferência e recuperação manual em `scripts/engine/lib/SKILL.md`.
+
+O contrato dos mapas também é v2: `hosts` no snapshot é uma lista com IDs inteiros,
+`members` e `host_ids` são listas de inteiros, `positions` é uma lista de
+`{host_id, x, y, z_index?}`. Pontas visuais usam `{kind: host, host_id: 42}` ou
+`{kind: object, object_id: forma-a}`. Enlaces mantêm `a.host`/`b.host` como inteiros.
+O helper `static/js/host-identity.js` adapta somente a visão do editor para seus nós
+textuais `host:42`; todas as gravações retornam o formato numérico canônico.
+
+Backups usam configuração v3, `targets.hosts` com inteiros e `legacy_sources` para
+associar pastas antigas sem reescrever o histórico. Novas coletas ficam em
+`backups/by-id/<id>/`, separadas de pastas legadas numéricas. O runner delega a coleta
+ao script de acesso; ele não lê nem descriptografa credenciais por conta própria.
+Gravações do console e o migrador compartilham a trava de inventário; migração
+interrompida bloqueia o uso até a recuperação pelo launcher ou pelo comando manual,
+sem misturar versões.
 
 A página **Mapas** integra o editor React Flow ao cadastro de **Hosts** e aos enlaces de
 `network/topology.yaml`. A antiga página `/#topology` e seu módulo exclusivo foram removidos;
@@ -227,7 +316,9 @@ Não é a demo temporária e não usa localStorage como banco de rede.
 - “+ Dobra” acrescenta um canto de 90 graus por clique; A/B saem perpendicularmente às bordas.
   Com hosts alinhados, desloque um deles para formar um L. Os quatro pontos do host ficam ocultos.
 - O mapa geral não permite ocultar host. Mapas adicionais permitem “Remover do mapa”, sem
-  excluir do inventário. Excluir em Hosts é confirmado e limpa os enlaces/referências afetados.
+  excluir do inventário. Excluir o host é confirmado e remove todos os enlaces físicos com
+  o host em A ou B e as ligações visuais com ele na origem ou no destino, em todos os mapas,
+  além de membros, posições e rotas afetadas. Os demais hosts, formas e ligações permanecem.
 - Dados são compartilhados entre computador e celular, com atualização ao voltar à janela e
   consulta periódica enquanto não houver edição em andamento. Respostas atrasadas não
   sobrescrevem o arraste atual; autosave mantém as dimensões e a visibilidade dos nós.
@@ -243,13 +334,16 @@ instalação e funciona offline. Para manutenção do editor, ver `maps/SKILL.md
 `NETOPS_UI_DATA_ROOT=/caminho/temporario` aponta os arquivos canônicos de rede e o config
 para um diretório de teste. Ele precisa conter `network/hosts.yaml`, `network/topology.yaml`
 e `core/config/project-config.yaml`, todos fictícios. Nunca copiar credenciais reais.
+Execute o launcher a partir de uma **cópia completa temporária do código**: mudar somente
+`DATA_ROOT` não isola a instalação, a trava do supervisor ou o motor de atualização.
 
 ```bash
 NETOPS_UI_DATA_ROOT=/tmp/netops-teste NETOPS_UI_HOST=127.0.0.1 NETOPS_UI_PORT=8771 \
   NETOPS_UI_CLAUDE=0 NETOPS_UI_TERMINAL=0 scripts/engine/ui/start.sh
 ```
 
-O launcher usa `flock` por diretório de dados/endereço, sem matar processos de outro console.
+O launcher usa `flock` por diretório de dados/endereço e o supervisor tem trava por instalação,
+sem matar processos de outro console.
 Se já estiver rodando no mesmo endereço, ele informa o conflito. Para reiniciar, encerre a
 instância desejada primeiro. Testes não devem operar o inventário real.
 
@@ -322,8 +416,10 @@ da linha sem perder o ícone. Remover a forma limpa só suas conexões visuais.
 
 Seleção e alinhamento:
 
-- Computador: **Ctrl/Cmd + clique** adiciona/remove dispositivos da seleção, ou **Shift +
-  arraste no fundo** seleciona um retângulo. Clique direito sobre um membro/grupo mantém a
+- Computador: **Ctrl/Cmd + clique** adiciona/remove dispositivos da seleção; **arraste com
+  o botão esquerdo no fundo** seleciona um retângulo, sem modificadores (Shift também
+  funciona). O retângulo seleciona itens inteiramente contidos; botão central ou Espaço
+  permitem mover o mapa. Clique direito sobre um membro/grupo mantém a
   seleção e oferece **Alinhar horizontalmente** e **Alinhar verticalmente**.
 - Celular: no menu **⋯**, escolha **Selecionar vários**, toque nos dispositivos e abra **⋯**
   para alinhar. Cancelar/Escape ou tocar no fundo encerra a seleção temporária.
@@ -337,6 +433,11 @@ Seleção e alinhamento:
 Testes: `tests/test_shape_connections.py`, testes do helper em `maps/node-state.test.mjs` e
 `tests/shapes-align.browser.mjs` (mesmas variáveis Playwright/Chromium dos demais cenários,
 sempre em `NETOPS_UI_DATA_ROOT` temporário).
+
+`tests/test_host_delete_cascade.py` verifica a exclusão nos YAMLs gravados, em ambas as
+pontas e em vários mapas, incluindo preservação dos itens não afetados e conflito 409
+sem escrita. `tests/host-delete-cascade.browser.mjs` cobre detalhes, menus, confirmação
+de exclusão e persistência em desktop/toque, sempre numa instalação completa fictícia.
 
 ### Falha ao salvar ícone de forma após atualizar arquivos
 
