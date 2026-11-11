@@ -97,7 +97,7 @@ export function UpdatesControl() {
         </section>`)}
         ${confirm && html`<section class="updates-confirm">
           <h3>Atualizar para ${latest.tag}?</h3>
-          <p>Salve os formulários abertos e encerre terminais, agentes e backups em execução. Um backup privado será verificado antes de substituir o código.</p>
+          <p>Salve os formulários abertos. Terminais e sessões do agente abertos serão encerrados no reinício (as conversas do Claude ficam salvas e podem ser retomadas). Backups e workflows em execução impedem a atualização até terminarem. Um backup privado será verificado antes de substituir o código.</p>
           <p>O console ficará indisponível por alguns instantes. Se a nova versão falhar, o atualizador tentará restaurar a anterior. Mantenha também um backup externo.</p>
           <button disabled=${submitting} onClick=${() => setConfirm(false)}>Cancelar</button>
           <button class="primary" disabled=${submitting} onClick=${apply}>${submitting ? "Confirmando…" : "Criar backup e atualizar"}</button>

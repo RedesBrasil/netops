@@ -45,12 +45,12 @@ def check() -> dict:
 
 
 def activity() -> list[str]:
-    from services import claude_svc
     active = []
-    if deps.STATE.active_sessions:
-        active.append("terminal ou sessão interativa aberta")
-    if any(not session._closing_done for session in claude_svc._LIVE.values()):
-        active.append("sessão persistente do agente (inclusive desanexada)")
+    # Sessões abertas (terminal web, aba Claude — conectada, desanexada ou em turno) NÃO
+    # bloqueiam: o socket da aba Claude fica aberto em todas as páginas e reconecta sozinho,
+    # o que travava a atualização sem nenhuma sessão visível. O reinício encerra as sessões;
+    # as conversas do agente estão no transcript em disco e são retomadas depois.
+    # Só bloqueia trabalho que gravaria dados pela metade (backup/workflow em execução).
     if deps.BACKUPS_RUNS.exists():
         for path in deps.BACKUPS_RUNS.glob("*.json"):
             try:
@@ -78,7 +78,7 @@ def request_update(release_id: int) -> dict:
         raise UpdateError("busy", "Já existe uma atualização ou recuperação pendente.")
     busy = activity()
     if busy:
-        raise UpdateError("active_sessions", "Antes de atualizar, encerre: " + "; ".join(busy) + ".")
+        raise UpdateError("active_work", "Antes de atualizar, aguarde: " + "; ".join(busy) + ".")
     stable = releases.stable_releases()
     if not stable or stable[0]["id"] != release_id:
         raise UpdateError("release_changed", "A release mais recente mudou. Verifique atualizações novamente.")

@@ -2,7 +2,7 @@
 
 ## Uso
 
-Inicie sempre por `scripts/engine/ui/start.sh`. Na barra superior, clique em **Verificar atualizações**, leia as notas de todas as versões posteriores e escolha **Atualizar para vX.Y.Z**. Salve formulários e encerre terminais, agentes e backups em execução antes de confirmar.
+Inicie sempre por `scripts/engine/ui/start.sh`. Na barra superior, clique em **Verificar atualizações**, leia as notas de todas as versões posteriores e escolha **Atualizar para vX.Y.Z**. Salve formulários antes de confirmar. Terminais e sessões do agente abertos não bloqueiam: são encerrados no reinício (as conversas do Claude ficam salvas e podem ser retomadas). Só backup de equipamento ou workflow em execução impede a atualização até terminar.
 
 O repositório oficial é `RedesBrasil/netops`, atualmente privado. Instale GitHub CLI e rode `gh auth login --hostname github.com` como o mesmo usuário e HOME do servidor. Não passe tokens pela interface. O atualizador usa `gh api`; não imprime nem exporta credenciais.
 

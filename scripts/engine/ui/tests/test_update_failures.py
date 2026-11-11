@@ -79,15 +79,37 @@ def test_rollback_does_not_overwrite_external_code_changes(installation, tmp_pat
     assert (installation / "core/config/core-config.yaml").read_text() == "external code change"
 
 
-def test_active_sessions_block_request(installation, monkeypatch):
+def _gate_ready(installation, monkeypatch):
     from services import updates_svc
     monkeypatch.setattr(deps, "NETOPS_ROOT", installation)
     monkeypatch.setattr(deps, "BACKUPS_RUNS", installation / "runs/backups")
     monkeypatch.setattr(updates_svc, "managed", lambda: True)
     from update.common import write_json
     write_json(installation / STATE_DIR / "job.json", {"phase": "completed"})
-    monkeypatch.setattr(deps.STATE, "active_sessions", 1)
-    with pytest.raises(UpdateError, match="encerre"):
+    return updates_svc
+
+
+@pytest.mark.parametrize("state", ["idle", "detached", "turn", "question"])
+def test_open_sessions_never_block_update(installation, monkeypatch, state):
+    """Regressão: terminal ou aba Claude abertos (o socket da aba fica aberto em todas as
+    páginas) recusavam a atualização com "encerre: terminal ou sessão interativa aberta"."""
+    updates_svc = _gate_ready(installation, monkeypatch)
+    from services import claude_svc
+    monkeypatch.setattr(deps.STATE, "active_sessions", 2)       # /api/term + /api/claude
+    session = claude_svc.ClaudeWebSession(persist=True, resume="sid")
+    session._busy = state == "turn"
+    if state == "question":
+        session._pending["q1"] = object()
+    monkeypatch.setitem(claude_svc._LIVE, "sid", session)
+    assert updates_svc.activity() == []
+
+
+def test_running_workflow_still_blocks(installation, monkeypatch):
+    updates_svc = _gate_ready(installation, monkeypatch)
+    run = installation / "runs/x"
+    run.mkdir(parents=True)
+    (run / "state.json").write_text('{"status": "running"}')
+    with pytest.raises(UpdateError, match="aguarde: workflow em andamento"):
         updates_svc.request_update(1)
 
 
