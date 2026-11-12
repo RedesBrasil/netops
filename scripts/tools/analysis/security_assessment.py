@@ -5,9 +5,9 @@ Checagens tipo 'port'   : rodam um scan e detectam serviços inseguros expostos.
 Checagens tipo 'config' : rodam regex sobre a configuração coletada (--config-file).
 
 Uso:
-    python scripts/tools/analysis/security_assessment.py --host rt-core-01
-    python scripts/tools/analysis/security_assessment.py --all
-    python scripts/tools/analysis/security_assessment.py --host rt-core-01 \\
+    python3 scripts/tools/analysis/security_assessment.py --host rt-core-01
+    python3 scripts/tools/analysis/security_assessment.py --all
+    python3 scripts/tools/analysis/security_assessment.py --host rt-core-01 \\
         --config-file runs/2026-05-18-1430-security-audit/collected/rt-core-01.txt
 """
 from __future__ import annotations
@@ -21,6 +21,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # scripts/tools (familias irmas)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 from diagnostics.portscan import DEFAULT_PORTS, scan_nmap, scan_socket  # noqa: E402
 from lib.inventory import list_hosts, load_inventory, resolve_host  # noqa: E402
 

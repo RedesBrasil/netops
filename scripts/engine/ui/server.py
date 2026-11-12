@@ -10,7 +10,7 @@ Segurança: bind em loopback (127.0.0.1) por padrão; recusa 0.0.0.0. O acesso �
 pelo LOGIN com a senha-mestra do cofre (quando o cofre está inicializado) + checagem de
 Host/Origin (anti DNS-rebinding/CSRF). O cofre pode ser destrancado pela web (senha-mestra
 digitada na UI -> derive_key -> sessão); use --no-vault-unlock para exigir o terminal
-(`python scripts/engine/vault/cli.py unlock`).
+(`python3 scripts/engine/vault/cli.py unlock`).
 """
 from __future__ import annotations
 
@@ -99,7 +99,7 @@ def main() -> int:
     else:
         print("\n  ⚠ SEM COFRE INICIALIZADO: não há senha-mestra, então NÃO há login — o console fica")
         print("    aberto a qualquer um que alcance este endereço. Inicialize o cofre")
-        print("    (`python scripts/engine/vault/cli.py init`) para proteger o acesso por senha.")
+        print("    (`python3 scripts/engine/vault/cli.py init`) para proteger o acesso por senha.")
 
     if deps.STATE.enable_terminal:
         print("\n  ⚠ TERMINAL WEB LIGADO (--enable-terminal): quem acessar o console tem um SHELL")

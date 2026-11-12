@@ -26,6 +26,8 @@ from pathlib import Path
 
 # Permite importar scripts/engine/lib/ de qualquer lugar.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 
 NETOPS_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CREDS = NETOPS_ROOT / "network" / "credentials.yaml"
@@ -238,7 +240,7 @@ def cmd_init(args) -> int:
     meta, _key = vault.build_meta(pw1)
     _atomic_write(path, _set_vault_block(text, meta))
     print(f"OK — cofre inicializado em {path}.")
-    print("Próximo passo: python scripts/engine/vault/cli.py encrypt")
+    print("Próximo passo: python3 scripts/engine/vault/cli.py encrypt")
     return 0
 
 
@@ -314,7 +316,7 @@ def cmd_unlock(args) -> int:
         print(f"export {vault_session.ENV_KEY}={vault_session.encode_key(key)}")
         print(
             "# Cofre destrancado SÓ neste shell (modo terminal-puro).\n"
-            '# Uso: eval "$(python scripts/engine/vault/cli.py unlock --env)"',
+            '# Uso: eval "$(python3 scripts/engine/vault/cli.py unlock --env)"',
             file=sys.stderr,
         )
         return 0

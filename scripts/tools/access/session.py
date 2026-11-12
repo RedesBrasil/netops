@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Sessão CLI persistente (SSH/Telnet): autentica UMA vez e roda N comandos, um de cada vez.
+"""ÚNICO script de acesso CLI a equipamentos (SSH/Telnet) — substitui os antigos ssh.py/telnet.py.
 
-Para o modo "roda comando -> lê a saída -> decide o próximo" sem relogar a cada passo.
-Um processo em background segura a conexão Netmiko e atende por um Unix socket local
-(dir 0700, socket 0600). A credencial é resolvida só dentro desse processo — nunca sai dele.
+Dois modos:
+  run                → lote numa chamada só: conecta, roda os comandos, desconecta.
+  open/exec/close    → sessão persistente: autentica UMA vez e roda N comandos, um de cada vez,
+                       para o modo "roda comando -> lê a saída -> decide o próximo".
+Na sessão persistente, um processo em background segura a conexão Netmiko e atende por um Unix
+socket local (dir 0700, socket 0600). A credencial é resolvida só dentro do processo — nunca sai dele.
+Python: `python3` (ou `python`) do sistema — o script entra sozinho no .venv do projeto.
 
 Uso:
-    python scripts/tools/access/session.py open  --host rt-core-01          # imprime o SESSION_ID
-    python scripts/tools/access/session.py exec  --session <ID> --command "/ip/route/print"
-    python scripts/tools/access/session.py exec  --session <ID> --command "a" --command "b"
-    python scripts/tools/access/session.py list
-    python scripts/tools/access/session.py close --session <ID>     # ou: close --all
+    python3 scripts/tools/access/session.py run   --host-id 21 --command "/system/identity/print"
+    python3 scripts/tools/access/session.py run   --host-id 21 --command "a" --command "b" [--telnet]
+    python3 scripts/tools/access/session.py open  --host-id 21          # imprime o SESSION_ID
+    python3 scripts/tools/access/session.py exec  --session <ID> --command "/ip/route/print"
+    python3 scripts/tools/access/session.py list
+    python3 scripts/tools/access/session.py close --session <ID>     # ou: close --all
 
 Linux (vendor linux/proxmox/...): por padrão cada comando roda num canal `exec` do MESMO
 transporte SSH (sem parse de prompt, com exit code e stderr; `cd` não persiste — use
@@ -394,6 +399,21 @@ def cmd_open(args) -> int:
     return 1
 
 
+def _print_result(cmd: str, res: dict, multi: bool) -> int | None:
+    """Imprime a saída de um comando. Devolve 3 se a sequência deve parar, o exit code se ≠0, ou None."""
+    if multi:
+        print(f"### {cmd}")
+    print(res.get("output", ""), end="" if res.get("output", "").endswith("\n") else "\n", flush=True)
+    if res.get("stderr"):
+        print(res["stderr"], file=sys.stderr, end="" if res["stderr"].endswith("\n") else "\n")
+    extra = " (reconectou antes)" if res.get("reconnected") else ""
+    print(f"[status={res.get('status')} exit={res.get('exit')} {res.get('seconds')}s{extra}]",
+          file=sys.stderr)
+    if res.get("status") not in ("ok", "interrompido"):
+        return 3                                      # não segue a sequência às cegas
+    return res.get("exit") or None
+
+
 def cmd_exec(args) -> int:
     rc = 0
     for cmd in args.command:
@@ -404,19 +424,53 @@ def cmd_exec(args) -> int:
         except (FileNotFoundError, OSError, ValueError) as exc:
             print(f"FALHA: {exc}", file=sys.stderr)
             return 4
-        if len(args.command) > 1:
-            print(f"### {cmd}")
-        print(res.get("output", ""), end="" if res.get("output", "").endswith("\n") else "\n", flush=True)
-        if res.get("stderr"):
-            print(res["stderr"], file=sys.stderr, end="" if res["stderr"].endswith("\n") else "\n")
-        extra = " (reconectou antes)" if res.get("reconnected") else ""
-        print(f"[status={res.get('status')} exit={res.get('exit')} {res.get('seconds')}s{extra}]",
-              file=sys.stderr)
-        if res.get("status") not in ("ok", "interrompido"):
-            rc = 3
-            break                                     # não segue a sequência às cegas
-        if res.get("exit"):
-            rc = res["exit"]
+        code = _print_result(cmd, res, len(args.command) > 1)
+        if code == 3:
+            return 3
+        if code:
+            rc = code
+    return rc
+
+
+def cmd_run(args) -> int:
+    """Lote numa chamada só: conecta, roda os comandos em ordem e desconecta (sem processo em background).
+
+    Substitui os antigos ssh.py/telnet.py. Mesmo comportamento do exec (modo exec no Linux, Ctrl-C em
+    timeout, para no primeiro que falha) e mesmo log em runs/<ts>-session-<id>/session.log.
+    """
+    host_ref = args.host_id if args.host_id is not None else args.host
+    commands = list(args.command or [])
+    if args.commands_file:
+        commands += [ln.strip() for ln in Path(args.commands_file).read_text().splitlines() if ln.strip()]
+    if not commands:
+        print("FALHA: informe ao menos um --command ou --commands-file", file=sys.stderr)
+        return 2
+    try:
+        host = _canonical(host_ref)
+    except Exception as exc:  # noqa: BLE001
+        print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
+        return 1
+    method = "telnet" if args.telnet else "ssh"
+    if method == "telnet":
+        print("AVISO: Telnet trafega em texto puro. Prefira SSH sempre que possível.", file=sys.stderr)
+    try:
+        sess = Session(f"run-{secrets.token_hex(3)}", host_ref, method, args.shell)
+        sess.connect()
+    except BaseException as exc:  # noqa: BLE001 — inclui SystemExit (cofre trancado etc.)
+        print(f"FALHA ao conectar em '{host.get('hostname') or host['name']}': {exc}", file=sys.stderr)
+        return 1
+    rc = 0
+    try:
+        for cmd in commands:
+            code = _print_result(cmd, sess.run(cmd, args.timeout, args.expect, args.timing), len(commands) > 1)
+            if code == 3:
+                rc = 3
+                break
+            if code:
+                rc = code
+    finally:
+        sess.close()
+        print(f"[log] {sess.log_path}", file=sys.stderr)
     return rc
 
 
@@ -455,8 +509,23 @@ def main() -> int:
         kind, _, ref = sys.argv[3].partition(":")          # preserva o tipo: ID inteiro x nome
         return serve(sys.argv[2], int(ref) if kind == "id" else ref, sys.argv[4], sys.argv[5] == "1")
 
-    parser = argparse.ArgumentParser(description="Sessão SSH/Telnet persistente: 1 login, N comandos.")
+    parser = argparse.ArgumentParser(description="Acesso a equipamentos do inventário (SSH/Telnet): "
+                                                 "run = lote numa chamada; open/exec/close = sessão persistente.")
     sub = parser.add_subparsers(dest="action", required=True)
+
+    p_run = sub.add_parser("run", help="Conecta, roda o(s) comando(s) e desconecta — numa chamada só")
+    rsel = p_run.add_mutually_exclusive_group(required=True)
+    rsel.add_argument("--host-id", type=int, help="ID inteiro do host no inventário")
+    rsel.add_argument("--host", help="Nome único ou alias legado do host")
+    p_run.add_argument("--command", action="append", help="Comando (pode repetir)")
+    p_run.add_argument("--commands-file", help="Arquivo com um comando por linha")
+    p_run.add_argument("--telnet", action="store_true", help="Usa Telnet (legado) em vez de SSH")
+    p_run.add_argument("--shell", action="store_true",
+                       help="Linux: shell interativo (estado/cd persiste) em vez de canal exec")
+    p_run.add_argument("--timeout", type=float, default=60, help="Segundos por comando (padrão 60)")
+    p_run.add_argument("--expect", help="Regex do prompt esperado (shell), se ele mudar")
+    p_run.add_argument("--timing", action="store_true",
+                       help="Shell: lê por tempo (comando contínuo/paginado: ping, torch)")
 
     p_open = sub.add_parser("open", help="Conecta e deixa a sessão aberta (imprime o SESSION_ID)")
     sel = p_open.add_mutually_exclusive_group(required=True)
@@ -481,7 +550,8 @@ def main() -> int:
     g.add_argument("--all", action="store_true")
 
     args = parser.parse_args()
-    return {"open": cmd_open, "exec": cmd_exec, "list": cmd_list, "close": cmd_close}[args.action](args)
+    return {"run": cmd_run, "open": cmd_open, "exec": cmd_exec, "list": cmd_list,
+            "close": cmd_close}[args.action](args)
 
 
 if __name__ == "__main__":

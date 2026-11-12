@@ -17,7 +17,7 @@ workflow:
       inputFiles: [network/hosts.yaml, network/topology.yaml, memory/MEMORY.md]
       outputFiles: ["runs/${run}/state.json"]
       instructions: >-
-        Validar o inventário (python scripts/engine/lib/inventory.py --validate). Definir o escopo
+        Validar o inventário (python3 scripts/engine/lib/inventory.py --validate). Definir o escopo
         (todos os hosts ou um subconjunto). Injetar a memória relevante conforme
         core/rules/memory-protocol.md. Criar runs/${run}/ a partir de core/templates/run-state.tmpl.json.
       qualityCriteria: Inventário válido; escopo definido; runs/${run}/state.json criado.
@@ -42,8 +42,8 @@ workflow:
       outputFiles: ["runs/${run}/collected/*.txt"]
       instructions: >-
         Pré-requisito: se as credenciais estiverem criptografadas, o cofre precisa estar
-        destrancado (o operador roda 'python scripts/engine/vault/cli.py unlock'). Conectar em cada host
-        com o script de acesso adequado (scripts/tools/access/). Modo read-only. Em falha de conexão:
+        destrancado (o operador roda 'python3 scripts/engine/vault/cli.py unlock'). Conectar em cada host
+        com scripts/tools/access/session.py (run --host-id <ID> --command ...; api_mikrotik.py se method=api). Modo read-only. Em falha de conexão:
         registrar o erro e seguir para o próximo host.
       vetoConditions: ["Host fora de network/hosts.yaml", "Plano contém comando de escrita", "Cofre de credenciais trancado"]
 

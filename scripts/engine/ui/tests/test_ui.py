@@ -749,8 +749,8 @@ def _tools_tree(env, monkeypatch):
     root = env / "scripts" / "tools"
     (root / "access").mkdir(parents=True)
     (root / "_TEMPLATE").mkdir(parents=True)
-    (root / "access" / "ssh.py").write_text(
-        '#!/usr/bin/env python3\n"""Acesso SSH multi-fabricante."""\n', encoding="utf-8")
+    (root / "access" / "session.py").write_text(
+        '#!/usr/bin/env python3\n"""Acesso a equipamentos (SSH/Telnet)."""\n', encoding="utf-8")
     (root / "access" / "SKILL.md").write_text("# Acesso\nDoc da família.\n", encoding="utf-8")
     (root / "access" / "backup.sh").write_text("#!/usr/bin/env bash\n# Faz backup\n", encoding="utf-8")
     (root / "_TEMPLATE" / "script.py").write_text('"""template"""\n', encoding="utf-8")
@@ -765,10 +765,10 @@ def test_scripts_list_only_py_sh_with_metadata(client, env, monkeypatch):
     data = r.json()
     paths = {s["path"] for s in data["scripts"]}
     # só .py/.sh; nada de .md como linha; _TEMPLATE ignorado
-    assert "access/ssh.py" in paths and "access/backup.sh" in paths
+    assert "access/session.py" in paths and "access/backup.sh" in paths
     assert not any(p.endswith(".md") for p in paths)
     assert not any(p.startswith("_TEMPLATE") for p in paths)
-    ssh = next(s for s in data["scripts"] if s["path"] == "access/ssh.py")
+    ssh = next(s for s in data["scripts"] if s["path"] == "access/session.py")
     assert ssh["location"] == "access" and ssh["lang"] == "python" and ssh["desc"]
     assert ssh["doc"] == "access/SKILL.md"             # ícone de doc -> SKILL.md da pasta
     assert "access" in data["locations"]

@@ -30,7 +30,7 @@ import yaml  # noqa: E402
 from lib.inventory import resolve_host  # noqa: E402
 from lib.host_identity import require_host_id  # noqa: E402
 from lib.inventory_lock import ensure_migration_complete, inventory_lock  # noqa: E402
-from access.ssh import run_commands  # noqa: E402
+from lib.cli_runner import run_commands  # noqa: E402
 
 
 def _atomic_write(path: Path, text: str, mode: int = 0o644) -> None:

@@ -51,6 +51,44 @@ def open_cli(host: dict, cred: dict):
     return ConnectHandler(**params)
 
 
+def open_napalm(host: dict, cred: dict):
+    """Abre um driver NAPALM (coleta estruturada / compare_config). Levanta se não suportado."""
+    driver_name = resolve_vendor(host.get("vendor")).get("napalm")
+    if not driver_name:
+        raise ValueError(f"NAPALM não suporta o fabricante '{host.get('vendor')}'")
+    try:
+        from napalm import get_network_driver
+    except ImportError:
+        sys.exit("ERRO: napalm não instalado. Rode: pip install -r requirements.txt")
+
+    driver = get_network_driver(driver_name)
+    dev = driver(
+        hostname=host["mgmt_ip"],
+        username=cred.get("username", ""),
+        password=cred.get("password", ""),
+        optional_args={"secret": cred.get("secret", ""), "port": (host.get("access") or {}).get("port", 22)},
+    )
+    dev.open()
+    return dev
+
+
+def open_routeros_api(host: dict, cred: dict):
+    """Abre a API nativa do MikroTik RouterOS via librouteros."""
+    try:
+        import librouteros
+    except ImportError:
+        sys.exit("ERRO: librouteros não instalado. Rode: pip install -r requirements.txt")
+
+    port = (host.get("access") or {}).get("port", 8728)
+    return librouteros.connect(
+        host=host["mgmt_ip"],
+        username=cred.get("username", ""),
+        password=cred.get("password", ""),
+        port=port,
+        timeout=DEFAULT_TIMEOUT,
+    )
+
+
 def _routeros_telnet_class():
     """mikrotik_routeros sobre Telnet. O 'generic_telnet' do Netmiko é de terminal-server (não faz
     login) e o RouterOS exige CR+LF no Enter; a negociação de opções o telnetlib já responde."""

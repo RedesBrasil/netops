@@ -37,7 +37,7 @@ seguem a separação de engine, não aparecem como scripts operacionais e nunca 
 
 | Pasta | Conteúdo |
 |-------|----------|
-| `tools/access/` | Conexão com equipamentos — `ssh.py`, `telnet.py`, `api_mikrotik.py` |
+| `tools/access/` | Conexão com equipamentos — `session.py` (único de SSH/Telnet: `run` e `open/exec/close`), `api_mikrotik.py` |
 | `tools/diagnostics/` | Diagnóstico de rede — `portscan.py`, `ping_advanced.py`, `traceroute_advanced.py` |
 | `tools/analysis/` | Análise — `security_assessment.py`, `config_diff.py` |
 | `tools/docs/` | Geração de documentação — `topology_render.py` |
@@ -45,7 +45,10 @@ seguem a separação de engine, não aparecem como scripts operacionais e nunca 
 
 ## Padrão de um script
 
-- Python 3, executável como `python scripts/tools/<familia>/<script>.py [args]`.
+- Python 3, executável como `python3 scripts/tools/<familia>/<script>.py [args]`.
+- **Entra sozinho no venv:** logo após o `sys.path.insert` do bootstrap e ANTES de qualquer lib externa,
+  `from lib._venv import ensure_venv; ensure_venv()` (já está no `_TEMPLATE`). Assim ninguém precisa
+  ativar `.venv` nem instalar nada para rodar um script.
 - `argparse` com `--help` claro. Funciona offline (imports de rede são preguiçosos).
 - Lê o inventário sempre via `from lib.inventory import …` (o motor em `engine/lib/`,
   posto no `sys.path` pelo bootstrap do script) — nunca recebe credencial por argumento.

@@ -38,7 +38,7 @@ export function CredentialsPage() {
     <div class="page-title"><h1>Credenciais</h1><span class="spacer"></span>
       <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Nova credencial</button></div>
     ${!vault_initialized && html`<div class="card"><b>Cofre não inicializado.</b> Para guardar senhas cifradas,
-      rode no terminal: <code>python scripts/engine/vault/cli.py init</code> e depois <code>encrypt</code>.</div>`}
+      rode no terminal: <code>python3 scripts/engine/vault/cli.py init</code> e depois <code>encrypt</code>.</div>`}
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar credencial" count=${credentials.length} total=${allCreds.length} />
     ${seg && seg !== "new" && !found && html`<div class="card">Credencial '${seg}' não encontrada. <a href="#credentials">Voltar às credenciais</a></div>`}
     <${ResourceTable} columns=${cols} rows=${credentials.map((c) => ({ ...c, _key: c.name }))}

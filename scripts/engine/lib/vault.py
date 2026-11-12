@@ -65,7 +65,7 @@ class VaultNotInitialized(VaultError):
         super().__init__(
             msg
             or "Cofre não inicializado. Rode:\n"
-            "  python scripts/engine/vault/cli.py init"
+            "  python3 scripts/engine/vault/cli.py init"
         )
 
 

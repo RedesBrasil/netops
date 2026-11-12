@@ -12,9 +12,9 @@ Uso como biblioteca:
     from lib.inventory import load_inventory, resolve_host, list_hosts
 
 Uso como CLI:
-    python scripts/engine/lib/inventory.py --validate
-    python scripts/engine/lib/inventory.py --list
-    python scripts/engine/lib/inventory.py --show rt-core-01
+    python3 scripts/engine/lib/inventory.py --validate
+    python3 scripts/engine/lib/inventory.py --list
+    python3 scripts/engine/lib/inventory.py --show rt-core-01
 """
 from __future__ import annotations
 
@@ -25,6 +25,8 @@ from pathlib import Path
 
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 
 NETOPS_ROOT = Path(__file__).resolve().parents[3]
 HOSTS_FILE = NETOPS_ROOT / "network" / "hosts.yaml"
@@ -45,7 +47,7 @@ def resolve_secret(value):
 
     Texto puro -> retorna como está (compatível com arquivos não migrados/mistos).
     'enc.v1:<token>' -> descriptografa EM MEMÓRIA com a chave da sessão (cofre destrancado
-    via 'python scripts/engine/vault/cli.py unlock'). Cofre trancado -> levanta VaultLocked com
+    via 'python3 scripts/engine/vault/cli.py unlock'). Cofre trancado -> levanta VaultLocked com
     instrução clara. Migrar para criptografia altera SÓ esta função — os hosts não mudam.
     """
     if not isinstance(value, str) or not value.startswith("enc.v1:"):

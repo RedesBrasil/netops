@@ -51,8 +51,8 @@ def integer_inventory(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("ref", [7, "rt-old", "Roteador Matriz"])
-def test_ssh_resolves_integer_and_alias_to_management_ip(integer_inventory, monkeypatch, ref):
-    from access import ssh
+def test_cli_runner_resolves_integer_and_alias_to_management_ip(integer_inventory, monkeypatch, ref):
+    from lib import cli_runner
 
     captured = {}
 
@@ -68,8 +68,9 @@ def test_ssh_resolves_integer_and_alias_to_management_ip(integer_inventory, monk
         captured.update(host=host, cred=cred)
         return Connection()
 
-    monkeypatch.setattr(ssh, "open_cli", open_fake)
-    assert ssh.run_commands(ref, ["show version"])["show version"] == "coleta fictícia"
+    monkeypatch.setattr(cli_runner, "open_cli", open_fake)
+    assert cli_runner.run_commands(ref, ["show version"])["show version"] == "coleta fictícia"
+    assert cli_runner.canonical_host_id(ref) == 7
     assert captured["host"]["id"] == 7
     assert type(captured["host"]["id"]) is int
     assert captured["host"]["mgmt_ip"] == "192.0.2.7"
@@ -77,31 +78,69 @@ def test_ssh_resolves_integer_and_alias_to_management_ip(integer_inventory, monk
     assert captured["closed"]
 
 
-@pytest.mark.parametrize("module_name", ["access.ssh", "access.telnet", "access.api_mikrotik"])
-def test_access_cli_passes_true_integer(integer_inventory, monkeypatch, module_name):
-    module = importlib.import_module(module_name)
+def test_access_legacy_scripts_removed():
+    access = ENGINE.parent / "tools" / "access"
+    assert not (access / "ssh.py").exists() and not (access / "telnet.py").exists()
+
+
+def _fake_session(captured):
+    class FakeSession:
+        def __init__(self, sid, host_ref, method, shell):
+            captured.append(host_ref)
+            self.log_path = "fake.log"
+
+        def connect(self):
+            pass
+
+        def run(self, cmd, timeout, expect, timing):
+            return {"status": "ok", "output": "ok", "stderr": "", "exit": 0, "seconds": 0}
+
+        def close(self):
+            pass
+    return FakeSession
+
+
+def test_session_run_passes_true_integer(integer_inventory, monkeypatch):
+    from access import session
     captured = []
-    if module_name.endswith("api_mikrotik"):
-        monkeypatch.setattr(module, "query", lambda host, paths: captured.append(host) or {})
-        extra = ["--path", "/ip/service"]
-    else:
-        monkeypatch.setattr(module, "run_commands", lambda host, commands, **kwargs: captured.append(host) or {})
-        extra = ["--command", "show version"]
-    monkeypatch.setattr(sys, "argv", [module_name, "--host-id", "7", *extra])
-    assert module.main() == 0
+    monkeypatch.setattr(session, "Session", _fake_session(captured))
+    monkeypatch.setattr(sys, "argv", ["session", "run", "--host-id", "7", "--command", "show version"])
+    assert session.main() == 0
     assert captured == [7] and type(captured[0]) is int
-    monkeypatch.setattr(sys, "argv", [module_name, "--host-id", "7", "--host", "rt-old", *extra])
+    monkeypatch.setattr(sys, "argv", ["session", "run", "--host-id", "7", "--host", "rt-old",
+                                      "--command", "x"])
     with pytest.raises(SystemExit):
-        module.main()
+        session.main()
+
+
+def test_session_run_rejects_host_outside_inventory(integer_inventory, monkeypatch):
+    from access import session
+    captured = []
+    monkeypatch.setattr(session, "Session", _fake_session(captured))
+    monkeypatch.setattr(sys, "argv", ["session", "run", "--host", "nao-existe", "--command", "x"])
+    assert session.main() == 1 and captured == []
+
+
+def test_api_mikrotik_passes_true_integer(integer_inventory, monkeypatch):
+    from access import api_mikrotik
+    captured = []
+    monkeypatch.setattr(api_mikrotik, "query", lambda host, paths: captured.append(host) or {})
+    monkeypatch.setattr(sys, "argv", ["api_mikrotik", "--host-id", "7", "--path", "/ip/service"])
+    assert api_mikrotik.main() == 0
+    assert captured == [7] and type(captured[0]) is int
+    monkeypatch.setattr(sys, "argv", ["api_mikrotik", "--host-id", "7", "--host", "rt-old",
+                                      "--path", "/ip/service"])
+    with pytest.raises(SystemExit):
+        api_mikrotik.main()
 
 
 def test_access_output_uses_canonical_id_after_alias_selection(integer_inventory, monkeypatch):
-    from access import api_mikrotik, ssh
+    from access import api_mikrotik, session
 
     _, root = integer_inventory
-    monkeypatch.setattr(ssh, "NETOPS_ROOT", root)
+    monkeypatch.setattr(session, "NETOPS_ROOT", root)
     monkeypatch.setattr(api_mikrotik, "NETOPS_ROOT", root)
-    assert ssh._save("rt-old", {"show version": "fictício"}).name == "7.txt"
+    assert session.Session("t", "rt-old", "ssh", False).log_dir.name.endswith("-session-7")
     assert api_mikrotik._save("Roteador Matriz", {"/ip/service": []}).name == "7.json"
 
 

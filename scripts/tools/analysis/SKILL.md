@@ -25,14 +25,14 @@ Scripts de análise que o agente `tester` usa para auditar e comparar.
 
 ```bash
 # Avaliação de segurança de todos os hosts
-python scripts/tools/analysis/security_assessment.py --all
+python3 scripts/tools/analysis/security_assessment.py --all
 
 # Avaliação com checagens de configuração (precisa da config coletada)
-python scripts/tools/analysis/security_assessment.py --host-id 1 \
+python3 scripts/tools/analysis/security_assessment.py --host-id 1 \
   --config-file runs/2026-05-18-1430-security-audit/collected/1.txt
 
 # Diff de configuração
-python scripts/tools/analysis/config_diff.py --before baseline.txt --after proposta.txt
+python3 scripts/tools/analysis/config_diff.py --before baseline.txt --after proposta.txt
 ```
 
 ## Setup

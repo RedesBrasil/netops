@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Atualiza ícones locais a partir de um commit explícito, sem executar código remoto.
 
-Uso: python scripts/engine/ui/vendor_icons.py
+Uso: python3 scripts/engine/ui/vendor_icons.py
 Requer Pillow somente para gerar as miniaturas de manutenção, não em execução.
 """
 from __future__ import annotations

@@ -70,7 +70,7 @@ def vault_unlock(body: VaultUnlock):
     if not deps.CREDS_FILE.exists():
         return JSONResponse(
             {"error": "vault_uninitialized", "detail": "credentials.yaml não existe.",
-             "action": "python scripts/engine/vault/cli.py init"},
+             "action": "python3 scripts/engine/vault/cli.py init"},
             status_code=409,
         )
     data = yaml.safe_load(deps.CREDS_FILE.read_text(encoding="utf-8")) or {}

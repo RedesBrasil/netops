@@ -5,8 +5,8 @@ Usa nmap se disponível (com detecção de versão); senão cai num scan TCP-con
 Aceita um host do inventário (--host) ou um IP direto (--target).
 
 Uso:
-    python scripts/tools/diagnostics/portscan.py --host rt-core-01
-    python scripts/tools/diagnostics/portscan.py --target 10.0.0.1 --ports 22,80,443,8728
+    python3 scripts/tools/diagnostics/portscan.py --host rt-core-01
+    python3 scripts/tools/diagnostics/portscan.py --target 10.0.0.1 --ports 22,80,443,8728
 """
 from __future__ import annotations
 
@@ -20,6 +20,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # scripts/tools (familias irmas)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 
 # Portas de gerência/serviço comuns em redes e infra.
 DEFAULT_PORTS = [21, 22, 23, 25, 53, 80, 161, 443, 445, 2000, 3389, 8080, 8291, 8728, 8729]

@@ -20,17 +20,20 @@ mudanças, testam e geram relatórios.
    python3 -m venv .venv
    . .venv/bin/activate
    pip install -r requirements.txt
-   sudo apt install nmap
+   sudo apt install nmap python-is-python3
    ```
+   Pronto: depois disso nenhum pedido precisa preparar ambiente. Todo script se re-executa
+   sozinho no `.venv` (`python3 scripts/...` basta, sem `activate`), e o acesso a equipamentos é
+   sempre `python3 scripts/tools/access/session.py run --host-id <ID> --command "..."`.
 2. **Cadastre seus equipamentos** em `network/hosts.yaml` (copie de
    `network/hosts.example.yaml`). Esse arquivo é git-ignorado.
 3. **Cadastre as credenciais** em `network/credentials.yaml` (copie de
    `network/credentials.example.yaml`). Esse arquivo é git-ignorado.
 4. **(Recomendado) Criptografe as senhas** com uma senha-mestra:
    ```bash
-   python scripts/engine/vault/cli.py init       # define a senha-mestra
-   python scripts/engine/vault/cli.py encrypt     # senhas -> "enc.v1:..."
-   python scripts/engine/vault/cli.py unlock      # destranca a sessão (no início do trabalho)
+   python3 scripts/engine/vault/cli.py init       # define a senha-mestra
+   python3 scripts/engine/vault/cli.py encrypt     # senhas -> "enc.v1:..."
+   python3 scripts/engine/vault/cli.py unlock      # destranca a sessão (no início do trabalho)
    ```
    Os valores ficam criptografados em repouso e são descriptografados só em memória, durante
    a sessão. Ver `scripts/engine/vault/SKILL.md`.

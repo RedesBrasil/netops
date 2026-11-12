@@ -24,6 +24,8 @@ from pathlib import Path
 ENGINE = Path(__file__).resolve().parents[1]
 if str(ENGINE) not in sys.path:
     sys.path.insert(0, str(ENGINE))
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 
 from scheduler import runner, store  # noqa: E402
 

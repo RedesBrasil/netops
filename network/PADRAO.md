@@ -52,7 +52,7 @@ Campos de um host:
 | `group` | opcional | Nome do grupo do qual herda |
 | `notes` | opcional | Observações livres |
 
-Validar: `python scripts/engine/lib/inventory.py --validate` (usa `core/schemas/inventory.schema.json`).
+Validar: `python3 scripts/engine/lib/inventory.py --validate` (usa `core/schemas/inventory.schema.json`).
 
 ## `credentials.yaml`
 
@@ -80,7 +80,7 @@ este arquivo + `hosts.yaml` e regenera `topology.md` com um diagrama Mermaid.
 1. Adicione o host em `hosts.yaml` (use um `group` existente ou crie um).
 2. Se a credencial for nova, adicione-a em `credentials.yaml`.
 3. Adicione os enlaces dele em `topology.yaml`.
-4. Rode `python scripts/tools/docs/topology_render.py` para atualizar `topology.md`.
+4. Rode `python3 scripts/tools/docs/topology_render.py` para atualizar `topology.md`.
 
 
 ## `maps.yaml`

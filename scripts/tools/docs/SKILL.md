@@ -24,8 +24,8 @@ atualizado. Faz parte do passo de documentação dos workflows.
 ## Como usar
 
 ```bash
-python scripts/tools/docs/topology_render.py            # grava network/topology.md
-python scripts/tools/docs/topology_render.py --stdout   # só imprime
+python3 scripts/tools/docs/topology_render.py            # grava network/topology.md
+python3 scripts/tools/docs/topology_render.py --stdout   # só imprime
 ```
 
 ## Setup
@@ -36,7 +36,7 @@ python scripts/tools/docs/topology_render.py --stdout   # só imprime
 
 Após cadastrar novos hosts e enlaces, regenere o diagrama:
 ```bash
-python scripts/tools/docs/topology_render.py
+python3 scripts/tools/docs/topology_render.py
 ```
 O `network/topology.md` resultante renderiza o grafo direto na IDE e no GitHub.
 No inventário v2, os enlaces referenciam IDs inteiros e os rótulos mostram `hostname`.

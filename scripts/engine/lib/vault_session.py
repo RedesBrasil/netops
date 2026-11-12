@@ -167,7 +167,7 @@ def _load_cache() -> dict | None:
     if st_dir.st_uid != os.getuid() or stat.S_IMODE(st_dir.st_mode) != 0o700:
         raise VaultLocked(
             f"Diretório do cache com permissões inseguras: {d}. "
-            "Rode: python scripts/engine/vault/cli.py lock"
+            "Rode: python3 scripts/engine/vault/cli.py lock"
         )
 
     try:
@@ -183,7 +183,7 @@ def _load_cache() -> dict | None:
         ):
             raise VaultLocked(
                 "Arquivo de cache com permissões inseguras. "
-                "Rode: python scripts/engine/vault/cli.py lock  (e depois unlock)"
+                "Rode: python3 scripts/engine/vault/cli.py lock  (e depois unlock)"
             )
         data = os.read(fd, 65536)
     finally:

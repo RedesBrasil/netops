@@ -60,5 +60,5 @@ acesso (`scripts/tools/access/*`), no instante de conectar.
 Credenciais **nunca** entram em `runs/`, `reports/`, `memory/` ou logs (só em `credentials.yaml`,
 git-ignorado). A descriptografia acontece só em memória, **dentro do script de acesso**, via
 `scripts/engine/lib/inventory.py:resolve_secret()`; a chave da sessão vive em RAM (tmpfs, `0600`),
-nunca em disco. O cofre é destrancado pelo humano (`python scripts/engine/vault/cli.py unlock`);
+nunca em disco. O cofre é destrancado pelo humano (`python3 scripts/engine/vault/cli.py unlock`);
 a IA não digita a senha-mestra.

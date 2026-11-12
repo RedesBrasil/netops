@@ -51,8 +51,8 @@ const CASES = {
     await page.goBack(); await settle();
     assert.equal(await page.locator(".modal").count(), 0, "settings: Voltar fecha painel");
   } },
-  scripts: { row: "table td:first-child a[href^='#scripts/']", open: "button:has-text('+ Novo script')", q: "ssh", qRows: -1,
-    extra: [["#scripts?tab=scripts", "table td:first-child a[href^='#scripts/access/']"], ["#scripts/access/ssh.py?tab=scripts", ".modal"],
+  scripts: { row: "table td:first-child a[href^='#scripts/']", open: "button:has-text('+ Novo script')", q: "session", qRows: -1,
+    extra: [["#scripts?tab=scripts", "table td:first-child a[href^='#scripts/access/']"], ["#scripts/access/session.py?tab=scripts", ".modal"],
       ["#scripts/access", "button:has-text('Editar SKILL.md')"], ["#scripts/access/SKILL.md", ".modal"]],
     deep: ["#scripts?tab=scripts&sort=location&dir=desc", "th:has-text('Skill'):has-text('▼')"] },
   memory: { custom: async (page, BASE, { assert, settle, hash }) => {   // MEMORY.md | AGENTS.md | Notas — cada um com URL

@@ -5,8 +5,8 @@ O `documenter` roda este script após qualquer mudança de topologia. O diagrama
 renderiza direto no GitHub e nas IDEs.
 
 Uso:
-    python scripts/tools/docs/topology_render.py            # gera network/topology.md
-    python scripts/tools/docs/topology_render.py --stdout   # só imprime, não grava
+    python3 scripts/tools/docs/topology_render.py            # gera network/topology.md
+    python3 scripts/tools/docs/topology_render.py --stdout   # só imprime, não grava
 """
 from __future__ import annotations
 
@@ -17,6 +17,8 @@ from pathlib import Path
 from html import escape
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 from lib.host_identity import host_index, resolve_reference  # noqa: E402
 from lib.inventory import resolve_host  # noqa: E402
 from lib.inventory_lock import ensure_migration_complete, inventory_lock  # noqa: E402

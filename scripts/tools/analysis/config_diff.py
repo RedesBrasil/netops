@@ -5,7 +5,7 @@ Usado pelo `tester`/`planner` para revisar exatamente o que uma mudança altera,
 `executor` para comparar o estado antes/depois de uma mudança.
 
 Uso:
-    python scripts/tools/analysis/config_diff.py --before baseline.txt --after proposta.txt
+    python3 scripts/tools/analysis/config_diff.py --before baseline.txt --after proposta.txt
 """
 from __future__ import annotations
 
@@ -13,6 +13,10 @@ import argparse
 import difflib
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 
 
 def diff(before: Path, after: Path) -> tuple[str, int, int]:

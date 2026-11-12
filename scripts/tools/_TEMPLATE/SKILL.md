@@ -18,7 +18,7 @@ Em que situação o agente deve chamar este script.
 ## Como usar
 
 ```bash
-python scripts/<familia>/<script>.py --opcao valor
+python3 scripts/<familia>/<script>.py --opcao valor
 ```
 
 | Argumento | Obrigatório | Descrição |
@@ -33,5 +33,5 @@ Dependências (já em `requirements.txt`) e binários externos, se houver.
 ## Exemplos
 
 ```bash
-python scripts/tools/<familia>/<script>.py --host-id 1
+python3 scripts/tools/<familia>/<script>.py --host-id 1
 ```

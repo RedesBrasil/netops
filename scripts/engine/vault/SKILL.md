@@ -42,7 +42,7 @@ automaticamente.
 ## Como usar
 
 ```bash
-python scripts/engine/vault/cli.py <subcomando> [--file PATH]
+python3 scripts/engine/vault/cli.py <subcomando> [--file PATH]
 ```
 
 | Subcomando | Faz | Pergunta (oculta) |
@@ -66,16 +66,16 @@ e, por último, `/tmp` (com aviso de que pode ser disco).
 ```bash
 # Migração inicial (uma vez)
 cp network/credentials.yaml ~/creds.backup.$(date +%F).yaml   # backup fora do repo
-python scripts/engine/vault/cli.py init
-python scripts/engine/vault/cli.py encrypt --dry-run
-python scripts/engine/vault/cli.py encrypt
+python3 scripts/engine/vault/cli.py init
+python3 scripts/engine/vault/cli.py encrypt --dry-run
+python3 scripts/engine/vault/cli.py encrypt
 
 # Dia a dia
-python scripts/engine/vault/cli.py unlock      # destranca (digita a senha-mestra, sem eco)
-python scripts/engine/lib/inventory.py --list  # funciona mesmo trancado (não descriptografa)
+python3 scripts/engine/vault/cli.py unlock      # destranca (digita a senha-mestra, sem eco)
+python3 scripts/engine/lib/inventory.py --list  # funciona mesmo trancado (não descriptografa)
 # ... agentes/scripts acessam os equipamentos usando a chave da sessão ...
-python scripts/engine/vault/cli.py lock        # tranca ao terminar
+python3 scripts/engine/vault/cli.py lock        # tranca ao terminar
 
 # Modo terminal-puro (trava ao fechar o terminal; não compartilha com a IA)
-eval "$(python scripts/engine/vault/cli.py unlock --env)"
+eval "$(python3 scripts/engine/vault/cli.py unlock --env)"
 ```

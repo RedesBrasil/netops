@@ -10,6 +10,8 @@ from pathlib import Path
 # Permite importar scripts/engine/lib/ de qualquer script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # scripts/tools (familias irmas)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # OBRIGATÓRIO: python3 do sistema -> re-executa no .venv (antes de libs externas)
 
 
 def main() -> int:

@@ -23,7 +23,7 @@ uma licença que o projeto de origem não forneceu.
 ## Atualização reproduzível
 
 ```bash
-python scripts/engine/ui/vendor_icons.py
+python3 scripts/engine/ui/vendor_icons.py
 ```
 
 O script requer Pillow apenas na manutenção, baixa de um commit explícito, confere SHA-256 e

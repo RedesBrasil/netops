@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def ensure_venv() -> None:
-    # Só re-executa quando quem chamou é o script de entrada (`python3 ssh.py ...`). Importado
+    # Só re-executa quando quem chamou é o script de entrada (`python3 session.py ...`). Importado
     # como biblioteca (console, backup runner, pytest), trocar o processo inteiro com execv
     # derrubava o hospedeiro: o pytest virava `.venv/bin/python -m pytest` sem pytest instalado.
     if sys._getframe(1).f_globals.get("__name__") != "__main__":

@@ -5,8 +5,8 @@ Aceita um host do inventário (--host) ou um IP/nome direto (--target). Tenta tr
 depois tracepath, depois mtr — o primeiro disponível. Útil para troubleshooting de caminho.
 
 Uso:
-    python scripts/tools/diagnostics/traceroute_advanced.py --host srv-web-01
-    python scripts/tools/diagnostics/traceroute_advanced.py --target 1.1.1.1 --max-hops 20
+    python3 scripts/tools/diagnostics/traceroute_advanced.py --host srv-web-01
+    python3 scripts/tools/diagnostics/traceroute_advanced.py --target 1.1.1.1 --max-hops 20
 """
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # scripts/tools (familias irmas)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 
 
 def resolve_target(host: int | str | None, target: str | None) -> str:

@@ -26,7 +26,7 @@ quando o operador precisa e ser encerrada depois. O framework funciona 100% com 
 
 ## Como subir
 
-**SEMPRE** pelo script (nunca `python scripts/engine/ui/server.py` direto). Ele liga o terminal web
+**SEMPRE** pelo script (nunca `python3 scripts/engine/ui/server.py` direto). Ele liga o terminal web
 e faz bind no IP da máquina, com instância única:
 
 ```bash

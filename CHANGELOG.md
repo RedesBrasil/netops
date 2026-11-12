@@ -8,6 +8,10 @@
 
 ### Correções
 
+- **Acesso a equipamentos = só `session.py`.** `ssh.py` e `telnet.py` foram removidos. O novo `session.py run --host-id <ID> --command ...` faz o lote em uma chamada (conecta, roda e desconecta, com log em `runs/<ts>-session-<id>/`), e `open/exec/close` seguem para o modo interativo. O motor (backup do console, backup de mudança) passa a usar `scripts/engine/lib/cli_runner.py`.
+- **Ambiente pronto, sem preparo por pedido.** Todo script CLI (diagnóstico, análise, backup, cofre, agendador, inventário e `_TEMPLATE`) se re-executa sozinho no `.venv`, e `python3 scripts/...` funciona sem ativar nada. Documentação e mensagens padronizadas em `python3`. O README inclui `python-is-python3`.
+- `lib/transport.py`: restaurados `open_routeros_api` e `open_napalm`, removidos por engano em 3a94642 (o `api_mikrotik.py` quebrava na importação).
+
 - Aba Claude Code: a persistência da sessão agora é **padrão** (`start.sh` e `restart-console.sh`). F5, troca de aba ou standby não cancelam mais a tarefa em andamento; ao voltar, a aba re-anexa onde estava. `NETOPS_UI_CLAUDE_PERSIST=0` desliga. Limite: reiniciar ou encerrar o console encerra as sessões vivas.
 
 ## [2.3.1] - 2026-11-12

@@ -5,7 +5,12 @@ Analisa template do Zabbix - lista itens e triggers
 import os
 import sys
 import json
-import requests
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
+import requests  # noqa: E402
 from collections import defaultdict
 
 ZABBIX_URL = "http://10.8.200.10/zabbix/api_jsonrpc.php"

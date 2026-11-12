@@ -5,8 +5,8 @@ Para hosts MikroTik com `access.method: api` no inventário. A API retorna dados
 estruturados (lista de dicts), melhor que parsear texto de CLI.
 
 Uso:
-    python scripts/tools/access/api_mikrotik.py --host rt-core-01 --path /ip/service
-    python scripts/tools/access/api_mikrotik.py --host rt-core-01 --path /ip/firewall/filter --save
+    python3 scripts/tools/access/api_mikrotik.py --host rt-core-01 --path /ip/service
+    python3 scripts/tools/access/api_mikrotik.py --host rt-core-01 --path /ip/firewall/filter --save
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
 from lib.inventory import NETOPS_ROOT, load_inventory, resolve_host  # noqa: E402
 from lib.transport import open_routeros_api  # noqa: E402
-from access.ssh import _canonical_host_id  # noqa: E402
+from lib.cli_runner import canonical_host_id as _canonical_host_id  # noqa: E402
 
 
 def query(host_name: int | str, paths: list[str]) -> dict[str, list]:

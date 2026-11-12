@@ -5,8 +5,8 @@ Aceita um host do inventário (--host) ou um IP/nome direto (--target). Resume p
 pacotes e RTT min/avg/max. Útil para o `tester` validar conectividade.
 
 Uso:
-    python scripts/tools/diagnostics/ping_advanced.py --host rt-core-01
-    python scripts/tools/diagnostics/ping_advanced.py --target 8.8.8.8 --count 20 --size 1400
+    python3 scripts/tools/diagnostics/ping_advanced.py --host rt-core-01
+    python3 scripts/tools/diagnostics/ping_advanced.py --target 8.8.8.8 --count 20 --size 1400
 """
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # scripts/tools (familias irmas)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 
 
 def resolve_target(host: int | str | None, target: str | None) -> str:

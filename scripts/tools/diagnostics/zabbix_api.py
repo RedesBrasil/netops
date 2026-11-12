@@ -5,8 +5,12 @@ Resolve credenciais internamente via vault
 """
 import sys
 import json
-import requests
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
+import requests  # noqa: E402
 
 # Adiciona o lib do engine ao path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "engine" / "lib"))

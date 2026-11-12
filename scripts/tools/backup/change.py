@@ -16,10 +16,12 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "engine"))
 sys.path.insert(0, str(ROOT / "scripts" / "tools"))
 sys.path.insert(0, str(ROOT / "scripts" / "engine" / "ui"))
+from lib._venv import ensure_venv  # noqa: E402
+ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 
 import yaml  # noqa: E402
 from lib.inventory import resolve_host  # noqa: E402
-from access.ssh import run_commands  # noqa: E402
+from lib.cli_runner import run_commands  # noqa: E402
 from backup_runner import _strip_ros, _atomic_write  # noqa: E402
 
 STORE = ROOT / "backups" / "by-id"
