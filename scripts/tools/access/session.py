@@ -133,7 +133,10 @@ class Session:
         from lib.vendor_map import netmiko_device_type
         hosts_data, creds_data = load_inventory()
         host, cred = resolve_host(self.host_ref, hosts_data, creds_data)   # decripta só aqui
-        host.setdefault("access", {})["method"] = self.method
+        access = host.setdefault("access", {})
+        if self.method == "telnet" and access.get("method") != "telnet":
+            access.pop("port", None)              # porta do cadastro é a do SSH; Telnet usa a 23
+        access["method"] = self.method
         self.host = host
         self.conn = open_cli(host, cred)
         if cred.get("secret"):
@@ -160,6 +163,14 @@ class Session:
             if self.exec_mode:
                 t = self._transport()
                 return bool(t and t.is_active())
+            if self.method == "telnet" and self.conn:
+                # is_alive() do Netmiko manda IAC NOP, e o RouterOS fecha a conexão: checa o socket sem escrever
+                import select
+                import socket as _socket
+                sock = self.conn.remote_conn.get_socket()
+                if select.select([sock], [], [], 0)[0]:
+                    return bool(sock.recv(1, _socket.MSG_PEEK))
+                return True
             return bool(self.conn and self.conn.is_alive())
         except Exception:  # noqa: BLE001
             return False

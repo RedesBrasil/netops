@@ -33,6 +33,7 @@ class NodeUpsert(BaseModel):
     site: Optional[str] = None
     notes: Optional[str] = None
     credential: Optional[str] = None
+    backup_before_change: Optional[bool] = None
     access: Optional[Access] = None
 
 

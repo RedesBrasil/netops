@@ -47,6 +47,10 @@ com rollback: nunca aplica nada sem ter como desfazer.
    fica disponível para compatibilidade, sem mudar a identidade do cadastro.
 4. **Coletar.** Rodar os comandos read-only; salvar a saída em `runs/<id>/collected/<host>.txt`.
 5. **Aplicar mudança (se houver).**
+   0. **Backup de sessão:** se o host tem `backup_before_change: true`, rode ANTES da 1ª alteração
+      `.venv/bin/python scripts/tools/backup/change.py begin --host-id <ID>` (falhou = **não altere nada**), faça todas
+      as alterações da sessão e, ao concluir, `... change.py end --host-id <ID>` (backup pós + diff + retenção
+      `backups.keep_versions`, padrão 10). Um `begin`/`end` por host por sessão, não por comando.
    a. Capturar baseline da área afetada → `runs/<id>/collected/<host>.before.txt`.
    b. Aplicar a config de `runs/<id>/proposals/<host>.change.txt`.
    c. Capturar o estado pós-mudança → `<host>.after.txt`.
@@ -55,9 +59,29 @@ com rollback: nunca aplica nada sem ter como desfazer.
 
 | Acesso | Script | Quando |
 |--------|--------|--------|
-| SSH/Telnet | `scripts/tools/access/ssh.py`, `scripts/tools/access/telnet.py` | Padrão multi-fabricante (Netmiko) |
+| **SSH/Telnet — PADRÃO** | `scripts/tools/access/session.py` | **Sempre que pedirem para acessar/rodar comandos num host**: 1 login, N comandos, estado mantido |
+| SSH/Telnet — lote único | `scripts/tools/access/ssh.py`, `scripts/tools/access/telnet.py` | Só um comando isolado e fixo (sem depender de saída anterior) |
 | API MikroTik | `scripts/tools/access/api_mikrotik.py` | Hosts MikroTik com `method: api` |
 | Coleta estruturada | via `scripts/engine/lib/transport.py` (NAPALM) | Cisco/Juniper/Arista, quando há diff |
+
+### Padrão de acesso — `session.py` (1 conexão, N comandos)
+
+Sem instrução em contrário, **todo acesso a host usa sessão persistente**; nunca reabra a conexão
+a cada comando. Fluxo: `open` → `exec`… → `close` (sempre fechar no fim).
+
+```bash
+S=$(python3 scripts/tools/access/session.py open --host-id <ID>)        # SSH (padrão do cadastro)
+python3 scripts/tools/access/session.py exec --session $S --command "<cmd>"   # repetir; ler saída e decidir
+python3 scripts/tools/access/session.py close --session $S
+```
+
+- Protocolo: SSH por padrão. Se o usuário pedir Telnet, `open --host-id <ID> --telnet` (texto puro; só
+  legado). Pedir SSH → SSH. Respeitar o `method` do inventário; API MikroTik segue em `api_mikrotik.py`.
+- Condicional na mesma sessão (ex.: "se não tem o IP, adicione"): `exec` de checagem → decide → `exec` de ação → verifica.
+- Contínuo/paginado (ping, torch): `exec --timing --timeout N`. `status=timeout` mantém a sessão viva.
+- Mudança de config pela sessão exige as mesmas regras: baseline antes, rollback pronto.
+- Cofre trancado → `open` falha com `VaultLocked`; pedir ao humano o `unlock` (nunca digitar a senha).
+- Detalhes: `scripts/tools/access/SKILL.md`. Auditoria em `runs/<ts>-session-<id>/session.log`.
 
 ## Tom de Voz
 

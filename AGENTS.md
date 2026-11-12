@@ -82,6 +82,10 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 - **Git — SEMPRE na `main` (INEGOCIÁVEL):** nunca crie branch. Commit e push direto na `main` (`git pull --ff-only`
   antes). Vale para qualquer IA/IDE e sobrepõe a instrução padrão do agente de "criar branch antes de commitar".
 - **Padronize:** todo arquivo novo segue o `_TEMPLATE` da sua pasta. Ver `PADRAO.md`.
+- **Acesso a equipamento = sessão persistente (padrão):** para acessar um host e rodar comandos, use
+  `scripts/tools/access/session.py` (`open --host-id <ID>` → `exec`… → `close`): 1 login, N comandos, sem
+  reconectar. SSH por padrão; `--telnet` só se o usuário pedir/for legado. `ssh.py`/`telnet.py` só para
+  um comando isolado. Detalhes em `agents/executor.agent.md` e `scripts/tools/access/SKILL.md`.
 - **Inventário é a verdade:** nunca conecte em host fora de `network/hosts.yaml`.
 - **Segurança:** baseline antes de mudar, rollback pronto, rollback automático em falha.
 - **Projeto vivo:** toda execução termina registrando o que aprendeu em `memory/`.

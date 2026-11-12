@@ -37,63 +37,30 @@ def open_cli(host: dict, cred: dict):
         "timeout": DEFAULT_TIMEOUT,
         "fast_cli": False,
     }
+    if method == "telnet" and (host.get("vendor") or "").lower() == "mikrotik":
+        # RouterOS/telnet: sem "+ct" ele consulta o terminal (ANSI) e derruba a conexão
+        if "+" not in params["username"]:
+            params["username"] += "+ct"
     if cred.get("secret"):
         params["secret"] = cred["secret"]
     if cred.get("key_file"):
         params["use_keys"] = True
         params["key_file"] = cred["key_file"]
+    if method == "telnet" and (host.get("vendor") or "").lower() == "mikrotik":
+        return _routeros_telnet_class()(**{**params, "device_type": "mikrotik_routeros_telnet"})
     return ConnectHandler(**params)
 
 
-def open_napalm(host: dict, cred: dict):
-    """Abre um driver NAPALM (coleta estruturada / compare_config). Levanta se não suportado."""
-    driver_name = resolve_vendor(host.get("vendor")).get("napalm")
-    if not driver_name:
-        raise ValueError(f"NAPALM não suporta o fabricante '{host.get('vendor')}'")
-    try:
-        from napalm import get_network_driver
-    except ImportError:
-        sys.exit("ERRO: napalm não instalado. Rode: pip install -r requirements.txt")
+def _routeros_telnet_class():
+    """mikrotik_routeros sobre Telnet. O 'generic_telnet' do Netmiko é de terminal-server (não faz
+    login) e o RouterOS exige CR+LF no Enter; a negociação de opções o telnetlib já responde."""
+    from netmiko.ssh_dispatcher import CLASS_MAPPER
+    base = CLASS_MAPPER["mikrotik_routeros"]
 
-    driver = get_network_driver(driver_name)
-    dev = driver(
-        hostname=host["mgmt_ip"],
-        username=cred.get("username", ""),
-        password=cred.get("password", ""),
-        optional_args={"secret": cred.get("secret", ""), "port": (host.get("access") or {}).get("port", 22)},
-    )
-    dev.open()
-    return dev
+    class RouterOSTelnet(base):
+        def write_channel(self, out_data):
+            if isinstance(out_data, str) and out_data.endswith("\r"):
+                out_data += "\n"
+            return super().write_channel(out_data)
 
-
-def open_routeros_api(host: dict, cred: dict):
-    """Abre a API nativa do MikroTik RouterOS via librouteros."""
-    try:
-        import librouteros
-    except ImportError:
-        sys.exit("ERRO: librouteros não instalado. Rode: pip install -r requirements.txt")
-
-    port = (host.get("access") or {}).get("port", 8728)
-    return librouteros.connect(
-        host=host["mgmt_ip"],
-        username=cred.get("username", ""),
-        password=cred.get("password", ""),
-        port=port,
-        timeout=DEFAULT_TIMEOUT,
-    )
-
-
-def get_connection(host: dict, cred: dict):
-    """Despachante central. Retorna (tipo, conexão) — tipo ∈ {'api','cli'}."""
-    method = (host.get("access") or {}).get("method", "ssh")
-    vendor = (host.get("vendor") or "").lower()
-
-    if method == "api":
-        if vendor == "mikrotik":
-            return "api", open_routeros_api(host, cred)
-        raise ValueError(f"acesso API ainda não implementado para o fabricante '{vendor}'")
-    if method in ("ssh", "telnet"):
-        return "cli", open_cli(host, cred)
-    if method == "winbox":
-        raise ValueError("winbox não é automatizável — cadastre o host com method 'api' ou 'ssh'")
-    raise ValueError(f"método de acesso desconhecido: '{method}'")
+    return RouterOSTelnet

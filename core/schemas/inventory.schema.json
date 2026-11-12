@@ -70,6 +70,7 @@
         "site": { "type": "string" },
         "notes": { "type": "string" },
         "credential": { "type": "string" },
+        "backup_before_change": { "type": "boolean", "description": "Backup automático antes/depois de mudanças (scripts/tools/backup/change.py)." },
         "access": {
           "type": "object",
           "additionalProperties": false,

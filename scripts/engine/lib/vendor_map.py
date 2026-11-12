@@ -15,7 +15,7 @@ from __future__ import annotations
 VENDOR_MAP: dict[str, dict] = {
     "mikrotik": {
         "netmiko": "mikrotik_routeros",
-        "netmiko_telnet": "mikrotik_routeros_telnet",
+        "netmiko_telnet": "generic_telnet",  # netmiko não tem mikrotik_routeros_telnet
         "napalm": None,
         "api": "librouteros",
         "notes": "API nativa na porta 8728 (8729 com TLS). Preferir API a SSH para MikroTik.",

@@ -28,7 +28,10 @@ def run_commands(host_name: int | str, commands: list[str], force_method: str = 
     """Conecta no host via CLI e executa os comandos. Retorna {comando: saída}."""
     hosts_data, creds_data = load_inventory()
     host, cred = resolve_host(host_name, hosts_data, creds_data)
-    host.setdefault("access", {})["method"] = force_method
+    access = host.setdefault("access", {})
+    if access.get("method") != force_method:
+        access.pop("port", None)                  # porta do cadastro é do outro protocolo (ex.: SSH 64777 ≠ Telnet 23)
+    access["method"] = force_method
 
     conn = open_cli(host, cred)
     results: dict[str, str] = {}
