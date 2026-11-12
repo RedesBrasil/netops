@@ -40,40 +40,85 @@ function Kind({ kind, r }) {
        { key: "id", label: "ID", render: (r) => r.id || "—" },
        { key: "function", label: "Função", render: (r) => r.function || "—" }];
   cols[0].render = ((orig) => (row) => html`<a href=${"#" + kind + "/" + encodeURIComponent(row.file)} onClick=${(e) => e.stopPropagation()}>${orig(row)}</a>`)(cols[0].render);
+  if (open) return html`<${Detail} key=${open} kind=${kind} file=${open} onClose=${() => setOpen(null)} onSaved=${() => res.reload()} />`;
   return html`<div>
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar" count=${items.length} total=${(res.data[kind] || []).length} />
     <${ResourceTable} columns=${cols} rows=${items.map((i) => ({ ...i, _key: i.file }))}
       onRowClick=${(r) => setOpen(r.file)} empty="Nada aqui." />
-    ${open && html`<${Editor} key=${open} kind=${kind} file=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}
     ${creating && html`<${Creator} kind=${kind} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); res.reload(); }} />`}
   </div>`;
 }
 
-function Editor({ kind, file, onClose, onSaved }) {
+// Detalhe inline (sem modal), como Memória e Skills: #workflows/<arquivo> | #agents/<arquivo>
+function Detail({ kind, file, onClose, onSaved }) {
   const [data, setData] = useState(null);
   const [text, setText] = useState("");
   const [name, setName] = useState(file);
-  useEffect(() => { api.get(`/${kind}/${file}`).then((d) => { setData(d); setText(d.text); }).catch(handleError); }, []);
-  if (!data) return html`<${Modal} title="Carregando…" onClose=${onClose}><${Spinner} /><//>`;
+  const [err, setErr] = useState(null);
+  useEffect(() => { api.get(`/${kind}/${file}`).then((d) => { setData(d); setText(d.text); }).catch(setErr); }, []);
+  if (err) return html`<div class="card">'${file}' não encontrado. <a href=${"#" + kind}>Voltar</a></div>`;
+  if (!data) return html`<${Spinner} />`;
   async function save() {
     try {
-      let target = file;
+      let target = file, rev = data.rev;
       if (name !== file) {                          // renomeia o arquivo (conteúdo igual => rev não muda)
         await api.post(`/${kind}/${file}/rename`, { to: name });
         target = name;
       }
-      await api.put(`/${kind}/${target}`, { text }, data.rev);
-      toast.ok("Salvo"); onSaved();
+      const r = await api.put(`/${kind}/${target}`, { text }, rev);
+      toast.ok("Salvo");
+      if (target !== file) { location.hash = `#${kind}/${encodeURIComponent(target)}`; onSaved(); return; }
+      setData({ ...data, rev: r?.rev ?? rev, text }); onSaved();
     } catch (e) { handleError(e); }
   }
   const isMd = file.endsWith(".md");
-  return html`<${Modal} title=${file} onClose=${onClose} wide=${true}>
+  const dirty = text !== data.text || name !== file;
+  return html`<div>
+    <div class="help"><a href=${"#" + kind}>← ${kind === "workflows" ? "Workflows" : "Agentes"}</a></div>
+    <div class="page-title"><h1>${file}</h1></div>
     <${Field} label=${`Nome do arquivo (alterar = renomear — termina em ${kind === "workflows" ? ".workflow.yaml" : ".agent.md"})`}>
       <input value=${name} onInput=${(e) => setName(e.target.value)} /><//>
-    ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`<${CodeTextEditor} name=${file} value=${text} onChange=${setText} />`}
+    ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />`
+      : html`<${YamlEditor} name=${file} value=${text} onChange=${setText} view=${kind === "workflows" ? WorkflowView : null} />`}
     <div class="help">Validação no servidor: ${kind === "workflows" ? "exige workflow.steps" : "frontmatter com id/name/function"}.</div>
-    <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary" onClick=${save}>Salvar</button></div>
-  <//>`;
+    <div style="margin-top:12px"><button class="primary" disabled=${!dirty} onClick=${save}>Salvar</button></div>
+  </div>`;
+}
+
+// YAML estruturado: mesmos modos do Markdown — Ler (formatado) e Texto puro (validado).
+function YamlEditor({ name, value, onChange, view }) {
+  const [mode, setMode] = useState("read");
+  return html`<div>
+    <div class="md-toolbar"><div class="seg">
+      ${[["read", "Ler"], ["raw", "Texto puro"]].map(([k, l]) => html`<button type="button" class=${mode === k ? "on" : ""} onClick=${() => setMode(k)}>${l}</button>`)}
+    </div></div>
+    ${mode === "raw" ? html`<${CodeTextEditor} name=${name} value=${value} onChange=${onChange} />`
+      : html`<div class="card md-readbox">${view ? html`<${view} text=${value} />` : html`<pre class="raw">${value}</pre>`}</div>`}
+  </div>`;
+}
+
+const STEP_FIELDS = [["inputFiles", "Entradas"], ["outputFiles", "Saídas"], ["qualityCriteria", "Critérios de qualidade"], ["vetoConditions", "Condições de veto"]];
+function WorkflowView({ text }) {
+  const [doc, setDoc] = useState(undefined);
+  useEffect(() => {
+    import("js-yaml").then((m) => { try { setDoc((m.load || m.default.load)(text)); } catch (e) { setDoc(e); } });
+  }, [text]);
+  if (doc === undefined) return html`<${Spinner} />`;
+  if (doc instanceof Error) return html`<div class="yaml-bad">⚠ YAML inválido: ${doc.message.split("\n")[0]}. Corrija em “Texto puro”.</div>`;
+  const w = doc?.workflow;
+  if (!w) return html`<pre class="raw">${text}</pre>`;
+  const list = (v) => (Array.isArray(v) ? v : [v]).map((x) => html`<code>${String(x)}</code> `);
+  return html`<div class="md">
+    <h2>${w.name || w.id}</h2>
+    ${w.description && html`<p>${w.description}</p>`}
+    ${w.triggers?.length ? html`<p><b>Gatilhos:</b> ${list(w.triggers)}</p>` : ""}
+    <h3>Passos (${(w.steps || []).length})</h3>
+    ${(w.steps || []).map((st) => html`<div class="card" key=${st.id} style="margin-bottom:10px">
+      <div><b>${st.id} · ${st.name}</b> ${st.type && html`<${Badge}>${st.type}<//>`} ${st.agent && html`<${Badge}>${st.agent}<//>`}</div>
+      ${st.instructions && html`<p>${st.instructions}</p>`}
+      ${STEP_FIELDS.filter(([k]) => st[k] && (!Array.isArray(st[k]) || st[k].length)).map(([k, l]) => html`<div><b>${l}:</b> ${list(st[k])}</div>`)}
+    </div>`)}
+  </div>`;
 }
 
 function Creator({ kind, onClose, onSaved }) {
