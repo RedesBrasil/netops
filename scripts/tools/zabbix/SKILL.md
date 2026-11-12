@@ -34,7 +34,7 @@ python3 scripts/tools/zabbix/analise_template.py "SNMP LINUX"
 python3 scripts/tools/zabbix/analise_template.py "Mikrotik by SNMP"
 ```
 
-## Pendência
+## Token
 
-O token da API está fixo no código (`API_TOKEN`). O certo é ler de `network/credentials.yaml`
-(cofre) ou de variável de ambiente, como os scripts de `access/` — e girar o token atual.
+O token da API é lido da variável de ambiente `ZABBIX_API_TOKEN` (nunca fica no código).
+O token antigo esteve versionado no histórico do git: **gire-o no Zabbix** (Users → API tokens).

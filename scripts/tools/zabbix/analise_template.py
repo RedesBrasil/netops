@@ -2,13 +2,16 @@
 """
 Analisa template do Zabbix - lista itens e triggers
 """
+import os
 import sys
 import json
 import requests
 from collections import defaultdict
 
 ZABBIX_URL = "http://10.8.200.10/zabbix/api_jsonrpc.php"
-API_TOKEN = "REMOVIDO-TOKEN-ZABBIX"
+API_TOKEN = os.environ.get("ZABBIX_API_TOKEN", "")
+if not API_TOKEN:
+    sys.exit("Defina ZABBIX_API_TOKEN no ambiente (nunca commitar o token).")
 
 def zabbix_request(method, params):
     """Faz requisição à API do Zabbix"""

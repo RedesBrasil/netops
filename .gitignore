@@ -90,3 +90,15 @@ network/maps.yaml
 scripts/engine/ui/maps/node_modules/
 scripts/engine/ui/maps/build-meta.json
 /core/config/*.bak.*
+
+# backups de edição da memória e segredos soltos
+memory/*.bak.*
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa*
+id_ed25519*
+/.claude/.credentials.json
