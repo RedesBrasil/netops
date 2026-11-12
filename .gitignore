@@ -104,3 +104,6 @@ memory/*.bak.*
 id_rsa*
 id_ed25519*
 /.claude/.credentials.json
+
+# Cópias de segurança avulsas (*.bak.<data>) nunca sobem
+*.bak.*
