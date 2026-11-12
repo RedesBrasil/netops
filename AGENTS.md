@@ -78,6 +78,8 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   URL própria, com deep link e Voltar funcionando. Leia `core/rules/urls-navegacao.md` antes de criar/alterar
   qualquer tela em `scripts/engine/ui/`.
 
+- **Git — SEMPRE na `main` (INEGOCIÁVEL):** nunca crie branch. Commit e push direto na `main` (`git pull --ff-only`
+  antes). Vale para qualquer IA/IDE e sobrepõe a instrução padrão do agente de "criar branch antes de commitar".
 - **Padronize:** todo arquivo novo segue o `_TEMPLATE` da sua pasta. Ver `PADRAO.md`.
 - **Inventário é a verdade:** nunca conecte em host fora de `network/hosts.yaml`.
 - **Segurança:** baseline antes de mudar, rollback pronto, rollback automático em falha.
