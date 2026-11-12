@@ -232,7 +232,7 @@ class ClaudeWebSession:
     def __init__(self, ws: WebSocket | None = None, *, owner: str = "",
                  persist: bool = False, resume: str | None = None, model: str | None = None,
                  effort: str | None = None):
-        self.ws = ws
+        self._wss: list = [ws] if ws is not None else []   # MULTI-ANEXO: várias abas na mesma sessão
         self.owner = owner
         self.persist = persist
         # resume/model ficam na SESSÃO (não no socket), p/ (re)lançar igual em cada anexo.
@@ -272,20 +272,37 @@ class ClaudeWebSession:
         self._interrupted = False        # interrupt durante o turno -> não despacha a fila no fim
         self._restore_pending: list[dict] = []  # itens a devolver p/ a caixa quando reanexar
 
+    @property
+    def ws(self):
+        """Socket mais recente (compat). Pode haver vários anexados em `_wss`."""
+        return self._wss[-1] if self._wss else None
+
+    @ws.setter
+    def ws(self, value) -> None:
+        self._wss = [value] if value is not None else []
+
     # ------------------------------------------------------------------ envio
-    async def _send(self, obj: dict) -> None:
-        # Desanexado (persist): NÃO guarda nada — o transcript em disco é a verdade. Descarta.
-        ws = self.ws
-        if ws is None:
+    async def _send(self, obj: dict, only=None, skip=None) -> None:
+        """Envia a TODAS as abas anexadas (ou só a `only`; `skip` exclui uma). Desanexado
+        (persist): NÃO guarda nada — o transcript em disco é a verdade. Descarta."""
+        targets = [only] if only is not None else list(self._wss)
+        if skip is not None:
+            targets = [w for w in targets if w is not skip]
+        if not targets:
             return
         # default=str protege contra qualquer valor não-serializável vindo do SDK.
+        data = json.dumps(obj, default=str)
+        await asyncio.gather(*(self._send_one(w, data) for w in targets))
+
+    async def _send_one(self, ws, data: str) -> None:
         try:
             # Timeout: socket half-open (celular bloqueou/sem rede, sem FIN) pode travar o drain e,
-            # como o _sdk_pump envia inline, parar o agente. Estourou = trata como desanexado.
-            await asyncio.wait_for(ws.send_text(json.dumps(obj, default=str)), timeout=_SEND_TIMEOUT)
+            # como o _sdk_pump envia inline, parar o agente. Estourou = solta SÓ esse socket
+            # (as outras abas continuam).
+            await asyncio.wait_for(ws.send_text(data), timeout=_SEND_TIMEOUT)
         except asyncio.TimeoutError:
-            if self.persist and self.ws is ws:
-                self.detach()
+            if self.persist and ws in self._wss:
+                self.detach(ws)
                 try:
                     asyncio.create_task(ws.close())
                 except Exception:
@@ -414,22 +431,23 @@ class ClaudeWebSession:
     def attach(self, ws: WebSocket) -> None:
         """(Re)anexa um socket. Cancela os timers de carência/pergunta e reemite os cards de
         permissão pendentes (o envio original foi DESCARTADO enquanto desanexado)."""
-        old = self.ws
-        self.ws = ws
-        if old is not None and old is not ws:   # supersede (ex.: nova aba) — fecha o antigo
-            try:
-                asyncio.create_task(old.close(code=4409, reason="session_superseded"))
-            except Exception:
-                pass
+        # MULTI-ANEXO: abas/dispositivos adicionais convivem; nenhum derruba o outro.
+        if ws not in self._wss:
+            self._wss.append(ws)
         self._cancel_grace()
         self._cancel_ask_timers()               # você voltou: perguntas voltam a esperar sem pressa
         for payload in list(self._pending_payloads.values()):
-            asyncio.create_task(self._send(payload))
+            asyncio.create_task(self._send(payload, only=ws))
 
-    def detach(self) -> None:
-        """Solta o socket SEM matar o agente. Arma a carência (se ocioso) e o timeout das
-        perguntas em aberto."""
-        self.ws = None
+    def detach(self, ws=None) -> None:
+        """Solta um socket (ou todos, sem argumento) SEM matar o agente. Só arma a carência e o
+        timeout das perguntas quando NÃO sobrar nenhuma aba anexada."""
+        if ws is None:
+            self._wss = []
+        elif ws in self._wss:
+            self._wss.remove(ws)
+        if self._wss:
+            return
         if self._pending_payloads:              # perguntas em aberto e você saiu -> conta o timeout
             self._arm_ask_timers()
         self._maybe_arm_grace()
@@ -516,24 +534,25 @@ class ClaudeWebSession:
             await self.start()
             await self._send_queue(fresh=True)
         else:
-            await self._send({"type": "reattached", "busy": self._busy})
-            await self._send_queue()
+            # Estado inicial só para ESTE socket (as outras abas já o têm).
+            await self._send({"type": "reattached", "busy": self._busy}, only=ws)
+            await self._send_queue(only=ws)
             if self._restore_pending:
                 items, self._restore_pending = self._restore_pending, []
-                await self._send({"type": "queue_restored", "items": items})
+                await self._send({"type": "queue_restored", "items": items}, only=ws)
             lt = self._last_turn
             if lt:   # restaura o relógio do cache (idade real) e o contexto após recarregar a página
                 await self._send({"type": "cache_state", "usage": lt["usage"],
-                                  "age": max(0.0, time.monotonic() - lt["t"])})
+                                  "age": max(0.0, time.monotonic() - lt["t"])}, only=ws)
                 if lt.get("ctx"):
-                    await self._send(lt["ctx"])
+                    await self._send(lt["ctx"], only=ws)
         try:
-            await self._ws_pump()
+            await self._ws_pump(ws)
         finally:
             if self._closing:
                 await self.teardown()
-            elif self.ws is ws:        # só desanexa se OUTRO socket não tomou o lugar
-                self.detach()
+            else:                      # solta só ESTE socket; as outras abas seguem
+                self.detach(ws)
 
     async def teardown(self) -> None:
         """Mata o subprocesso `claude`, cancela timers/futures e sai do registro. Idempotente."""
@@ -556,16 +575,17 @@ class ClaudeWebSession:
                 await self.client.disconnect()  # mata o subprocesso `claude`
         except Exception:
             pass
-        try:
-            if self.ws is not None:
-                await self.ws.close()
-        except Exception:
-            pass
+        for w in list(self._wss):
+            try:
+                await w.close()
+            except Exception:
+                pass
 
-    async def _ws_pump(self) -> None:
+    async def _ws_pump(self, ws=None) -> None:
+        ws = ws or self.ws
         while True:
             try:
-                raw = await self.ws.receive_json()
+                raw = await ws.receive_json()
             except (WebSocketDisconnect, RuntimeError):
                 return
             except Exception:
@@ -576,6 +596,8 @@ class ClaudeWebSession:
             if kind == "prompt":
                 text = (raw.get("text") or "").strip()
                 if text:
+                    if len(self._wss) > 1:   # outras abas da sessão veem a pergunta
+                        await self._send({"type": "user_echo", "text": text}, skip=ws)
                     if raw.get("queue") and self._busy:
                         await self._enqueue(text)
                     elif raw.get("queue"):
@@ -642,11 +664,11 @@ class ClaudeWebSession:
         self._busy = True
         await self.client.query(text)
 
-    async def _send_queue(self, fresh: bool = False) -> None:
+    async def _send_queue(self, fresh: bool = False, only=None) -> None:
         ev = {"type": "queue", "items": list(self._queue)}
         if fresh:
             ev["fresh"] = True
-        await self._send(ev)
+        await self._send(ev, only=only)
 
     async def _add_to_queue(self, texts) -> None:
         """Re-enfileira o cache da aba SEM despachar (nem com o agente ocioso): o turno que as

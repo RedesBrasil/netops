@@ -490,6 +490,10 @@ function useClaudeSession() {
             saveQueueCache(sid, items);
             break;
           }
+          case "user_echo":   // pergunta digitada em OUTRA aba da mesma sessão
+            setItems((prev) => [...closeOpen(prev), { type: "user", text: ev.text, ts: Date.now() }]);
+            setWorking(true);
+            break;
           case "queue_dispatched":   // item da fila virou turno no servidor
             setItems((prev) => [...closeOpen(prev), { type: "user", text: ev.text, queued: true, ts: Date.now() }]);
             setWorking(true);

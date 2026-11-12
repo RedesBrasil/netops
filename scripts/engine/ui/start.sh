@@ -34,10 +34,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
+# Marcadores INTERNOS nunca vêm do ambiente: o console exporta NETOPS_UI_FOREGROUND/NETOPS_UPDATE_* p/
+# os filhos (aba Claude, terminal web) e, herdados, faziam o start.sh de lá pular o modo gerenciado e
+# recusar com "já existe um console" (12/11/2026) — e NETOPS_UPDATE_FROZEN=1 faria um supervisor novo
+# pular a cópia do runtime. Os modos agora são escolhidos SÓ por argumento (--foreground / --no-detach);
+# o supervisor recria as NETOPS_UPDATE_* dele.
+unset NETOPS_UI_FOREGROUND NETOPS_RESTART_DETACHED \
+      NETOPS_UPDATE_FROZEN NETOPS_UPDATE_MANAGED NETOPS_UPDATE_NONCE NETOPS_UPDATE_RECOVERING
+
 # ----------------------------------------------------------------------------- modo gerenciado
 # (padrão) sobe ou reinicia de forma desacoplada. O modo "primeiro plano" (mais abaixo) é o que o
-# systemd/setsid executa de fato, com NETOPS_UI_FOREGROUND=1.
-if [ "${NETOPS_UI_FOREGROUND:-0}" != "1" ] && [ "${1:-}" != "--foreground" ]; then
+# systemd/setsid executa de fato, chamando este script com --foreground.
+if [ "${1:-}" != "--foreground" ]; then
   LOG=/tmp/netops-restart.log
   log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
   ASSUME_YES=0; NO_DETACH=0; PASS=()
@@ -52,7 +60,7 @@ if [ "${NETOPS_UI_FOREGROUND:-0}" != "1" ] && [ "${1:-}" != "--foreground" ]; th
     SUP=$(pgrep -of "update/supervisor.py --root $ROOT --" || true)
   fi
 
-  if [ "$NO_DETACH" = "0" ] && [ -z "${NETOPS_RESTART_DETACHED:-}" ]; then
+  if [ "$NO_DETACH" = "0" ]; then
     if [ -n "$SUP" ] && [ "$ASSUME_YES" = "0" ] && [ -t 0 ] && [ -t 1 ]; then
       echo "O console já está rodando. Reiniciar ENCERRA as sessões vivas da aba Claude (tarefas em andamento)."
       read -r -p "Reiniciar mesmo assim? [s/N] " ans
@@ -61,21 +69,21 @@ if [ "${NETOPS_UI_FOREGROUND:-0}" != "1" ] && [ "${1:-}" != "--foreground" ]; th
     : >"$LOG"
     if command -v systemd-run >/dev/null; then
       systemd-run --quiet --collect --unit="netops-restart-$(date +%s)" \
-        --setenv=NETOPS_RESTART_DETACHED=1 --setenv=HOME="${HOME:-/root}" \
+        --setenv=HOME="${HOME:-/root}" \
         --setenv=NETOPS_UI_HOME="${NETOPS_UI_HOME:-}" --setenv=NETOPS_UI_HOST="${NETOPS_UI_HOST:-}" \
         --setenv=NETOPS_UI_PORT="${NETOPS_UI_PORT:-}" --setenv=NETOPS_UI_TERMINAL="${NETOPS_UI_TERMINAL:-}" \
         --setenv=NETOPS_UI_CLAUDE="${NETOPS_UI_CLAUDE:-}" --setenv=NETOPS_UI_CLAUDE_PERSIST="${NETOPS_UI_CLAUDE_PERSIST:-}" \
         "$0" --no-detach "${PASS[@]}" \
         && { echo "$([ -n "$SUP" ] && echo Reinício || echo Subida) agendado(a) (desacoplado). Acompanhe: tail -f $LOG"; echo "Console volta em ~15 s; aba Claude reconecta sozinha / F5."; exit 0; }
     fi
-    NETOPS_RESTART_DETACHED=1 setsid nohup "$0" --no-detach "${PASS[@]}" >/dev/null 2>&1 < /dev/null &
+    setsid nohup "$0" --no-detach "${PASS[@]}" >/dev/null 2>&1 < /dev/null &
     echo "Agendado (setsid). Acompanhe: tail -f $LOG"; exit 0
   fi
 
   # 1) captura o console atual (host/porta/flags); env explícito tem precedência
   HOST=""; PORT=8765; TERM_ON=1; CLAUDE_ON=1
   if [ -n "$SUP" ]; then
-    mapfile -d '' ARGS < "/proc/$SUP/cmdline"
+    mapfile -d '' ARGS < "/proc/$SUP/cmdline" 2>/dev/null || ARGS=()
     for i in "${!ARGS[@]}"; do
       case "${ARGS[$i]}" in --host) HOST="${ARGS[$((i+1))]}";; --port) PORT="${ARGS[$((i+1))]}";; esac
     done
@@ -98,20 +106,54 @@ if [ "${NETOPS_UI_FOREGROUND:-0}" != "1" ] && [ "${1:-}" != "--foreground" ]; th
   PYV="$ROOT/.venv/bin/python3"; [ -x "$PYV" ] || PYV=python3
   { [ -x "$ROOT/.venv/bin/python3" ] || [ -f "$ROOT/.netops-update/journal.json" ]; } || preflight_fail "venv ausente"
   [ -f "$ROOT/scripts/engine/update/supervisor.py" ] || preflight_fail "supervisor.py ausente"
-  "$PYV" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$ROOT/scripts/engine/ui/server.py" 2>/dev/null || preflight_fail "server.py com erro de sintaxe"
+  # Sintaxe de TODO o backend (server, services, routers, update) — não só do server.py.
+  SYNTAX_ERR=$("$PYV" - "$ROOT/scripts/engine/ui" "$ROOT/scripts/engine/update" <<'PYEOF' 2>&1
+import ast, pathlib, sys
+bad = []
+for base in sys.argv[1:]:
+    for f in pathlib.Path(base).rglob("*.py"):
+        if "tests" in f.parts or "__pycache__" in f.parts:
+            continue
+        try:
+            ast.parse(f.read_text(encoding="utf-8"), str(f))
+        except Exception as e:
+            bad.append(f"{f}: {e}")
+print("\n".join(bad)); sys.exit(1 if bad else 0)
+PYEOF
+) || preflight_fail "erro de sintaxe no backend: $SYNTAX_ERR"
+  # Import SECO do app (o mesmo venv do console), com dados/HOME numa pasta vazia: pega nome errado,
+  # import quebrado, dependência faltando — o que passa no parse mas derrubaria o console novo.
+  # Só importa (não sobe servidor, não abre porta, não toca nos dados reais).
+  if [ -x "$ROOT/.venv/bin/python3" ]; then
+    SMOKE_DIR=$(mktemp -d)
+    IMPORT_RC=0
+    (cd "$ROOT/scripts/engine/ui" && env -i PATH="/usr/bin:/bin" HOME="$SMOKE_DIR" \
+      NETOPS_UI_DATA_ROOT="$SMOKE_DIR" timeout 60 "$ROOT/.venv/bin/python3" \
+      -c "import sys; sys.path.insert(0, '.'); import app") >"$SMOKE_DIR.log" 2>&1 || IMPORT_RC=$?
+    IMPORT_ERR=$(tail -3 "$SMOKE_DIR.log" 2>/dev/null)
+    rm -rf "$SMOKE_DIR" "$SMOKE_DIR.log"
+    [ "$IMPORT_RC" = "0" ] || preflight_fail "o app não importa: $IMPORT_ERR"
+  fi
   if [ -z "$SUP" ] && ss -ltn "sport = :$PORT" 2>/dev/null | grep -q LISTEN; then preflight_fail "porta $PORT ocupada por outro processo"; fi
   log "pré-validação OK"
 
-  # 2) para: SIGTERM no supervisor, espera ele (e o filho) sumirem; KILL após 30 s
+  # 2) para: SIGTERM no supervisor, espera ele (e o filho) sumirem; KILL após 30 s.
+  # Daqui em diante o console antigo está parando: NENHUM comando pode abortar o helper (set -e)
+  # antes de subir o novo — todo comando que pode "falhar à toa" leva `|| true`.
+  set +e
   if [ -n "$SUP" ]; then
-    sleep 2; kill -TERM "$SUP" 2>/dev/null
+    sleep 2; kill -TERM "$SUP" 2>/dev/null || true
     for _ in $(seq 30); do kill -0 "$SUP" 2>/dev/null || break; sleep 1; done
-    if kill -0 "$SUP" 2>/dev/null; then log "supervisor não saiu em 30 s — KILL"; pkill -KILL -P "$SUP"; kill -KILL "$SUP"; sleep 1; fi
+    if kill -0 "$SUP" 2>/dev/null; then
+      log "supervisor não saiu em 30 s — KILL"
+      pkill -KILL -P "$SUP" 2>/dev/null || true; kill -KILL "$SUP" 2>/dev/null || true; sleep 1
+    fi
   fi
   # 3) espera o lock ficar livre (até 30 s)
-  mkdir -p "$(dirname "$LOCK")"
+  mkdir -p "$(dirname "$LOCK")" || true
   for _ in $(seq 30); do
-    { exec 8>"$LOCK"; } 2>/dev/null; flock -n 8 && { exec 8>&-; break; }; exec 8>&-; sleep 1
+    { exec 8>"$LOCK"; } 2>/dev/null && flock -n 8 && { exec 8>&-; break; }
+    exec 8>&- 2>/dev/null; sleep 1
   done
 
   # O console NUNCA pode ficar no cgroup do helper: quando a unidade do helper termina, o systemd
@@ -120,23 +162,31 @@ if [ "${NETOPS_UI_FOREGROUND:-0}" != "1" ] && [ "${1:-}" != "--foreground" ]; th
   launch_console() {
     if command -v systemd-run >/dev/null; then
       systemd-run --quiet --collect --unit="netops-console-$(date +%s)" --working-directory="$ROOT" \
-        --setenv=NETOPS_UI_FOREGROUND=1 --setenv=HOME="${HOME:-/root}" --setenv=NETOPS_UI_HOME="${NETOPS_UI_HOME:-}" \
+        --setenv=HOME="${HOME:-/root}" --setenv=NETOPS_UI_HOME="${NETOPS_UI_HOME:-}" \
         --setenv=NETOPS_UI_HOST --setenv=NETOPS_UI_PORT --setenv=NETOPS_UI_TERMINAL \
         --setenv=NETOPS_UI_CLAUDE --setenv=NETOPS_UI_CLAUDE_PERSIST \
         --property=StandardOutput=append:"$LOG" --property=StandardError=append:"$LOG" \
-        "$ROOT/scripts/engine/ui/start.sh" "${PASS[@]}" >>"$LOG" 2>&1 && return 0
+        "$ROOT/scripts/engine/ui/start.sh" --foreground "${PASS[@]}" >>"$LOG" 2>&1 && return 0
       log "systemd-run falhou; usando setsid"
     fi
-    ( cd "$ROOT" && NETOPS_UI_FOREGROUND=1 setsid nohup scripts/engine/ui/start.sh "${PASS[@]}" >>"$LOG" 2>&1 < /dev/null & )
+    ( cd "$ROOT" && setsid nohup scripts/engine/ui/start.sh --foreground "${PASS[@]}" >>"$LOG" 2>&1 < /dev/null & )
   }
 
-  # 4) sobe com até 3 tentativas; 5) valida HTTP
+  # 4) sobe com até 3 tentativas; 5) valida HTTP (responde e continua respondendo após 8 s)
+  http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://$HOST:$PORT/" 2>/dev/null || true; }
   for try in 1 2 3; do
     log "subindo (tentativa $try)"
-    launch_console
+    launch_console || true
     for _ in $(seq 25); do
-      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://$HOST:$PORT/" 2>/dev/null)
-      case "$code" in 200|301|302|303|401|403) sleep 8; c2=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://$HOST:$PORT/"); [ "$c2" != "000" ] && { log "OK: console respondendo ($code/$c2) em http://$HOST:$PORT/ e estável após 8 s"; exit 0; }; log "console caiu após subir"; break;; esac
+      code=$(http_code)
+      case "$code" in
+        200|301|302|303|401|403)
+          sleep 8; c2=$(http_code)
+          case "$c2" in
+            ""|000) log "console caiu após subir"; break ;;
+            *) log "OK: console respondendo ($code/$c2) em http://$HOST:$PORT/ e estável após 8 s"; exit 0 ;;
+          esac ;;
+      esac
       sleep 1
     done
     log "sem resposta HTTP; aguardando lock e tentando de novo"; sleep 5

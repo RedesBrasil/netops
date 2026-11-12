@@ -49,7 +49,7 @@ def _session(inbox=()):
     s.client = FakeClient()
     sent = []
 
-    async def capture(ev):
+    async def capture(ev, only=None, skip=None):
         sent.append(ev)
     s._send = capture
     return s, sent

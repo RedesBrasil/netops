@@ -68,19 +68,24 @@ def test_missing_resume_never_launches_agent(client, monkeypatch, persist):
         assert error.value.code == 4404
 
 
-def test_takeover_uses_close_code_without_reconnect_loop(env):
+def test_multi_attach_keeps_both_sockets(env):
     async def check():
-        closes = []
+        closes, sent = [], []
         class Socket:
             query_params = {}
             async def close(self, **kw):
                 closes.append(kw)
+            async def send_text(self, t):
+                sent.append((id(self), t))
         old, new = Socket(), Socket()
         session = claude_svc.ClaudeWebSession(old)
         session.attach(new)
         await asyncio.sleep(0)
-        assert session.ws is new
-        assert closes == [{"code": 4409, "reason": "session_superseded"}]
+        assert session.ws is new and closes == []
+        await session._send({"type": "x"})
+        assert {i for i, _ in sent} == {id(old), id(new)}
+        session.detach(new)
+        assert session.ws is old and session._grace_handle is None
     asyncio.run(check())
 
 
@@ -100,7 +105,7 @@ def _translated_events(message):
     sent = []
     async def check():
         session = claude_svc.ClaudeWebSession()
-        async def capture(event):
+        async def capture(event, only=None, skip=None):
             sent.append(event)
         session._send = capture
         await session._translate(message)

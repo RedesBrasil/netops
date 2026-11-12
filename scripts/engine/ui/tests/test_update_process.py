@@ -102,7 +102,7 @@ else:
     for key in ("NETOPS_UPDATE_FROZEN", "NETOPS_UPDATE_MANAGED", "NETOPS_UPDATE_NONCE"):
         env.pop(key, None)
     with (tmp_path / "console.log").open("wb") as log:
-        proc = subprocess.Popen(["bash", str(root / "scripts/engine/ui/start.sh")], cwd=root, env=env, stdout=log, stderr=log)
+        proc = subprocess.Popen(["bash", str(root / "scripts/engine/ui/start.sh"), "--foreground"], cwd=root, env=env, stdout=log, stderr=log)
         try:
             wait_for(lambda: (state / "supervisor.json").exists(), proc)
             def get_meta():

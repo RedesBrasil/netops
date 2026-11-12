@@ -492,7 +492,7 @@ descartar a fila; ícone inválido continua sendo tratado como erro de validaç�
 
 ## Reiniciar o console
 
-Use `scripts/engine/restart-console.sh` (desacopla, preserva host/flags, espera o lock, valida HTTP, log em `/tmp/netops-restart.log`). Nunca `kill` + `start.sh` manual.
+Use `scripts/engine/ui/start.sh --yes` (o mesmo script que sobe; desacopla, preserva host/flags, espera o lock, valida HTTP, log em `/tmp/netops-restart.log`). Nunca `kill` + `start.sh` manual.
 
 ## URLs de navegação (regra)
 

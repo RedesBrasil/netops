@@ -141,7 +141,9 @@ sys.stdout.buffer.write((base / ('release.tar.gz' if '/releases/assets/' in argu
                         NETOPS_UI_HOST='127.0.0.1', NETOPS_UI_PORT=str(self.port),
                         NETOPS_UI_TERMINAL='0', NETOPS_UI_CLAUDE='0', NETOPS_UI_CLAUDE_PERSIST='0',
                         NETOPS_UI_DATA_ROOT=str(self.data), NETOPS_FIXTURE_ASSETS=str(assets),
-                        PIP_NO_INDEX='1')
+                        PIP_NO_INDEX='1',
+                        # start.sh de releases ANTIGAS (fixture) só entra em primeiro plano por env.
+                        NETOPS_UI_FOREGROUND='1')
         for key in ('NETOPS_UPDATE_FROZEN', 'NETOPS_UPDATE_MANAGED', 'NETOPS_UPDATE_NONCE', 'NETOPS_UPDATE_RECOVERING'):
             self.env.pop(key, None)
         self.process = None

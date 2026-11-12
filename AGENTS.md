@@ -100,7 +100,8 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   - Desacopla (funciona de dentro da aba Claude/terminal web), faz **pré-validação** (venv, sintaxe do `server.py`, porta) antes de
     parar qualquer coisa, espera o supervisor sair e o lock liberar, tenta até 3 vezes e só termina OK quando o HTTP responde
     (log: `/tmp/netops-restart.log`). `--yes` pula a confirmação (em terminal interativo ele pergunta); `--foreground` roda em
-    primeiro plano, só para depurar. `scripts/engine/restart-console.sh` é só um atalho de compatibilidade para `start.sh --yes`.
+    primeiro plano, só para depurar. **Não existe script de restart separado** (o `restart-console.sh` foi removido em 12/11/2026).
+  - Funciona de dentro da aba Claude/terminal web: os modos internos são escolhidos só por argumento, nunca pelo ambiente herdado do console.
   - **Reiniciar encerra as sessões vivas da aba Claude** (a persistência cobre F5/standby, não o fim do processo do console).
     Avise o usuário antes: a aba cai ~15 s. Faça do restart a **última ação** do turno.
   - Liga o **terminal web** e a **página Claude Code** por padrão (sem o script as abas somem), injeta o `claude` no PATH,
