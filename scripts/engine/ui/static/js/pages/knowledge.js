@@ -82,7 +82,7 @@ function FileEditor({ kind, target, onClose, onSaved }) {
   return html`<${Modal} title=${`${target.vendor}/${target.name}`} onClose=${onClose} wide=${true}>
     <${Field} label="Nome do arquivo (alterar = renomear, atualiza o índice)">
       <input value=${name} onInput=${(e) => setName(e.target.value)} /><//>
-    ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`<${CodeTextEditor} value=${text} onChange=${setText} />`}
+    ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`<${CodeTextEditor} name=${target.name} value=${text} onChange=${setText} />`}
     <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary" onClick=${save}>Salvar</button></div>
   <//>`;
 }
@@ -107,7 +107,9 @@ function NewFile({ kind, onClose, onSaved }) {
              <${Field} label="Quando usar"><input value=${f.quando_usar} onInput=${(e) => set("quando_usar", e.target.value)} /><//>`
       : html`<${Field} label="Tópico"><input value=${f.topico} onInput=${(e) => set("topico", e.target.value)} /><//>
              <${Field} label="Descrição"><input value=${f.descricao} onInput=${(e) => set("descricao", e.target.value)} /><//>`}
-    <${Field} label="Conteúdo"><textarea class="codearea" value=${f.text} onInput=${(e) => set("text", e.target.value)}></textarea><//>
+    <${Field} label="Conteúdo">${f.name.endsWith(".md") || (kind === "best-practices" && !/\.\w+$/.test(f.name))
+      ? html`<${MarkdownEditor} value=${f.text} onChange=${(v) => set("text", v)} />`
+      : html`<${CodeTextEditor} name=${f.name} value=${f.text} onChange=${(v) => set("text", v)} />`}<//>
     <div class="modal-actions"><button onClick=${onClose}>Cancelar</button><button class="primary" onClick=${save}>Criar</button></div>
   <//>`;
 }

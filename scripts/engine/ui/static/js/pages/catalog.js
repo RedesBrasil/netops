@@ -70,7 +70,7 @@ function Editor({ kind, file, onClose, onSaved }) {
   return html`<${Modal} title=${file} onClose=${onClose} wide=${true}>
     <${Field} label=${`Nome do arquivo (alterar = renomear — termina em ${kind === "workflows" ? ".workflow.yaml" : ".agent.md"})`}>
       <input value=${name} onInput=${(e) => setName(e.target.value)} /><//>
-    ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`<${CodeTextEditor} value=${text} onChange=${setText} />`}
+    ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`<${CodeTextEditor} name=${file} value=${text} onChange=${setText} />`}
     <div class="help">Validação no servidor: ${kind === "workflows" ? "exige workflow.steps" : "frontmatter com id/name/function"}.</div>
     <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary" onClick=${save}>Salvar</button></div>
   <//>`;
@@ -89,7 +89,7 @@ function Creator({ kind, onClose, onSaved }) {
   }
   return html`<${Modal} title=${`Novo ${kind}`} onClose=${onClose} wide=${true}>
     <${Field} label=${`Nome do arquivo (termina em ${ext})`}><input value=${file} placeholder=${`exemplo${ext}`} onInput=${(e) => setFile(e.target.value)} /><//>
-    <${CodeTextEditor} value=${text} onChange=${setText} />
+    ${ext.endsWith(".md") ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`<${CodeTextEditor} name=${ext} value=${text} onChange=${setText} />`}
     <div class="modal-actions"><button onClick=${onClose}>Cancelar</button><button class="primary" onClick=${save}>Criar</button></div>
   <//>`;
 }

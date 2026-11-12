@@ -188,7 +188,7 @@ function Editor({ path, onClose, onSaved }) {
     ${path.endsWith(".md") ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`
     <${Field} label="Caminho (alterar = renomear/mover dentro de tools/)">
       <input value=${name} onInput=${(e) => setName(e.target.value)} /><//>
-    <${CodeTextEditor} value=${text} onChange=${setText} />`}
+    <${CodeTextEditor} name=${path} value=${text} onChange=${setText} />`}
     <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary" onClick=${save}>Salvar</button></div>
   <//>`;
 }

@@ -272,11 +272,18 @@ export function MarkdownEditor({ value, onChange, tokenBudget }) {
   const pct = tokenBudget ? Math.min(100, Math.round((tokens / tokenBudget) * 100)) : 0;
   const meterKind = pct > 100 ? "danger" : pct > 85 ? "warn" : "";
   const modes = [["read", "Ler"], ["visual", "Editar (visual)"], ["raw", "Texto puro"]];
+  // Frontmatter YAML (--- … ---) não é Markdown: fica fora do editor visual e é reanexado intacto.
+  const fm = (value || "").match(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/);
+  const front = fm ? fm[0] : "";
+  const body = (value || "").slice(front.length);
   return html`<div>
     <div class="md-toolbar"><div class="seg">
       ${modes.map(([k, l]) => html`<button type="button" class=${mode === k ? "on" : ""} onClick=${() => setMode(k)}>${l}</button>`)}
     </div></div>
-    ${mode === "visual" ? html`<${WysiwygEditor} value=${value} onChange=${onChange} />`
+    ${mode === "visual" ? html`<div>
+        ${front && html`<details class="md-front"><summary>Cabeçalho (frontmatter) — edite em “Texto puro”</summary><pre class="raw">${front}</pre></details>`}
+        <${WysiwygEditor} value=${body.replace(/^\n+/, "")} onChange=${(md) => onChange(front + (front ? "\n" : "") + md)} />
+      </div>`
       : mode === "raw" ? html`<textarea class="codearea" value=${value} onInput=${(e) => onChange(e.target.value)}></textarea>`
       : html`<div class="card md-readbox"><${MarkdownView} text=${value} /></div>`}
     ${tokenBudget && mode !== "read" && html`<div>
@@ -286,8 +293,29 @@ export function MarkdownEditor({ value, onChange, tokenBudget }) {
   </div>`;
 }
 
-export function CodeTextEditor({ value, onChange }) {
-  return html`<textarea class="codearea" value=${value} onInput=${(e) => onChange(e.target.value)}></textarea>`;
+// Editor de código/YAML em texto puro: Tab indenta (não sai do campo) e .yaml/.yml é validado ao digitar.
+export function CodeTextEditor({ value, onChange, name = "" }) {
+  const isYaml = /\.ya?ml$/i.test(name) || /^\s*(workflow|version|project):/m.test(value || "") && !name;
+  const [yerr, setYerr] = useState("");
+  useEffect(() => {
+    if (!isYaml) return setYerr("");
+    const t = setTimeout(async () => {
+      try { const y = await import("js-yaml"); (y.load || y.default.load)(value || ""); setYerr(""); }
+      catch (e) { setYerr(e.message.split("\n")[0]); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [value, isYaml]);
+  const onKey = (e) => {
+    if (e.key !== "Tab" || e.ctrlKey || e.altKey || e.metaKey) return;
+    e.preventDefault();
+    const ta = e.target, i = ta.selectionStart, j = ta.selectionEnd;
+    ta.setRangeText("  ", i, j, "end");
+    onChange(ta.value);
+  };
+  return html`<div>
+    <textarea class="codearea" spellcheck="false" value=${value} onKeyDown=${onKey} onInput=${(e) => onChange(e.target.value)}></textarea>
+    ${isYaml && html`<div class=${yerr ? "help yaml-bad" : "help yaml-ok"}>${yerr ? "⚠ YAML inválido: " + yerr : "✓ YAML válido"}</div>`}
+  </div>`;
 }
 
 /* ---------------------------- LoginScreen ------------------------------- */
