@@ -1,7 +1,7 @@
 # NetOps — Integração multi-IDE
 # ============================================================================
-# O NetOps funciona em qualquer IDE de IA. O ponto de entrada universal é o CLAUDE.md
-# (e o AGENTS.md) na raiz — qualquer IDE entende o framework lendo esses arquivos.
+# O NetOps funciona em qualquer IDE de IA. O ponto de entrada universal é o AGENTS.md
+# na raiz — qualquer IDE entende o framework lendo esse arquivo (CLAUDE.md foi aposentado).
 # Adaptado do bloco ide_sync do framework-config.yaml do AIOX.
 # ============================================================================
 
@@ -10,24 +10,24 @@ ide_integration:
   source:
     agents: "agents/"
     workflows: "workflows/"
-    entrypoint: "CLAUDE.md"
+    entrypoint: "AGENTS.md"
 
   targets:
     claude-code:
       enabled: true
-      entrypoint: "CLAUDE.md"           # lido automaticamente pelo Claude Code
+      entrypoint: "AGENTS.md"           # lido automaticamente pelo Claude Code (padrão AGENTS.md)
       commands: ".claude/commands/"     # slash commands /netops-audit, /netops-apply-change
-      notes: "Agentes lidos sob demanda de agents/*.agent.md conforme o CLAUDE.md instrui."
+      notes: "Agentes lidos sob demanda de agents/*.agent.md conforme o AGENTS.md instrui."
 
     codex:
       enabled: true
       entrypoint: "AGENTS.md"           # lido automaticamente pelo Codex
-      notes: "AGENTS.md na raiz aponta para o CLAUDE.md."
+      notes: "AGENTS.md na raiz é o ponto de entrada completo."
 
     cursor:
       enabled: true
       entrypoint: ".cursor/rules/netops.mdc"
-      notes: "Regra do Cursor que carrega o framework e aponta para o CLAUDE.md."
+      notes: "Regra do Cursor que carrega o framework e aponta para o AGENTS.md."
 
     antigravity:
       enabled: true

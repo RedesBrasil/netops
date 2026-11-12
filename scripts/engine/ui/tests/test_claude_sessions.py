@@ -226,3 +226,68 @@ def test_send_timeout_on_half_open_socket_detaches_instead_of_stalling_agent(mon
         return s.ws
 
     assert asyncio.run(run()) is None
+
+
+# ------------------------------------------------------------------ fork (ramificar)
+def _m(t, uuid, content):
+    return SimpleNamespace(type=t, uuid=uuid, message={"content": content})
+
+
+_FORK_MSGS = [
+    _m("user", "u1", "primeiro"),
+    _m("assistant", "a1", [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}]),
+    _m("user", "r1", [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]),
+    _m("assistant", "a1b", [{"type": "text", "text": "feito"}]),
+    _m("user", "n1", "<task-notification>\n<status>completed</status>"),
+    _m("assistant", "a1c", [{"type": "text", "text": "tarefa ok"}]),
+    _m("user", "u2", [{"type": "text", "text": "segundo"}]),
+    _m("assistant", "a2", [{"type": "text", "text": "resp 2"}]),
+    _m("user", "u3", "primeiro"),
+    _m("assistant", "a3", [{"type": "text", "text": "resp 3"}]),
+]
+
+
+def test_fork_cut_includes_whole_turn_and_skips_injected_messages():
+    cut = claude_svc.fork_cut_uuid
+    assert cut(_FORK_MSGS, uuid="u1") == "a1c"        # tool_result e task-notification são do turno
+    assert cut(_FORK_MSGS, uuid="u2") == "a2"
+    assert cut(_FORK_MSGS, uuid="u3") == "a3"         # último prompt → fim do transcript
+    assert cut(_FORK_MSGS, text="  primeiro ") == "a1c"
+    assert cut(_FORK_MSGS, text="primeiro", occurrence=1) == "a3"   # prompt repetido
+    assert cut(_FORK_MSGS, text="segun") == "a2"      # fallback "contém" (fila junta envios)
+    assert cut(_FORK_MSGS, uuid="nope") is None
+    assert cut(_FORK_MSGS, text="inexistente") is None
+
+
+def test_fork_endpoint_calls_sdk_and_copies_prefs(client, env, monkeypatch):
+    from services import claude_prefs
+    assert client.post(f"/api/claude/sessions/{A}/fork", json={"uuid": "u2"}).status_code == 403
+    monkeypatch.setattr(deps.STATE, "enable_claude", True)
+    monkeypatch.setattr(claude_svc, "_SDK_OK", True)
+    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid: sid == A)
+    B = "22222222-2222-4222-8222-222222222222"
+    calls = []
+    def fork(sid, *, directory, up_to_message_id, title):
+        calls.append((sid, directory, up_to_message_id, title))
+        return SimpleNamespace(session_id=B)
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", SimpleNamespace(
+        fork_session=fork, get_session_messages=lambda sid, directory: _FORK_MSGS))
+    saved = {}
+    monkeypatch.setattr(claude_prefs, "get_session", lambda sid: {"model": "opus", "mode": "plan"} if sid == A else {})
+    monkeypatch.setattr(claude_prefs, "set_session", lambda sid, **kw: saved.update({sid: kw}))
+    r = client.post(f"/api/claude/sessions/{A}/fork", json={"uuid": "u2"})
+    assert r.status_code == 200 and r.json() == {"id": B}
+    assert calls == [(A, str(env), "a2", None)]
+    assert saved == {B: {"model": "opus", "mode": "plan"}}
+    r = client.post(f"/api/claude/sessions/{A}/fork", json={"text": "nada disso"})
+    assert r.status_code == 400 and r.json()["error"] == "fork_failed"
+    assert client.post(f"/api/claude/sessions/{B}/fork", json={"uuid": "u2"}).status_code == 404
+
+
+def test_history_user_items_carry_uuid_for_fork(env, monkeypatch):
+    monkeypatch.setattr(claude_svc, "_SDK_OK", True)
+    monkeypatch.setattr(claude_svc, "_transcript_timestamps", lambda sid: {})
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", SimpleNamespace(
+        get_session_messages=lambda sid, directory: _FORK_MSGS))
+    users = [i for i in claude_svc.session_items(A) if i["type"] == "user"]
+    assert [u["uuid"] for u in users] == ["u1", "n1", "u2", "u3"]

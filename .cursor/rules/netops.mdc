@@ -6,7 +6,7 @@ alwaysApply: true
 # NetOps
 
 Este projeto é o **NetOps**, um framework multi-agente para operações de redes e
-infraestrutura. O ponto de entrada e as instruções completas estão em **`CLAUDE.md`** na
+infraestrutura. O ponto de entrada e as instruções completas estão em **`AGENTS.md`** na
 raiz — leia esse arquivo primeiro; ele vale para qualquer IDE, inclusive o Cursor.
 
 Resumo: o usuário pede tarefas de rede em português; você orquestra os agentes de

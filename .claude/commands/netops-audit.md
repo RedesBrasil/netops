@@ -3,7 +3,7 @@ description: Roda a auditoria de segurança da rede (workflow security-audit)
 argument-hint: "[host ou grupo opcional; vazio = toda a rede]"
 ---
 
-Você está operando o framework NetOps. Leia `CLAUDE.md` na raiz para o contexto completo.
+Você está operando o framework NetOps. Leia `AGENTS.md` na raiz para o contexto completo.
 
 Execute o workflow `workflows/security-audit.workflow.yaml` como o agente `coordinator`.
 

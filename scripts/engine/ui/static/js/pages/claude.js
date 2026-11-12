@@ -618,6 +618,27 @@ function useClaudeSession() {
     else location.hash = claudeSessionHash(id);
   }
 
+  // Ramificar (fork): nova conversa com o histórico até o fim do turno deste prompt; a de
+  // origem fica intacta. Histórico relido traz `uuid`; na conversa ao vivo os itens do stream
+  // não têm, então vai o texto + qual ocorrência dele (prompts repetidos).
+  const forkingRef = useRef(false);
+  async function forkFrom(idx) {
+    const sid = sessionIdRef.current;
+    const it = items[idx];
+    if (!sid || !it || it.type !== "user" || forkingRef.current) return;
+    const norm = (t) => String(t || "").replace(/\s+/g, " ").trim();
+    const occurrence = items.slice(0, idx).filter((x) => x.type === "user" && norm(x.text) === norm(it.text)).length;
+    forkingRef.current = true;
+    try {
+      const r = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/fork`,
+        it.uuid ? { uuid: it.uuid } : { text: it.text, occurrence });
+      if (r && validSessionId(r.id)) { toast.ok("Conversa ramificada — abrindo o fork"); resumeSession(r.id); }
+      else toast.err("Fork falhou");
+    } catch (e) {
+      toast.err("Fork falhou: " + ((e && e.payload && (e.payload.detail || e.payload.error)) || (e && e.message) || "erro"));
+    } finally { forkingRef.current = false; }
+  }
+
   // Pós-login: o subprocesso `claude` vivo ainda carrega a credencial velha, então é preciso
   // relançar. RETOMA o mesmo sid — a conversa continua de onde parou (o histórico é relido do
   // transcript). Sem sid ainda, cai numa sessão nova.
@@ -704,7 +725,7 @@ function useClaudeSession() {
     status, items, working, mode, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
-    send, submit, stop, newSession, resumeSession, answerPermission, changeMode, changeModel, uploadFile,
+    send, submit, stop, newSession, resumeSession, forkFrom, answerPermission, changeMode, changeModel, uploadFile,
     endSession,
     auth, showAuth, setShowAuth, refreshAuth, relaunch, refreshModels,
     showModelPick, setShowModelPick, modelErr, pickModelAndRelaunch,
@@ -715,11 +736,15 @@ function useClaudeSession() {
 // --------------------------------------------------------------------- visões
 // Transcrição rolável (compartilhada). Cada instância faz seu próprio auto-scroll ao fim.
 function Transcript() {
-  const { items, status, answerPermission, auth, setShowAuth } = useClaude();
+  const { items, status, answerPermission, auth, setShowAuth, forkFrom, sessionId } = useClaude();
   const scrollRef = useRef(null);
-  useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [items]);
+  // Só acompanha o fim se o usuário já estiver perto dele; se rolou para cima, não puxa de volta.
+  const stickRef = useRef(true);
+  const onScroll = () => { const el = scrollRef.current; if (el) stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; };
+  useEffect(() => { stickRef.current = true; }, [sessionId]);
+  useEffect(() => { const el = scrollRef.current; if (el && stickRef.current) el.scrollTop = el.scrollHeight; }, [items]);
   const loggedOut = auth && auth.available && !auth.loggedIn;
-  return html`<div class="cc-transcript" ref=${scrollRef}>
+  return html`<div class="cc-transcript" ref=${scrollRef} onScroll=${onScroll}>
     ${loggedOut && html`<${LoginBanner} auth=${auth} onLogin=${() => setShowAuth(true)} />`}
     ${items.length === 0 && status === "pronto" && !loggedOut && html`<div class="cc-hint help">
       Pronto. Peça em linguagem natural, use <code>/comandos</code> ou anexe arquivos.
@@ -728,7 +753,8 @@ function Transcript() {
     ${status === "desabilitado" && html`<div class="card cc-off">
       Página Claude Code desabilitada no servidor. Suba com <code>--enable-claude</code> (e sem <code>--read-only</code>).
     </div>`}
-    ${items.map((it, i) => html`<${Item} key=${i} it=${it} onPermission=${answerPermission} />`)}
+    ${items.map((it, i) => html`<${Item} key=${i} it=${it} onPermission=${answerPermission}
+      onFork=${sessionId && !it.queued ? () => forkFrom(i) : null} />`)}
   </div>`;
 }
 
@@ -775,13 +801,16 @@ function MsgTime({ ts }) {
   const label = same ? hm : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hm}`;
   return html`<time class="cc-time" title=${d.toLocaleString("pt-BR")}>${label}</time>`;
 }
-function UserMsg({ text, tag, ts }) {
+function UserMsg({ text, tag, ts, onFork }) {
   const refs = [...text.matchAll(UPLOAD_REF_RE)].map((m) => m[1]);
   const rest = text.replace(UPLOAD_REF_RE, "").replace(/[ \t]{2,}/g, " ").trim();
   return html`<div class="cc-msg user"><div class="cc-role">você${tag && html` · <em>${tag}</em>`}</div>
     ${refs.length > 0 && html`<div class="cc-attach-row user">${refs.map((r) => html`<${AttachThumb} key=${r} path=${r} />`)}</div>`}
     ${(rest || !refs.length) && html`<div class="cc-usertext">${refs.length ? rest : text}</div>`}
-    <${MsgTime} ts=${ts} /></div>`;
+    <div class="cc-user-foot">
+      ${onFork && html`<button class="cc-fork" title="Ramificar: abre uma NOVA conversa com o histórico até a resposta deste prompt (a original continua intacta)"
+        onClick=${onFork}>⑂ Ramificar daqui</button>`}
+      <${MsgTime} ts=${ts} /></div></div>`;
 }
 
 // Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
@@ -1503,9 +1532,9 @@ function fmtTime(ms) {
   try { return new Date(ms).toLocaleString(); } catch (_) { return ""; }
 }
 
-function Item({ it, onPermission }) {
+function Item({ it, onPermission, onFork }) {
   if (it.type === "user")
-    return html`<${UserMsg} text=${it.text} tag=${it.interjected ? "durante a execução" : it.queued ? "da fila" : ""} ts=${it.ts} />`;
+    return html`<${UserMsg} text=${it.text} tag=${it.interjected ? "durante a execução" : it.queued ? "da fila" : ""} ts=${it.ts} onFork=${onFork} />`;
 
   if (it.type === "assistant")
     return html`<div class="cc-msg assistant"><div class="cc-role">claude</div><${MarkdownView} text=${it.text} /><${MsgTime} ts=${it.ts} /></div>`;

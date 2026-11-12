@@ -19,7 +19,7 @@ MAX_UNPACKED = 512 * 1024 * 1024
 MAX_FILES = 10000
 CUSTOM_ROOTS = {"agents", "workflows", "best-practices", "config-examples", "planning-examples"}
 DIST_ROOTS = CUSTOM_ROOTS | {"scripts", "core", "network", ".github"}
-DIST_FILES = {"README.md", "CLAUDE.md", "PADRAO.md", "constitution.md", "requirements.txt", ".gitignore", "CHANGELOG.md"}
+DIST_FILES = {"README.md", "AGENTS.md", "PADRAO.md", "constitution.md", "requirements.txt", ".gitignore", "CHANGELOG.md"}
 TERMINAL_STATES = {"completed", "failed", "rolled_back", "recovery_failed"}
 
 

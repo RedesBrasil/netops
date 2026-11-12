@@ -200,6 +200,32 @@ def claude_session_info(sid: str):
     return {"id": sid}
 
 
+@router.post("/claude/sessions/{sid}/fork")
+def claude_session_fork(sid: str, body: dict):
+    """Ramifica a conversa a partir de um prompt (histórico até o fim daquele turno).
+
+    body: {uuid?, text?, occurrence?, title?} — uuid vem do histórico; text+occurrence da
+    conversa ao vivo. Devolve {id} da nova conversa; a de origem fica intacta.
+    """
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    try:
+        occ = int(body.get("occurrence") or 0)
+    except (TypeError, ValueError):
+        occ = 0
+    try:
+        new = claude_svc.fork_project_session(
+            sid, uuid=(body.get("uuid") or None), text=(body.get("text") or None),
+            occurrence=occ, title=((body.get("title") or "").strip()[:120] or None))
+    except FileNotFoundError:
+        return JSONResponse({"error": "session_not_found"}, status_code=404)
+    except ValueError as e:
+        return JSONResponse({"error": "fork_failed", "detail": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": "fork_failed", "detail": str(e)[:300]}, status_code=500)
+    return {"id": new}
+
+
 @router.delete("/claude/sessions/{sid}", status_code=204)
 def claude_session_delete(sid: str):
     if not deps.STATE.enable_claude:

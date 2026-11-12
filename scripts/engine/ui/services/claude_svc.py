@@ -3,7 +3,7 @@
 
 ⚠ EXECUÇÃO DE COMANDO ARBITRÁRIO + EDIÇÃO DE ARQUIVOS. Cada conexão abre um
 `ClaudeSDKClient` (que dispara um subprocesso `claude`) rodando COMO O USUÁRIO DO
-SERVIDOR, com `cwd` = NETOPS_ROOT e herdando CLAUDE.md/skills/agentes do projeto.
+SERVIDOR, com `cwd` = NETOPS_ROOT e herdando AGENTS.md/skills/agentes do projeto.
 Por isso só liga com `--enable-claude` (default DESLIGADO) e nunca em `--read-only`
 (ver routers/claude.py e server.py).
 
@@ -13,7 +13,7 @@ usuário, troca de modo, respostas de permissão, interromper) e outra bombeia a
 mensagens do SDK de volta como JSON. A autenticação do `claude` reaproveita o login de
 assinatura já existente (~/.claude/.credentials.json) — o SDK herda o HOME do processo.
 
-PERSISTÊNCIA (--enable-claude-persist, default OFF). Com a flag LIGADA, a sessão
+PERSISTÊNCIA (--enable-claude-persist; o start.sh liga por padrão, NETOPS_UI_CLAUDE_PERSIST=0 desliga). Com a flag LIGADA, a sessão
 DESACOPLA do socket: se a aba dorme/entra em standby e o WebSocket cai, o agente NÃO é
 morto — termina o turno e o SDK grava tudo no transcript em disco (SEM buffer na RAM).
 Ao voltar, a aba RE-ANEXA à sessão viva (e recarrega o que faltou do disco). O dono é
@@ -302,7 +302,7 @@ class ClaudeWebSession:
             resume=resume,
             model=model,
             **({"effort": self._effort} if self._effort else {}),
-            setting_sources=["user", "project", "local"],  # herda CLAUDE.md/skills/agentes
+            setting_sources=["user", "project", "local"],  # herda AGENTS.md/skills/agentes
             # O modo bypassPermissions (exposto na UI) exige DUAS condições no lançamento:
             #  1) a sessão precisa nascer com --dangerously-skip-permissions, senão o SDK recusa a
             #     troca em runtime ("session was not launched with --dangerously-skip-permissions").
@@ -951,7 +951,10 @@ def session_items(sid: str) -> list[dict]:
         content = (sm.message or {}).get("content")
         if isinstance(content, str):
             if content.strip():
-                items.append({"type": role_item, "text": content.strip(), "ts": ts})
+                it = {"type": role_item, "text": content.strip(), "ts": ts}
+                if role_item == "user":
+                    it["uuid"] = sm.uuid   # âncora do fork ("ramificar daqui")
+                items.append(it)
             continue
         if not isinstance(content, list):
             continue
@@ -962,7 +965,10 @@ def session_items(sid: str) -> list[dict]:
             if bt == "text":
                 t = (b.get("text") or "").strip()
                 if t:
-                    items.append({"type": role_item, "text": t, "ts": ts})
+                    it = {"type": role_item, "text": t, "ts": ts}
+                    if role_item == "user":
+                        it["uuid"] = sm.uuid   # âncora do fork ("ramificar daqui")
+                    items.append(it)
             elif bt == "thinking":
                 t = (b.get("thinking") or "").strip()
                 if t:
@@ -995,3 +1001,76 @@ def delete_project_session(sid: str) -> None:
         delete_session(sid, directory=str(deps.NETOPS_ROOT))
     except Exception:
         pass
+
+
+# --------------------------------------------------------------------------- #
+# Fork (ramificar) — nova conversa com o histórico até o fim do turno de um prompt.
+# --------------------------------------------------------------------------- #
+def _prompt_text(sm) -> str | None:
+    """Texto do prompt humano; None se a mensagem não é prompt (tool_result, assistant…)."""
+    if sm.type != "user":
+        return None
+    content = (sm.message or {}).get("content")
+    if isinstance(content, str):
+        return content.strip() or None
+    if isinstance(content, list):
+        parts = [(b.get("text") or "").strip() for b in content
+                 if isinstance(b, dict) and b.get("type") == "text"]
+        t = "\n".join(p for p in parts if p)
+        return t or None
+    return None
+
+
+_SYNTHETIC_RE = re.compile(r"^\s*<(task-notification|system-reminder|command-name|command-message|"
+                           r"local-command-stdout|local-command-stderr|bash-stdout|bash-input)>")
+
+
+def _norm(t: str) -> str:
+    return re.sub(r"\s+", " ", t or "").strip()
+
+
+def fork_cut_uuid(msgs, *, uuid: str | None = None, text: str | None = None,
+                  occurrence: int = 0) -> str | None:
+    """UUID da ÚLTIMA mensagem do turno do prompt escolhido (inclusive a resposta dele).
+
+    O prompt é achado pelo uuid (histórico lido do transcript) ou, na conversa ao vivo (itens
+    do stream não têm uuid), pela `occurrence`-ésima ocorrência do texto — com fallback para
+    prompts que CONTÊM o texto (a fila pode juntar mensagens num envio só).
+    """
+    prompts = [(i, _prompt_text(m)) for i, m in enumerate(msgs)]
+    prompts = [(i, t) for i, t in prompts if t is not None]
+    start = None
+    if uuid:
+        start = next((i for i, _ in prompts if msgs[i].uuid == uuid), None)
+    if start is None and text:
+        want = _norm(text)
+        for pred in (lambda t: _norm(t) == want, lambda t: want and want in _norm(t)):
+            hits = [i for i, t in prompts if pred(t)]
+            if hits:
+                start = hits[min(max(occurrence, 0), len(hits) - 1)]
+                break
+    if start is None:
+        return None
+    # Mensagens injetadas (fim de tarefa em background, saída de /comando) continuam o turno.
+    nxt = next((i for i, t in prompts if i > start and not _SYNTHETIC_RE.match(t)), len(msgs))
+    return msgs[nxt - 1].uuid
+
+
+def fork_project_session(sid: str, *, uuid: str | None = None, text: str | None = None,
+                         occurrence: int = 0, title: str | None = None) -> str:
+    """Cria a conversa ramificada e devolve o novo sid. ValueError/FileNotFoundError se inválido."""
+    if not _SDK_OK:
+        raise RuntimeError("SDK do Claude indisponível")
+    if not project_session_exists(sid):
+        raise FileNotFoundError(sid)
+    from claude_agent_sdk import fork_session, get_session_messages  # noqa: PLC0415
+    msgs = get_session_messages(sid, directory=str(deps.NETOPS_ROOT))
+    cut = fork_cut_uuid(msgs, uuid=uuid, text=text, occurrence=occurrence)
+    if cut is None:
+        raise ValueError("prompt não encontrado no histórico gravado")
+    res = fork_session(sid, directory=str(deps.NETOPS_ROOT), up_to_message_id=cut,
+                       title=(title or None))
+    src = claude_prefs.get_session(sid)   # o ramo herda modelo/modo da conversa de origem
+    if src:
+        claude_prefs.set_session(res.session_id, model=src.get("model"), mode=src.get("mode"))
+    return res.session_id

@@ -134,7 +134,7 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   e dá shell completo — prefira túnel SSH/VPN.
 - **Página Claude Code (`--enable-claude`):** ⚠ dirige um **agente de IA** (via `claude-agent-sdk`)
   que **executa comandos e edita arquivos** como o usuário do servidor, com `cwd=NETOPS_ROOT` e
-  herdando `CLAUDE.md`/skills/agentes. Mesma postura do terminal: DESLIGADA por padrão no server.py
+  herdando `AGENTS.md`/skills/agentes. Mesma postura do terminal: DESLIGADA por padrão no server.py
   (o `start.sh` liga; `NETOPS_UI_CLAUDE=0` desliga), **nunca** liga em `--read-only`. O WebSocket
   (`/api/claude`) e o upload (`POST /api/claude/upload`) usam a **mesma auth** (token + Host +
   Origin + sessão). A UI expõe **todos os modos** (`plan/default/acceptEdits/dontAsk/bypassPermissions`)

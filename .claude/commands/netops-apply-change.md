@@ -3,7 +3,7 @@ description: Planeja e aplica uma mudança de configuração (workflow apply-con
 argument-hint: "<descrição da mudança e host-alvo>"
 ---
 
-Você está operando o framework NetOps. Leia `CLAUDE.md` na raiz para o contexto completo.
+Você está operando o framework NetOps. Leia `AGENTS.md` na raiz para o contexto completo.
 
 Execute o workflow `workflows/apply-config-change.workflow.yaml` como o agente `coordinator`.
 

@@ -604,3 +604,9 @@ th.sortable:hover { color: var(--text); }
 .cc-time { font-size: 10px; color: var(--muted); opacity: .65; font-variant-numeric: tabular-nums; }
 .cc-msg.user .cc-time { align-self: flex-end; }
 .cc-msg.assistant .cc-time { align-self: flex-start; }
+
+/* Ramificar (fork) a conversa a partir de um prompt */
+.cc-user-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.cc-fork { background: none; border: 0; padding: 0 2px; font-size: 11px; color: var(--muted); cursor: pointer; opacity: .55; }
+.cc-fork:hover, .cc-fork:focus-visible { opacity: 1; color: var(--accent); text-decoration: underline; }
+.cc-msg.user:not(:hover) .cc-fork { opacity: .3; }
