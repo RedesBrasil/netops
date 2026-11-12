@@ -90,6 +90,11 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   - Interativo (saída decide o próximo): `S=$(python3 scripts/tools/access/session.py open --host-id <ID>)` →
     `… exec --session $S --command "<c>"`… → `… close --session $S`.
   SSH por padrão; `--telnet` só se o usuário pedir/for legado. Detalhes: `scripts/tools/access/SKILL.md`.
+- **Backup antes de alterar equipamento (INEGOCIÁVEL):** qualquer alteração em host (add/set/remove/restart…), mesmo num
+  pedido direto sem workflow, começa com `python3 scripts/tools/backup/change.py begin --host-id <ID>` (backup "pré"; falhou =
+  não altere) e termina com `... change.py end --host-id <ID>` (backup "pós" + diff; 1 par por host por sessão). Padrão ligado
+  p/ mikrotik/cisco/huawei/linux/proxmox; `backup_before_change: false` no host/grupo desliga. Retenção: `backups.keep_versions`
+  (10). O hook `guard-netops.sh` bloqueia o `session.py` de alteração sem o `begin` — pode ir encadeado na mesma linha: `change.py begin --host-id N && session.py run ... ; change.py end --host-id N` (o `&&` é exigido; `;` não vale).
 - **Inventário é a verdade:** nunca conecte em host fora de `network/hosts.yaml`.
 - **Segurança:** baseline antes de mudar, rollback pronto, rollback automático em falha.
 - **Projeto vivo:** toda execução termina registrando o que aprendeu em `memory/`.

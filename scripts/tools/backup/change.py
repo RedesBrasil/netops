@@ -5,7 +5,9 @@
   change.py end   --host-id N             # backup "pós" + diff pré×pós + retenção
 
 Usa o mesmo armazenamento da aba Backups: backups/by-id/<id>/. Só roda se o host tem
-`backup_before_change: true` (herdável do grupo) ou com --force. Segredos no backup ficam em
+`backup_before_change` ligado (padrão p/ mikrotik/cisco/huawei/linux/proxmox; `false` no host/grupo desliga) ou --force.
+  change.py check --host-id N   # exit 3 se há backup pendente (usado pelo hook guard-netops.sh)
+ Segredos no backup ficam em
 texto puro (como o próprio export do equipamento); a credencial de acesso nunca é lida aqui.
 Retenção: project-config.yaml -> backups.keep_versions (padrão 10 arquivos por host).
 """
@@ -94,7 +96,7 @@ def save(hid: int, tag: str, text: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["begin", "end"])
+    ap.add_argument("action", choices=["begin", "end", "check"])
     ap.add_argument("--host-id", type=int, required=True)
     ap.add_argument("--force", action="store_true")
     a = ap.parse_args()
@@ -102,8 +104,16 @@ def main():
     h = host_info(hid)
     STATE.mkdir(parents=True, exist_ok=True)
     marker = STATE / f"{hid}.json"
-    if not h.get("backup_before_change") and not a.force:
-        print(f"SKIP: host {hid} sem backup_before_change (use --force para forçar)")
+    flag = h.get("backup_before_change")
+    if flag is None:   # padrão: ligado p/ equipamentos de rede e Linux/Proxmox; false explícito desliga
+        flag = collector(h.get("vendor") or "") is not None
+    if a.action == "check":   # usado pelo hook: exit 3 = falta rodar `begin` antes de alterar
+        if flag and not marker.exists():
+            print(f"FALTA BACKUP: rode `python3 scripts/tools/backup/change.py begin --host-id {hid}` antes de alterar o host {hid}.")
+            sys.exit(3)
+        return
+    if not flag and not a.force:
+        print(f"SKIP: host {hid} com backup_before_change desligado (use --force para forçar)")
         return
     if a.action == "begin":
         name = save(hid, "pre", collect(hid, h))
