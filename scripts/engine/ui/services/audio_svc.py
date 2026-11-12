@@ -2,8 +2,8 @@
 """Transcrição de áudio (ditado) via Cloudflare Workers AI — config + chamada ao modelo.
 
 Config em `runs/claude/audio-transcription.json` (0600, git-ignorado): {"account_id", "token"}.
-O token é cifrado com o cofre (`enc.v1:`) quando a chave da sessão está disponível; senão fica em
-texto puro 0600 (mesmo regime do credentials.yaml). NUNCA volta ao navegador nem vai para log.
+O token fica em texto puro 0600 — independe do cofre (o cofre é só das credenciais dos hosts).
+NUNCA volta ao navegador nem vai para log.
 """
 from __future__ import annotations
 
@@ -48,22 +48,33 @@ def _save(d: dict) -> None:
     tmp.replace(_FILE)
 
 
-def _seal(token: str) -> str:
-    try:
-        from lib import vault, vault_session  # noqa: PLC0415
-        return vault.encrypt_value(vault_session.get_session_key(), token)
-    except Exception:  # cofre trancado/não iniciado: texto puro 0600
-        return token
-
-
 def _unseal(value: str) -> str:
-    from lib import vault, vault_session  # noqa: PLC0415
-    if not vault.is_encrypted(value):
+    """Token salvo em texto puro (0600). O cofre é só p/ credenciais de hosts; versões antigas
+    gravavam `enc.v1:` — migra p/ texto puro na primeira leitura possível."""
+    if not value.startswith("enc.v1:"):
         return value
     try:
-        return vault.decrypt_value(vault_session.get_session_key(), value)
+        from lib import vault, vault_session  # noqa: PLC0415
+        plain = vault.decrypt_value(vault_session.get_session_key(), value)
     except Exception:
-        raise AudioError(423, "Cofre trancado: destrave o cofre para usar a transcrição.") from None
+        raise AudioError(409, "Cole o token da Cloudflare novamente nas configurações (formato antigo).") from None
+    with _LOCK:
+        d = _load()
+        d["token"] = plain
+        _save(d)
+    return plain
+
+
+def _ogg_info(content: bytes) -> tuple[float, int]:
+    """(duração em s, nº de páginas) lidos dos cabeçalhos Ogg — só metadados, sem decodificar."""
+    try:
+        i = content.find(b"OpusHead")
+        preskip = int.from_bytes(content[i + 10:i + 12], "little") if i >= 0 else 0
+        last = content.rfind(b"OggS")
+        gran = int.from_bytes(content[last + 6:last + 14], "little", signed=True)
+        return max(0.0, (gran - preskip) / 48000), content.count(b"OggS")
+    except Exception:
+        return 0.0, 0
 
 
 def status() -> dict:
@@ -124,7 +135,7 @@ async def save(account_id: str | None, token: str | None) -> dict:
                 raise AudioError(422, "Ao trocar de conta, informe também o token da nova conta.")
             d["account_id"] = aid
         if tok:
-            d["token"] = _seal(tok)
+            d["token"] = tok
         _save(d)
     return status()
 
@@ -168,7 +179,10 @@ async def transcribe(content: bytes) -> str:
     if r.status_code == 429:
         raise AudioError(429, "Limite de uso da Cloudflare atingido. Tente mais tarde.")
     if not r.is_success:
-        raise AudioError(502, "A Cloudflare não conseguiu processar o áudio.")
+        _debug_keep(content)
+        dur, pages = _ogg_info(content)
+        raise AudioError(502, f"A Cloudflare não conseguiu processar o áudio (HTTP {r.status_code}"
+                              f"{_cf_errors(r)}; {dur:.1f} s, {len(content) // 1024} KB, {pages} páginas Ogg).")
     try:
         data = r.json()
     except ValueError:
@@ -180,8 +194,35 @@ async def transcribe(content: bytes) -> str:
         raise AudioError(502, "A resposta da Cloudflare não incluiu a transcrição.")
     text = res["text"].strip()
     if not text:
-        raise AudioError(422, "Não foi possível identificar fala no áudio.")
+        dur, pages = _ogg_info(content)
+        _debug_keep(content)
+        raise AudioError(422, f"Não foi possível identificar fala no áudio "
+                              f"({dur:.1f} s gravados, {len(content) // 1024} KB, {pages} páginas Ogg).")
     return text
+
+
+def _cf_errors(r) -> str:
+    """Códigos/mensagens de erro da Cloudflare (sanitizados, sem token nem áudio)."""
+    try:
+        errs = r.json().get("errors") or []
+        txt = "; ".join(f"{e.get('code')}: {str(e.get('message'))[:160]}" for e in errs if isinstance(e, dict))
+        return f" — {txt}" if txt else ""
+    except Exception:
+        return ""
+
+
+DEBUG_FILE = deps.RUNS_DIR / "claude" / "audio-debug-last-empty.ogg"
+
+
+def _debug_keep(content: bytes) -> None:
+    """DIAGNÓSTICO TEMPORÁRIO: guarda só o ÚLTIMO áudio que voltou sem texto (0600, sobrescrito).
+    Remover depois de achar a causa do "sem fala" na gravação do navegador."""
+    try:
+        fd = os.open(DEBUG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(content)
+    except OSError:
+        pass
 
 
 async def verify() -> dict:

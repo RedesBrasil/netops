@@ -30,7 +30,7 @@ async function upload(blob, signal) {
   const headers = {}; const a = authToken(); if (a) headers["X-Netops-Session"] = a;
   const res = await fetch("/api/audio/transcribe", { method: "POST", headers, body: form, signal });
   const out = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof out.detail === "string" ? out.detail : "Falha ao transcrever o áudio.");
+  if (!res.ok) throw new Error(typeof out.detail === "string" ? out.detail : `Falha ao transcrever o áudio (HTTP ${res.status}).`);
   const text = typeof out.transcription === "string" ? out.transcription.trim() : "";
   if (!text) throw new Error("O áudio não gerou uma transcrição.");
   return text;
