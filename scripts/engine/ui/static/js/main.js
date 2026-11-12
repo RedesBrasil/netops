@@ -30,7 +30,7 @@ const ROUTES = {
   reports: { label: "Relatórios", comp: ReportsPage, group: "Saída" },
   runs: { label: "Execuções", comp: RunsPage, group: "Saída" },
   backups: { label: "Backups", comp: BackupsPage, group: "Saída" },
-  scripts: { label: "Scripts", comp: ScriptsPage, group: "Sistema" },
+  scripts: { label: "Scripts / Skills", comp: ScriptsPage, group: "Sistema" },
   claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled" },
   terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled" },
   settings: { label: "Configuração", comp: SettingsPage, group: "Sistema" },
@@ -76,9 +76,12 @@ function Shell({ onLogout, showLogout }) {
   const claude = useClaude();
   const [meta, setMeta] = useState({ network_name: "NetOps" });
   const [navOpen, setNavOpen] = useState(false);     // gaveta de navegação (mobile)
+  const [collapsed, setCollapsed] = useState(localStorage.getItem("netops_sidebar") === "0");  // barra lateral escondida (desktop)
+  useEffect(() => { localStorage.setItem("netops_sidebar", collapsed ? "0" : "1"); }, [collapsed]);
   const [moreOpen, setMoreOpen] = useState(false);   // folha de ações do topo (mobile)
   const [theme, setTheme] = useState(localStorage.getItem("netops_theme") || "light");
   useEffect(() => { startVaultPolling(); api.get("/config/meta").then(setMeta).catch(() => {}); }, []);
+  useEffect(() => { document.title = meta.network_name ? `NetOps · ${meta.network_name}` : "NetOps"; }, [meta.network_name]);
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("netops_theme", theme); }, [theme]);
 
   async function doLogout() {
@@ -92,7 +95,7 @@ function Shell({ onLogout, showLogout }) {
   const Page = (ROUTES[route] || ROUTES.hosts).comp;
   // Chat encaixado à direita: só fora da página cheia (#claude) e com conversa viva.
   const dockVisible = route !== "claude" && !!(claude && claude.hasSession);
-  return html`<div class=${"shell" + (dockVisible ? " has-dock" : "")}>
+  return html`<div class=${"shell" + (dockVisible ? " has-dock" : "") + (collapsed ? " nav-collapsed" : "")}>
     <div class="topbar">
       <button class="sm mob-only nav-toggle" aria-label="Menu" onClick=${() => { setMoreOpen(false); setNavOpen(!navOpen); }}>☰</button>
       ${route === "claude"
@@ -112,6 +115,8 @@ function Shell({ onLogout, showLogout }) {
     </div>
     ${(navOpen || moreOpen) && html`<div class="mob-backdrop" onClick=${() => { setNavOpen(false); setMoreOpen(false); }}></div>`}
     <${Sidebar} current=${route} meta=${meta} open=${navOpen} onNavigate=${() => setNavOpen(false)} />
+    <button class="sidebar-toggle" aria-label=${collapsed ? "Mostrar barra lateral" : "Esconder barra lateral"}
+      title=${collapsed ? "Mostrar barra lateral" : "Esconder barra lateral"} onClick=${() => setCollapsed(!collapsed)}>${collapsed ? "›" : "‹"}</button>
     <main class=${"content" + (route === "maps" ? " maps-content" : "")}>
       <${Page} />
     </main>

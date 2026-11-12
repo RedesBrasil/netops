@@ -57,6 +57,9 @@ def env(tmp_path, monkeypatch):
 
     monkeypatch.setattr(deps, "NETOPS_ROOT", tmp_path)
     monkeypatch.setattr(deps, "DATA_ROOT", tmp_path)
+    # memória isolada: sem isto os testes gravavam no memory/MEMORY.md REAL
+    monkeypatch.setattr(deps, "MEMORY_DIR", tmp_path / "memory")
+    monkeypatch.setattr(deps, "MEMORY_MD", tmp_path / "memory" / "MEMORY.md")
     monkeypatch.setattr(deps, "BACKUPS_RUNS", tmp_path / "runs" / "backups")
     monkeypatch.setattr(deps, "BACKUPS_FILE", tmp_path / "network" / "backups.yaml")
     monkeypatch.setattr(deps, "BACKUPS_STORE", tmp_path / "backups")

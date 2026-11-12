@@ -50,10 +50,11 @@ Todos os menus do console seguem a regra. Helpers: `static/js/route.js` (`useMen
 | Relatórios | `#reports/<arquivo>` | `q` |
 | Execuções | `#runs/<id>` | `q status` |
 | Backups | `#backups/services[/<id>\|/new]`, `#backups/storage[/<host>]` | `q run file diffa diffb` |
-| Scripts | `#scripts/<pasta>/<arquivo>`, `/new` | `q location lang sort dir doc` |
+| Scripts / Skills | abas `#scripts` (Skills) e `#scripts?tab=scripts` (Scripts); `#scripts/<skill>` (página da skill), `#scripts/<skill>/<arquivo>[?tab=scripts]` (script ou `SKILL.md`), `/new` | `tab q location lang sort dir doc` |
 | Configuração | `#settings/updates` (painel de atualizações) | — |
 | Claude Code | `#claude/<id>`, `#claude/new` | — |
-| Memória, Terminal | página única (sem item aberto) | — |
+| Memória | `#memory` (=MEMORY.md), `#memory/AGENTS.md`, `#memory/notas`, `#memory/<nota>.md` | `q` (lista de notas) |
+| Terminal | página única (sem item aberto) | — |
 
 Filtros efêmeros dentro de formulários/modais (ex.: escolher hosts ao editar um serviço de backup) não vivem na URL.
 

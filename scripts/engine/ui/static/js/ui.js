@@ -49,7 +49,12 @@ export async function refreshVault() {
 let _poll = null;
 export function startVaultPolling() {
   refreshVault();
-  if (!_poll) _poll = setInterval(refreshVault, 45000);
+  if (!_poll) {
+    _poll = setInterval(refreshVault, 30000);
+    // Voltou para a aba (standby/troca de aba): atualiza na hora, sem esperar o ciclo.
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshVault(); });
+    window.addEventListener("focus", refreshVault);
+  }
 }
 
 /* ----------------------------- useResource ------------------------------ */

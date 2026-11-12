@@ -7,7 +7,7 @@ E=/tmp/netops-e2e; PORT=${NETOPS_E2E_PORT:-8771}; PY=${NETOPS_E2E_PY:-/tmp/ccq/v
 sync_code() {
   mkdir -p "$E/code" && cd "$ROOT"
   rm -rf "$E/code"; mkdir -p "$E/code"
-  tar -c --exclude=__pycache__ --exclude='*.bak*' --exclude='*.orig' --exclude=console.log scripts core agents workflows best-practices config-examples memory | tar -x -C "$E/code"
+  tar -c --exclude=__pycache__ --exclude='*.bak*' --exclude='*.orig' --exclude=console.log scripts core agents workflows best-practices config-examples memory AGENTS.md | tar -x -C "$E/code"
   # reports/ e runs/ moram na raiz do código (NETOPS_ROOT), não no DATA_ROOT
   mkdir -p "$E/code/reports" "$E/code/runs/run-a" "$E/code/runs/run-b"
   echo '# Relatório A' > "$E/code/reports/a.md"; echo '# Relatório B' > "$E/code/reports/b.md"

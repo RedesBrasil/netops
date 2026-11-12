@@ -48,7 +48,21 @@ const CASES = {
     await page.goBack(); await settle();
     assert.equal(await page.locator(".modal").count(), 0, "settings: Voltar fecha painel");
   } },
-  scripts: { row: "table a[href^='#scripts/']", open: ".modal", q: "ssh", qRows: -1, deep: ["#scripts?sort=location&dir=desc", "th:has-text('Pasta'):has-text('▼')"] },
+  scripts: { row: "table td:first-child a[href^='#scripts/']", open: "button:has-text('+ Novo script')", q: "ssh", qRows: -1,
+    extra: [["#scripts?tab=scripts", "table td:first-child a[href^='#scripts/access/']"], ["#scripts/access/ssh.py?tab=scripts", ".modal"],
+      ["#scripts/access", "button:has-text('Editar SKILL.md')"], ["#scripts/access/SKILL.md", ".modal"]],
+    deep: ["#scripts?tab=scripts&sort=location&dir=desc", "th:has-text('Skill'):has-text('▼')"] },
+  memory: { custom: async (page, BASE, { assert, settle, hash }) => {   // MEMORY.md | AGENTS.md | Notas — cada um com URL
+    await page.goto(`${BASE}/#memory`); await page.locator(".tabs button.active:has-text('MEMORY.md')").waitFor();
+    await page.locator(".tabs button:has-text('AGENTS.md')").click(); await settle();
+    assert.equal(hash(), "#memory/AGENTS.md", "memory: aba AGENTS.md");
+    await page.reload(); await page.locator(".tabs button.active:has-text('AGENTS.md')").waitFor();
+    await page.goBack(); await settle(); assert.equal(hash(), "#memory", "memory: Voltar");
+    await page.goto(`${BASE}/#memory/notas`); await page.locator("table a[href^='#memory/']").first().waitFor();
+    const note = await page.locator("table a[href^='#memory/']").first().getAttribute("href");
+    await page.goto(`${BASE}/${note}`); await page.locator(".tabs button.active:has-text('Notas')").waitFor();
+    await page.goto(`${BASE}/#memory/nao-existe.md`); await page.locator("text=não encontrado").waitFor();
+  } },
   credentials: { row: "table a[href^='#credentials/']", open: ".modal", q: "demo", qRows: 1, deep: ["#credentials/cred_demo/password", ".modal:has-text('Definir password')"] },
   reports: { row: "table a[href^='#reports/']", open: ".modal", q: "b.md", qRows: 1 },
   runs: { row: "table a[href^='#runs/']", open: ".modal", q: "run-b", qRows: 1 },

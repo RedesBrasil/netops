@@ -59,6 +59,8 @@ scripts/engine/ui/.ui-token
 *.orig
 *.bak
 *.bak-*
+# backups da UI ao editar o AGENTS.md pelo menu Memória
+/AGENTS.md.bak.*
 
 # Sistema operacional / editor
 .DS_Store
@@ -87,3 +89,4 @@ network/.host-id-migration.json
 network/maps.yaml
 scripts/engine/ui/maps/node_modules/
 scripts/engine/ui/maps/build-meta.json
+/core/config/*.bak.*

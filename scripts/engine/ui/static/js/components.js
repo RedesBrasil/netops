@@ -390,11 +390,9 @@ export function VaultBanner({ compact = false } = {}) {
       const left = Math.max(0, (v.expires_in || 0) - tick);
       const mm = String(Math.floor(left / 60)).padStart(2, "0"), ss = String(left % 60).padStart(2, "0");
       if (compact) return html`<span class="vault-chip ok" title="Cofre destrancado (sessão) — expira em ${mm}:${ss}">🔓 ${mm}:${ss}
-        <button class="sm" onClick=${refreshVault}>Re-verificar</button>
         <button class="sm" onClick=${doLock}>Trancar</button></span>`;
       return html`<div class="vault-banner ok">🔓 Cofre destrancado (sessão) — expira em ${mm}:${ss}
         <span class="spacer"></span>
-        <button class="sm" onClick=${refreshVault}>Re-verificar</button>
         <button class="sm" onClick=${doLock}>Trancar</button></div>`;
     }
     if (v.state === "env") return compact
@@ -406,12 +404,11 @@ export function VaultBanner({ compact = false } = {}) {
   const cmd = v.unlock_cmd || "cd /opt/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock";
   if (compact) return html`<span class=${"vault-chip " + (v.state === "insecure" ? "insecure" : "locked")}
     title=${v.state === "insecure" ? "Permissões inseguras no cache do cofre — " + v.detail : "Cofre TRANCADO — edições de senha desabilitadas"}>
-    ${v.state === "insecure" ? "⚠ Cofre inseguro" : "🔒 Cofre trancado"}${unlockBtn}
-    <button class="sm" onClick=${refreshVault}>Re-verificar</button>${modal}</span>`;
+    ${v.state === "insecure" ? "⚠ Cofre inseguro" : "🔒 Cofre trancado"}${unlockBtn}${modal}</span>`;
   if (v.state === "insecure")
     return html`<div class="vault-banner insecure">⚠ Permissões inseguras no cache do cofre — ${v.detail}
       ${unlockBtn}
-      <span class="spacer"></span><button class="sm" onClick=${refreshVault}>Re-verificar</button>
+      <span class="spacer"></span>
       ${modal}</div>`;
   // locked / error
   return html`<div class="vault-banner locked">
@@ -420,7 +417,6 @@ export function VaultBanner({ compact = false } = {}) {
     <span class="spacer"></span>
     ${canUnlock && html`<span class="help">ou rode no shell abaixo:</span>`}
     <code>${cmd}</code><${CopyButton} text=${cmd} />
-    <button class="sm" onClick=${refreshVault}>Re-verificar</button>
     ${modal}
   </div>`;
 }

@@ -828,3 +828,52 @@ def test_auth_sessions_never_touch_real_install_and_survive_restart(env):
     assert deps.auth_session_valid(sid) and deps.auth_session_valid(other)
     deps.drop_auth_session(sid)
     assert not deps.auth_session_valid(sid) and deps.auth_session_valid(other)
+
+
+# --------------------------------------------------------------------------- #
+# Memória: MEMORY.md + AGENTS.md + notas memory/*.md
+# --------------------------------------------------------------------------- #
+def test_memory_files_lists_index_agents_and_notes(client, env):
+    (env / "AGENTS.md").write_text("# NetOps\nregras\n", encoding="utf-8")
+    (env / "memory" / "nota-x.md").write_text("---\nname: Nota X\n---\ncorpo\n", encoding="utf-8")
+    (env / "memory" / "MEMORY.md.bak.20260101").write_text("velho", encoding="utf-8")
+    files = client.get("/api/memory/files").json()["files"]
+    names = [f["name"] for f in files]
+    assert names[:2] == ["MEMORY.md", "AGENTS.md"]
+    assert "nota-x.md" in names and not any(".bak" in n for n in names)
+    assert next(f for f in files if f["name"] == "nota-x.md")["title"] == "Nota X"
+
+
+def test_memory_file_roundtrip_agents_md(client, env):
+    (env / "AGENTS.md").write_text("# NetOps\n", encoding="utf-8")
+    g = client.get("/api/memory/file", params={"name": "AGENTS.md"})
+    assert g.status_code == 200
+    w = client.put("/api/memory/file", json={"name": "AGENTS.md", "text": "# NetOps\nnovo\n"},
+                   headers={"If-Match": g.json()["rev"]})
+    assert w.status_code == 200
+    assert (env / "AGENTS.md").read_text(encoding="utf-8") == "# NetOps\nnovo\n"
+    stale = client.put("/api/memory/file", json={"name": "AGENTS.md", "text": "x"},
+                       headers={"If-Match": g.json()["rev"]})
+    assert stale.status_code == 409
+
+
+def test_memory_file_blocks_traversal(client, env):
+    for bad in ("../AGENTS.md", "../network/hosts.yaml", "x.yaml", "sub/n.md"):
+        assert client.get("/api/memory/file", params={"name": bad}).status_code == 422, bad
+    assert client.get("/api/memory/file", params={"name": "nao-existe.md"}).status_code == 404
+
+
+def test_scripts_lists_skills(client, env, monkeypatch):
+    root = _tools_tree(env, monkeypatch)
+    (root / "docs").mkdir()
+    (root / "docs" / "SKILL.md").write_text("---\nname: Docs\ndescription: Gera docs.\n---\n", encoding="utf-8")
+    (root / "zabbix").mkdir()
+    (root / "zabbix" / "a.py").write_text('"""x"""\n', encoding="utf-8")
+    skills = {k["id"]: k for k in client.get("/api/scripts").json()["skills"]}
+    assert set(skills) == {"access", "docs", "zabbix"}           # _TEMPLATE fora
+    assert skills["access"]["scripts"] == 2 and skills["access"]["doc"] == "access/SKILL.md"
+    assert skills["docs"]["name"] == "Docs" and skills["docs"]["scripts"] == 0   # skill só de doc
+    assert skills["zabbix"]["doc"] is None
+    # cria o SKILL.md que falta; .md comum continua barrado
+    assert client.post("/api/scripts", json={"path": "zabbix/SKILL.md", "text": "# Z\n"}).status_code == 201
+    assert client.post("/api/scripts", json={"path": "SKILL.md", "text": "x"}).status_code == 422

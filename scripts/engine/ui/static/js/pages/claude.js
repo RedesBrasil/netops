@@ -15,13 +15,17 @@ import { classifyClaudeError, claudeErrorDetail } from "../claude-errors.js";
 import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
   rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, claudePrefsOpen, setClaudePrefsHash, copyClaudeSessionLink } from "../claude-sessions.js";
 
-// Ctrl/Cmd+clique: abre o destino (#hash) em nova janela/aba e NÃO altera a sessão atual.
+// Ctrl/Cmd+clique ou clique do meio (roda do mouse): abre o destino (#hash) em nova aba e NÃO altera a sessão atual.
+// O clique do meio dispara `auxclick` (não `click`): ligue também onAuxClick e onMouseDown=${noAutoscroll}.
 function openInNewWindow(e, hash) {
-  if (!e || !(e.ctrlKey || e.metaKey)) return false;
+  if (!e || !(e.ctrlKey || e.metaKey || e.button === 1)) return false;
   e.preventDefault(); e.stopPropagation();
   window.open(location.pathname + location.search + hash, "_blank", "noopener");
   return true;
 }
+
+// Clique do meio no Windows/Linux liga o "autoscroll"; cancela p/ ele virar só um clique.
+function noAutoscroll(e) { if (e.button === 1) e.preventDefault(); }
 
 async function copySessionLink(id) {
   try { await copyClaudeSessionLink(id); toast.ok("Link da sessão copiado"); }
@@ -1146,20 +1150,23 @@ export function ClaudeStatusDot() {
 
 export function ClaudeTopbarControls() {
   const s = useClaude();
+  // Ordem (padrão de mercado): ação primária → navegação → estado → configurações.
+  // O mesmo DOM alimenta o desktop (barra) e o celular (folha "⋯").
   return html`
-    <div class="keep-open"><${VaultBanner} compact=${true} /></div>
+    <button class="sm primary" onClick=${(e) => { if (!openInNewWindow(e, "#claude/new")) s.newSession(); }}
+      onAuxClick=${(e) => openInNewWindow(e, "#claude/new")} onMouseDown=${noAutoscroll}
+      title="Encerra esta sessão e abre uma nova (Ctrl+clique abre em nova janela)">＋ Nova sessão</button>
+    <button class="sm" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
     <span class="badge ${s.badge} desk-only">${s.status}</span>
     ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
+    <div class="keep-open"><${VaultBanner} compact=${true} /></div>
     ${s.auth && s.auth.available && html`<button
       class=${"sm cc-authbtn " + (s.auth.loggedIn ? "" : "danger")}
       onClick=${() => s.setShowAuth(true)}
       title=${s.auth.loggedIn ? "Conta do agente: " + (s.auth.email || s.auth.authMethod || "conectado") + " (/login)" : "O agente está deslogado — clique para entrar"}>
       ${s.auth.loggedIn ? "👤" : "🔓 entrar (/login)"}
     </button>`}
-    <button class="sm" onClick=${() => s.setShowPrefs(true)} title="Modelo e modo de permissão padrão p/ novas conversas">⚙ Padrões</button>
-    <button class="sm" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
-    <button class="sm" onClick=${(e) => { if (!openInNewWindow(e, "#claude/new")) s.newSession(); }}
-      title="Encerra esta sessão e abre uma nova (Ctrl+clique abre em nova janela)">Nova sessão</button>`;
+    <button class="sm" onClick=${() => s.setShowPrefs(true)} title="Modelo e modo de permissão padrão p/ novas conversas">⚙ Padrões</button>`;
 }
 
 export function ClaudeCodePage() {
@@ -1490,9 +1497,10 @@ function SessionsModal({ currentId, onClose, onResume }) {
       : html`<div class="cc-sess-list">
         ${list.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "")}
             onClick=${(e) => { if (!openInNewWindow(e, claudeSessionHash(s.id))) onResume(s.id); }}
-            title="Retomar esta sessão (Ctrl+clique abre em nova janela)">
+            onAuxClick=${(e) => openInNewWindow(e, claudeSessionHash(s.id))} onMouseDown=${noAutoscroll}
+            title="Retomar esta sessão (Ctrl+clique ou clique do meio abre em nova aba)">
           <div class="cc-sess-main">
-            <div class="cc-sess-title"><a href=${claudeSessionHash(s.id)} onClick=${(e) => {
+            <div class="cc-sess-title"><a href=${claudeSessionHash(s.id)} onAuxClick=${(e) => e.stopPropagation()} onClick=${(e) => {
               e.stopPropagation();
               if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.button === 0) {
                 e.preventDefault(); onResume(s.id);

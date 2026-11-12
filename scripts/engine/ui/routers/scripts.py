@@ -5,6 +5,10 @@ São os scripts que o usuário cria/edita p/ acessar roteadores, diagnosticar, a
 O motor do NetOps (scripts/engine: lib, vault, ui) NÃO é exposto aqui. A UI mostra UMA tabela
 única (ordenável/pesquisável); a pasta de cada script vira uma coluna/tag ("location"). Só
 lista .py/.sh — docs (.md) não viram linha, mas aparecem como ícone no próprio script.
+
+Skills: cada pasta de tools/ é uma skill (padrão Agent Skills: pasta = SKILL.md + scripts).
+`GET /scripts` devolve também `skills` (id=pasta, name/description do frontmatter do SKILL.md,
+nº de scripts). Skill sem script é válida (só a doc); script sem SKILL.md fica "sem doc".
 Não executa nada — rodar continua no Terminal/Claude. Caminho relativo a tools/ via `path`."""
 from __future__ import annotations
 
@@ -69,6 +73,37 @@ def _doc_for(path: Path) -> str | None:
     return None
 
 
+def _skill_meta(folder: Path) -> dict:
+    """name/description do frontmatter do SKILL.md (senão 1º título/parágrafo). Best-effort."""
+    skill = folder / "SKILL.md"
+    meta = {"id": folder.name, "name": folder.name, "description": "",
+            "doc": str(skill.relative_to(deps.TOOLS_DIR)) if skill.exists() else None}
+    if not skill.exists():
+        return meta
+    try:
+        text, _, _ = yaml_io.read_text_meta(skill)
+        fm, body = docs_svc.split_frontmatter(text)
+        if isinstance(fm, dict):
+            meta["name"] = str(fm.get("name") or folder.name)
+            meta["description"] = str(fm.get("description") or "")
+        if not meta["description"] or meta["name"] == folder.name:
+            lines = [ln.strip() for ln in body.splitlines()]
+            for ln in lines:
+                if ln.startswith("# ") and meta["name"] == folder.name:
+                    meta["name"] = ln[2:].replace("SKILL —", "").strip() or folder.name
+                elif ln and not ln.startswith(("#", "|", "```", "-", ">")) and not meta["description"]:
+                    meta["description"] = ln
+                if meta["description"] and meta["name"] != folder.name:
+                    break
+    except Exception:
+        pass
+    return meta
+
+
+def _skip(rel: Path) -> bool:
+    return any(p in _IGNORE or p.startswith(".") or p.startswith("_") for p in rel.parts)
+
+
 @router.get("/scripts")
 def list_scripts():
     """Lista única de scripts operacionais (.py/.sh) de tools/. Cada item traz a pasta
@@ -80,7 +115,7 @@ def list_scripts():
             if not f.is_file() or f.suffix not in deps.SCRIPT_EXTS:
                 continue
             rel = f.relative_to(base)
-            if any(p in _IGNORE or p.startswith(".") or p.startswith("_") for p in rel.parts):
+            if _skip(rel):
                 continue
             location = rel.parts[0] if len(rel.parts) > 1 else "(raiz)"
             out.append({
@@ -89,7 +124,16 @@ def list_scripts():
                 "desc": _describe(f), "doc": _doc_for(f),
             })
     locations = sorted({s["location"] for s in out})
-    return {"scripts": out, "locations": locations}
+    skills = []
+    if base.exists():
+        for d in sorted(p for p in base.iterdir() if p.is_dir()):
+            if _skip(d.relative_to(base)):
+                continue
+            meta = _skill_meta(d)
+            meta["scripts"] = sum(1 for s in out if s["location"] == d.name)
+            if meta["scripts"] or meta["doc"]:
+                skills.append(meta)
+    return {"scripts": out, "locations": locations, "skills": skills}
 
 
 @router.get("/scripts/file")
@@ -107,9 +151,10 @@ def get_script(path: str):
 def create_script(body: dict):
     rel = (body.get("path") or "").strip()
     p = _resolve(rel)
-    if p.suffix not in deps.SCRIPT_EXTS:
+    is_skill_doc = p.name == "SKILL.md" and p.parent != deps.TOOLS_DIR.resolve()
+    if p.suffix not in deps.SCRIPT_EXTS and not is_skill_doc:
         raise deps.ValidationFailed(
-            [{"loc": "path", "msg": f"só Python/Shell: {', '.join(deps.SCRIPT_EXTS)}"}]
+            [{"loc": "path", "msg": f"só Python/Shell ({', '.join(deps.SCRIPT_EXTS)}) ou <skill>/SKILL.md"}]
         )
     if p.exists():
         raise deps.ValidationFailed([{"loc": "path", "msg": f"'{rel}' já existe"}])

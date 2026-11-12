@@ -54,7 +54,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Mapa de como a rede se interliga | `network/topology.yaml` + `network/topology.md` |
 | Boas práticas (texto) | `best-practices/<vendor>/` ou `best-practices/general/` |
 | Exemplos de configuração reais | `config-examples/<vendor>/` |
-| Scripts operacionais (acesso, diagnóstico, análise) | `scripts/tools/<familia>/` |
+| Skills = scripts operacionais + `SKILL.md` (acesso, diagnóstico, análise) | `scripts/tools/<skill>/` (console: menu **Scripts / Skills**) |
 | Motor do NetOps (lib, cofre, console web) | `scripts/engine/` |
 | Subir **ou reiniciar** o console web (SEMPRE por aqui) | `scripts/engine/ui/start.sh` |
 | Modelos de planejamento | `planning-examples/` |
