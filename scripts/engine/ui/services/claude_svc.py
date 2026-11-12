@@ -233,35 +233,46 @@ def _resume_forget(sid: str | None) -> None:
         _resume_save(data)
 
 
+def _rlog(msg: str) -> None:
+    """Diário da retomada (stdout do servidor = /tmp/netops-restart.log): cada decisão fica visível."""
+    print(f"[claude-autoresume] {msg}", flush=True)
+
+
 def autoresume_enabled() -> bool:
     return (os.environ.get("NETOPS_UI_CLAUDE_AUTORESUME", "1") != "0"
             and deps.STATE.enable_claude and deps.STATE.claude_persist and is_available())
 
 
-async def resume_after_restart(delay: float = _RESUME_DELAY) -> list[str]:
+async def resume_after_restart(delay: float = _RESUME_DELAY, snapshot: dict | None = None) -> list[str]:
     """Relança as sessões que estavam NO MEIO de um turno quando o console caiu. Devolve os sids
     retomados. Se a aba já reconectou (sessão viva em _LIVE), injeta o prompt nela em vez de
-    abrir um segundo `claude` na mesma conversa."""
+    abrir um segundo `claude` na mesma conversa. `snapshot` = o arquivo lido NO STARTUP, antes de
+    aceitar conexões (a aba pode reconectar durante o `delay`)."""
     if delay:
         await asyncio.sleep(delay)
-    data = _resume_load()
+    data = dict(snapshot) if snapshot is not None else _resume_load()
+    _rlog(f"anotadas: {len(data)} ({_RESUME_FILE})")
     if not data:
         return []
     now = time.time()
     done: list[str] = []
     for sid, e in list(data.items()):
-        if not isinstance(e, dict) or not e.get("busy"):
-            data.pop(sid, None)
-            continue
-        chain = int(e.get("chain") or 0)
-        if (now - float(e.get("t") or 0) > _RESUME_MAX_AGE or chain >= _RESUME_MAX_CHAIN
-                or not project_session_exists(sid)):
-            data.pop(sid, None)
-            continue
         try:
+            if not isinstance(e, dict) or not e.get("busy"):
+                _rlog(f"{sid}: ociosa, ignorada")
+                data.pop(sid, None)
+                continue
+            chain = int(e.get("chain") or 0)
+            age = now - float(e.get("t") or 0)
+            if age > _RESUME_MAX_AGE or chain >= _RESUME_MAX_CHAIN or not project_session_exists(sid):
+                _rlog(f"{sid}: descartada (idade {age:.0f}s, cadeia {chain})")
+                data.pop(sid, None)
+                continue
             s = _LIVE.get(sid)
-            if s is None or s._closing_done:
+            reuse = s is not None and not s._closing_done
+            if not reuse:
                 if _detached_count() >= deps.STATE.claude_max_sessions:
+                    _rlog(f"{sid}: teto de sessões, fica p/ o próximo start")
                     continue           # teto: fica anotada p/ um próximo start, não força
                 s = ClaudeWebSession(persist=True, resume=sid, model=e.get("model") or None,
                                      effort=e.get("effort") or None)
@@ -276,6 +287,9 @@ async def resume_after_restart(delay: float = _RESUME_DELAY) -> list[str]:
             if not s._busy:
                 await s._send({"type": "queue_dispatched", "id": None, "text": RESUME_PROMPT})
                 await s._query(RESUME_PROMPT)
+                _rlog(f"{sid}: retomada ({'aba já anexada' if reuse else 'sessão nova'}, cadeia {chain + 1})")
+            else:
+                _rlog(f"{sid}: já tinha turno rodando, nada a injetar")
             await s._send_queue()
             done.append(sid)
         except Exception:
@@ -389,11 +403,14 @@ class ClaudeWebSession:
         self._interrupted = False        # interrupt durante o turno -> não despacha a fila no fim
         self._restore_pending: list[dict] = []  # itens a devolver p/ a caixa quando reanexar
         self._auto_chain = 0             # retomadas automáticas seguidas (zera no prompt humano)
+        # Só quem JÁ rodou turno neste processo mexe na anotação. Sem isto, a aba que reconecta
+        # logo após o restart (sessão nova, ociosa) APAGAVA a anotação antes da retomada lê-la.
+        self._tracked = False
         self._start_lock = asyncio.Lock()  # aba e retomada automática podem chamar start() juntas
 
     def _track(self) -> None:
         """Anota/remove esta sessão no arquivo de retomada pós-restart (só persist + sid conhecido)."""
-        if not self.persist or not self.sid or self._closing_done:
+        if not self.persist or not self.sid or self._closing_done or not self._tracked:
             return
         data = _resume_load()
         if self._busy or self._queue:
@@ -800,6 +817,7 @@ class ClaudeWebSession:
     # ------------------------------------------------------------------ fila
     async def _query(self, text: str) -> None:
         self._busy = True
+        self._tracked = True
         self._track()
         await self.client.query(text)
 

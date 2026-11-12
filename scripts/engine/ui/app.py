@@ -207,7 +207,17 @@ def create_app() -> FastAPI:
         # Pós-atualização o candidato ainda passa pelo readiness/commit: espera mais. Se ele for
         # revertido, a anotação continua no disco e o processo restaurado retoma.
         delay = 12.0 if os.environ.get("NETOPS_UPDATE_RECOVERING") == "1" else 3.0
-        app.state.claude_autoresume_task = asyncio.create_task(claude_svc.resume_after_restart(delay))
+        # Cópia AGORA, antes de aceitar conexões: a aba que reconecta durante o delay não pode
+        # alterar o que estava anotado no momento do restart.
+        snapshot = claude_svc._resume_load()
+        task = asyncio.create_task(claude_svc.resume_after_restart(delay, snapshot))
+
+        def _done(t):  # exceção numa task guardada nunca é logada sozinha: registra aqui
+            if not t.cancelled() and t.exception() is not None:
+                import logging  # noqa: PLC0415
+                logging.getLogger("netops").error("Retomada da aba Claude falhou", exc_info=t.exception())
+        task.add_done_callback(_done)
+        app.state.claude_autoresume_task = task
 
     @app.on_event("shutdown")
     async def _claude_shutdown():  # noqa: ANN202

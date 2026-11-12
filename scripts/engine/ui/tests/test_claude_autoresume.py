@@ -140,3 +140,21 @@ def test_prompt_humano_zera_cadeia(fake):
 
     asyncio.run(s._ws_pump(WS()))
     assert s._auto_chain == 0 and _entries()["sid-1"]["chain"] == 0
+
+
+def test_aba_reconectando_antes_nao_apaga_anotacao(fake):
+    """Regressão 12/11: serve(first) da aba chama _send_queue(fresh) -> _track() da sessão nova e
+    ociosa apagava a anotação antes da retomada ler o arquivo."""
+    _write({"sid-1": {"busy": True, "queue": [], "chain": 0, "t": time.time()}})
+    s, how = claude_svc.attach_or_create(owner="", resume="sid-1", model=None)
+    asyncio.run(s.start())
+    asyncio.run(s._send_queue(fresh=True))          # o que serve(first=True) faz
+    assert _entries()["sid-1"]["busy"] is True      # anotação intacta
+    assert asyncio.run(claude_svc.resume_after_restart(delay=0)) == ["sid-1"]
+    assert s.client.queries == [claude_svc.RESUME_PROMPT]
+
+
+def test_snapshot_do_startup_prevalece(fake):
+    snap = {"sid-1": {"busy": True, "queue": [], "chain": 0, "t": time.time()}}
+    _write({})                                      # arquivo mexido depois do startup
+    assert asyncio.run(claude_svc.resume_after_restart(delay=0, snapshot=snap)) == ["sid-1"]
