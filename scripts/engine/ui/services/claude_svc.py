@@ -221,6 +221,7 @@ async def shutdown_all() -> None:
 
 
 VALID_EFFORT = ("low", "medium", "high", "xhigh", "max")
+_SEND_TIMEOUT = 10.0   # seg p/ um envio ao socket (half-open não pode travar o agente)
 MAX_QUEUE = 20   # teto de mensagens na fila por sessão (estático)
 
 
@@ -279,7 +280,16 @@ class ClaudeWebSession:
             return
         # default=str protege contra qualquer valor não-serializável vindo do SDK.
         try:
-            await ws.send_text(json.dumps(obj, default=str))
+            # Timeout: socket half-open (celular bloqueou/sem rede, sem FIN) pode travar o drain e,
+            # como o _sdk_pump envia inline, parar o agente. Estourou = trata como desanexado.
+            await asyncio.wait_for(ws.send_text(json.dumps(obj, default=str)), timeout=_SEND_TIMEOUT)
+        except asyncio.TimeoutError:
+            if self.persist and self.ws is ws:
+                self.detach()
+                try:
+                    asyncio.create_task(ws.close())
+                except Exception:
+                    pass
         except (WebSocketDisconnect, RuntimeError):
             pass
 

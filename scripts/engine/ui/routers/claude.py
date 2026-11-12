@@ -68,14 +68,12 @@ async def claude_ws(ws: WebSocket):
         await ws.accept()
         await claude_svc.ClaudeWebSession(ws).run()
         return
-    # Modo persistente: valida o DONO (cookie HttpOnly) e decide re-anexar vs criar.
+    # Modo persistente. O WS já passou por _ws_authorized (login). O cookie de dono NÃO é mais
+    # requisito p/ persistir: antes, cookie ausente/expirado/perdido no restart degradava CALADO p/
+    # o modo clássico (vida do agente = vida do socket) e o turno morria quando o celular
+    # bloqueava ou o navegador fechava. Agora a sessão persiste sempre; o cookie só rotula o dono
+    # (o takeover por qualquer usuário autenticado já era permitido em attach_or_create).
     owner = ws.cookies.get(_ATTACH_COOKIE) or ""
-    if not claude_svc.valid_owner(owner):
-        # Sem cookie de dono válido (aba não pediu o ticket, ou persist recém-ligado): degrada
-        # p/ o modo clássico em vez de recusar — nada quebra, só não sobrevive ao standby.
-        await ws.accept()
-        await claude_svc.ClaudeWebSession(ws).run()
-        return
     model = ws.query_params.get("model") or None
     session, how = claude_svc.attach_or_create(owner=owner, resume=resume, model=model,
                                                   effort=ws.query_params.get("effort") or None)

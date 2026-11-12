@@ -1,5 +1,19 @@
 # Changelog do NetOps
 
+## [2.3.1] - 2026-11-12
+
+### Correções
+
+- Aba Claude Code no celular: a sessão persistente não depende mais do cookie de dono. Sem ele, a aba caía calada no modo clássico e o turno morria ao bloquear a tela; o acesso continua exigindo login.
+- Aba Claude Code: envio ao navegador com limite de 10 s. Uma conexão pendurada (celular sem rede) desanexa a aba e o agente segue trabalhando, em vez de travar.
+- Aba Claude Code: a reconexão não desiste após 4 quedas. Tenta até 40 vezes com intervalo crescente (3 s a 60 s) e reconecta na hora quando a aba volta à tela, a rede volta ou a página é restaurada.
+- Scripts de acesso (`ssh.py`, `telnet.py`, `api_mikrotik.py`, `session.py`): o re-exec no `.venv` do projeto só acontece quando o script é executado direto. Importados como biblioteca, eles substituíam o processo hospedeiro.
+- Suíte de testes: não usa o cofre real (roda com o cofre trancado) e isola as preferências, o cache de modelos, o log do agente e o token de transcrição de `runs/claude/`, que antes eram lidos e podiam ser gravados.
+
+### Compatibilidade
+
+- Sem migração de dados e sem novas dependências.
+
 ## [2.3.0] - 2026-11-11
 
 ### Novidades

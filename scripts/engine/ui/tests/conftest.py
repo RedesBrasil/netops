@@ -27,6 +27,15 @@ def _isolated_vault_session(tmp_path_factory, monkeypatch):
     runtime = tmp_path_factory.mktemp("xdg-runtime")
     runtime.chmod(0o700)
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    # Estes módulos fixam o caminho em runs/claude/ no import: sem isto o teste lia (e podia
+    # gravar) as preferências, o cache de modelos e o token de transcrição REAIS do console.
+    import importlib
+    claude_runs = tmp_path_factory.mktemp("runs-claude")
+    for module, attr, name in (("services.claude_prefs", "_FILE", "prefs.json"),
+                               ("services.claude_models", "_CACHE_FILE", "models-cache.json"),
+                               ("services.audio_svc", "_FILE", "audio-transcription.json"),
+                               ("services.claude_svc", "_AGENT_LOG", "agent-stderr.log")):
+        monkeypatch.setattr(importlib.import_module(module), attr, claude_runs / name)
 
 
 @pytest.fixture()

@@ -402,17 +402,18 @@ function useClaudeSession() {
         // Erro TERMINAL (rate limit / modelo inválido): reconectar+retomar em loop só MARTELA o
         // token do agente e mantém o 429 aceso. Não reconecta — o modal já orienta. (2026-09-28)
         if (noReconnectRef.current) { setStatus("erro"); return; }
-        // Circuit breaker: várias quedas seguidas SEM conectar (ex.: agente morre no start) =>
-        // para de tentar, em vez de criar tempestade de reconexão. Uma conexão OK zera o contador.
+        // Quedas seguidas SEM conectar: NÃO desiste (celular bloqueado/sem rede volta minutos depois e
+        // antes a aba ficava em "erro" com o agente vivo no servidor). Só espaça as tentativas
+        // (backoff 3s→60s, teto 40 tentativas). Erros terminais já saíram acima (noReconnectRef).
         failCountRef.current += 1;
-        if (failCountRef.current >= 4) { setStatus("erro"); return; }
+        if (failCountRef.current > 40) { setStatus("erro"); return; }
         setStatus("desconectado");
+        const delay = Math.min(60000, 3000 * Math.pow(2, Math.max(0, failCountRef.current - 4)));
         // Renova o cookie de dono antes de reconectar: após um reinício do console o antigo
-        // não vale mais e o servidor cairia calado no modo clássico (sessão morre no F5,
-        // levando a fila junto — incidente 11/11).
+        // não vale mais (incidente 11/11).
         reconnTimerRef.current = setTimeout(() => {
           api.get("/claude/attach-ticket").then(() => open(true), () => open(true));
-        }, 3000);
+        }, delay);
       };
 
       ws.onmessage = (e) => {
@@ -532,7 +533,25 @@ function useClaudeSession() {
     // handshake já carregá-lo. 403 = persist desligado -> segue igual a antes.
     api.get("/claude/attach-ticket").then(() => open(false), () => open(false));
 
+    // Celular bloqueado / navegador em segundo plano: o socket morre mas o agente segue no servidor
+    // (persist). Ao voltar (visível / rede de volta / bfcache) reconecta NA HORA, sem esperar o backoff.
+    const wake = () => {
+      if (!current() || manualCloseRef.current || noReconnectRef.current) return;
+      if (document.visibilityState === "hidden") return;
+      const w = wsRef.current;
+      if (w && (w.readyState === 0 || w.readyState === 1)) return;   // conectando/aberto
+      failCountRef.current = 0;
+      if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }
+      api.get("/claude/attach-ticket").then(() => open(true), () => open(true));
+    };
+    document.addEventListener("visibilitychange", wake);
+    addEventListener("online", wake);
+    addEventListener("pageshow", wake);
+
     return () => {
+      document.removeEventListener("visibilitychange", wake);
+      removeEventListener("online", wake);
+      removeEventListener("pageshow", wake);
       disposed = true;
       manualCloseRef.current = true;                                 // impede reconexao ao trocar de sessao/encerrar
       if (reconnTimerRef.current) { clearTimeout(reconnTimerRef.current); reconnTimerRef.current = null; }

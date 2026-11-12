@@ -12,6 +12,11 @@ from pathlib import Path
 
 
 def ensure_venv() -> None:
+    # Só re-executa quando quem chamou é o script de entrada (`python3 ssh.py ...`). Importado
+    # como biblioteca (console, backup runner, pytest), trocar o processo inteiro com execv
+    # derrubava o hospedeiro: o pytest virava `.venv/bin/python -m pytest` sem pytest instalado.
+    if sys._getframe(1).f_globals.get("__name__") != "__main__":
+        return
     venv_dir = Path(__file__).resolve().parents[3] / ".venv"
     venv_py = venv_dir / "bin" / "python"
     # Já estamos DENTRO do venv? sys.prefix aponta pro diretório do venv quando ele está

@@ -202,3 +202,27 @@ def test_start_with_cold_cache_discovers_model_outside_websocket_loop(env, monke
         assert clients[0].disconnected
 
     asyncio.run(check())
+
+
+def test_send_timeout_on_half_open_socket_detaches_instead_of_stalling_agent(monkeypatch):
+    """Celular bloqueado = socket half-open: o envio travaria o _sdk_pump. Estourou o timeout ->
+    desanexa (agente segue vivo, persist) em vez de parar."""
+    import asyncio
+    from services import claude_svc
+
+    monkeypatch.setattr(claude_svc, "_SEND_TIMEOUT", 0.05)
+
+    class HungWS:
+        async def send_text(self, _):
+            await asyncio.sleep(5)
+
+        async def close(self, *a, **k):
+            pass
+
+    async def run():
+        s = claude_svc.ClaudeWebSession(owner="x", persist=True)
+        s.ws = HungWS()
+        await s._send({"type": "ping"})
+        return s.ws
+
+    assert asyncio.run(run()) is None
