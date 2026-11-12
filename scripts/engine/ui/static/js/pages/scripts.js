@@ -35,7 +35,8 @@ export function ScriptsPage() {
   const skill = skillOfSeg && !(onScriptsTab && r.segments.length > 1) ? skillOfSeg : null;
   // Arquivo aberto: script (.py/.sh) ou a doc da skill (SKILL.md)
   const editable = (p) => all.some((s) => s.path === p) || skills.some((k) => k.doc === p);
-  const open = joined && (r.segments.length > 1 || !skillOfSeg) ? joined : null;
+  // O SKILL.md da skill é editado direto na página dela (sem modal); só scripts abrem em janela.
+  const open = joined && (r.segments.length > 1 || !skillOfSeg) && !(skill && joined === skill.doc) ? joined : null;
   const setDoc = (d) => r.setParams({ doc: d || "" });
   const closeEditor = () => (skill ? r.open(skill.id) : r.close());
   const setTab = (t) => r.openWith([], { tab: t, q: "", location: "", lang: "", sort: "", dir: "" });
@@ -124,11 +125,10 @@ export function ScriptsPage() {
   const skillView = skill && html`<div>
     <div class="help"><a href="#scripts">← Skills</a></div>
     <div class="page-title"><h1>${skill.name}</h1><span class="spacer"></span>
-      ${skill.doc && html`<button onClick=${() => r.open(skill.doc.split("/"))}>Editar SKILL.md</button>`}
       <button class="primary" onClick=${() => startCreate(skill.id + "/")}>+ Novo script</button></div>
     ${skill.description && html`<div style="margin-bottom:4px">${skill.description}</div>`}
     <div class="help mono" style="margin-bottom:8px">scripts/tools/${skill.id}/</div>
-    ${skill.doc ? html`<${SkillDoc} key=${skill.doc} path=${skill.doc} version=${res.data} />`
+    ${skill.doc ? html`<${SkillDoc} key=${skill.doc} path=${skill.doc} version=${res.data} onSaved=${res.reload} />`
       : html`<div class="card">Esta skill ainda não tem <span class="mono">SKILL.md</span> — sem ele a IA não sabe quando nem como usar estes scripts.
           <div style="margin-top:8px"><button class="primary" onClick=${async () => {
             try { await api.post("/scripts", { path: `${skill.id}/SKILL.md`, text: SKILL_TMPL(skill.id) }); toast.ok("SKILL.md criado"); res.reload(); r.open([skill.id, "SKILL.md"]); }
@@ -157,12 +157,24 @@ export function ScriptsPage() {
   </div>`;
 }
 
-function SkillDoc({ path, version }) {
+// SKILL.md editável direto na página da skill (Ler / Editar visual / Texto puro), como na Memória.
+function SkillDoc({ path, version, onSaved }) {
+  const [data, setData] = useState(null);
   const [text, setText] = useState(null);
-  useEffect(() => { api.get(`/scripts/file?path=${encodeURIComponent(path)}`).then((d) => setText(d.text)).catch(handleError); }, [path, version]);
-  // frontmatter (id/name/description) já aparece no cabeçalho — renderizado viraria um título gigante
-  const body = text === null ? null : text.replace(/^---\n[\s\S]*?\n---\n?/, "").trimStart();
-  return text === null ? html`<${Spinner} />` : html`<div class="card md-readbox"><${MarkdownPanel} text=${body} /></div>`;
+  useEffect(() => {
+    api.get(`/scripts/file?path=${encodeURIComponent(path)}`).then((d) => { setData(d); setText(d.text); }).catch(handleError);
+  }, [path, version]);
+  async function save() {
+    try {
+      const r = await api.put(`/scripts/file`, { path, text }, data.rev);
+      setData({ ...data, rev: r?.rev ?? data.rev, text }); toast.ok("Salvo"); onSaved && onSaved();
+    } catch (e) { handleError(e); }
+  }
+  if (text === null) return html`<${Spinner} />`;
+  return html`<div>
+    <${MarkdownEditor} value=${text} onChange=${setText} />
+    <div style="margin-top:12px"><button class="primary" disabled=${text === data.text} onClick=${save}>Salvar SKILL.md</button></div>
+  </div>`;
 }
 
 function Editor({ path, onClose, onSaved }) {
