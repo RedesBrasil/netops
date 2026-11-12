@@ -282,7 +282,7 @@ a aba **pergunta** o que fazer:
 - **Cancelar** (Esc): volta a editar sem interromper o agente.
 
 Regras: a fila é **por sessão** e vive no servidor (`ClaudeWebSession._queue`, teto `MAX_QUEUE`=20).
-Com `--enable-claude-persist`, ela **continua andando com a aba fechada** e o estado volta no
+Com a persistência (padrão no `start.sh`; `NETOPS_UI_CLAUDE_PERSIST=0` desliga), ela **continua andando com a aba fechada** e o estado volta no
 re-anexo. Em modo clássico, ela morre junto com o socket. **Interromper** ou um turno com **erro** não
 dispara a fila sozinha: os textos voltam para a caixa (`queue_restored`) para você decidir o que fazer,
 inclusive quando a aba estava fechada nesse momento. Protocolo: `prompt{queue:bool}`, `queue_remove`,

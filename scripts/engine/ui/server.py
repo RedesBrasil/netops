@@ -63,7 +63,7 @@ def main() -> int:
                              "ARQUIVOS como este usuário. Não liga em --read-only. Default: desligado")
     parser.add_argument("--enable-claude-persist", action="store_true",
                         help="Mantém a sessão da aba Claude viva após o socket cair (termina o turno; "
-                             "re-anexa ao voltar). Sobrevive a standby/troca de aba. Default: desligado")
+                             "re-anexa ao voltar). Sobrevive a F5/standby/troca de aba. Default do server.py: desligado; o start.sh liga por padrão (NETOPS_UI_CLAUDE_PERSIST=0 desliga)")
     parser.add_argument("--claude-max-sessions", type=int, default=4,
                         help="Teto de sessões Claude desanexadas vivas (recusa novas ao estourar)")
     parser.add_argument("--claude-detach-grace", type=int, default=300,

@@ -29,13 +29,12 @@ fi
 
 # 1) captura o console atual (supervisor do ROOT)
 SUP=$(pgrep -of "update/supervisor.py --root $ROOT --" || true)
-HOST=""; PORT=8765; TERM=1; CLAUDE=1; PERSIST=0
+HOST=""; PORT=8765; TERM=1; CLAUDE=1; PERSIST="${NETOPS_UI_CLAUDE_PERSIST:-1}"   # persistência: default ON
 if [ -n "$SUP" ]; then
   mapfile -d '' ARGS < "/proc/$SUP/cmdline"
   for i in "${!ARGS[@]}"; do
     case "${ARGS[$i]}" in
       --host) HOST="${ARGS[$((i+1))]}";; --port) PORT="${ARGS[$((i+1))]}";;
-      --enable-claude-persist) PERSIST=1;;
     esac
   done
   printf '%s\n' "${ARGS[@]}" | grep -qx -- '--enable-terminal' || TERM=0

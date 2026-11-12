@@ -1,5 +1,11 @@
 # Changelog do NetOps
 
+## [Não lançado]
+
+### Correções
+
+- Aba Claude Code: a persistência da sessão agora é **padrão** (`start.sh` e `restart-console.sh`). F5, troca de aba ou standby não cancelam mais a tarefa em andamento; ao voltar, a aba re-anexa onde estava. `NETOPS_UI_CLAUDE_PERSIST=0` desliga. Limite: reiniciar ou encerrar o console encerra as sessões vivas.
+
 ## [2.3.1] - 2026-11-12
 
 ### Correções
