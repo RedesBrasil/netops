@@ -670,3 +670,17 @@ tr.sc-unread td { font-weight: 600; }
 .sc-form .sc-kind-opt.on b { color: inherit; }
 .sc-form textarea { resize: vertical; color: var(--text); }
 .sc-form .sc-kind-opt.on.sc-k-agent b { color: var(--accent); } .sc-form .sc-kind-opt.on.sc-k-hybrid b { color: var(--warn); }
+
+/* Editor visual de Markdown + seletor de modo */
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { background: var(--surface); color: var(--text); border: 0; border-right: 1px solid var(--border); padding: 5px 12px; cursor: pointer; font: inherit; }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--accent, #2563eb); color: #fff; }
+.wy { border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.wy-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); z-index: 2; border-radius: 6px 6px 0 0; }
+.wy-btn, .wy-block { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 9px; cursor: pointer; font: inherit; min-width: 32px; }
+.wy-btn:hover { filter: brightness(1.15); }
+.wy-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+.wy-area { min-height: 320px; max-height: 64vh; overflow: auto; padding: 12px 16px; outline: none; }
+.wy-area blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 2px 12px; opacity: .85; }
+.wy-area th, .wy-area td { border: 1px solid var(--border); padding: 4px 8px; }

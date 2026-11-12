@@ -16,3 +16,4 @@ a1cefabf06ec626adcb92731537e1e04fd09a7908e22551bab50540106dc950d  ./preact.modul
 e8958a47f336fc06bfb08885ea370639fac4831e07e6caa832ecc9774c8d1c0b  ./xterm-addon-fit.mjs
 ba8e6985669488981ccf40c0cefe3aba80722cb6c92de7ad628b0bd717faf2b6  ./xterm.css
 5218960e7444baf65a4741d32271555eb9fc676ff34db9d98ac2bdd0c1f99483  ./xterm.mjs
+turndown 7.2.0 | turndown-plugin-gfm 1.0.2 (editor visual de Markdown)

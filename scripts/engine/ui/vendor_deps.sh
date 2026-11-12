@@ -26,6 +26,11 @@ get "https://cdn.jsdelivr.net/npm/marked@${MARKED}/lib/marked.esm.js"      marke
 get "https://cdn.jsdelivr.net/npm/js-yaml@${JSYAML}/dist/js-yaml.mjs"      js-yaml.mjs || \
   get "https://esm.sh/js-yaml@${JSYAML}/es2022/js-yaml.mjs"               js-yaml.mjs
 
+# Editor visual de Markdown (HTML -> Markdown). Já vendorizados; rode de novo só para atualizar.
+get "https://cdn.jsdelivr.net/npm/turndown@7.2.0/+esm"                    turndown.mjs
+get "https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/+esm"         turndown-plugin-gfm.mjs
+sed -i '/sourceMappingURL/d' turndown.mjs turndown-plugin-gfm.mjs
+
 # Terminal web (xterm.js). /+esm = bundle ESM self-contained (sem imports externos -> offline-safe).
 get "https://cdn.jsdelivr.net/npm/@xterm/xterm@${XTERM}/+esm"             xterm.mjs
 get "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@${XTERM_FIT}/+esm"     xterm-addon-fit.mjs
