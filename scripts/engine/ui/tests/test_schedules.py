@@ -33,7 +33,16 @@ def test_cron_next_and_match():
     assert CronExpr("0 0 * * 7").matches(_dt("2026-11-15T00:00"))     # 7 = domingo
 
 
-@pytest.mark.parametrize("bad", ["", "* * *", "61 * * * *", "0 25 * * *", "5-1 * * * *", "*/0 * * * *", "x * * * *"])
+def test_cron_extended_syntax_and_dst():
+    """Ganhos do croniter: último dia do mês (L), n-ésimo dia da semana (#) e horário de verão."""
+    assert CronExpr("0 9 L * *").next_after(_dt("2026-11-12T10:00")) == _dt("2026-11-30T09:00")
+    assert CronExpr("0 9 * * 1#2").next_after(_dt("2026-11-01T00:00")) == _dt("2026-11-09T09:00")  # 2ª segunda
+    ny = store.tzinfo("America/New_York")
+    nxt = CronExpr("30 2 * * *").next_after(datetime(2026, 3, 7, 12, 0, tzinfo=ny))
+    assert nxt.tzinfo is not None and nxt > datetime(2026, 3, 7, 12, 0, tzinfo=ny)   # pula a hora inexistente sem quebrar
+
+
+@pytest.mark.parametrize("bad", ["", "* * *", "61 * * * *", "0 25 * * *", "*/0 * * * *", "* * * * * *", "x * * * *"])
 def test_cron_invalid(bad):
     with pytest.raises(CronError):
         CronExpr(bad)

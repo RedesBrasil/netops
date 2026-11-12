@@ -23,6 +23,7 @@ websockets>=12,<14      # WebSocket no uvicorn — necessário p/ o terminal web
 claude-agent-sdk>=0.2,<1  # Página Claude Code (--enable-claude): dirige o binário `claude` (precisa estar no PATH)
 python-multipart>=0.0.9   # Upload de anexos da página Claude Code (POST /api/claude/upload)
 httpx>=0.27             # Ditado por voz: chamada ao Workers AI da Cloudflare (services/audio_svc.py)
+croniter>=6.0,<8         # Tarefas agendadas: expressão cron + fuso (mesma lib do Hermes Agent) — scripts/engine/scheduler
 
 # Binário fora do pip (instalar pelo SO):  sudo apt install nmap
 # nmap é usado por scripts/diagnostics/portscan.py e scripts/analysis/security_assessment.py
