@@ -29,7 +29,8 @@ get "https://cdn.jsdelivr.net/npm/js-yaml@${JSYAML}/dist/js-yaml.mjs"      js-ya
 # Editor visual de Markdown (HTML -> Markdown). Já vendorizados; rode de novo só para atualizar.
 get "https://cdn.jsdelivr.net/npm/turndown@7.2.0/+esm"                    turndown.mjs
 get "https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/+esm"         turndown-plugin-gfm.mjs
-sed -i '/sourceMappingURL/d' turndown.mjs turndown-plugin-gfm.mjs
+get "https://cdn.jsdelivr.net/npm/yaml@2.8.1/+esm"                        yaml.mjs
+sed -i '/sourceMappingURL/d' turndown.mjs turndown-plugin-gfm.mjs yaml.mjs
 
 # Terminal web (xterm.js). /+esm = bundle ESM self-contained (sem imports externos -> offline-safe).
 get "https://cdn.jsdelivr.net/npm/@xterm/xterm@${XTERM}/+esm"             xterm.mjs

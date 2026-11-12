@@ -1,6 +1,7 @@
 // Workflows (*.workflow.yaml) e Agents (*.agent.md) — editores de texto cru + validação.
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
+import { WorkflowForm } from "../workflow-form.js";
 import { FilterBar, ResourceTable, Field, Modal, CodeTextEditor, MarkdownEditor } from "../components.js";
 
 // Página de um único tipo (workflows OU agentes), sem abas.
@@ -79,20 +80,21 @@ function Detail({ kind, file, onClose, onSaved }) {
     <${Field} label=${`Nome do arquivo (alterar = renomear — termina em ${kind === "workflows" ? ".workflow.yaml" : ".agent.md"})`}>
       <input value=${name} onInput=${(e) => setName(e.target.value)} /><//>
     ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />`
-      : html`<${YamlEditor} name=${file} value=${text} onChange=${setText} view=${kind === "workflows" ? WorkflowView : null} />`}
+      : html`<${YamlEditor} name=${file} value=${text} onChange=${setText} view=${kind === "workflows" ? WorkflowView : null} form=${kind === "workflows" ? WorkflowForm : null} />`}
     <div class="help">Validação no servidor: ${kind === "workflows" ? "exige workflow.steps" : "frontmatter com id/name/function"}.</div>
     <div style="margin-top:12px"><button class="primary" disabled=${!dirty} onClick=${save}>Salvar</button></div>
   </div>`;
 }
 
 // YAML estruturado: mesmos modos do Markdown — Ler (formatado) e Texto puro (validado).
-function YamlEditor({ name, value, onChange, view }) {
+function YamlEditor({ name, value, onChange, view, form }) {
   const [mode, setMode] = useState("read");
   return html`<div>
     <div class="md-toolbar"><div class="seg">
-      ${[["read", "Ler"], ["raw", "Texto puro"]].map(([k, l]) => html`<button type="button" class=${mode === k ? "on" : ""} onClick=${() => setMode(k)}>${l}</button>`)}
+      ${[["read", "Ler"], ...(form ? [["visual", "Editar (visual)"]] : []), ["raw", "Texto puro"]].map(([k, l]) => html`<button type="button" class=${mode === k ? "on" : ""} onClick=${() => setMode(k)}>${l}</button>`)}
     </div></div>
-    ${mode === "raw" ? html`<${CodeTextEditor} name=${name} value=${value} onChange=${onChange} />`
+    ${mode === "visual" ? html`<${form} value=${value} onChange=${onChange} />`
+      : mode === "raw" ? html`<${CodeTextEditor} name=${name} value=${value} onChange=${onChange} />`
       : html`<div class="card md-readbox">${view ? html`<${view} text=${value} />` : html`<pre class="raw">${value}</pre>`}</div>`}
   </div>`;
 }
