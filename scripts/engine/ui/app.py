@@ -195,6 +195,20 @@ def create_app() -> FastAPI:
         if os.environ.get("NETOPS_UPDATE_MANAGED") == "1":
             asyncio.create_task(receipt())
 
+    @app.on_event("startup")
+    async def _claude_autoresume():  # noqa: ANN202
+        # Turnos da aba Claude interrompidos pelo restart voltam sozinhos (anotados em
+        # runs/claude/resume-on-restart.json). Em background: nunca atrasa nem derruba o startup.
+        import asyncio
+        import os
+        from services import claude_svc  # noqa: PLC0415
+        if not claude_svc.autoresume_enabled():
+            return
+        # Pós-atualização o candidato ainda passa pelo readiness/commit: espera mais. Se ele for
+        # revertido, a anotação continua no disco e o processo restaurado retoma.
+        delay = 12.0 if os.environ.get("NETOPS_UPDATE_RECOVERING") == "1" else 3.0
+        app.state.claude_autoresume_task = asyncio.create_task(claude_svc.resume_after_restart(delay))
+
     @app.on_event("shutdown")
     async def _claude_shutdown():  # noqa: ANN202
         # Mata sessões Claude vivas (persist) p/ não deixar subprocesso `claude` órfão num deploy.

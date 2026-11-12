@@ -34,7 +34,8 @@ def _isolated_vault_session(tmp_path_factory, monkeypatch):
     for module, attr, name in (("services.claude_prefs", "_FILE", "prefs.json"),
                                ("services.claude_models", "_CACHE_FILE", "models-cache.json"),
                                ("services.audio_svc", "_FILE", "audio-transcription.json"),
-                               ("services.claude_svc", "_AGENT_LOG", "agent-stderr.log")):
+                               ("services.claude_svc", "_AGENT_LOG", "agent-stderr.log"),
+                               ("services.claude_svc", "_RESUME_FILE", "resume-on-restart.json")):
         monkeypatch.setattr(importlib.import_module(module), attr, claude_runs / name)
 
 

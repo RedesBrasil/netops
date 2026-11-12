@@ -308,6 +308,20 @@ reconexão renova o `attach-ticket` antes de abrir o socket.
 Testes: `tests/test_claude_queue.py` (pytest, client/WebSocket fictícios) e
 `tests/claude-queue.browser.mjs` (Playwright, desktop + celular, WebSocket fictício).
 
+### Retomada automática após restart do console
+
+Reiniciar o console mata o subprocesso `claude` no meio do turno. Para o turno voltar **sem mensagem
+manual**, toda sessão persistente com turno rodando (ou fila) é anotada em `runs/claude/resume-on-restart.json`
+a cada início/fim de turno e mudança de fila (vale até para `kill -9`). O `shutdown_all` **não** apaga a
+anotação; `bye`/carência apagam. No startup (`app.py` → `claude_svc.resume_after_restart`, 3 s depois; 12 s
+pós-atualização) cada sessão anotada como `busy` é relançada com `resume=<sid>`, recebe o `RESUME_PROMPT`
+(confira o estado antes de repetir ação; se foi você que reiniciou, só valide o HTTP) e a fila volta a rodar
+depois. A aba re-anexa ao reconectar (backoff 3 s) e relê o transcript. Se a aba reconectar **antes**, a
+sessão nova já fica em `_LIVE` desde a criação e a retomada injeta o prompt nela, sem um segundo `claude`.
+Limites estáticos: anotação com mais de 30 min é ignorada; até 2 retomadas seguidas sem prompt humano
+(anti-loop); respeita `claude_max_sessions`. Kill-switch: `NETOPS_UI_CLAUDE_AUTORESUME=0`.
+Testes: `tests/test_claude_autoresume.py`.
+
 ## Mapas de rede
 
 ### Identidade inteira dos hosts

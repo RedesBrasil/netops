@@ -125,8 +125,11 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
     (log: `/tmp/netops-restart.log`). `--yes` pula a confirmação (em terminal interativo ele pergunta); `--foreground` roda em
     primeiro plano, só para depurar. **Não existe script de restart separado** (o `restart-console.sh` foi removido em 12/11/2026).
   - Funciona de dentro da aba Claude/terminal web: os modos internos são escolhidos só por argumento, nunca pelo ambiente herdado do console.
-  - **Reiniciar encerra as sessões vivas da aba Claude** (a persistência cobre F5/standby, não o fim do processo do console).
-    Avise o usuário antes: a aba cai ~15 s. Faça do restart a **última ação** do turno.
+  - **Reiniciar encerra as sessões vivas da aba Claude**, mas o **turno em andamento volta sozinho**: o console anota em
+    `runs/claude/resume-on-restart.json` quem estava no meio de um turno e, ao subir, relança a conversa (`resume`) com um
+    prompt de continuação "[NetOps — retomada automática]" (até 2 seguidas sem prompt humano; anotação > 30 min é ignorada;
+    `NETOPS_UI_CLAUDE_AUTORESUME=0` desliga). Avise o usuário antes: a aba cai ~15 s. Faça do restart a **última ação** do
+    turno; ao ser retomado depois de um restart que você disparou, só confirme o HTTP e conclua — **não reinicie de novo**.
   - Liga o **terminal web** e a **página Claude Code** por padrão (sem o script as abas somem), injeta o `claude` no PATH,
     faz bind no IP da máquina e garante uma instância só. Variáveis: `NETOPS_UI_HOST`, `NETOPS_UI_PORT`, `NETOPS_UI_TERMINAL=0`,
     `NETOPS_UI_CLAUDE=0`, `NETOPS_UI_CLAUDE_PERSIST=0`. Acesso protegido pelo **login com a senha-mestra** (sem token na URL).

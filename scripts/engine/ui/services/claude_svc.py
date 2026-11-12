@@ -181,7 +181,117 @@ def _gc_owners() -> None:
 
 
 def _detached_count() -> int:
-    return sum(1 for s in _LIVE.values() if s.ws is None and not s._closing_done)
+    uniq = {id(s): s for s in _LIVE.values()}.values()   # a mesma sessão pode ter 2 chaves (resume/init)
+    return sum(1 for s in uniq if s.ws is None and not s._closing_done)
+
+
+# --------------------------------------------------------------------------- #
+# RETOMADA APÓS RESTART. Reiniciar o console mata o subprocesso `claude` no meio do turno.
+# Para o turno voltar SOZINHO, cada sessão persistente com turno em andamento fica anotada em
+# disco (runs/claude/resume-on-restart.json) — gravado a cada início/fim de turno e mudança de
+# fila, então vale até para kill -9. No startup, resume_after_restart() relança essas sessões
+# (resume=<sid>) e manda um prompt de continuação; a aba re-anexa quando reconectar.
+# Kill-switch: NETOPS_UI_CLAUDE_AUTORESUME=0. Limites ESTÁTICOS: idade e cadeia de retomadas.
+# --------------------------------------------------------------------------- #
+_RESUME_FILE = deps.RUNS_DIR / "claude" / "resume-on-restart.json"
+_RESUME_MAX_AGE = 30 * 60      # seg: turno anotado há mais tempo que isso não é retomado
+_RESUME_MAX_CHAIN = 2          # retomadas automáticas seguidas sem prompt humano (anti-loop)
+_RESUME_DELAY = 3.0            # seg após o startup antes de relançar (deixa o console assentar)
+_SHUTTING_DOWN = False         # shutdown_all em curso: teardown NÃO apaga a anotação
+RESUME_PROMPT = (
+    "[NetOps — retomada automática] O console web foi reiniciado enquanto você executava o turno "
+    "anterior e o seu processo foi encerrado no meio. Retome a tarefa de onde parou. Antes de "
+    "repetir qualquer ação, confira o estado real (um comando pode ter rodado só em parte; nunca "
+    "repita alteração em equipamento sem verificar). Se o reinício foi disparado por você mesmo, "
+    "apenas confirme que o console voltou (HTTP) e conclua — NÃO reinicie o console de novo."
+)
+
+
+def _resume_load() -> dict:
+    try:
+        data = json.loads(_RESUME_FILE.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _resume_save(data: dict) -> None:
+    try:
+        _RESUME_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _RESUME_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False))
+        os.replace(tmp, _RESUME_FILE)
+    except OSError:
+        pass   # best-effort: nunca derruba o agente por causa da anotação
+
+
+def _resume_forget(sid: str | None) -> None:
+    if not sid:
+        return
+    data = _resume_load()
+    if data.pop(sid, None) is not None:
+        _resume_save(data)
+
+
+def autoresume_enabled() -> bool:
+    return (os.environ.get("NETOPS_UI_CLAUDE_AUTORESUME", "1") != "0"
+            and deps.STATE.enable_claude and deps.STATE.claude_persist and is_available())
+
+
+async def resume_after_restart(delay: float = _RESUME_DELAY) -> list[str]:
+    """Relança as sessões que estavam NO MEIO de um turno quando o console caiu. Devolve os sids
+    retomados. Se a aba já reconectou (sessão viva em _LIVE), injeta o prompt nela em vez de
+    abrir um segundo `claude` na mesma conversa."""
+    if delay:
+        await asyncio.sleep(delay)
+    data = _resume_load()
+    if not data:
+        return []
+    now = time.time()
+    done: list[str] = []
+    for sid, e in list(data.items()):
+        if not isinstance(e, dict) or not e.get("busy"):
+            data.pop(sid, None)
+            continue
+        chain = int(e.get("chain") or 0)
+        if (now - float(e.get("t") or 0) > _RESUME_MAX_AGE or chain >= _RESUME_MAX_CHAIN
+                or not project_session_exists(sid)):
+            data.pop(sid, None)
+            continue
+        try:
+            s = _LIVE.get(sid)
+            if s is None or s._closing_done:
+                if _detached_count() >= deps.STATE.claude_max_sessions:
+                    continue           # teto: fica anotada p/ um próximo start, não força
+                s = ClaudeWebSession(persist=True, resume=sid, model=e.get("model") or None,
+                                     effort=e.get("effort") or None)
+                _LIVE[sid] = s
+            await s.start()
+            s._auto_chain = chain + 1
+            known = {q["text"] for q in s._queue}
+            for t in e.get("queue") or []:
+                if isinstance(t, str) and t.strip() and t not in known and len(s._queue) < MAX_QUEUE:
+                    s._queue_seq += 1
+                    s._queue.append({"id": f"q{s._queue_seq}", "text": t})
+            if not s._busy:
+                await s._send({"type": "queue_dispatched", "id": None, "text": RESUME_PROMPT})
+                await s._query(RESUME_PROMPT)
+            await s._send_queue()
+            done.append(sid)
+        except Exception:
+            import logging  # noqa: PLC0415
+            logging.getLogger("netops").exception("Claude: falha ao retomar a sessão %s após restart", sid)
+            data.pop(sid, None)
+            s = _LIVE.get(sid)
+            if s is not None:
+                await s.teardown()
+    # Releitura: as sessões retomadas já regravaram a própria anotação (chain+1) no _query.
+    cur = _resume_load()
+    for sid in list(cur):
+        if sid not in data and sid not in done:
+            cur.pop(sid, None)
+    _resume_save(cur)
+    return done
 
 
 def attach_or_create(*, owner: str, resume: str | None, model: str | None, effort: str | None = None):
@@ -205,13 +315,20 @@ def attach_or_create(*, owner: str, resume: str | None, model: str | None, effor
     if _detached_count() >= deps.STATE.claude_max_sessions:
         return None, "too_many"       # teto estático: recusa com mensagem (o cliente avisa)
     s = ClaudeWebSession(owner=owner, persist=True, resume=resume, model=model, effort=effort)
+    if resume:
+        # Registra JÁ (o init só chega no 1º turno): duas abas — ou a aba + a retomada automática
+        # pós-restart — reconectando na mesma conversa caem na MESMA sessão, nunca em dois `claude`.
+        _LIVE[resume] = s
     return s, "new"
 
 
 async def shutdown_all() -> None:
     """Teardown de todas as sessões vivas (chamado no shutdown do uvicorn) — não deixa
-    subprocesso `claude` órfão num deploy/restart."""
-    for s in list(_LIVE.values()):
+    subprocesso `claude` órfão num deploy/restart. A anotação de retomada FICA no disco: é ela
+    que faz o turno interrompido voltar sozinho no próximo start (resume_after_restart)."""
+    global _SHUTTING_DOWN
+    _SHUTTING_DOWN = True
+    for s in {id(v): v for v in _LIVE.values()}.values():
         try:
             await s.teardown()
         except Exception:
@@ -271,6 +388,21 @@ class ClaudeWebSession:
         self._queue_seq = 0
         self._interrupted = False        # interrupt durante o turno -> não despacha a fila no fim
         self._restore_pending: list[dict] = []  # itens a devolver p/ a caixa quando reanexar
+        self._auto_chain = 0             # retomadas automáticas seguidas (zera no prompt humano)
+        self._start_lock = asyncio.Lock()  # aba e retomada automática podem chamar start() juntas
+
+    def _track(self) -> None:
+        """Anota/remove esta sessão no arquivo de retomada pós-restart (só persist + sid conhecido)."""
+        if not self.persist or not self.sid or self._closing_done:
+            return
+        data = _resume_load()
+        if self._busy or self._queue:
+            data[self.sid] = {"busy": self._busy, "queue": [q["text"] for q in self._queue],
+                              "model": self._model, "effort": self._effort,
+                              "chain": self._auto_chain, "t": time.time()}
+        elif data.pop(self.sid, None) is None:
+            return
+        _resume_save(data)
 
     @property
     def ws(self):
@@ -502,20 +634,21 @@ class ClaudeWebSession:
     # ------------------------------------------------------------- ciclo de vida
     async def start(self) -> None:
         """Conecta o client e inicia o pump do SDK (uma vez por sessão viva)."""
-        if self._started:
-            return
-        self._started = True
-        if not self._model:
-            # Descoberta usa um loop próprio; não pode bloquear/nestar o loop do WebSocket.
-            self._model = await asyncio.to_thread(claude_models.default_model)
-        self.client = ClaudeSDKClient(options=self._options())
-        await self.client.connect()  # sem prompt: modo streaming, pronto p/ query()
-        if self._mode != "default" and self._mode in VALID_MODES:
-            try:
-                await self.client.set_permission_mode(self._mode)
-            except Exception:
-                self._mode = "default"
-        self._sdk_task = asyncio.create_task(self._sdk_pump())
+        async with self._start_lock:   # o 2º chamador espera o client ficar pronto
+            if self._started:
+                return
+            if not self._model:
+                # Descoberta usa um loop próprio; não pode bloquear/nestar o loop do WebSocket.
+                self._model = await asyncio.to_thread(claude_models.default_model)
+            self.client = ClaudeSDKClient(options=self._options())
+            await self.client.connect()  # sem prompt: modo streaming, pronto p/ query()
+            if self._mode != "default" and self._mode in VALID_MODES:
+                try:
+                    await self.client.set_permission_mode(self._mode)
+                except Exception:
+                    self._mode = "default"
+            self._sdk_task = asyncio.create_task(self._sdk_pump())
+            self._started = True
 
     async def run(self) -> None:
         """Caminho CLÁSSICO (persist OFF): vida do agente = vida do socket."""
@@ -558,6 +691,8 @@ class ClaudeWebSession:
         """Mata o subprocesso `claude`, cancela timers/futures e sai do registro. Idempotente."""
         if self._closing_done:
             return
+        if not _SHUTTING_DOWN:          # encerrou de verdade (bye/carência): nada a retomar
+            _resume_forget(self.sid)
         self._closing_done = True
         self._cancel_grace()
         self._cancel_ask_timers()
@@ -568,8 +703,9 @@ class ClaudeWebSession:
                 fut.cancel()
         self._pending.clear()
         self._pending_payloads.clear()
-        if self.sid and _LIVE.get(self.sid) is self:
-            _LIVE.pop(self.sid, None)
+        for key in {self.sid, self._resume}:
+            if key and _LIVE.get(key) is self:
+                _LIVE.pop(key, None)
         try:
             if self.client is not None:
                 await self.client.disconnect()  # mata o subprocesso `claude`
@@ -596,6 +732,7 @@ class ClaudeWebSession:
             if kind == "prompt":
                 text = (raw.get("text") or "").strip()
                 if text:
+                    self._auto_chain = 0     # humano no comando: a cadeia anti-loop recomeça
                     if len(self._wss) > 1:   # outras abas da sessão veem a pergunta
                         await self._send({"type": "user_echo", "text": text}, skip=ws)
                     if raw.get("queue") and self._busy:
@@ -618,6 +755,7 @@ class ClaudeWebSession:
             elif kind == "queue_send_now":
                 item = self._pop_queued(raw.get("id"))
                 if item is not None:
+                    self._auto_chain = 0
                     await self._send_queue()
                     await self._send({"type": "queue_dispatched", **item})
                     await self._query(item["text"])
@@ -662,12 +800,14 @@ class ClaudeWebSession:
     # ------------------------------------------------------------------ fila
     async def _query(self, text: str) -> None:
         self._busy = True
+        self._track()
         await self.client.query(text)
 
     async def _send_queue(self, fresh: bool = False, only=None) -> None:
         ev = {"type": "queue", "items": list(self._queue)}
         if fresh:
             ev["fresh"] = True
+        self._track()
         await self._send(ev, only=only)
 
     async def _add_to_queue(self, texts) -> None:
@@ -752,6 +892,7 @@ class ClaudeWebSession:
                 if sid:
                     self.sid = sid
                     _LIVE[sid] = self
+                    self._track()
             data = msg.data
             if msg.subtype == "init":
                 sid = (data or {}).get("session_id")
@@ -827,6 +968,7 @@ class ClaudeWebSession:
                 await self._after_turn(bool(msg.is_error))
             except Exception as e:
                 await self._send({"type": "error", "detail": f"fila: {e}"})
+            self._track()   # turno acabou (e a fila não disparou outro): sai da anotação
             if self.persist:
                 # Turno acabou. Se a aba está dormindo (desanexado), começa a contar a carência
                 # até o teardown — a resposta já foi gravada no disco.
