@@ -30,6 +30,9 @@ netops/
 
 ### Distribuição e atualização
 
+Tarefas agendadas vivem em `scripts/engine/scheduler/` (`SKILL.md`): cadastro em `network/schedules.yaml`,
+execuções em `runs/schedules/`, disparo pelo cron do sistema.
+
 O motor de atualização vive em `scripts/engine/update/`, com `SKILL.md`. Estado e snapshots
 privados ficam em `.netops-update/` (git-ignorado). Releases seguem `core/rules/releases.md`,
 com versão única em `core/config/core-config.yaml`, notas em `CHANGELOG.md` e workflow em

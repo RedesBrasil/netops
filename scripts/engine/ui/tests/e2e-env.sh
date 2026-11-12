@@ -43,6 +43,11 @@ Y
     curl -s -X PUT "http://127.0.0.1:$PORT/api/backups" -H "If-Match: $REV" -H 'Content-Type: application/json' -d '{"version":3,"legacy_sources":[],"services":[
       {"id":"svc-a","name":"Servico A","enabled":true,"schedule":{"frequency":"daily","time":"03:00"},"targets":{"hosts":[1],"groups":[]},"retention":{"mode":"count","value":7}},
       {"id":"svc-b","name":"Servico B","enabled":false,"schedule":{"frequency":"daily","time":"04:00"},"targets":{"hosts":[2],"groups":[]},"retention":{"mode":"count","value":7}}]}' >/dev/null
+    for t in '{"name":"Changelog MikroTik","kind":"agent","prompt":"veja o changelog","schedule":{"type":"cron","expr":"0 8 * * *"}}' \
+             '{"name":"Eco diario","kind":"script","script":"echo eco","schedule":{"type":"cron","expr":"0 3 * * *"}}' \
+             '{"name":"Backup + analise","kind":"hybrid","script":"true","prompt":"compare","schedule":{"type":"interval","minutes":30}}'; do
+      curl -s -X POST "http://127.0.0.1:$PORT/api/schedules/tasks" -H 'Content-Type: application/json' -d "$t" >/dev/null
+    done
     curl -sf "http://127.0.0.1:$PORT/api/config/meta" >/dev/null && { echo "up :$PORT"; exit 0; }
     tail -20 "$E/server.log"; exit 1 ;;
 esac

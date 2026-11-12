@@ -13,6 +13,7 @@ import { WorkflowsPage, AgentsPage } from "./pages/catalog.js";
 import { ScriptsPage } from "./pages/scripts.js";
 import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
 import { BackupsPage } from "./pages/backups.js";
+import { SchedulesPage } from "./pages/schedules.js";
 import { UpdatesControl } from "./pages/updates.js";
 import { TerminalPage } from "./pages/terminal.js";
 import { ClaudeCodePage, ClaudeTopbarControls, ClaudeStatusDot, ClaudeSessionTitle, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
@@ -31,6 +32,7 @@ const ROUTES = {
   runs: { label: "Execuções", comp: RunsPage, group: "Saída" },
   backups: { label: "Backups", comp: BackupsPage, group: "Saída" },
   scripts: { label: "Scripts / Skills", comp: ScriptsPage, group: "Sistema" },
+  schedules: { label: "Tarefas agendadas", comp: SchedulesPage, group: "Sistema", badge: "schedules" },
   claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled" },
   terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled" },
   settings: { label: "Configuração", comp: SettingsPage, group: "Sistema" },
@@ -53,13 +55,30 @@ function useHash() {
   return hash;
 }
 
+// Contador de notificações não lidas das tarefas agendadas (badge no menu). Polling leve +
+// recarga imediata quando a página de tarefas marca algo como lido (evento netops:schedules).
+function useScheduleBadge() {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.get("/schedules/notifications").then((d) => alive && setN(d.unread || 0)).catch(() => {});
+    load();
+    const t = setInterval(load, 30000);
+    addEventListener("netops:schedules", load); addEventListener("focus", load);
+    return () => { alive = false; clearInterval(t); removeEventListener("netops:schedules", load); removeEventListener("focus", load); };
+  }, []);
+  return { schedules: n };
+}
+
 function Sidebar({ current, meta, open, onNavigate }) {
   const visible = ([, r]) => !r.flag || meta[r.flag];
+  const badges = useScheduleBadge();
   return html`<nav class=${"sidebar" + (open ? " open" : "")} onClick=${(e) => { if (e.target.closest("a")) onNavigate(); }}>
     ${ORDER.map((g) => html`<div key=${g}>
       <div class="group-label">${g}</div>
       ${Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
-        <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${r.label}</a>`)}
+        <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${r.label}${r.badge && badges[r.badge] > 0
+          ? html`<span class="nav-badge" title="execuções com resultado não lido">${badges[r.badge]}</span>` : ""}</a>`)}
     </div>`)}
   </nav>`;
 }

@@ -82,6 +82,8 @@ backups/*
 !backups/exemplo/
 # Config de serviços de backup (referencia hosts reais) — runtime, como hosts.yaml.
 network/backups.yaml
+# tarefas agendadas (comandos/prompts locais) — ver scripts/engine/scheduler/SKILL.md
+network/schedules.yaml
 network/.inventory.lock
 network/.host-id-migration.json
 

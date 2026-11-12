@@ -164,6 +164,14 @@ humano para uma **interface gráfica**: em vez de digitar `claude` no terminal, 
 com o agente direto na web — com troca de modo, aprovação de cada ferramenta na tela, slash
 commands e anexos. Continua sendo a pessoa no comando (ela aprova/escolhe o modo), só que sem TUI.
 
+**Exceção 3: Tarefas agendadas** (`#schedules`, `routers/schedules.py`). A tela só edita
+`network/schedules.yaml` e lê `runs/schedules/`. Quem executa é o **cron do sistema**
+(`/etc/cron.d/netops-scheduler` → `scripts/engine/scheduler/cli.py tick`), com o console ligado ou
+não. "▶ Executar" usa o mesmo executor, em processo destacado. Cada tarefa é um pedido explícito
+do humano (ele cadastrou o comando/prompt e o horário). O agente agendado vem com permissão
+`restricted` por padrão e nunca cria outras tarefas. O contador de não lidas no menu faz polling
+de `GET /api/schedules/notifications` a cada 30 s. Detalhes em `scripts/engine/scheduler/SKILL.md`.
+
 ## Estrutura
 
 ```

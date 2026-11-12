@@ -619,3 +619,54 @@ th.sortable:hover { color: var(--text); }
 .cc-fork { background: none; border: 0; padding: 0 2px; font-size: 11px; color: var(--muted); cursor: pointer; opacity: .55; }
 .cc-fork:hover, .cc-fork:focus-visible { opacity: 1; color: var(--accent); text-decoration: underline; }
 .cc-msg.user:not(:hover) .cc-fork { opacity: .3; }
+
+/* ---- Tarefas agendadas (pages/schedules.js) ---- */
+.nav-badge { float: right; min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--danger); color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.sc-kind { font-weight: 600; }
+.sc-k-script { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+.sc-k-agent { background: var(--accent-weak); color: var(--accent); border-color: transparent; }
+.sc-k-hybrid { background: var(--warn-weak); color: var(--warn); border-color: transparent; }
+.sc-task.off { opacity: .65; }
+.sc-what { margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.sc-desc { margin-top: 2px; }
+.sc-arrow { color: var(--accent); font-weight: 600; }
+.bk-svc-main { min-width: 0; flex: 1; }
+.sc-form { display: flex; flex-direction: column; gap: 12px; }
+.sc-form label { display: flex; flex-direction: column; gap: 4px; }
+.sc-form h3 { margin: 6px 0 0; }
+.sc-form textarea { width: 100%; font: inherit; }
+.sc-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.sc-grow { flex: 1; min-width: 220px; }
+.sc-grow input { width: 100%; }
+.sc-toggle { padding-bottom: 6px; }
+.sc-toggle label { flex-direction: row; }
+.sc-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.sc-kind-opt { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; background: var(--surface); }
+.sc-kind-opt input { display: none; }
+.sc-kind-opt.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.sc-kind-opt.on.sc-k-hybrid { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn) inset; }
+.sc-kind-opt:hover { border-color: var(--accent); }
+.sc-preview { margin-top: -4px; }
+.sc-form .err, .sc-run .err, .sc-excerpt .err { color: var(--danger); font-size: 12px; }
+.sc-cron-warn { border-color: var(--warn); background: var(--warn-weak); }
+.sc-run { display: flex; flex-direction: column; gap: 8px; }
+.sc-run h3 { margin: 8px 0 0; }
+.sc-run-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sc-err { color: var(--danger); background: var(--danger-weak); padding: 6px 10px; border-radius: 6px; }
+.sc-md { margin: 0; }
+.sc-cmd { display: block; white-space: pre-wrap; word-break: break-all; }
+.sc-out { max-height: 340px; overflow: auto; white-space: pre-wrap; }
+.sc-excerpt { max-width: 520px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+tr.sc-unread td { font-weight: 600; }
+.sc-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); }
+.sc-form .mono, .sc-what.mono, .sc-cron-warn .mono { font-family: var(--mono); font-size: 12px; }
+.sc-form input:not([type=checkbox]):not([type=radio]), .sc-form select, .sc-form textarea {
+  padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; }
+.sc-form input:focus, .sc-form select:focus, .sc-form textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-weak); }
+.sc-form label { font-size: 13px; color: var(--muted); }
+.sc-form label > .help { display: inline; }
+.sc-form .sc-kind-opt b { color: var(--text); }
+.sc-form .sc-kind-opt.on b { color: inherit; }
+.sc-form textarea { resize: vertical; color: var(--text); }
+.sc-form .sc-kind-opt.on.sc-k-agent b { color: var(--accent); } .sc-form .sc-kind-opt.on.sc-k-hybrid b { color: var(--warn); }

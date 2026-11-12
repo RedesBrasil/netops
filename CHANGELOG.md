@@ -2,6 +2,10 @@
 
 ## [Não lançado]
 
+### Novidades
+
+- **Tarefas agendadas** (menu Sistema → Tarefas agendadas, `#schedules`). Permite criar, editar, pausar, remover e executar tarefas. São três tipos: **determinística/script**, **agente de IA** (Claude Code headless) e **script + agente** (o script coleta e o agente analisa; saída vazia não aciona a IA). Quem dispara é o cron do sistema (`/etc/cron.d/netops-scheduler`), mesmo com o console desligado. As agendas são avaliadas no fuso do cadastro (padrão `America/Sao_Paulo`). Há histórico por execução e contador de não lidas no menu. O agente que responde `[SILENT]` não notifica; falha sempre notifica. Pelo chat, o agente agenda via `scripts/engine/scheduler/cli.py`. Desenho inspirado no cron do Hermes Agent.
+
 ### Correções
 
 - Aba Claude Code: a persistência da sessão agora é **padrão** (`start.sh` e `restart-console.sh`). F5, troca de aba ou standby não cancelam mais a tarefa em andamento; ao voltar, a aba re-anexa onde estava. `NETOPS_UI_CLAUDE_PERSIST=0` desliga. Limite: reiniciar ou encerrar o console encerra as sessões vivas.

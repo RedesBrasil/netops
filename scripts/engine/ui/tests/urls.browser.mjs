@@ -28,6 +28,9 @@ const CASES = {
   backups: { row: ".bk-svc a[href^='#backups/services/']", open: ".modal", q: "Servico B", qRows: -1, extra: [
     ["#backups/storage", "a[href^='#backups/storage/']"], ["#backups/storage/1", ".modal:has-text('Backups')"],
     ["#backups/storage/1?file=by-id%2F1%2Fa.rsc", ".modal pre"], ["#backups/services/new", ".modal"]] },
+  schedules: { row: ".sc-task .bk-svc-name a", open: ".modal", q: "Changelog", qRows: -1, extra: [
+    ["#schedules/new", ".modal:has-text('Nova tarefa')"], ["#schedules/runs", ".tabs"],
+    ["#schedules/runs?task=eco-diario", ".fb-select.on"]] },
   smoke: { custom: async (page, BASE, { assert, settle, hash }) => {   // todo menu abre sem erro, com URL e item ativo na sidebar
     await page.goto(`${BASE}/#hosts`); await page.locator(".sidebar a").first().waitFor();
     const hrefs = await page.locator(".sidebar a").evaluateAll((a) => a.map((x) => x.getAttribute("href")));

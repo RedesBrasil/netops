@@ -57,6 +57,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Skills = scripts operacionais + `SKILL.md` (acesso, diagnóstico, análise) | `scripts/tools/<skill>/` (console: menu **Scripts / Skills**) |
 | Motor do NetOps (lib, cofre, console web) | `scripts/engine/` |
 | Subir **ou reiniciar** o console web (SEMPRE por aqui) | `scripts/engine/ui/start.sh` |
+| Tarefas agendadas (script / agente de IA / script + agente) | `scripts/engine/scheduler/` (`SKILL.md`; console: menu **Tarefas agendadas**) |
 | Modelos de planejamento | `planning-examples/` |
 | O que o framework já aprendeu | `memory/` |
 | Saída bruta de execuções | `runs/` |
@@ -96,6 +97,11 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   credencial internamente); nunca chame `resolve_host(decrypt=True)`/`resolve_secret`/`decrypt_value`.
   Ver `constitution.md` §V e `core/rules/connection-safety.md`.
 - **Setup:** as deps Python estão em `requirements.txt` (use um venv). `nmap` via `apt`.
+- **Agendar tarefa ("todo dia…", "a cada N min…", "me avise quando…"):** use **sempre**
+  `scripts/engine/scheduler/cli.py add` (ver `scripts/engine/scheduler/SKILL.md`) — a tarefa vai para o cron do
+  sistema e aparece no menu **Tarefas agendadas** para editar. Escolha o tipo: `script` (determinística),
+  `agent` (agente de IA) ou `hybrid` (script coleta + agente analisa). **Nunca** `crontab -e`, arquivo em
+  `/etc/cron.d` à mão nem a ferramenta `CronCreate` (morre com a sessão). Responda com `id`, tipo e próximos horários.
 - **Console web — subir E reiniciar = um script só, `scripts/engine/ui/start.sh` (INEGOCIÁVEL):** rode **SEMPRE** ele —
   **nunca** `python scripts/engine/ui/server.py` direto, nem `kill` + `start.sh` à mão, nem `systemd-run` improvisado.
   - Console **parado** → o script **sobe**. Console **já rodando** → o script **reinicia**, preservando host/porta/terminal/claude.
