@@ -56,7 +56,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Exemplos de configuração reais | `config-examples/<vendor>/` |
 | Scripts operacionais (acesso, diagnóstico, análise) | `scripts/tools/<familia>/` |
 | Motor do NetOps (lib, cofre, console web) | `scripts/engine/` |
-| Subir o console web (SEMPRE por aqui) | `scripts/engine/ui/start.sh` |
+| Subir **ou reiniciar** o console web (SEMPRE por aqui) | `scripts/engine/ui/start.sh` |
 | Modelos de planejamento | `planning-examples/` |
 | O que o framework já aprendeu | `memory/` |
 | Saída bruta de execuções | `runs/` |
@@ -94,17 +94,19 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   credencial internamente); nunca chame `resolve_host(decrypt=True)`/`resolve_secret`/`decrypt_value`.
   Ver `constitution.md` §V e `core/rules/connection-safety.md`.
 - **Setup:** as deps Python estão em `requirements.txt` (use um venv). `nmap` via `apt`.
-- **Console web:** para subir a interface web, rode **SEMPRE** `scripts/engine/ui/start.sh` — **nunca**
-  `python scripts/engine/ui/server.py` direto. O script liga o **terminal web** e a **página Claude Code**
-  por padrão (são opt-in — sem o script as abas somem), injeta o `claude` no PATH e faz bind no IP da
-  máquina, garantindo uma instância só. Variáveis: `NETOPS_UI_HOST`, `NETOPS_UI_PORT`, `NETOPS_UI_TERMINAL=0`,
-  `NETOPS_UI_CLAUDE=0`. O acesso é protegido pelo **login com a senha-mestra** (sem token na URL). Se uma aba
-  nova não aparecer após atualizar, é cache do navegador: **hard refresh** (`Ctrl+Shift+R`). Ver `scripts/engine/ui/SKILL.md`.
-- **Reiniciar o console (INEGOCIÁVEL):** quando pedirem para reiniciar o NetOps/console web, rode **SEMPRE**
-  `scripts/engine/restart-console.sh` — **nunca** `kill` + `start.sh` à mão nem `systemd-run` improvisado. O script
-  captura host/porta/flags atuais, se desacopla (funciona de dentro da aba Claude), espera o supervisor sair e o
-  lock liberar, sobe com tentativas e só termina OK quando o HTTP responde (log: `/tmp/netops-restart.log`).
-  ainda segurava o flock, `start.sh` recusou e o console ficou fora até subir à mão.
+- **Console web — subir E reiniciar = um script só, `scripts/engine/ui/start.sh` (INEGOCIÁVEL):** rode **SEMPRE** ele —
+  **nunca** `python scripts/engine/ui/server.py` direto, nem `kill` + `start.sh` à mão, nem `systemd-run` improvisado.
+  - Console **parado** → o script **sobe**. Console **já rodando** → o script **reinicia**, preservando host/porta/terminal/claude.
+  - Desacopla (funciona de dentro da aba Claude/terminal web), faz **pré-validação** (venv, sintaxe do `server.py`, porta) antes de
+    parar qualquer coisa, espera o supervisor sair e o lock liberar, tenta até 3 vezes e só termina OK quando o HTTP responde
+    (log: `/tmp/netops-restart.log`). `--yes` pula a confirmação (em terminal interativo ele pergunta); `--foreground` roda em
+    primeiro plano, só para depurar. `scripts/engine/restart-console.sh` é só um atalho de compatibilidade para `start.sh --yes`.
+  - **Reiniciar encerra as sessões vivas da aba Claude** (a persistência cobre F5/standby, não o fim do processo do console).
+    Avise o usuário antes: a aba cai ~15 s. Faça do restart a **última ação** do turno.
+  - Liga o **terminal web** e a **página Claude Code** por padrão (sem o script as abas somem), injeta o `claude` no PATH,
+    faz bind no IP da máquina e garante uma instância só. Variáveis: `NETOPS_UI_HOST`, `NETOPS_UI_PORT`, `NETOPS_UI_TERMINAL=0`,
+    `NETOPS_UI_CLAUDE=0`, `NETOPS_UI_CLAUDE_PERSIST=0`. Acesso protegido pelo **login com a senha-mestra** (sem token na URL).
+    Aba nova que não aparece após atualizar = cache: **hard refresh** (`Ctrl+Shift+R`). Ver `scripts/engine/ui/SKILL.md`.
 - **Console NUNCA pode ficar parado (INEGOCIÁVEL):** antes de qualquer start/restart ou mudança em `start.sh`/supervisor,
   valide que o console volta (sintaxe, venv, porta) e **nunca** teste contra o ROOT real "em outra porta". Depois,
 - **Login do agente na aba Claude Code:** `/login` (e `/logout`) funcionam **na própria aba** — não são do
