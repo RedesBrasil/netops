@@ -285,7 +285,9 @@ export function MarkdownEditor({ value, onChange, tokenBudget }) {
         <${WysiwygEditor} value=${body.replace(/^\n+/, "")} onChange=${(md) => onChange(front + (front ? "\n" : "") + md)} />
       </div>`
       : mode === "raw" ? html`<textarea class="codearea" value=${value} onInput=${(e) => onChange(e.target.value)}></textarea>`
-      : html`<div class="card md-readbox"><${MarkdownView} text=${value} /></div>`}
+      : html`<div class="card md-readbox">
+          ${front && html`<details class="md-front"><summary>Cabeçalho (frontmatter)</summary><pre class="raw">${front}</pre></details>`}
+          <${MarkdownView} text=${body} /></div>`}
     ${tokenBudget && mode !== "read" && html`<div>
       <div class="help">~${tokens} tokens / orçamento ~${tokenBudget}</div>
       <div class="meter ${meterKind}"><div style=${`width:${Math.min(100, pct)}%`}></div></div>
