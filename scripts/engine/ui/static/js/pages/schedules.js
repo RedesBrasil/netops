@@ -360,9 +360,11 @@ export function SchedulesPage() {
   const cronCard = !cron.healthy && html`<div class="card sc-cron-warn">
     ${!cron.installed
       ? html`<b>O cron do despachante não está instalado.</b> As tarefas não vão disparar sozinhas.
-          <button class="sm primary" onClick=${installCron}>Instalar agora</button>`
+          <button class="sm primary" onClick=${installCron}>Instalar agora</button>
+          ${cron.error && html`<div class="help">${cron.error}</div>`}`
       : cron.daemon_active === false
-        ? html`<b>O serviço cron está parado nesta máquina.</b> Rode <code>systemctl start cron</code>.`
+        ? html`<b>O cron não está rodando nesta máquina</b> — as tarefas não disparam sozinhas. Rode
+            <code>apt install cron && systemctl enable --now cron</code> (como root).`
         : tasks.length
           ? html`<b>O despachante ainda não rodou</b>${cron.last_tick ? " desde " + fmtTs(cron.last_tick) : ""} — ele roda a cada minuto; se persistir, veja <code>runs/schedules/tick.log</code>.`
           : html`Crie a primeira tarefa — o despachante do cron já está instalado.`}

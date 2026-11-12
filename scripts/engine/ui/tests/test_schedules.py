@@ -169,3 +169,38 @@ def test_api_crud_run_and_notifications(client, env):
     assert client.delete("/api/schedules/tasks/eco").status_code == 200
     assert client.get("/api/schedules").json()["config"]["tasks"] == []
     assert json.loads((env / "runs" / "schedules" / "state.json").read_text())["tasks"] == {}
+
+
+# ------------------------------------------------- instalação nova ---------
+def _task(root):
+    store.create_task({"name": "t", "kind": "script", "script": "true",
+                       "schedule": {"type": "interval", "minutes": 5}}, root=root)
+
+
+def test_self_heal_reinstalls_missing_cron_line(tmp_path):
+    assert store.ensure_cron_if_tasks(tmp_path) is None          # sem tarefas: não instala nada
+    _task(tmp_path)
+    cf = store.cron_file(tmp_path)
+    cf.unlink()                                                   # reinstalação/restore perdeu a linha
+    assert store.cron_status(tmp_path, check_daemon=False)["installed"] is False
+    assert store.ensure_cron_if_tasks(tmp_path)["installed"] is True
+    assert cf.exists() and store.ensure_cron_if_tasks(tmp_path) is None   # idempotente
+
+
+def test_non_root_falls_back_to_user_crontab(tmp_path, monkeypatch):
+    """Console sem root não escreve em /etc/cron.d: usa o crontab do usuário (bloco idempotente)."""
+    tab = tmp_path / "crontab.txt"
+    tab.write_text("0 1 * * * /usr/bin/outra-coisa\n")
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "crontab").write_text(f'#!/bin/bash\nif [ "$1" = "-l" ]; then cat {tab}; else cat > {tab}; fi\n')
+    (fake / "crontab").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake}:/usr/bin:/bin")
+    monkeypatch.setattr(store, "_cron_mode", lambda root=None: "user")
+    r1 = store.install_cron(tmp_path)
+    r2 = store.install_cron(tmp_path)
+    text = tab.read_text()
+    assert r1["installed"] and r2["mode"] == "user"
+    assert text.count(store.USER_BEGIN) == 1 and "outra-coisa" in text      # preserva o resto
+    assert " root " not in text.split(store.USER_BEGIN)[1]                 # crontab de usuário: sem campo usuário
+    assert store.cron_status(tmp_path, check_daemon=False)["installed"] is True

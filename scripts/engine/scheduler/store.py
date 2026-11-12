@@ -426,53 +426,137 @@ def _python() -> str:
     return str(venv if venv.exists() else "/usr/bin/python3")
 
 
-def cron_text(root=None) -> str:
+def _cron_mode(root=None) -> str:
+    """'file' = /etc/cron.d (ou arquivo isolado de teste); 'user' = crontab do usuário.
+
+    Instalação nova com o console rodando sem root não consegue escrever em /etc/cron.d:
+    cai no crontab do próprio usuário (bloco delimitado, idempotente), que funciona igual.
+    """
+    p = cron_file(root)
+    if p.parent != Path("/etc/cron.d") or os.environ.get("NETOPS_SCHEDULER_CRON_FILE"):
+        return "file"
+    return "file" if os.access(p.parent, os.W_OK) else "user"
+
+
+USER_BEGIN = "# >>> netops-scheduler (gerado; edite pelo console/cli.py) >>>"
+USER_END = "# <<< netops-scheduler <<<"
+
+
+def _cron_line(root=None, with_user: bool = True) -> str:
     import pwd  # noqa: PLC0415
     user = pwd.getpwuid(os.getuid()).pw_name
-    r = data_root(root)
     cli = NETOPS_ROOT / "scripts" / "engine" / "scheduler" / "cli.py"
+    who = f" {user}" if with_user else ""
+    return (f"* * * * *{who} {_python()} {cli} --data-root {data_root(root)} tick "
+            f">> {runs_dir(root)}/tick.log 2>&1")
+
+
+def _cron_env() -> str:
     path = f"{Path.home()}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    return f"SHELL=/bin/bash\nPATH={path}\n"
+
+
+def cron_text(root=None) -> str:
     return (
         "# Gerado pelo NetOps (scripts/engine/scheduler). NÃO edite à mão: use o console\n"
         "# (menu Tarefas agendadas) ou scripts/engine/scheduler/cli.py. As tarefas ficam em\n"
         f"# {tasks_file(root)}; este despachante roda a cada minuto e dispara as que venceram.\n"
-        "SHELL=/bin/bash\n"
-        f"PATH={path}\n"
-        f"* * * * * {user} {_python()} {cli} --data-root {r} tick >> {runs_dir(root)}/tick.log 2>&1\n"
+        + _cron_env() + _cron_line(root) + "\n"
     )
 
 
+def _user_block(root=None) -> str:
+    return USER_BEGIN + "\n" + _cron_env() + _cron_line(root, with_user=False) + "\n" + USER_END + "\n"
+
+
+def _read_user_crontab() -> str:
+    import subprocess  # noqa: PLC0415
+    r = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+    return r.stdout if r.returncode == 0 else ""
+
+
+def _strip_block(text: str) -> str:
+    return re.sub(re.escape(USER_BEGIN) + r".*?" + re.escape(USER_END) + r"\n?", "", text, flags=re.S)
+
+
 def install_cron(root=None) -> dict:
-    """Garante a linha do despachante (idempotente). Falha de permissão não derruba o cadastro."""
-    p = cron_file(root)
-    want = cron_text(root)
+    """Garante a linha do despachante (idempotente). Falha não derruba o cadastro: a tela avisa."""
     try:
         # o `>> runs/schedules/tick.log` da linha falha (e o tick nem roda) sem a pasta
         runs_dir(root).mkdir(parents=True, exist_ok=True)
-        if not p.exists() or p.read_text(encoding="utf-8") != want:
-            _atomic_write(p, want, 0o644)
-        return {"installed": True, "file": str(p)}
-    except OSError as e:
-        return {"installed": False, "file": str(p), "error": str(e)}
-
-
-def cron_status(root=None) -> dict:
-    p = cron_file(root)
-    st = read_state(root)
-    daemon = None
-    if p.parent == Path("/etc/cron.d"):
+        if _cron_mode(root) == "file":
+            p = cron_file(root)
+            want = cron_text(root)
+            if not p.exists() or p.read_text(encoding="utf-8") != want:
+                _atomic_write(p, want, 0o644)
+            return {"installed": True, "mode": "file", "file": str(p)}
+        import shutil  # noqa: PLC0415
         import subprocess  # noqa: PLC0415
+        if not shutil.which("crontab"):
+            return {"installed": False, "mode": "user", "file": "crontab do usuário",
+                    "error": "cron não instalado nesta máquina (apt install cron)"}
+        cur = _read_user_crontab()
+        want = _strip_block(cur).rstrip("\n")
+        want = (want + "\n" if want else "") + _user_block(root)
+        if cur != want:
+            r = subprocess.run(["crontab", "-"], input=want, capture_output=True, text=True, timeout=10)
+            if r.returncode != 0:
+                return {"installed": False, "mode": "user", "file": "crontab do usuário",
+                        "error": (r.stderr or "crontab recusou").strip()}
+        return {"installed": True, "mode": "user", "file": "crontab do usuário"}
+    except (OSError, ValueError) as e:
+        return {"installed": False, "file": str(cron_file(root)), "error": str(e)}
+
+
+def ensure_cron_if_tasks(root=None) -> dict | None:
+    """Auto-reparo (startup do console): há tarefas mas a linha sumiu (reinstalação, restore)."""
+    if not load(root)["config"]["tasks"]:
+        return None
+    if cron_status(root, check_daemon=False)["installed"]:
+        return None
+    return install_cron(root)
+
+
+def _daemon_state() -> bool | None:
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    if not (shutil.which("cron") or shutil.which("crond") or os.path.exists("/usr/sbin/cron")):
+        return False
+    for unit in ("cron", "crond"):
         try:
-            daemon = subprocess.run(["systemctl", "is-active", "cron"], capture_output=True, text=True,
-                                    timeout=5).stdout.strip() == "active"
+            out = subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True,
+                                 timeout=5).stdout.strip()
         except (OSError, subprocess.SubprocessError):
-            daemon = None
+            return None
+        if out == "active":
+            return True
+    try:   # sem systemd (container): procura o processo
+        return subprocess.run(["pgrep", "-x", "cron|crond"], capture_output=True, timeout=5).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def cron_status(root=None, check_daemon: bool = True) -> dict:
+    mode = _cron_mode(root)
+    st = read_state(root)
+    if mode == "file":
+        p = cron_file(root)
+        installed = p.exists() and p.read_text(encoding="utf-8") == cron_text(root)
+        where = str(p)
+    else:
+        try:
+            installed = _user_block(root) in _read_user_crontab()
+        except (OSError, ValueError):
+            installed = False
+        where = "crontab do usuário"
+    daemon = _daemon_state() if check_daemon and cron_file(root).parent == Path("/etc/cron.d") else None
     last_tick = st.get("last_tick")
     return {
-        "file": str(p),
-        "installed": p.exists() and p.read_text(encoding="utf-8") == cron_text(root),
+        "mode": mode,
+        "file": where,
+        "installed": installed,
         "daemon_active": daemon,
         "last_tick": last_tick,
         "healthy": bool(last_tick and time.time() - last_tick < 180),
-        "line": cron_text(root).strip().splitlines()[-1],
+        "line": _cron_line(root, with_user=(mode == "file")),
     }

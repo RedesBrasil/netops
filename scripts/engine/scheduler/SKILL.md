@@ -37,6 +37,18 @@ No `hybrid`, saída vazia do script (ou última linha `{"wakeAgent": false}`) **
 - **Cofre:** tarefas que acessam equipamentos precisam do cofre destrancado (mesmo cache de sessão do
   console, `/run/user/<uid>/netops`); trancado → a execução falha com o erro do script.
 
+## Instalação nova / atualização
+
+Nada a fazer à mão: o código vem no pacote e no atualizador. O cadastro (`network/schedules.yaml`) é
+dado local e nunca é distribuído. A linha do cron é instalada sozinha ao salvar a 1ª tarefa e
+reinstalada no arranque do console se houver tarefas e a linha tiver sumido (restore, reinstalação).
+- Console como **root** (padrão): `/etc/cron.d/netops-scheduler`.
+- Console **sem root**: cai no **crontab do usuário** (bloco `# >>> netops-scheduler`, preserva o resto).
+- **Sem o pacote `cron`** (container mínimo): a tela avisa; rode `apt install cron && systemctl enable --now cron`.
+- Pré-requisitos: `.venv` do projeto (a linha usa `.venv/bin/python3`). Tarefas de agente também exigem o
+  `claude` logado para o mesmo usuário do console (igual à aba Claude Code).
+- Manual/diagnóstico: `cli.py install-cron`; `cli.py list` mostra `cron.installed/healthy/last_tick`.
+
 ## Uso pelo agente de IA (pedido no chat)
 
 Quando o usuário pedir "agende…", "todo dia…", "a cada N minutos…", "me avise quando…":

@@ -151,6 +151,17 @@ def create_app() -> FastAPI:
         deps.load_auth_sessions()  # logins válidos (7 dias) sobrevivem ao restart
 
     @app.on_event("startup")
+    async def _scheduler_cron():
+        # Auto-reparo: há tarefas agendadas mas a linha do cron sumiu (instalação nova restaurada,
+        # reinstalação, alguém apagou /etc/cron.d/netops-scheduler). Nunca derruba o startup.
+        try:
+            from scheduler import store as sched_store  # noqa: PLC0415
+            sched_store.ensure_cron_if_tasks(deps.DATA_ROOT)
+        except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger("netops").exception("Tarefas agendadas: não consegui garantir o cron")
+
+    @app.on_event("startup")
     async def _update_readiness():
         import asyncio
         import os
