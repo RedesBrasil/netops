@@ -10,6 +10,7 @@ import { useDictation, MAX_SECONDS } from "../audio-dictation.js";
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import { MarkdownView, VaultBanner, Modal, Field } from "../components.js";
+import { autoOpenFromText } from "../term-link.js";
 import { authToken } from "../api.js";
 import { classifyClaudeError, claudeErrorDetail } from "../claude-errors.js";
 import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
@@ -125,6 +126,8 @@ function useClaudeSession() {
   const [showRateLimit, setShowRateLimit] = useState(false); // modal de limite de uso (429 disfarçado)
   const [rateLimitDetail, setRateLimitDetail] = useState(""); // mensagem crua do erro
   const wsRef = useRef(null);
+  const liveTextRef = useRef("");       // texto do agente no turno ao vivo (abertura automática de terminal)
+  const liveTurnRef = useRef(String(Date.now()));
   const fileRef = useRef(null);
   const sessionIdRef = useRef("");      // sid vigente (p/ retomar na reconexao automatica)
   const defaultsRef = useRef({ model: "", mode: "default", catalogModel: "" }); // padrões p/ conversas novas
@@ -435,7 +438,12 @@ function useClaudeSession() {
               if (Array.isArray(d.slash_commands)) setSlash(d.slash_commands);
             }
             break;
-          case "text_delta": appendDelta("assistant", ev.text); break;
+          case "text_delta":
+            appendDelta("assistant", ev.text);
+            // Agente respondeu com link de terminal de host ("abre a borda") -> abre a janela sozinho.
+            liveTextRef.current += ev.text;
+            autoOpenFromText(liveTextRef.current, liveTurnRef.current);
+            break;
           case "thinking_delta": appendDelta("thinking", ev.text); break;
           case "tool_use":
             setItems((prev) => {
@@ -451,6 +459,7 @@ function useClaudeSession() {
                 : it));
             break;
           case "assistant_end":
+            liveTextRef.current = ""; liveTurnRef.current = String(Date.now());
             setItems((prev) => closeOpen(prev));
             break;
           case "permission_request":

@@ -308,3 +308,17 @@ def test_locked_vault_without_web_unlock_goes_manual(client, env, ssh_server):
         assert "desabilitado" in out and not any(s["status"] == "vault_locked" for s in statuses)
     finally:
         deps.STATE.allow_vault_unlock = True
+
+
+def test_terminal_link_script_prints_markdown_link(env):
+    """terminal_link.py (usado pelo agente da aba Claude): link markdown que o chat abre em janela nova."""
+    import re
+    from lib.terminal_access import access_entries, pick_entry, terminal_url
+    host = {"id": 2, "access": {"method": "ssh", "port": 64777}, "extra_access": [{"method": "telnet"}]}
+    entries = access_entries(host)
+    assert terminal_url(2, pick_entry(entries, None, None)) == "#hostterm/2?method=ssh&port=64777"
+    assert terminal_url(2, pick_entry(entries, "telnet", None)) == "#hostterm/2?method=telnet&port=23"
+    line = f"[⌨ Abrir terminal — RT (SSH:64777)]({terminal_url(2, entries[0])})"
+    # mesmo regex do front (static/js/term-link.js): só link markdown COMPLETO
+    assert re.findall(r"\]\((#hostterm/[^\s)]+)\)", line) == ["#hostterm/2?method=ssh&port=64777"]
+    assert re.findall(r"\]\((#hostterm/[^\s)]+)\)", line[:-1]) == []

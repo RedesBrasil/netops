@@ -97,6 +97,11 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
     `access.session_idle_minutes` (tela **Configuração**; padrão 5 min) sem comando, ou `… close --host-id <ID>` / `close --all`.
   - `run` (conecta, roda, desconecta) só para coleta pontual isolada; `open`/`exec --session` continuam valendo.
   SSH por padrão; `--telnet` só se o usuário pedir/for legado. Detalhes: `scripts/tools/access/SKILL.md`.
+- **"Abre/abrir o terminal (ou o acesso) do host X pra mim" = janela do console, NÃO `session.py`:** o humano quer o
+  terminal interativo dele. Ache o ID em `network/hosts.yaml`, rode `python3 scripts/tools/access/terminal_link.py --host-id <ID>`
+  (`--method telnet` se pedir Telnet; `--all` se ele quiser escolher) e cole a linha impressa **como está** na resposta: a aba
+  Claude abre a janela sozinha (ou mostra o link, se o pop-up for bloqueado). O script não conecta em nada. Vários hosts
+  ("abre a borda e o core") = um link por host. Ambíguo (2+ hosts batem com o nome) → pergunte qual.
 - **Backup antes de alterar equipamento (INEGOCIÁVEL):** qualquer alteração em host (add/set/remove/restart…), mesmo num
   pedido direto sem workflow, começa com `python3 scripts/tools/backup/change.py begin --host-id <ID>` (backup "pré"; falhou =
   não altere) e termina com `... change.py end --host-id <ID>` (backup "pós" + diff; 1 par por host por sessão). Padrão ligado

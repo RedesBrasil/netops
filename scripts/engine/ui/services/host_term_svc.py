@@ -26,8 +26,9 @@ from pathlib import Path
 
 import deps
 
-TERMINAL_METHODS = ("ssh", "telnet")
-DEFAULT_PORTS = {"ssh": 22, "telnet": 23}
+from lib.terminal_access import (  # noqa: E402,F401 — regra única (console + agente)
+    DEFAULT_PORTS, TERMINAL_METHODS, TargetError, access_entries, pick_entry)
+
 TERM_TYPE = "xterm-256color"
 CONNECT_TIMEOUT = 20
 MAX_AUTH_ATTEMPTS = 3
@@ -43,49 +44,9 @@ class Closed(Exception):
     """O navegador fechou a janela (ou Ctrl-C/Ctrl-D num prompt local)."""
 
 
-class TargetError(Exception):
-    """Host/método inválido para o terminal (vira mensagem + close 4404)."""
-
-
 # --------------------------------------------------------------------------- #
 # Inventário: métodos de acesso de terminal e credencial
 # --------------------------------------------------------------------------- #
-def access_entries(host: dict) -> list[dict]:
-    """Métodos de terminal do host resolvido, em ordem de prioridade: [{method, port, credential}].
-
-    Principal (access + credential) primeiro, depois extra_access. Só ssh/telnet; sem duplicata
-    (método+porta). extra_access sem credential herda a credencial do host."""
-    principal = host.get("access") or {}
-    items = [{"method": principal.get("method") or "ssh", "port": principal.get("port"),
-              "credential": host.get("credential")}]
-    for extra in host.get("extra_access") or []:
-        if isinstance(extra, dict):
-            items.append({"method": extra.get("method"), "port": extra.get("port"),
-                          "credential": extra.get("credential") or host.get("credential")})
-    out, seen = [], set()
-    for item in items:
-        method = str(item["method"] or "").lower()
-        if method not in TERMINAL_METHODS:
-            continue
-        try:
-            port = int(item["port"] or DEFAULT_PORTS[method])
-        except (TypeError, ValueError):
-            port = DEFAULT_PORTS[method]
-        if (method, port) in seen:
-            continue
-        seen.add((method, port))
-        out.append({"method": method, "port": port, "credential": item["credential"]})
-    return out
-
-
-def pick_entry(entries: list[dict], method: str | None, port: int | None) -> dict:
-    method = (method or "").lower() or None
-    for entry in entries:
-        if (method is None or entry["method"] == method) and (port is None or entry["port"] == port):
-            return entry
-    raise TargetError(f"método {method or '?'}{':' + str(port) if port else ''} não está cadastrado neste host")
-
-
 def _host_ref(host_id: str):
     return int(host_id) if str(host_id).isdigit() else host_id
 

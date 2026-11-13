@@ -1,5 +1,6 @@
 // Componentes reutilizáveis: formulário, tabela, markdown, banner do cofre.
 import { marked } from "marked";
+import { openTermHref } from "./term-link.js";
 import {
   html, useState, useEffect, useRef, api, Badge, CopyButton, Spinner, Modal,
   vaultStore, useStore, refreshVault, toast, handleError,
@@ -230,6 +231,9 @@ async function copyText(t) {
   ta.remove(); return ok;
 }
 function onMdClick(e) {
+  // Link para o terminal de host (#hostterm/...): abre em janela nova, não troca a página atual.
+  const term = e.target.closest && e.target.closest('a[href^="#hostterm/"]');
+  if (term) { e.preventDefault(); openTermHref(term.getAttribute("href"), { fallbackHere: true }); return; }
   const btn = e.target.closest && e.target.closest(".md-copy");
   if (!btn) return;
   const code = btn.closest(".md-codeblock")?.querySelector("pre");

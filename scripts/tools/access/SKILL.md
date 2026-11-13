@@ -16,6 +16,7 @@ rodar comandos — de coleta (read-only) ou de mudança de configuração.
 |--------|--------|-----------|
 | `session.py` | **SSH/Telnet — o ÚNICO script de CLI** (`run` = lote; `open`/`exec`/`close` = persistente) | Netmiko + canal exec Paramiko (Linux) |
 | `api_mikrotik.py` | API RouterOS (dados estruturados, só se `access.method: api`) | librouteros |
+| `terminal_link.py` | **Não conecta**: gera o link que abre o terminal web do host numa janela do console (pedido "abre a borda pra mim") | — |
 
 `ssh.py` e `telnet.py` **não existem mais** (removidos em 12/11/2026): o `session.py` faz tudo o que
 eles faziam. O motor (backup do console etc.) usa a biblioteca `scripts/engine/lib/cli_runner.py`.

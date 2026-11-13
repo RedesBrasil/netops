@@ -8,6 +8,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { authToken } from "../api.js";
 import { useRoute } from "../route.js";
+import { openTermHref } from "../term-link.js";
 
 const TERM_METHODS = ["ssh", "telnet"];
 const DEFAULT_PORT = { ssh: 22, telnet: 23 };
@@ -39,11 +40,9 @@ export function hostTermUrl(id, entry) {
   return `#hostterm/${encodeURIComponent(id)}?method=${entry.method}&port=${entry.port}`;
 }
 
-// Janela nova (uma por host+método: clicar de novo foca a mesma janela).
+// Janela nova (uma por host+método: clicar de novo foca a mesma janela). Popup bloqueado: abre aqui.
 export function openHostTerminal(id, entry) {
-  const name = `netops-term-${id}-${entry.method}-${entry.port}`.replace(/[^\w-]/g, "_");
-  const w = window.open(location.pathname + hostTermUrl(id, entry), name, "popup,width=1100,height=700");
-  if (w) w.focus(); else location.hash = hostTermUrl(id, entry).slice(1);   // popup bloqueado: abre aqui
+  openTermHref(hostTermUrl(id, entry), { fallbackHere: true });
 }
 
 // Popup de escolha quando o host tem mais de um método de terminal.
