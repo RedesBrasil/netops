@@ -54,8 +54,17 @@ export function mapLinkIds(map, links = []) {
   const ids = new Set(map.host_ids);
   return links.filter(l => ids.has(l.a.host) && ids.has(l.b.host)).map(l => l.id);
 }
+// Camada logo acima de todos os z_index já gravados (0 se não há nenhum). Host SEM z_index é
+// recém-chegado (adicionado, criado pela página Hosts ou pelo mapa) e fica à frente de tudo; a
+// ordem só é gravada quando o usuário mexe nas camadas. Vários recém-chegados mantêm a ordem dos IDs.
+export function topLayer(map) {
+  const z = [...Object.values(map.positions || {}).map(p => p?.z_index), ...(map.objects || []).map(o => o.z_index),
+    ...Object.values(map.edges || {}).map(e => e?.z_index), ...(map.visual_links || []).map(l => l.z_index)].filter(Number.isFinite);
+  return z.length ? Math.max(...z) + 1 : 0;
+}
 export function orderedNodeIds(map, linkIds = []) {
-  const nodes = [...map.host_ids.map(id => ({ id: 'host:' + id, z: map.positions[id]?.z_index ?? 0 })),
+  const top = topLayer(map);
+  const nodes = [...map.host_ids.map(id => ({ id: 'host:' + id, z: map.positions[id]?.z_index ?? top })),
     ...map.objects.map(o => ({ id: 'object:' + o.id, z: o.z_index ?? (o.type === 'shape' ? -1 : 0), shape: o.type === 'shape' }))];
   const devices = nodes.filter(n => !n.shape).map(n => n.z);
   const linkZ = devices.length ? Math.min(...devices) - .5 : Math.max(-1, ...nodes.map(n => n.z)) + .5;

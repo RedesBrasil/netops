@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { reconcileNodes, orderedNodeIds, moveLayer, removeMapNodes, duplicateShape, contrastingText, shapesOverlap, pushHistory, reconcileLayout } from './node-state.js';
+import { reconcileNodes, orderedNodeIds, moveLayer, removeMapNodes, duplicateShape, contrastingText, shapesOverlap, pushHistory, reconcileLayout, topLayer } from './node-state.js';
 
 const host = () => ({ id: 'host:a', type: 'device', position: { x: 10, y: 20 }, data: { label: 'A' } });
 const measured = () => ({ ...host(), measured: { width: 198, height: 91 }, selected: true, dragging: false });
@@ -206,4 +206,17 @@ test('desfazer reconcilia com inventário/topologia atuais e restaura objeto apa
   assert.deepEqual(restored.visual_links.map(l => l.id), ['visual']);
   // tudo ainda existe: volta exatamente ao estado anterior
   assert.deepEqual(reconcileLayout(before, current, ['a', 'b'], ['real']), before);
+});
+
+test('host sem z_index (recém-adicionado) fica à frente de formas, notas, linhas e hosts já ordenados', () => {
+  const map = { kind: 'all', host_ids: [1, 2, 9, 10], members: [], positions: { 1: { x: 0, y: 0, z_index: 2 }, 2: { x: 0, y: 0, z_index: 7 } },
+    objects: [{ id: 'n', type: 'note', z_index: 19 }, { id: 's', type: 'shape', z_index: 75 }], edges: { a: { z_index: 40 } }, visual_links: [] };
+  assert.equal(topLayer(map), 76);
+  const order = orderedNodeIds(map, ['a']);
+  assert.deepEqual(order.slice(-2), ['host:9', 'host:10']);        // novos por último (frente), na ordem dos IDs
+  assert.ok(order.indexOf('host:9') > order.indexOf('object:s'));   // acima da forma de fundo
+  // mapa sem nenhum z gravado: nada muda (empate em 0)
+  const plain = { kind: 'all', host_ids: [1, 2], positions: {}, objects: [{ id: 's', type: 'shape' }], edges: {}, visual_links: [] };
+  assert.equal(topLayer(plain), 0);
+  assert.equal(orderedNodeIds(plain, [])[0], 'object:s');           // forma continua no fundo
 });

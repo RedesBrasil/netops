@@ -6,8 +6,10 @@ import { useRoute, navigate, useMenuRoute, matchText } from "../route.js";
 
 // Padrão de cadastro: tudo em MAIÚSCULAS, exceto site e notes (o backend também força).
 const UP = (v) => typeof v === "string" ? v.toUpperCase() : v;
+const MAX_EXTRA_IPS = 20;  // mesmo teto do backend (models.MAX_EXTRA_IPS)
+const IP_ROLES = ["público", "interno", "VIP", "loopback", "gerência secundária"];  // sugestões; o campo é livre
 const upList = (l) => (l || []).map(UP);
-const UP_KEYS = new Set(["hostname", "group", "vendor", "role", "model", "credential", "method"]);
+const UP_KEYS = new Set(["hostname", "group", "vendor", "role", "model", "version", "credential", "method"]);
 const INHERIT = ["vendor", "role", "credential"];
 const bkLabel = (v) => v === true ? "sim" : v === false ? "não" : "padrão";
 
@@ -33,7 +35,7 @@ export function HostsPage() {
   const needle = q.trim().toLowerCase();
   const hosts = allHosts.filter((h) =>
     (!vendor || h.effective.vendor === vendor) && (!role || h.effective.role === role) && (!group || h.explicit.group === group) &&
-    (!needle || [h.id, h.explicit.hostname, h.explicit.mgmt_ip].some((v) => String(v || "").toLowerCase().includes(needle))));
+    (!needle || [h.id, h.explicit.hostname, h.explicit.mgmt_ip, ...(h.explicit.extra_ips || []).map((x) => x.ip)].some((v) => String(v || "").toLowerCase().includes(needle))));
 
   const cols = [
     { key: "id", label: "ID", sort: (r) => String(r.id), render: (r) => html`<span class="mono">${r.id}</span>` },
@@ -47,6 +49,7 @@ export function HostsPage() {
     // Ocultas por padrão — o usuário liga em ⚙ Colunas (preferência salva no navegador).
     { key: "credential", label: "Credencial", hidden: true, sort: (r) => r.effective.credential || "", render: (r) => r.effective.credential || "—" },
     { key: "model", label: "Modelo", hidden: true, sort: (r) => r.effective.model || "", render: (r) => r.effective.model || "—" },
+    { key: "version", label: "Versão (SO/app)", hidden: true, sort: (r) => r.effective.version || "", render: (r) => r.effective.version || "—" },
     { key: "site", label: "Site", hidden: true, sort: (r) => r.effective.site || "", render: (r) => r.effective.site || "—" },
     { key: "backup", label: "Backup pré-mudança", hidden: true, sort: (r) => bkLabel(r.effective.backup_before_change), render: (r) => bkLabel(r.effective.backup_before_change) },
     { key: "notes", label: "Notas", hidden: true, sort: (r) => r.effective.notes || "", render: (r) => html`<span title=${r.effective.notes || ""}>${r.effective.notes || "—"}</span>` },
@@ -91,8 +94,9 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   const [form, setForm] = useState({
     hostname: UP(explicit.hostname) || "", mgmt_ip: explicit.mgmt_ip || "",
     group: UP(explicit.group) || "", vendor: UP(explicit.vendor) ?? null, role: UP(explicit.role) ?? null,
-    model: UP(explicit.model) || "", site: explicit.site || "", notes: explicit.notes || "", icon: explicit.icon || "",
+    model: UP(explicit.model) || "", version: UP(explicit.version) || "", site: explicit.site || "", notes: explicit.notes || "", icon: explicit.icon || "",
     credential: UP(explicit.credential) ?? null,
+    extra_ips: (explicit.extra_ips || []).map((x) => ({ ip: x.ip || "", role: UP(x.role) || "", description: UP(x.description) || "" })),
     method: UP((explicit.access || {}).method) ?? null, port: (explicit.access || {}).port ?? "",
   });
 
@@ -124,11 +128,18 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     payload.hostname = form.hostname; payload.mgmt_ip = form.mgmt_ip;
     if (form.group) payload.group = form.group; else if (!isNew) payload.group = null;
     for (const k of ["vendor", "role", "credential"]) payload[k] = form[k] || null;
-    for (const k of ["model", "site", "notes", "icon"]) payload[k] = form[k] || null;
+    for (const k of ["model", "version", "site", "notes", "icon"]) payload[k] = form[k] || null;
     const acc = {};
     if (form.method) acc.method = form.method;
     if (form.port !== "" && form.port != null) acc.port = Number(form.port);
     payload.access = Object.keys(acc).length ? acc : null;
+    const extras = form.extra_ips.filter((x) => x.ip.trim()).map((x) => {
+      const item = { ip: x.ip.trim() };
+      if (x.role.trim()) item.role = x.role.trim();
+      if (x.description.trim()) item.description = x.description.trim();
+      return item;
+    });
+    if (extras.length) payload.extra_ips = extras; else if (!isNew) payload.extra_ips = null;
     try {
       let savedId = host.id;
       if (isNew) {
@@ -149,6 +160,11 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     } finally { setSaving(false); }
   }
   const errFor = (suffix) => Object.entries(errors).find(([k]) => k.endsWith(suffix))?.[1];
+  const setExtra = (i, k, v) => setForm((f) => ({ ...f, extra_ips: f.extra_ips.map((x, j) => j === i ? { ...x, [k]: k === "ip" ? v : UP(v) } : x) }));
+  const addExtra = () => setForm((f) => f.extra_ips.length >= MAX_EXTRA_IPS ? f : { ...f, extra_ips: [...f.extra_ips, { ip: "", role: "", description: "" }] });
+  const delExtra = (i) => setForm((f) => ({ ...f, extra_ips: f.extra_ips.filter((_, j) => j !== i) }));
+  const extraErr = (i) => Object.entries(errors).find(([k]) => k.includes(`/extra_ips/${i}/`))?.[1];
+  const extraGeneral = Object.entries(errors).find(([k]) => k.endsWith("/extra_ips") || k === "" || k === "/")?.[1];
 
   return html`<${Modal} title=${isNew ? "Novo host" : `Editar ${explicit.hostname}`} onClose=${onClose}>
     <div class="row">
@@ -156,6 +172,20 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
         <input value=${form.hostname} onInput=${(e) => set("hostname", e.target.value)} /><//>
       <${Field} label="IP de gerência" error=${errFor("/mgmt_ip")}>
         <input value=${form.mgmt_ip} onInput=${(e) => set("mgmt_ip", e.target.value)} /><//>
+    </div>
+    <div class="field extra-ips">
+      <label>IPs adicionais <span class="muted">(${form.extra_ips.length}/${MAX_EXTRA_IPS}) — só informativo; a conexão usa o IP de gerência</span></label>
+      <datalist id="extra-ip-roles">${IP_ROLES.map((r) => html`<option value=${r}></option>`)}</datalist>
+      ${form.extra_ips.map((x, i) => html`<div class="extra-ip-row" key=${i}>
+        <input class="mono" placeholder="IP (ex.: 200.1.2.3/29)" aria-label=${`IP adicional ${i + 1}`} value=${x.ip} onInput=${(e) => setExtra(i, "ip", e.target.value)} />
+        <input list="extra-ip-roles" placeholder="Função" maxlength="40" aria-label=${`Função do IP ${i + 1}`} value=${x.role} onInput=${(e) => setExtra(i, "role", e.target.value)} />
+        <input placeholder="Descrição" maxlength="200" aria-label=${`Descrição do IP ${i + 1}`} value=${x.description} onInput=${(e) => setExtra(i, "description", e.target.value)} />
+        <button type="button" aria-label=${`Remover IP ${i + 1}`} title="Remover" onClick=${() => delExtra(i)}>×</button>
+        ${extraErr(i) && html`<div class="err">${extraErr(i)}</div>`}
+      </div>`)}
+      <div><button type="button" disabled=${form.extra_ips.length >= MAX_EXTRA_IPS} onClick=${addExtra}>+ Adicionar IP</button>
+        ${form.extra_ips.length >= MAX_EXTRA_IPS && html` <span class="muted">Limite de ${MAX_EXTRA_IPS} IPs atingido.</span>`}</div>
+      ${extraGeneral && html`<div class="err">${extraGeneral}</div>`}
     </div>
     <${Field} label="Grupo (herança de defaults)">
       <${RefSelect} value=${form.group} options=${upList(groups)} placeholder="(sem grupo)" onChange=${(v) => set("group", v)} /><//>
@@ -184,6 +214,7 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
         ${mapOptions.maps.filter(m => m.kind === "custom").map(m => html`<option value=${m.id}>${m.name}</option>`)}</select><//>`}
     <div class="row">
       <${Field} label="Modelo"><input value=${form.model} onInput=${(e) => set("model", e.target.value)} /><//>
+      <${Field} label="Versão (SO ou aplicação)"><input placeholder="ex.: RouterOS 7.16.2, Debian 12, Zabbix 7.0.32" maxlength="80" value=${form.version} onInput=${(e) => set("version", e.target.value)} /><//>
       <${Field} label="Site"><input value=${form.site} onInput=${(e) => set("site", e.target.value)} /><//>
     </div>
     <${HostIconPicker} value=${form.icon} onChange=${value => set("icon", value)} error=${errFor("/icon") || errors.icon} />

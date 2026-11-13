@@ -49,6 +49,18 @@
         "properties": {
           "hostname": {"type": "string", "minLength": 1},
           "mgmt_ip": {"type": "string", "minLength": 1},
+          "extra_ips": {
+            "type": "array", "maxItems": 20,
+            "description": "IPs adicionais do host (publico, interno, VIP...). Apenas informativo: scripts conectam pelo mgmt_ip.",
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["ip"],
+              "properties": {
+                "ip": {"type": "string", "minLength": 1, "maxLength": 64},
+                "role": {"type": "string", "maxLength": 40},
+                "description": {"type": "string", "maxLength": 200}
+              }
+            }
+          },
           "group": {"type": "string"}
         }
       }]
@@ -67,6 +79,7 @@
         },
         "icon": { "type": "string", "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "description": "ID do ícone local de rede (ex.: router, switch)." },
         "model": { "type": "string" },
+        "version": { "type": "string", "maxLength": 80, "description": "Versão do SO/firmware OU da aplicação principal do host (ex.: RouterOS 7.16.2, Debian 12, Zabbix 7.0.32, EVE-NG 6.2.0-4, PVE 8.4.21)." },
         "site": { "type": "string" },
         "notes": { "type": "string" },
         "credential": { "type": "string" },

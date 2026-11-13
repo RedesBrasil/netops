@@ -40,7 +40,10 @@ groups:
 hosts:
   - id: 1
     hostname: RT-CORE-01
-    mgmt_ip: 10.0.0.1
+    mgmt_ip: 10.0.0.1                     # IP de gerência: é por ele que os scripts conectam
+    extra_ips:                            # opcional, até 20; só informativo (não usado para conexão)
+      - {ip: 198.51.100.10/29, role: público, description: Link principal}
+      - {ip: 10.0.1.1, role: interno, description: Gateway da LAN}
     group: mikrotik-core
     site: matriz
 

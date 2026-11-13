@@ -27,7 +27,8 @@ def _hosts(data=None):
             host, _ = resolve_host(name, data, {}, decrypt=False, lowercase_enums=False)
         except KeyError:
             host = explicit
-        result[name] = {"id": name, **{k: host.get(k, "") for k in ("hostname", "mgmt_ip", "vendor", "role", "site", "icon")}}
+        result[name] = {"id": name, **{k: host.get(k, "") for k in ("hostname", "mgmt_ip", "vendor", "role", "site", "icon")},
+                        "extra_ips": list(host.get("extra_ips") or [])}
     return result
 
 
@@ -334,7 +335,7 @@ def place_host(host_id, placement, hosts_data, writes, checks):
         raise KeyError("mapa não existe")
     positions = m.setdefault("positions", [])
     positions[:] = [p for p in positions if p["host_id"] != host_id]
-    positions.append({"host_id": host_id, "x": placement["x"], "y": placement["y"]})
+    positions.append({"host_id": host_id, "x": placement["x"], "y": placement["y"]})  # sem z_index: o editor o põe no topo
     if m["kind"] != "all" and host_id not in host_ids(m, hosts):
         m.setdefault("members", []).append(host_id)
     writes.append((deps.MAPS_FILE, yaml_io.dump_rt(y, data), 0o644))

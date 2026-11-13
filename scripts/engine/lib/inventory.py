@@ -35,7 +35,7 @@ SCHEMA_FILE = NETOPS_ROOT / "core" / "schemas" / "inventory.schema.json"
 
 
 # Padrão de cadastro: tudo em MAIÚSCULAS, exceto site e notes (livres).
-UPPER_NODE_FIELDS = ("hostname", "model", "vendor", "role", "credential", "group")
+UPPER_NODE_FIELDS = ("hostname", "model", "version", "vendor", "role", "credential", "group")
 ENUM_FIELDS = ("vendor", "role")  # + access.method; os scripts consomem em minúsculas (canônico)
 
 
@@ -51,6 +51,9 @@ def normalize_node_fields(fields: dict) -> dict:
             out[key] = upper_value(out[key])
     if isinstance(out.get("access"), dict) and isinstance(out["access"].get("method"), str):
         out["access"] = {**out["access"], "method": upper_value(out["access"]["method"])}
+    if "extra_ips" in out:  # remove chaves vazias; lista vazia => None (a chave some do YAML)
+        items = [{k: v for k, v in item.items() if v not in (None, "")} for item in (out["extra_ips"] or [])]
+        out["extra_ips"] = items or None
     return out
 
 

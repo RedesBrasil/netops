@@ -120,3 +120,4 @@
 }
 .netops-maps .map-locked .react-flow__resize-control{display:none}
 .netops-maps .map-lock{font-size:1rem}
+.netops-maps .device .ip-more { color:var(--accent); font-weight:700; }

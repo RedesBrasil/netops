@@ -43,6 +43,7 @@ class NodeUpsert(BaseModel):
     vendor: Optional[Vendor] = None
     role: Optional[Role] = None
     model: Optional[str] = None
+    version: Optional[str] = Field(default=None, max_length=80)  # versão do SO/firmware (livre, mantém a caixa)
     site: Optional[str] = None
     notes: Optional[str] = None
     credential: Optional[str] = None
@@ -50,9 +51,36 @@ class NodeUpsert(BaseModel):
     access: Optional[Access] = None
 
 
+MAX_EXTRA_IPS = 20  # teto de IPs adicionais por host (evita lista descontrolada)
+
+
+class ExtraIp(BaseModel):
+    """IP adicional de um host (público, interno, VIP...). Só informação: os scripts conectam pelo mgmt_ip."""
+    model_config = {"extra": "forbid"}
+    ip: str = Field(min_length=1, max_length=64)
+    role: Optional[str] = Field(default=None, max_length=40)
+    description: Optional[str] = Field(default=None, max_length=200)
+
+    @field_validator("ip", "role", "description", mode="before")
+    @classmethod
+    def _strip(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("ip")
+    @classmethod
+    def _valid_ip(cls, value):
+        import ipaddress
+        try:
+            ipaddress.ip_interface(value)  # aceita 10.0.0.1, 10.0.0.1/24, IPv6
+        except ValueError:
+            raise ValueError("IP inválido (use IPv4/IPv6, com máscara opcional: 200.1.2.3/29)")
+        return value
+
+
 class HostUpsert(NodeUpsert):
     hostname: Optional[str] = Field(default=None, min_length=1)
     mgmt_ip: Optional[str] = Field(default=None, min_length=1)
+    extra_ips: Optional[list[ExtraIp]] = Field(default=None, max_length=MAX_EXTRA_IPS)
     group: Optional[str] = None
     icon: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -63,6 +91,22 @@ class HostUpsert(NodeUpsert):
         if value is not None and not icons_svc.known_icon(value):
             raise ValueError("ícone não existe na biblioteca local")
         return value
+    @model_validator(mode="after")
+    def unique_extra_ips(self):
+        import ipaddress
+        seen = set()
+        if self.mgmt_ip:
+            try:
+                seen.add(ipaddress.ip_interface(self.mgmt_ip.strip()).ip)
+            except ValueError:
+                pass  # mgmt_ip pode ser um nome DNS
+        for item in self.extra_ips or []:
+            address = ipaddress.ip_interface(item.ip).ip
+            if address in seen:
+                raise ValueError(f"IP {address} repetido (já é o IP de gerência ou outro IP adicional)")
+            seen.add(address)
+        return self
+
 
 class MapPlacement(BaseModel):
     model_config = {"extra": "forbid"}

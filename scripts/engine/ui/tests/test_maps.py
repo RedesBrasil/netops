@@ -33,7 +33,7 @@ def test_reads_do_not_create_or_migrate_files(client, env):
     assert before == (env / 'network/topology.yaml').read_bytes()
     general = next(m for m in s['maps'] if m['id'] == 'all')
     assert set(general['host_ids']) == {h['id'] for h in s['hosts']}
-    assert all(set(h) == {'id', 'hostname', 'mgmt_ip', 'vendor', 'role', 'site', 'icon'} for h in s['hosts'])
+    assert all(set(h) == {'id', 'hostname', 'mgmt_ip', 'vendor', 'role', 'site', 'icon', 'extra_ips'} for h in s['hosts'])
     assert all(type(h['id']) is int for h in s['hosts'])
     assert len(s['topology']['links']) == len({l['id'] for l in s['topology']['links']})
 

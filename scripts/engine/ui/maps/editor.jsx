@@ -27,11 +27,13 @@ function Device({ data, selected }) {
   const [imageFailed, setImageFailed] = useState(false);
   const image = !data.mapId && iconFiles.get(data.icon);
   useEffect(() => setImageFailed(false), [image]);
-  return <div className={`device ${selected ? 'chosen' : ''} ${data.mapId ? 'map-ref' : ''}`}>
+  const extras = data.extraIps || [];
+  const ipTitle = extras.length ? [`${data.ip} (gerência)`, ...extras.map(x => `${x.ip}${x.role ? ` (${x.role})` : ''}${x.description ? ` — ${x.description}` : ''}`)].join('\n') : undefined;
+  return <div className={`device ${selected ? 'chosen' : ''} ${data.mapId ? 'map-ref' : ''}`} title={ipTitle}>
     {image && !imageFailed
       ? <img className="device-icon-image" src={image} alt="" width={44} height={44} draggable={false} decoding="async" onError={() => setImageFailed(true)} />
       : <span className="device-icon" aria-hidden="true">{data.mapId ? '▧' : data.role === 'server' ? '▥' : '▤'}</span>}
-    <div><strong>{data.label}</strong><small>{data.ip}</small><span className="role">{data.mapId ? 'Outro mapa' : roleLabel[data.role] || data.role || 'Dispositivo'}</span></div>
+    <div><strong>{data.label}</strong><small>{data.ip}{extras.length > 0 && <span className="ip-more"> +{extras.length}</span>}</small><span className="role">{data.mapId ? 'Outro mapa' : roleLabel[data.role] || data.role || 'Dispositivo'}</span></div>
     <NodeHandles />
   </div>;
 }
@@ -72,7 +74,7 @@ function makeNodes(map, hosts, readOnly, links) {
   const layers = layerMap(map, links);
   const nodes = map.host_ids.map((id, index) => ({ id: hostId(id), type: 'device',
     position: { x: map.positions[id]?.x ?? defaultHostPosition(index).x, y: map.positions[id]?.y ?? defaultHostPosition(index).y }, zIndex: layers.get(hostId(id)),
-    data: { hostId: id, label: hosts[id]?.hostname || id, ip: hosts[id]?.mgmt_ip || '', role: hosts[id]?.role, icon: hosts[id]?.icon } }));
+    data: { hostId: id, label: hosts[id]?.hostname || id, ip: hosts[id]?.mgmt_ip || '', role: hosts[id]?.role, icon: hosts[id]?.icon, extraIps: hosts[id]?.extra_ips || [] } }));
   for (const o of map.objects) nodes.push({ id: objectId(o.id), type: o.type === 'reference' ? 'device' : o.type,
     position: o.position, zIndex: layers.get(objectId(o.id)), ...(o.type === 'shape' || o.type === 'note' ? { style: { width: o.width, height: o.height } } : {}),
     data: { ...o, mapId: o.map_id, ip: o.type === 'reference' ? 'Toque para abrir' : '', readOnly } });

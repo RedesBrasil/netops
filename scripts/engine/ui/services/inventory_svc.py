@@ -23,9 +23,9 @@ from services import yaml_io
 ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 # Ordem de chaves p/ hosts/grupos novos (legibilidade do YAML).
-HOST_KEY_ORDER = ["id", "hostname", "mgmt_ip", "group", "vendor", "role", "icon", "model", "site", "access", "credential", "notes"]
-GROUP_KEY_ORDER = ["vendor", "role", "access", "credential", "model", "site", "notes"]
-OPTIONAL_STR = {"model", "site", "notes", "icon"}
+HOST_KEY_ORDER = ["id", "hostname", "mgmt_ip", "extra_ips", "group", "vendor", "role", "icon", "model", "version", "site", "access", "credential", "notes"]
+GROUP_KEY_ORDER = ["vendor", "role", "access", "credential", "model", "version", "site", "notes"]
+OPTIONAL_STR = {"model", "version", "site", "notes", "icon"}
 
 
 def _gkey(groups: dict, name: str) -> str:
@@ -155,6 +155,9 @@ def _apply_fields(node: dict, fields: dict, *, partial: bool) -> None:
             continue
         if val is None or (key in OPTIONAL_STR and val == ""):
             node.pop(key, None)
+        elif key == "extra_ips" and key not in node and "mgmt_ip" in node and hasattr(node, "insert"):
+            # chave nova entra logo após o mgmt_ip (e não depois do espaço em branco no fim do host)
+            node.insert(list(node.keys()).index("mgmt_ip") + 1, key, val)
         else:
             node[key] = val
 
