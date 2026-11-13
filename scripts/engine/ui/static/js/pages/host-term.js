@@ -2,7 +2,8 @@
 // URL: #hostterm/<id>?method=ssh|telnet&port=N  (core/rules/urls-navegacao.md)
 // WebSocket /api/term/host/<id>: teclas -> binário; resize -> JSON {resize:[c,r]};
 // servidor -> binário (saída) ou JSON {status, ...}. A senha nunca passa pelo navegador.
-import { html, useRef, useEffect, useState, Modal } from "../ui.js";
+import { html, useRef, useEffect, useState, Modal, api, refreshVault } from "../ui.js";
+import { UnlockModal } from "../components.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { authToken } from "../api.js";
@@ -70,6 +71,8 @@ export function HostTermPage() {
   const [status, setStatus] = useState("conectando");
   const [info, setInfo] = useState({});
   const [gen, setGen] = useState(0);
+  const [vaultAsk, setVaultAsk] = useState(false);   // popup "Destrancar o cofre"
+  const wsRef = useRef(null);
 
   useEffect(() => {
     document.title = `${(info.host || id)} · ${(method || "").toUpperCase()} — NetOps`;
@@ -90,6 +93,7 @@ export function HostTermPage() {
     if (port) qs.set("port", port);
     const ws = new WebSocket(`${proto}://${location.host}/api/term/host/${encodeURIComponent(id)}?${qs}`);
     ws.binaryType = "arraybuffer";
+    wsRef.current = ws;
     const enc = new TextEncoder();
     const sendResize = () => { if (ws.readyState === 1) ws.send(JSON.stringify({ resize: [term.cols, term.rows] })); };
 
@@ -98,10 +102,14 @@ export function HostTermPage() {
       if (typeof e.data !== "string") { term.write(new Uint8Array(e.data)); return; }
       try {
         const msg = JSON.parse(e.data);
-        if (msg.status) { setStatus(msg.status); if (msg.host || msg.ip) setInfo((o) => ({ ...o, ...msg })); }
+        if (msg.status) {
+          setStatus(msg.status); if (msg.host || msg.ip) setInfo((o) => ({ ...o, ...msg }));
+          setVaultAsk(msg.status === "vault_locked");
+        }
       } catch (err) { term.write(e.data); }
     };
     ws.onclose = (e) => {
+      setVaultAsk(false);
       if (e.code === 4403) {
         setStatus("desabilitado");
         term.write("\r\n\x1b[33mAcesso negado: faça login no console (ou o terminal está desligado: suba sem --read-only e com o terminal ligado).\x1b[0m\r\n");
@@ -127,16 +135,27 @@ export function HostTermPage() {
     };
   }, [id, method, port, gen]);
 
-  const badge = { conectado: "ok", conectando: "", desconectado: "warn", desabilitado: "danger", erro: "danger" }[status] || "";
+  // Fechou o popup: destrancou -> servidor relê a credencial (login automático); senão -> login manual.
+  async function vaultClosed() {
+    setVaultAsk(false);
+    let st = {};
+    try { st = await api.get("/vault/status"); } catch (e) {}
+    refreshVault();
+    const ws = wsRef.current;
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ vault: ["cache", "env"].includes(st.state) ? "retry" : "manual" }));
+  }
+
+  const badge = { conectado: "ok", conectando: "", desconectado: "warn", desabilitado: "danger", erro: "danger", vault_locked: "warn" }[status] || "";
   return html`<div class="hostterm-page">
     <div class="hostterm-bar">
       <b>${info.host || `host ${id}`}</b>
       <span class="mono">${info.ip || ""} · ${(method || "?").toUpperCase()}${port ? ":" + port : ""}${info.user ? " · " + info.user : ""}</span>
-      <span class="badge ${badge}">${status}</span>
+      <span class="badge ${badge}">${status === "vault_locked" ? "cofre trancado" : status}</span>
       <span class="spacer"></span>
       ${(status === "desconectado" || status === "erro") &&
         html`<button class="sm" onClick=${() => { setStatus("conectando"); setGen((g) => g + 1); }}>Reconectar</button>`}
     </div>
     <div class="hostterm-host" ref=${hostRef}></div>
+    ${vaultAsk && html`<${UnlockModal} onClose=${vaultClosed} />`}
   </div>`;
 }

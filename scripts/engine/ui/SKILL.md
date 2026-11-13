@@ -138,8 +138,10 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   principal + `extra_access` (só ssh/telnet, ordem do cadastro): 1 método → abre direto; 2+ → popup de
   escolha (`#hosts?access=<id>`). SSH = `asyncssh` (PTY xterm-256color, resize, algoritmos legados no fim
   da lista); Telnet = `telnetlib3` (NAWS, login automático detectando `login:`/`Password:`, Enter CR LF).
-  A credencial é decifrada **no servidor** (cofre destrancado) e nunca vai ao navegador; sem credencial
-  ou cofre trancado → o terminal pede usuário/senha (não grava). Chave do host SSH: aceita e registra o
+  A credencial é decifrada **no servidor** (cofre destrancado) e nunca vai ao navegador. **Cofre trancado**
+  → status `vault_locked` e a janela abre o popup "Destrancar o cofre" (`UnlockModal`); destrancou → o
+  cliente manda `{"vault":"retry"}` e o login segue automático; cancelou → `{"vault":"manual"}` e o terminal
+  pede a senha. Sem credencial (ou `--no-vault-unlock`) → o terminal pede usuário/senha (não grava). Chave do host SSH: aceita e registra o
   fingerprint no log. Auditoria em `runs/<ts>-terminal-<id>/session.log` (sem gravar teclas).
   Código: `routers/host_term.py`, `services/host_term_svc.py`, `static/js/pages/host-term.js`.
 - **Página Claude Code (`--enable-claude`):** ⚠ dirige um **agente de IA** (via `claude-agent-sdk`)

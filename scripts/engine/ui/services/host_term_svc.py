@@ -90,9 +90,10 @@ def _host_ref(host_id: str):
     return int(host_id) if str(host_id).isdigit() else host_id
 
 
-def resolve_target(host_id: str, method: str | None, port: int | None) -> tuple[dict, dict, dict, str]:
-    """(host, entry, cred, aviso). cred pode vir vazio/parcial (sem credencial ou cofre trancado)."""
+def resolve_target(host_id: str, method: str | None, port: int | None) -> tuple[dict, dict, dict, str, bool]:
+    """(host, entry, cred, aviso, cofre_trancado). cred pode vir vazio/parcial (sem credencial ou cofre trancado)."""
     from lib.inventory import lookup_ci, resolve_host, resolve_secret
+    from lib.vault import VaultLocked
     from services.credentials_svc import load_creds
     from services.inventory_svc import load_hosts
     hosts_data, _ = load_hosts()          # caminhos do console (deps.*: respeita DATA_ROOT/testes)
@@ -105,7 +106,7 @@ def resolve_target(host_id: str, method: str | None, port: int | None) -> tuple[
         raise TargetError("host sem IP de gerência (mgmt_ip)")
     entry = pick_entry(access_entries(host), method, port)
 
-    cred, note = {}, ""
+    cred, note, locked = {}, "", False
     name = entry.get("credential")
     raw = (lookup_ci(creds_data.get("credentials") or {}, name) or {}) if name else {}
     if not raw:
@@ -116,9 +117,11 @@ def resolve_target(host_id: str, method: str | None, port: int | None) -> tuple[
             continue
         try:
             cred[key] = resolve_secret(value)     # decripta só aqui, em memória
-        except Exception:  # noqa: BLE001 — VaultLocked/VaultError: pede no terminal
-            note = "cofre trancado — informe a senha manualmente"
-    return host, entry, cred, note
+        except VaultLocked:
+            locked, note = True, "cofre trancado"
+        except Exception:  # noqa: BLE001 — VaultError (chave errada/cofre corrompido): pede no terminal
+            note = "não foi possível decifrar a credencial — informe a senha manualmente"
+    return host, entry, cred, note, locked
 
 
 # --------------------------------------------------------------------------- #
@@ -150,6 +153,9 @@ class WsIO:
                 except ValueError:
                     self.queue.put_nowait(text.encode("utf-8"))
                     continue
+                if isinstance(ctrl, dict) and isinstance(ctrl.get("vault"), str):
+                    self.queue.put_nowait(("vault", ctrl["vault"]))   # resposta ao popup do cofre
+                    continue
                 size = ctrl.get("resize") if isinstance(ctrl, dict) else None
                 if isinstance(size, list) and len(size) == 2:
                     try:
@@ -166,12 +172,26 @@ class WsIO:
             pass
         self.queue.put_nowait(None)
 
-    async def read(self) -> bytes:
+    async def _next(self):
         data = await self.queue.get()
         if data is None:
             self.queue.put_nowait(None)   # mantém o "fechado" para quem ler depois
             raise Closed()
         return data
+
+    async def read(self) -> bytes:
+        while True:
+            data = await self._next()
+            if isinstance(data, bytes):
+                return data               # (eventos de controle fora de hora são ignorados)
+
+    async def wait_vault(self) -> str:
+        """Espera a resposta do popup do cofre ("retry" = destrancou; "manual" = cancelou).
+        Teclas digitadas enquanto o popup está aberto são descartadas."""
+        while True:
+            data = await self._next()
+            if isinstance(data, tuple) and data[0] == "vault":
+                return data[1]
 
     async def write(self, data: bytes | str) -> None:
         if isinstance(data, str):
@@ -420,7 +440,19 @@ async def serve(ws, host_id: str, method: str | None, port: int | None, cols: in
     audit = None
     try:
         try:
-            host, entry, cred, note = await asyncio.to_thread(resolve_target, host_id, method, port)
+            host, entry, cred, note, locked = await asyncio.to_thread(resolve_target, host_id, method, port)
+            # Cofre trancado: pede para DESTRANCAR (popup no navegador) em vez da senha do equipamento.
+            # Destrancou -> relê a credencial e segue no login automático; cancelou -> login manual.
+            while locked and deps.STATE.allow_vault_unlock:
+                await io.info("[netops] Cofre trancado — destranque no popup para entrar com a credencial cadastrada.", "33")
+                await io.status("vault_locked", host=host.get("hostname") or str(host.get("id")),
+                                ip=host["mgmt_ip"], method=entry["method"], port=entry["port"])
+                if await io.wait_vault() != "retry":
+                    note = "cofre continua trancado — informe a senha manualmente"
+                    break
+                host, entry, cred, note, locked = await asyncio.to_thread(resolve_target, host_id, method, port)
+            if locked and not deps.STATE.allow_vault_unlock:
+                note = "cofre trancado (destrancar pela web está desabilitado) — informe a senha manualmente"
         except TargetError as exc:
             await io.info(f"[netops] {exc}", "31")
             await io.status("erro", error=str(exc))

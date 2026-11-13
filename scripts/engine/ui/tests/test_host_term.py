@@ -231,3 +231,80 @@ def test_telnet_autologin_when_host_has_two_methods(client, env, ssh_server, tel
     assert f"LOGIN OK {USER}" in out
     assert PASSWORD not in out
     assert any(s["status"] == "conectado" for s in statuses)
+
+
+# --------------------------------------------------------------------------- #
+# Cofre trancado: pede para DESTRANCAR (popup) em vez da senha do equipamento
+# --------------------------------------------------------------------------- #
+def _locked_vault_inventory(env, ssh_port):
+    """Cofre inicializado, senha da credencial cifrada (enc.v1:) e sessão TRANCADA. Devolve a chave."""
+    import deps
+    from lib import vault, vault_session
+    from vault import cli
+    _write_inventory(env, ssh_port=ssh_port)
+    meta, key = vault.build_meta("mestra-teste")
+    enc = vault.encrypt_value(key, PASSWORD)
+    base = f"version: 1\n\ncredentials:\n  CRED_T:\n    username: {USER}\n    password: '{enc}'\n"
+    cli._atomic_write(deps.CREDS_FILE, cli._set_vault_block(base, meta))
+    vault_session.clear_session()
+    return key
+
+
+def _wait_status(ws, wanted: str, timeout=10.0) -> tuple[str, dict | None]:
+    out, deadline = "", time.time() + timeout
+    while time.time() < deadline:
+        msg = ws.receive()
+        if msg.get("bytes") is not None:
+            out += msg["bytes"].decode("utf-8", "replace")
+        elif msg.get("text"):
+            st = json.loads(msg["text"])
+            if st.get("status") == wanted:
+                return out, st
+        else:
+            break
+    return out, None
+
+
+def test_locked_vault_asks_unlock_then_autologin(client, env, ssh_server):
+    from lib import vault_session
+    _allow()
+    key = _locked_vault_inventory(env, ssh_server)
+    sid = client.headers["X-Netops-Session"]
+    with client.websocket_connect(f"/api/term/host/1?method=ssh&auth={sid}") as ws:
+        out, st = _wait_status(ws, "vault_locked")
+        assert st is not None and st["method"] == "ssh"               # popup em vez de pedir senha
+        assert "Cofre trancado" in out and "password:" not in out.lower()
+        vault_session.set_session_key(key, 900)                       # (o popup chama /vault/unlock)
+        ws.send_text(json.dumps({"vault": "retry"}))
+        out, statuses = _collect(ws, "BEM-VINDO")
+    assert "BEM-VINDO" in out and PASSWORD not in out
+    assert any(s["status"] == "conectado" and s.get("user") == USER for s in statuses)
+
+
+def test_locked_vault_cancel_falls_back_to_manual_password(client, env, ssh_server):
+    _allow()
+    _locked_vault_inventory(env, ssh_server)
+    sid = client.headers["X-Netops-Session"]
+    with client.websocket_connect(f"/api/term/host/1?method=ssh&auth={sid}") as ws:
+        _, st = _wait_status(ws, "vault_locked")
+        assert st is not None
+        ws.send_text(json.dumps({"vault": "manual"}))                 # cancelou o popup
+        out, _ = _collect(ws, "password:")
+        assert f"{USER}@127.0.0.1's password:" in out                # usuário (texto puro) aproveitado
+        ws.send_bytes(PASSWORD.encode() + b"\r")
+        out, _ = _collect(ws, "BEM-VINDO")
+    assert "BEM-VINDO" in out
+
+
+def test_locked_vault_without_web_unlock_goes_manual(client, env, ssh_server):
+    import deps
+    _allow()
+    _locked_vault_inventory(env, ssh_server)
+    deps.STATE.allow_vault_unlock = False
+    try:
+        sid = client.headers["X-Netops-Session"]
+        with client.websocket_connect(f"/api/term/host/1?method=ssh&auth={sid}") as ws:
+            out, statuses = _collect(ws, "password:")
+        assert "desabilitado" in out and not any(s["status"] == "vault_locked" for s in statuses)
+    finally:
+        deps.STATE.allow_vault_unlock = True
