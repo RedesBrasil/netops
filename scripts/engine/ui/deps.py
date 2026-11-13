@@ -67,7 +67,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 # Vendors válidos (espelha PADRAO.md + schema). Usado p/ validar pastas de conhecimento.
 VENDORS = (
     "mikrotik", "unifi", "ubiquiti", "cisco", "huawei", "proxmox",
-    "vmware", "datacom", "linux", "fiberhome", "intelbras", "general",
+    "vmware", "datacom", "linux", "fiberhome", "intelbras", "zabbix", "general",
 )
 
 

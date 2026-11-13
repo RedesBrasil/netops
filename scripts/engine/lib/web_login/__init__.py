@@ -15,7 +15,8 @@ from .proxmox import ProxmoxProvider
 from .zabbix import ZabbixProvider
 
 REGISTRY: dict[str, WebLoginProvider] = {p.app: p for p in (ProxmoxProvider(), ZabbixProvider())}
-APP_BY_VENDOR = {"proxmox": "proxmox"}      # vendor do host -> app, quando o extra_access não declara `app`
+APP_BY_VENDOR = {"proxmox": "proxmox", "zabbix": "zabbix"}      # vendor do host -> app, quando o extra_access não declara `app`
+APP_DEFAULT_PATH = {"zabbix": "/zabbix"}      # caminho padrão da interface quando o extra_access não declara `path`
 
 
 def provider_for(app: str | None) -> WebLoginProvider | None:

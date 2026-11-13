@@ -42,7 +42,7 @@ Campos de um host:
 | `hostname` | sim | FQDN ou nome |
 | `mgmt_ip` | sim | IP de gerência |
 | `extra_ips` | opcional | Até 20 IPs adicionais, cada um `{ip, role?, description?}` (ex.: público, interno, VIP). `ip` aceita IPv4/IPv6 com máscara opcional; sem repetir entre si nem o `mgmt_ip`. Apenas informativo: os scripts conectam pelo `mgmt_ip` |
-| `vendor` | sim (host ou grupo) | `mikrotik`, `unifi`, `ubiquiti`, `cisco`, `huawei`, `proxmox`, `vmware`, `datacom`, `linux`, `fiberhome`, `intelbras` |
+| `vendor` | sim (host ou grupo) | `mikrotik`, `unifi`, `ubiquiti`, `cisco`, `huawei`, `proxmox`, `vmware`, `datacom`, `linux`, `fiberhome`, `intelbras`, `zabbix` |
 | `model` | recomendado | Modelo do equipamento |
 | `version` | opcional | Versão do SO/firmware, ou da aplicação quando o host é uma aplicação (Zabbix, EVE-NG, PVE, PBS…) (texto livre, até 80 caracteres; ex.: `RouterOS 7.16.2`, `Debian 12`, `Zabbix 7.0.32`). Herdável do grupo |
 | `icon` | opcional | ID da biblioteca local: `router`, `switch`, `linux-server`, `windows-server`, `access-point`, `olt`, `cloud`, `pc`, `proxmox`, `vmware` |

@@ -61,7 +61,7 @@ WEB_DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
 def web_entries(host: dict) -> list[dict]:
-    from lib.web_login import APP_BY_VENDOR  # noqa: PLC0415
+    from lib.web_login import APP_BY_VENDOR, APP_DEFAULT_PATH  # noqa: PLC0415
     principal = host.get("access") or {}
     items = [{"method": principal.get("method"), "port": principal.get("port"),
               "credential": host.get("credential")}]
@@ -81,7 +81,7 @@ def web_entries(host: dict) -> list[dict]:
         if (method, port) in seen:
             continue
         seen.add((method, port))
-        path = str(item.get("path") or "/")
+        app = str(item.get("app") or default_app or "").lower()
         out.append({"method": method, "port": port, "credential": item.get("credential"),
-                    "app": str(item.get("app") or default_app or "").lower(), "path": path})
+                    "app": app, "path": str(item.get("path") or APP_DEFAULT_PATH.get(app) or "/")})
     return out

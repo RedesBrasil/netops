@@ -83,6 +83,13 @@ VENDOR_MAP: dict[str, dict] = {
         "api": "proxmox_api",
         "notes": "Host Proxmox é Debian — acesso SSH como linux. Gestão via API PVE (proxmoxer).",
     },
+    "zabbix": {
+        "netmiko": "linux",
+        "netmiko_telnet": None,
+        "napalm": None,
+        "api": "zabbix_api",
+        "notes": "Servidor/HA/DB do Zabbix (Debian) — SSH como linux. Interface web com login automático (Acessar → Web); API JSON-RPC em /zabbix/api_jsonrpc.php.",
+    },
     "vmware": {
         "netmiko": "linux",
         "netmiko_telnet": None,

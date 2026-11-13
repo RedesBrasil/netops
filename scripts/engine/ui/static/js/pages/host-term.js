@@ -39,7 +39,8 @@ export function terminalEntries(row) {
 // Acesso web (http/https) — espelho de terminal_access.web_entries (mudar os dois juntos).
 const WEB_METHODS = ["http", "https"];
 const WEB_DEFAULT_PORT = { http: 80, https: 443 };
-const APP_BY_VENDOR = { proxmox: "proxmox" };   // = web_login.APP_BY_VENDOR
+const APP_BY_VENDOR = { proxmox: "proxmox", zabbix: "zabbix" };   // = web_login.APP_BY_VENDOR
+const APP_DEFAULT_PATH = { zabbix: "/zabbix" };                 // = web_login.APP_DEFAULT_PATH
 export function webEntries(row) {
   const eff = row.effective || {};
   const principal = eff.access || {};
@@ -53,7 +54,8 @@ export function webEntries(row) {
     const port = Number(it.port) || WEB_DEFAULT_PORT[method];
     if (seen.has(`${method}:${port}`)) continue;
     seen.add(`${method}:${port}`);
-    out.push({ kind: "web", method, port, credential: it.credential || "", app: String(it.app || defaultApp || "").toLowerCase(), path: it.path || "/" });
+    const app = String(it.app || defaultApp || "").toLowerCase();
+    out.push({ kind: "web", method, port, credential: it.credential || "", app, path: it.path || APP_DEFAULT_PATH[app] || "/" });
   }
   return out;
 }

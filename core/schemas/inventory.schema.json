@@ -85,7 +85,7 @@
       "properties": {
         "vendor": {
           "type": "string",
-          "enum": ["mikrotik", "unifi", "ubiquiti", "cisco", "huawei", "proxmox", "vmware", "datacom", "linux", "fiberhome", "intelbras", "other"]
+          "enum": ["mikrotik", "unifi", "ubiquiti", "cisco", "huawei", "proxmox", "vmware", "datacom", "linux", "fiberhome", "intelbras", "zabbix", "other"]
         },
         "role": {
           "type": "string",

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, FiniteFloat, StrictInt, model_validator, 
 
 Vendor = Literal[
     "mikrotik", "unifi", "ubiquiti", "cisco", "huawei", "proxmox",
-    "vmware", "datacom", "linux", "fiberhome", "intelbras", "other",
+    "vmware", "datacom", "linux", "fiberhome", "intelbras", "zabbix", "other",
 ]
 Role = Literal["core", "distribution", "access", "firewall", "wireless", "server", "other"]
 Method = Literal["ssh", "telnet", "api", "winbox", "http", "https", "ftp", "snmp"]

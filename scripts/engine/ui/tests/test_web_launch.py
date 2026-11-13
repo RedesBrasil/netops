@@ -89,6 +89,13 @@ def test_web_entries_app_by_vendor_and_dedupe():
         {"method": "http", "port": 80, "credential": "Z", "app": "zabbix", "path": "/zabbix"}]
 
 
+def test_web_entries_vendor_zabbix_implies_app_and_path():
+    from lib.terminal_access import web_entries
+    host = {"vendor": "ZABBIX", "credential": "C", "access": {"method": "SSH", "port": 22},
+            "extra_access": [{"method": "HTTP", "port": 80}]}
+    assert web_entries(host) == [{"method": "http", "port": 80, "credential": "C", "app": "zabbix", "path": "/zabbix"}]
+
+
 def test_proxmox_handoff_has_ticket_not_password(client, env, fake):
     _setup(env, fake.server_port, app="proxmox")
     r = _launch(client, fake.server_port)

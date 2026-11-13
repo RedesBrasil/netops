@@ -42,7 +42,7 @@ def collector(vendor: str):
         return "show running-config", str.strip
     if v == "huawei":
         return "display current-configuration", str.strip
-    if v in ("linux", "proxmox"):
+    if v in ("linux", "proxmox", "zabbix"):
         return LINUX_CMD, str.strip
     return None
 

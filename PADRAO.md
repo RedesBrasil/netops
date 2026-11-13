@@ -60,7 +60,7 @@ Arquivos especiais (prefixo `_`):
 ## 3. Vendors suportados
 
 `mikrotik`, `unifi`, `ubiquiti`, `cisco`, `huawei`, `proxmox`, `vmware`, `datacom`,
-`linux`, `fiberhome`, `intelbras` — e os que surgirem. `general` = boas práticas
+`linux`, `fiberhome`, `intelbras`, `zabbix` — e os que surgirem. `general` = boas práticas
 cross-vendor (não pertence a um fabricante).
 
 **Conteúdo seed completo:** `mikrotik` e `linux`. Os demais já têm a pasta e o
