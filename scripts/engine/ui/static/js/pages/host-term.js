@@ -65,27 +65,45 @@ export function accessEntries(row) {
 // Abre a interface web numa ABA nova já autenticada. O servidor faz o login (POST /web-launch) e devolve o
 // "handoff": um formulário que a própria aba envia ao host (o cookie é gravado pelo host). Sem navegador
 // controlado pelo servidor. A aba é aberta ANTES do await (senão o pop-up é bloqueado).
+// Apps cujo login termina numa tela intermediária do próprio host (Proxmox: 301 -> /api2/html): o POST roda
+// numa janelinha auxiliar (cookie é por navegador, vale p/ todas as abas) e a aba principal só mostra
+// "Autenticando…" e vai direto para a interface. Janelinha barrada pelo bloqueador = POST na própria aba.
+const AUX_LOGIN_APPS = ["proxmox"];
+
 export async function openWebLaunch(id, entry) {
   const name = `netops-web-${id}-${entry.port}`.replace(/[^\w-]/g, "_");
   const w = window.open("about:blank", name);
   if (!w) { toast("error", "Pop-up bloqueado: permita pop-ups para este site e tente de novo."); return; }
-  try { w.document.title = "Autenticando…"; w.document.body.textContent = "Autenticando…"; } catch (e) {}
+  let aux = null;
+  if (AUX_LOGIN_APPS.includes(entry.app)) {
+    try { aux = window.open("about:blank", name + "-auth", "popup,width=420,height=180"); } catch (e) { aux = null; }
+  }
+  const say = (win, text) => { try { win.document.title = text; win.document.body.style.cssText = "font:16px sans-serif;background:#11161c;color:#e6ebf1;padding:2em"; win.document.body.textContent = text; } catch (e) {} };
+  say(w, `Autenticando em ${entry.app || "host"}… redirecionando.`);
+  if (aux) say(aux, "Autenticando…");
   try {
     const r = await api.post(`/hosts/${encodeURIComponent(id)}/web-launch`, { method: entry.method, port: entry.port });
     if (r.mode === "form_post") {
+      const target = aux ? name + "-auth" : name;
       const f = document.createElement("form");
-      f.method = "POST"; f.action = r.action; f.target = name; f.style.display = "none";
+      f.method = "POST"; f.action = r.action; f.target = target; f.style.display = "none";
       for (const [k, v] of Object.entries(r.fields || {})) {
         const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; f.appendChild(i);
       }
       document.body.appendChild(f); f.submit(); f.remove();     // os campos saem da página na hora
-      if (r.then_url) setTimeout(() => { try { w.location.href = r.then_url; } catch (e) {} }, r.then_delay_ms || 0);
+      if (r.then_url) setTimeout(() => {
+        try { w.location.href = r.then_url; w.focus(); } catch (e) {}
+        if (aux) setTimeout(() => { try { aux.close(); } catch (e) {} }, 400);
+      }, (r.then_delay_ms || 0) + (aux ? 300 : 0));
+      else if (aux) setTimeout(() => { try { aux.close(); } catch (e) {} }, 1500);
     } else if (r.then_url) {
+      if (aux) { try { aux.close(); } catch (e) {} }
       w.location.href = r.then_url;
       if (r.note) toast("info", r.note);
     }
   } catch (e) {
     try { w.close(); } catch (e2) {}
+    if (aux) { try { aux.close(); } catch (e2) {} }
     toast("error", `Acesso web: ${e.message || e}`);
   }
 }
