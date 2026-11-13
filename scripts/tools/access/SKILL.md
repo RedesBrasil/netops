@@ -40,7 +40,7 @@ python3 scripts/tools/access/session.py close --session $S        # ou close --a
 # Telnet (só se o usuário pedir / equipamento legado): acrescente --telnet no run ou no open
 ```
 
-Qual usar: **`run`** quando já sei todos os comandos (1 login, sai no fim). **`open/exec`** quando o
+Qual usar: **`run`** quando já sei todos os comandos (1 login, 1 shell, sai no fim). **`open/exec`** quando o
 próximo comando depende da saída do anterior (medido: Linux 0,05 s/comando, MikroTik ~0,9 s, contra
 1,4–1,6 s+ de login a cada nova conexão) — mantém estado (`enable`, contexto) e não enche o log do
 equipamento de logins. Não use `ssh`/`sshpass`/`telnet` do sistema: só o `session.py` resolve a
@@ -48,12 +48,22 @@ credencial do cofre sem expô-la.
 
 ## Comportamento
 
-- Linux (`vendor` linux/proxmox): cada comando é um canal `exec` no mesmo transporte → exit code
-  real e stderr, sem parse de prompt (`cd` não persiste: use `cd /x && cmd`). `--shell` usa o
-  shell interativo do Netmiko.
+- Linux (`vendor` linux/proxmox): **1 login + 1 shell persistente** (`bash -l`, ou `sh -l`) por
+  sessão/`run`. Todos os comandos rodam no MESMO shell (mesmo `$$`): `export`, `cd`, funções,
+  `source` (ex.: `. ~/.nvm/nvm.sh`) e venv **persistem** entre `exec`s — com exit code real e stderr
+  separado (sem PTY; fim do comando detectado por marcador aleatório). `modo=shell-persistente`.
+  - stdin dos comandos = `/dev/null` (nada de prompt interativo; `read` retorna na hora).
+  - `exit`/`set -e` que derruba o shell: devolve a saída e o exit code; o próximo comando sobe um
+    shell novo **no mesmo login** e avisa `AVISO: shell novo — variáveis/cd anteriores foram perdidos`.
+  - Processo em background que deve sobreviver ao `close`: `setsid nohup cmd >/tmp/x.log 2>&1 &`.
+  - Host sem `base64`/shell restrito: cai sozinho para `modo=exec-por-comando` (sem estado).
+  - `--shell` força o shell do Netmiko com PTY (raro: só p/ comando que exige terminal; sem exit code).
+- Rede (MikroTik/Cisco/Huawei...): shell Netmiko único por sessão — contexto/`enable` persistem.
 - Comando contínuo/paginado (ping sem count, `/tool torch`): `--timing --timeout N` lê por N s,
   manda Ctrl-C e devolve a saída (`status=interrompido`, rc 0).
-- `status=timeout` (rc 3): mandou Ctrl-C e reaprendeu o prompt — a sessão segue viva. Com vários
+- `status=timeout` (rc 3): interrompe (Ctrl-C na rede; SIGINT nos filhos do shell no Linux) — a
+  sessão e o estado seguem vivos. Se nem assim volta (loop em builtin), o shell é morto e o próximo
+  comando abre outro (com o aviso de estado perdido). Com vários
   `--command`, para no primeiro que falha. Queda de conexão: reconecta **antes** do próximo comando e
   **nunca reenvia** o que estava em curso.
 - Comando multilinha/aspas complexas: mande em base64 (`echo <b64> | base64 -d | sh`) ou use

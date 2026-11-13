@@ -17,11 +17,15 @@ Uso:
     python3 scripts/tools/access/session.py list
     python3 scripts/tools/access/session.py close --session <ID>     # ou: close --all
 
-Linux (vendor linux/proxmox/...): por padrão cada comando roda num canal `exec` do MESMO
-transporte SSH (sem parse de prompt, com exit code e stderr; `cd` não persiste — use
-`cd /x && cmd`). `open --shell` força o shell interativo do Netmiko.
+Linux (vendor linux/proxmox/...): 1 autenticação + 1 shell persistente (bash, ou sh) num canal do
+transporte SSH. TODOS os comandos da sessão (ou do `run`) rodam nesse MESMO shell: `export`, `cd`,
+funções, `source` e venv persistem entre comandos — e ainda há exit code real e stderr separado
+(sem PTY e sem parse de prompt: o fim de cada comando é detectado por marcador aleatório).
+O stdin dos comandos é /dev/null (sem PTY: nada de prompt interativo). `exit`/`set -e` que mata o
+shell: a sessão sobe um shell novo no mesmo login e avisa "estado do shell reiniciado".
+`open --shell` força o shell interativo do Netmiko (PTY), para o raro comando que exige terminal.
 Comandos que não terminam sozinhos (ping sem count, /tool torch): use `exec --timing`;
-em timeout a sessão manda Ctrl-C e devolve o que leu (status=timeout), sem cair.
+em timeout a sessão interrompe o comando (Ctrl-C / SIGINT nos filhos) e devolve o que leu, sem cair.
 
 Regras: só hosts do inventário; mudança de config continua exigindo baseline + rollback
 (workflow apply-config-change). Toda saída vai para runs/<ts>-session-<host>/session.log.
@@ -29,8 +33,10 @@ Regras: só hosts do inventário; mudança de config continua exigindo baseline 
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
+import re
 import secrets
 import signal
 import socket
@@ -113,12 +119,143 @@ def _cleanup(sid: str) -> None:
             pass
 
 
+# ----------------------------------------------------------------- shell persistente (Linux)
+class ShellDied(Exception):
+    """O shell remoto terminou (exit, set -e, kill) — o transporte SSH continua autenticado."""
+
+
+class PersistentShell:
+    """Um único bash/sh remoto, sem PTY, num canal do transporte SSH já autenticado.
+
+    Cada comando é enviado em base64 e executado com `eval` no próprio shell (não em subshell),
+    então variáveis, `cd`, funções e `source` persistem. O fim do comando é detectado por um
+    marcador aleatório (impossível de colidir com a saída) que carrega o exit code; o stderr
+    recebe um marcador próprio para sincronizar os dois fluxos.
+    """
+
+    START_CMD = "if command -v bash >/dev/null 2>&1; then exec bash -l; else exec sh -l; fi"
+    START_TIMEOUT = 20
+
+    def __init__(self, transport):
+        self.transport = transport
+        self.mark = f"__NETOPS_{secrets.token_hex(8)}__".encode()
+        self.re_out = re.compile(re.escape(self.mark) + rb"(-?\d+)\n")
+        self.chan = transport.open_session()
+        self.chan.exec_command(self.START_CMD)
+        self.pid = None
+        # Handshake: descarta o que o .profile imprimir e aprende o PID do shell (para interromper).
+        # Sem base64 no host, o shell não serve (PID "0" = recusa → canal exec por comando).
+        self.chan.sendall(f"if command -v base64 >/dev/null 2>&1; then __p=$$; else __p=0; fi; "
+                          f"printf '%s%s\\n' '{self.mark.decode()}' \"$__p\"; unset __p; "
+                          f"printf '%s\\n' '{self.mark.decode()}' >&2\n".encode())
+        out, _err, rc, done = self._collect(time.time() + self.START_TIMEOUT)
+        if not done or rc is None or rc <= 1:
+            self.close()
+            raise RuntimeError(f"shell persistente não respondeu ao handshake: {out[-200:]!r}")
+        self.pid = rc
+
+    def alive(self) -> bool:
+        return not self.chan.closed and not self.chan.exit_status_ready() and self.transport.is_active()
+
+    def _collect(self, deadline: float):
+        """Lê stdout/stderr até os dois marcadores (ou o prazo, ou o shell morrer)."""
+        out, err = bytearray(), bytearray()
+        got_out = got_err = False
+        rc = None
+        err_grace = None                       # após o marcador do stdout, espera o do stderr no máx. 2 s
+        while True:
+            busy = False
+            if self.chan.recv_ready():
+                out += self.chan.recv(65536); busy = True
+            if self.chan.recv_stderr_ready():
+                err += self.chan.recv_stderr(65536); busy = True
+            if not got_out:
+                m = self.re_out.search(out)
+                if m:
+                    got_out, rc = True, int(m.group(1))
+                    del out[m.start():]
+                    err_grace = time.time() + 2
+            if not got_err:
+                i = err.find(self.mark + b"\n")
+                if i >= 0:
+                    got_err = True
+                    del err[i:]
+            if got_out and (got_err or time.time() > err_grace):
+                return bytes(out), bytes(err), rc, True
+            if (self.chan.exit_status_ready() and not self.chan.recv_ready()
+                    and not self.chan.recv_stderr_ready()):
+                raise ShellDied(bytes(out), bytes(err), self.chan.recv_exit_status())
+            if time.time() > deadline:
+                return bytes(out), bytes(err), None, False
+            if not busy:
+                time.sleep(0.02)
+
+    def _signal_children(self, sig: str) -> None:
+        """Manda `sig` a todos os descendentes do shell (o shell em si fica vivo), por outro canal."""
+        script = ('k(){ for c in $(pgrep -P "$1" 2>/dev/null); do k "$c" "$2"; '
+                  'kill -"$2" "$c" 2>/dev/null; done; }; ' f"k {self.pid} {sig}")
+        try:
+            side = self.transport.open_session()
+            side.exec_command(script)
+            side.recv_exit_status()
+            side.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def run(self, cmd: str, timeout: float) -> dict:
+        b64 = base64.b64encode(cmd.encode()).decode()
+        m = self.mark.decode()
+        wrapper = (f"eval \"$(printf '%s' '{b64}' | base64 -d)\" </dev/null; "
+                   f"printf '%s%s\\n' '{m}' \"$?\"; printf '%s\\n' '{m}' >&2\n")
+        self.chan.sendall(wrapper.encode())
+        out, err, rc, done = self._collect(time.time() + timeout)
+        if done:
+            return {"status": "ok", "output": out.decode(errors="replace"),
+                    "stderr": err.decode(errors="replace"), "exit": rc}
+        # Prazo esgotado: Ctrl-C nos filhos; se o shell não voltar, mata o shell (estado perdido).
+        self._signal_children("INT")
+        more_out, more_err, rc, done = self._collect(time.time() + 3)
+        if not done:
+            self._signal_children("KILL")
+            more_out2, more_err2, rc, done = self._collect(time.time() + 3)
+            more_out, more_err = more_out + more_out2, more_err + more_err2
+        res = {"status": "timeout", "output": (out + more_out).decode(errors="replace"),
+               "stderr": (err + more_err).decode(errors="replace"), "exit": rc}
+        if not done:                              # loop em builtin etc.: shell irrecuperável
+            self._signal_children("KILL")
+            try:
+                side = self.transport.open_session()
+                side.exec_command(f"kill -KILL {self.pid} 2>/dev/null")
+                side.recv_exit_status()
+                side.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self.close()
+            res["shell_died"] = True
+        return res
+
+    def close(self) -> None:
+        try:
+            if self.pid and not self.chan.closed:
+                self.chan.sendall(b"exit 0\n")
+                self.chan.shutdown_write()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.chan.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 # ----------------------------------------------------------------- servidor (processo em background)
 class Session:
     def __init__(self, sid: str, host_ref: int | str, method: str, shell: bool):
         self.sid, self.host_ref, self.method, self.force_shell = sid, host_ref, method, shell
         self.conn = None
         self.exec_mode = False
+        self.shell: PersistentShell | None = None
+        self.shell_fallback = False      # host não aceitou o shell persistente: canal exec por comando
+        self.shell_starts = 0
         self.started = time.time()
         self.last_used = time.time()
         self.count = 0
@@ -155,8 +292,36 @@ class Session:
         transport = self._transport()
         if transport is not None:
             transport.set_keepalive(30)          # NAT/firewall não derruba a sessão ociosa
+        self.shell = None
+        self.shell_starts = 0
         self.log(f"CONECTADO host={host['name']} ip={host.get('mgmt_ip')} method={self.method} "
-                 f"device_type={dtype} modo={'exec' if self.exec_mode else 'shell'}")
+                 f"device_type={dtype} modo={self.mode_name()}")
+        if self.exec_mode:
+            self._ensure_shell()
+
+    def mode_name(self) -> str:
+        if not self.exec_mode:
+            return "shell"
+        return "exec-por-comando" if self.shell_fallback else "shell-persistente"
+
+    def _ensure_shell(self) -> bool:
+        """Garante o shell persistente vivo. Devolve True se precisou (re)criar um que já existia."""
+        if self.shell_fallback:
+            return False
+        if self.shell is not None and self.shell.alive():
+            return False
+        restarted = self.shell_starts > 0
+        if self.shell is not None:
+            self.shell.close()
+        try:
+            self.shell = PersistentShell(self._transport())
+            self.shell_starts += 1
+            self.log(f"shell persistente pid={self.shell.pid}" + (" (REINICIADO: estado anterior perdido)"
+                                                                   if restarted else ""))
+        except Exception as exc:  # noqa: BLE001 — shell restrito/sem base64: volta ao canal por comando
+            self.shell, self.shell_fallback = None, True
+            self.log(f"shell persistente indisponível ({exc}) — usando canal exec por comando (sem estado)")
+        return restarted
 
     def _transport(self):
         pre = getattr(self.conn, "remote_conn_pre", None)
@@ -203,6 +368,23 @@ class Session:
         chan.close()
         return {"status": "ok", "output": b"".join(out).decode(errors="replace"),
                 "stderr": b"".join(err).decode(errors="replace"), "exit": rc}
+
+    def _run_persistent(self, cmd: str, timeout: float, timing: bool) -> dict:
+        try:
+            res = self.shell.run(cmd, timeout)
+        except ShellDied as died:
+            out, err, rc = died.args
+            self.log(f"shell terminou durante o comando (exit {rc}) — o próximo comando sobe um shell novo")
+            self.shell = None
+            return {"status": "ok", "output": out.decode(errors="replace"),
+                    "stderr": err.decode(errors="replace"), "exit": rc, "shell_ended": True}
+        if res.pop("shell_died", False):
+            self.log("shell irrecuperável após timeout — morto; o próximo comando sobe um shell novo")
+            self.shell = None
+            res["shell_ended"] = True
+        if timing and res["status"] == "timeout":
+            res["status"] = "interrompido"     # com --timing, esgotar o prazo é o esperado
+        return res
 
     def _run_shell(self, cmd: str, timeout: float, expect: str | None, timing: bool) -> dict:
         from netmiko.exceptions import ReadTimeout
@@ -263,14 +445,26 @@ class Session:
                 pass
             self.connect()
             reconnected = True
+        state_reset = reconnected and self.count > 0 and self.exec_mode
         t0 = time.time()
         try:
-            res = self._run_exec(cmd, timeout) if self.exec_mode else self._run_shell(cmd, timeout, expect, timing)
+            if self.exec_mode:
+                if self._ensure_shell():
+                    state_reset = True
+                if self.shell is not None:
+                    res = self._run_persistent(cmd, timeout, timing)
+                else:
+                    res = self._run_exec(cmd, timeout)
+                    if timing and res["status"] == "timeout":
+                        res["status"] = "interrompido"
+            else:
+                res = self._run_shell(cmd, timeout, expect, timing)
         except Exception as exc:  # noqa: BLE001
             # Não reenvia: o comando pode ter sido aplicado. Quem chama decide.
             res = {"status": "erro", "output": "", "stderr": f"{type(exc).__name__}: {exc}", "exit": None}
         res["seconds"] = round(time.time() - t0, 2)
         res["reconnected"] = reconnected
+        res["state_reset"] = state_reset
         self.count += 1
         self.last_used = time.time()
         self.log(f"$ {cmd}\n--- status={res['status']} exit={res['exit']} t={res['seconds']}s\n"
@@ -278,6 +472,9 @@ class Session:
         return res
 
     def close(self) -> None:
+        if self.shell is not None:
+            self.shell.close()
+            self.shell = None
         try:
             if self.conn:
                 self.conn.disconnect()
@@ -303,7 +500,7 @@ def serve(sid: str, host_ref: int | str, method: str, shell: bool) -> int:
     srv.listen(4)
     meta = {"session": sid, "host": sess.host["name"], "ip": sess.host.get("mgmt_ip"),
             "vendor": sess.host.get("vendor"), "method": method,
-            "mode": "exec" if sess.exec_mode else "shell", "pid": os.getpid(),
+            "mode": sess.mode_name(), "pid": os.getpid(),
             "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "log": str(sess.log_path)}
     meta_path.write_text(json.dumps(meta))
@@ -346,6 +543,7 @@ def serve(sid: str, host_ref: int | str, method: str, shell: bool) -> int:
                                     req.get("expect"), bool(req.get("timing")))
                 elif op == "ping":
                     resp = {"status": "ok", "alive": sess.alive(), "commands": sess.count,
+                            "mode": sess.mode_name(),
                             "idle": int(time.time() - sess.last_used)}
                 elif op == "close":
                     resp, stop["flag"] = {"status": "ok"}, True
@@ -403,10 +601,16 @@ def _print_result(cmd: str, res: dict, multi: bool) -> int | None:
     """Imprime a saída de um comando. Devolve 3 se a sequência deve parar, o exit code se ≠0, ou None."""
     if multi:
         print(f"### {cmd}")
-    print(res.get("output", ""), end="" if res.get("output", "").endswith("\n") else "\n", flush=True)
+    out = res.get("output", "")
+    if out:
+        print(out, end="" if out.endswith("\n") else "\n", flush=True)
     if res.get("stderr"):
         print(res["stderr"], file=sys.stderr, end="" if res["stderr"].endswith("\n") else "\n")
     extra = " (reconectou antes)" if res.get("reconnected") else ""
+    if res.get("state_reset"):
+        extra += " (AVISO: shell novo — variáveis/cd anteriores foram perdidos)"
+    if res.get("shell_ended"):
+        extra += " (o shell terminou; o próximo comando abre outro no mesmo login)"
     print(f"[status={res.get('status')} exit={res.get('exit')} {res.get('seconds')}s{extra}]",
           file=sys.stderr)
     if res.get("status") not in ("ok", "interrompido"):
@@ -521,7 +725,7 @@ def main() -> int:
     p_run.add_argument("--commands-file", help="Arquivo com um comando por linha")
     p_run.add_argument("--telnet", action="store_true", help="Usa Telnet (legado) em vez de SSH")
     p_run.add_argument("--shell", action="store_true",
-                       help="Linux: shell interativo (estado/cd persiste) em vez de canal exec")
+                       help="Linux: shell interativo do Netmiko com PTY (só p/ comando que exige terminal; sem exit code)")
     p_run.add_argument("--timeout", type=float, default=60, help="Segundos por comando (padrão 60)")
     p_run.add_argument("--expect", help="Regex do prompt esperado (shell), se ele mudar")
     p_run.add_argument("--timing", action="store_true",
@@ -533,7 +737,7 @@ def main() -> int:
     sel.add_argument("--host", help="Nome único ou alias legado do host")
     p_open.add_argument("--telnet", action="store_true", help="Usa Telnet (legado) em vez de SSH")
     p_open.add_argument("--shell", action="store_true",
-                        help="Linux: shell interativo (estado/cd persiste) em vez de canal exec")
+                        help="Linux: shell interativo do Netmiko com PTY (só p/ comando que exige terminal; sem exit code)")
 
     p_exec = sub.add_parser("exec", help="Roda comando(s) numa sessão aberta")
     p_exec.add_argument("--session", required=True)
