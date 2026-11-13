@@ -726,3 +726,16 @@ th.rt-drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .rt-menu-move { display: flex; gap: 2px; }
 .rt-menu-move button { padding: 1px 6px; }
 .rt-menu-foot { border-top: 1px solid var(--border); margin-top: 6px; padding: 8px 12px 4px; text-align: right; }
+
+/* IPs adicionais no cadastro de host */
+.extra-ips .muted { color: var(--muted); font-weight: 400; font-size: 12px; }
+.extra-ip-row { display: grid; grid-template-columns: 1.3fr 1fr 1.6fr auto; gap: 8px; margin: 6px 0; align-items: center; }
+.extra-ip-row .err { grid-column: 1 / -1; margin-top: 0; }
+@media (max-width: 640px) { .extra-ip-row { grid-template-columns: 1fr auto; } .extra-ip-row button { grid-row: 1; grid-column: 2; } }
+
+/* Campo de senha com olhinho */
+.pw-wrap { position: relative; display: block; width: 100%; }
+.pw-wrap input { padding-right: 36px !important; }
+.pw-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: none; border: 0;
+  cursor: pointer; font-size: 16px; padding: 2px 6px; line-height: 1; opacity: .7; }
+.pw-eye:hover { opacity: 1; }

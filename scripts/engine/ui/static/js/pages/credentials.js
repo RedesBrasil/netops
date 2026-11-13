@@ -2,7 +2,7 @@
 import { html, useState, api, useResource, Spinner, Badge, toast, handleError, useStore, vaultStore } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
 import { FilterBar, DataTable, Field, Modal, ConfirmDialog, RenameCascadeHint } from "../components.js";
-import { vaultWritable } from "../components.js";
+import { vaultWritable, PasswordInput } from "../components.js";
 
 // URL: #credentials[/<nome>|/new|/<nome>/password|/<nome>/secret][?q=]  (core/rules/urls-navegacao.md)
 export function CredentialsPage() {
@@ -120,9 +120,9 @@ function RotateModal({ target, writable, onClose, onSaved }) {
     ${!writable
       ? html`<div class="vault-banner locked">🔒 Cofre trancado. Destranque na aba Terminal para definir a senha.</div>`
       : html`<div>
-          <${Field} label="Novo valor"><input type="password" autocomplete="new-password" value=${v1} onInput=${(e) => setV1(e.target.value)} /><//>
+          <${Field} label="Novo valor"><${PasswordInput} autocomplete="new-password" value=${v1} onInput=${(e) => setV1(e.target.value)} /><//>
           <${Field} label="Confirme" error=${mismatch ? "Os valores não conferem" : null}>
-            <input type="password" autocomplete="new-password" value=${v2} onInput=${(e) => setV2(e.target.value)} /><//>
+            <${PasswordInput} autocomplete="new-password" value=${v2} onInput=${(e) => setV2(e.target.value)} /><//>
         </div>`}
     <div class="modal-actions"><button onClick=${onClose}>Cancelar</button>
       <button class="primary" disabled=${!writable || !v1 || mismatch} onClick=${save}>Cifrar e gravar</button></div>

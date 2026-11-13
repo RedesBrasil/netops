@@ -287,6 +287,17 @@ export function CodeTextEditor({ value, onChange, name = "" }) {
 /* ---------------------------- LoginScreen ------------------------------- */
 // Gate de acesso ao console: a senha-mestra do cofre autentica a sessão de login (e
 // destranca o cofre na mesma ação). Mesmo caminho de verificação do UnlockModal.
+/* --------------------------- PasswordInput ------------------------------ */
+// Campo de senha com "olhinho" para mostrar/ocultar o que está sendo digitado.
+export function PasswordInput({ value, onInput, ...rest }) {
+  const [show, setShow] = useState(false);
+  return html`<span class="pw-wrap">
+    <input ...${rest} type=${show ? "text" : "password"} value=${value} onInput=${onInput} />
+    <button type="button" class="pw-eye" tabindex="-1" title=${show ? "Ocultar senha" : "Mostrar senha"}
+      aria-label=${show ? "Ocultar senha" : "Mostrar senha"} onClick=${() => setShow(!show)}>${show ? "🙈" : "👁"}</button>
+  </span>`;
+}
+
 export function LoginScreen({ onAuthed }) {
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
@@ -315,7 +326,7 @@ export function LoginScreen({ onAuthed }) {
       <p class="help">Acesso protegido. Entre com a senha-mestra do cofre.</p>
       <div class="field">
         <label>Senha mestra</label>
-        <input type="password" autocomplete="current-password" autofocus value=${pw}
+        <${PasswordInput} autocomplete="current-password" autofocus value=${pw}
           onInput=${(e) => setPw(e.target.value)} disabled=${busy} />
         ${err && html`<div class="err">${err}</div>`}
       </div>
@@ -356,7 +367,7 @@ export function UnlockModal({ onClose }) {
         registrada nem devolvida. A sessão vale também para a CLI e os agentes.</p>
       <div class="field">
         <label>Senha mestra</label>
-        <input type="password" autocomplete="off" autofocus value=${pw}
+        <${PasswordInput} autocomplete="off" autofocus value=${pw}
           onInput=${(e) => setPw(e.target.value)} disabled=${busy} />
         ${err && html`<div class="err">${err}</div>`}
       </div>
