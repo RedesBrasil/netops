@@ -108,7 +108,7 @@ def test_create_edit_delete_never_reuses_id(client, env):
     first = created.json()["id"]
     assert type(first) is int
     assert client.patch(f"/api/hosts/{first}", json={"hostname": "Renomeado"}).status_code == 200
-    assert client.get(f"/api/hosts/{first}").json()["effective"]["hostname"] == "Renomeado"
+    assert client.get(f"/api/hosts/{first}").json()["effective"]["hostname"] == "RENOMEADO"
     assert client.delete(f"/api/hosts/{first}").status_code == 200
     again = client.post("/api/hosts", json=fields)
     assert again.status_code == 201, again.text

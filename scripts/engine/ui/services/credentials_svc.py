@@ -26,6 +26,15 @@ ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")  # espelha models.CredentialCreate
 # --------------------------------------------------------------------------- #
 # Leitura (mascarada)
 # --------------------------------------------------------------------------- #
+def _ckey(creds: dict, name: str) -> str:
+    """Chave real da credencial (aceita qualquer caixa); KeyError se não existir."""
+    folded = str(name).casefold()
+    for k in creds or {}:
+        if str(k).casefold() == folded:
+            return k
+    raise KeyError(f"credencial '{name}' não existe")
+
+
 def load_creds() -> tuple[dict, str]:
     import yaml  # noqa: PLC0415
     text, rev, _ = yaml_io.read_text_meta(deps.CREDS_FILE)
@@ -55,8 +64,7 @@ def list_credentials() -> dict:
 def get_credential(name: str) -> dict:
     data, rev = load_creds()
     creds = data.get("credentials") or {}
-    if name not in creds:
-        raise KeyError(f"credencial '{name}' não existe")
+    name = _ckey(creds, name)
     return _mask_one(name, dict(creds[name] or {})) | {"rev": rev}
 
 
@@ -82,7 +90,8 @@ def _clean_fields(fields: dict) -> dict:
 def create_credential(name: str, fields: dict, rev: str | None) -> dict:
     data, y = _load_doc()
     creds = data.setdefault("credentials", {})
-    if name in creds:
+    name = name.strip().upper()  # padrão de cadastro: MAIÚSCULAS
+    if any(str(k).casefold() == name.casefold() for k in creds):
         raise deps.ValidationFailed([{"loc": "name", "msg": f"credencial '{name}' já existe"}])
     creds[name] = _clean_fields(fields)
     new_rev = yaml_io.write_rt(deps.CREDS_FILE, y, data, expected=rev, mode=MODE_600, backup=True)
@@ -93,8 +102,7 @@ def create_credential(name: str, fields: dict, rev: str | None) -> dict:
 def update_credential(name: str, fields: dict, rev: str | None, *, partial: bool) -> dict:
     data, y = _load_doc()
     creds = data.get("credentials") or {}
-    if name not in creds:
-        raise KeyError(f"credencial '{name}' não existe")
+    name = _ckey(creds, name)
     node = creds[name]
     if node is None:
         node = creds[name] = {}
@@ -112,8 +120,7 @@ def update_credential(name: str, fields: dict, rev: str | None, *, partial: bool
 def delete_credential(name: str, rev: str | None, *, force: bool) -> dict:
     data, y = _load_doc()
     creds = data.get("credentials") or {}
-    if name not in creds:
-        raise KeyError(f"credencial '{name}' não existe")
+    name = _ckey(creds, name)
     used = _referencing_hosts(name)
     if used and not force:
         raise deps.ConflictError(yaml_io.file_rev(deps.CREDS_FILE),
@@ -136,10 +143,10 @@ def _credential_refs(cred_name: str) -> list[dict]:
     refs = []
     from lib.host_identity import host_index
     for n, h in host_index(data).items():
-        if (h or {}).get("credential") == cred_name:
+        if str((h or {}).get("credential") or "").casefold() == str(cred_name).casefold():
             refs.append({"kind": "host", "id": n, "field": "credential", "label": f"host {n}"})
     for n, g in (data.get("groups") or {}).items():
-        if (g or {}).get("credential") == cred_name:
+        if str((g or {}).get("credential") or "").casefold() == str(cred_name).casefold():
             refs.append({"kind": "group", "id": n, "field": "credential", "label": f"grupo {n}"})
     return refs
 
@@ -149,8 +156,7 @@ def _credential_refs(cred_name: str) -> list[dict]:
 # --------------------------------------------------------------------------- #
 def credential_references(name: str) -> dict:
     data, _ = load_creds()
-    if name not in (data.get("credentials") or {}):
-        raise KeyError(f"credencial '{name}' não existe")
+    name = _ckey(data.get("credentials") or {}, name)
     refs = _credential_refs(name)
     return {"name": name, "references": refs, "count": len(refs)}
 
@@ -162,10 +168,10 @@ def rename_credential(old: str, new: str, rev: str | None) -> dict:
     (ruamel round-trip); os tokens enc.v1: viajam junto com o valor."""
     if not ID_RE.match(new):
         raise deps.ValidationFailed([{"loc": "to", "msg": "use a-z, 0-9, ponto, hífen ou underline"}])
+    new = new.strip().upper()
     data, y = _load_doc()
     creds = data.get("credentials") or {}
-    if old not in creds:
-        raise KeyError(f"credencial '{old}' não existe")
+    old = _ckey(creds, old)
     if new == old:
         raise deps.ValidationFailed([{"loc": "to", "msg": "o novo nome é igual ao atual"}])
     if new in creds:
@@ -182,7 +188,7 @@ def rename_credential(old: str, new: str, rev: str | None) -> dict:
             from lib.host_identity import host_index
             nodes = host_index(hosts_data) if section == "hosts" else (hosts_data.get(section) or {})
             for node_id, node in nodes.items():
-                if node and node.get("credential") == old:
+                if node and str(node.get("credential") or "").casefold() == old.casefold():
                     node["credential"] = new
                     updated.append({"kind": kind, "id": node_id, "field": "credential"})
         if updated:
@@ -211,8 +217,7 @@ def set_secret(name: str, field: str, value: str, rev: str | None) -> dict:
         raise deps.ConflictError(current_rev)
     import yaml as _yaml  # noqa: PLC0415
     data = _yaml.safe_load(text) if text.strip() else {}
-    if name not in ((data or {}).get("credentials") or {}):
-        raise KeyError(f"credencial '{name}' não existe")
+    name = _ckey((data or {}).get("credentials") or {}, name)
 
     meta = vault.load_meta(data)              # levanta VaultNotInitialized se sem bloco vault:
     key = vault_session.get_session_key()     # levanta VaultLocked se trancado

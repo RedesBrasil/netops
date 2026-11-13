@@ -67,7 +67,7 @@ def test_custom_map_and_rename_cascade(client, env):
     assert m['members'] == [ident]
     assert m['positions'] == [{'host_id': ident, 'x': 20, 'y': 50}]
     assert client.get(f'/api/hosts/{ident}/references').json()['count'] >= 1
-    assert next(h for h in snapshot(client)['hosts'] if h['id'] == ident)['hostname'] == 'new'
+    assert next(h for h in snapshot(client)['hosts'] if h['id'] == ident)['hostname'] == 'NEW'
 
 
 def test_stable_link_ids_and_table_edits(client, env):

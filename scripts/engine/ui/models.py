@@ -23,10 +23,23 @@ class Access(BaseModel):
     method: Optional[Method] = None
     port: Optional[Port] = None
 
+    @field_validator("method", mode="before")
+    @classmethod
+    def _method_any_case(cls, value):
+        return value.strip().lower() if isinstance(value, str) else value
+
 
 class NodeUpsert(BaseModel):
-    """Campos comuns a host e grupo (herdáveis)."""
+    """Campos comuns a host e grupo (herdáveis).
+
+    Padrão de cadastro: tudo em MAIÚSCULAS (o serviço grava assim), exceto site e notes.
+    Os enums são validados sem diferenciar caixa."""
     model_config = {"extra": "forbid"}
+
+    @field_validator("vendor", "role", mode="before")
+    @classmethod
+    def _enum_any_case(cls, value):
+        return value.strip().lower() if isinstance(value, str) else value
     vendor: Optional[Vendor] = None
     role: Optional[Role] = None
     model: Optional[str] = None

@@ -244,7 +244,7 @@ def test_encrypt_on_write_roundtrip(client, env):
     from lib.inventory import resolve_secret
     import yaml
     data = yaml.safe_load(env.joinpath("network/credentials.yaml").read_text())
-    token = data["credentials"]["cred_x"]["password"]
+    token = data["credentials"]["CRED_X"]["password"]
     assert token.startswith("enc.v1:")
     assert resolve_secret(token) == "super-secreto"
 
@@ -623,7 +623,7 @@ def test_edit_hostname_preserves_host_id_and_topology(client, env):
     assert r.status_code == 200, r.text
     assert r.json()["id"] == hid
     hosts = _hosts_yaml(env)["hosts"]
-    assert next(host for host in hosts if host["id"] == hid)["hostname"] == "t-new"
+    assert next(host for host in hosts if host["id"] == hid)["hostname"] == "T-NEW"
     topo = yaml.safe_load((env / "network" / "topology.yaml").read_text())
     ends = [e.get("host") for lk in topo["links"] for e in (lk.get("a"), lk.get("b")) if e]
     assert hid in ends and all(type(value) is int for value in ends)
@@ -669,10 +669,10 @@ def test_rename_group_cascades_hosts(client, env):
     r = client.post("/api/groups/grp-x/rename", json={"to": "grp-y"}, headers={"If-Match": rev})
     assert r.status_code == 200, r.text
     data = _hosts_yaml(env)
-    assert "grp-y" in data["groups"] and "grp-x" not in data["groups"]
+    assert "GRP-Y" in data["groups"] and "GRP-X" not in data["groups"]
     hosts = {host["id"]: host for host in data["hosts"]}
-    assert hosts[h1]["group"] == "grp-y"
-    assert hosts[h2]["group"] == "grp-y"
+    assert hosts[h1]["group"] == "GRP-Y"
+    assert hosts[h2]["group"] == "GRP-Y"
 
 
 def test_rename_credential_cascades_and_keeps_mode(client, env):
@@ -685,8 +685,8 @@ def test_rename_credential_cascades_and_keeps_mode(client, env):
     r = client.post("/api/credentials/cred_t/rename", json={"to": "cred_t2"}, headers={"If-Match": rev})
     assert r.status_code == 200, r.text
     creds = yaml.safe_load((env / "network" / "credentials.yaml").read_text())["credentials"]
-    assert "cred_t2" in creds and "cred_t" not in creds
-    assert next(host for host in _hosts_yaml(env)["hosts"] if host["id"] == hid)["credential"] == "cred_t2"
+    assert "CRED_T2" in creds and "CRED_T" not in creds and "cred_t" not in creds
+    assert next(host for host in _hosts_yaml(env)["hosts"] if host["id"] == hid)["credential"] == "CRED_T2"
     mode = stat.S_IMODE(os.stat(env / "network" / "credentials.yaml").st_mode)
     assert mode == 0o600
 
@@ -701,7 +701,7 @@ def test_rename_credential_preserves_encrypted_secret(client, env):
     import yaml
     from lib.inventory import resolve_secret
     creds = yaml.safe_load((env / "network" / "credentials.yaml").read_text())["credentials"]
-    token = creds["cred_y"]["password"]
+    token = creds["CRED_Y"]["password"]
     assert token.startswith("enc.v1:")
     assert resolve_secret(token) == "super-secreto"     # round-trip intacto sob o novo nome
 
@@ -877,3 +877,23 @@ def test_scripts_lists_skills(client, env, monkeypatch):
     # cria o SKILL.md que falta; .md comum continua barrado
     assert client.post("/api/scripts", json={"path": "zabbix/SKILL.md", "text": "# Z\n"}).status_code == 201
     assert client.post("/api/scripts", json={"path": "SKILL.md", "text": "x"}).status_code == 422
+
+
+def test_cadastro_host_grava_maiusculas_exceto_site_e_notes(client, env):
+    """Padrão: nome, modelo, vendor, role, método, grupo e credencial em MAIÚSCULAS; site/notes livres."""
+    client.post("/api/credentials", json={"name": "cred_up", "username": "admin"})
+    client.post("/api/groups", json={"name": "grp-up", "vendor": "linux"})
+    r = client.post("/api/hosts", json={
+        "hostname": "rt-up", "mgmt_ip": "10.9.9.9", "group": "grp-up", "vendor": "mikrotik", "role": "core",
+        "model": "ccr1036", "site": "Matriz", "notes": "texto livre", "credential": "cred_up",
+        "access": {"method": "ssh", "port": 22}})
+    assert r.status_code == 201, r.text
+    hid = r.json()["id"]
+    h = next(x for x in _hosts_yaml(env)["hosts"] if x["id"] == hid)
+    assert (h["hostname"], h["model"], h["vendor"], h["role"], h["group"], h["credential"]) == (
+        "RT-UP", "CCR1036", "MIKROTIK", "CORE", "GRP-UP", "CRED_UP")
+    assert h["access"]["method"] == "SSH"
+    assert h["site"] == "Matriz" and h["notes"] == "texto livre"
+    assert client.patch(f"/api/hosts/{hid}", json={"model": "x1", "role": "access"}).status_code == 200
+    h = next(x for x in _hosts_yaml(env)["hosts"] if x["id"] == hid)
+    assert h["model"] == "X1" and h["role"] == "ACCESS"

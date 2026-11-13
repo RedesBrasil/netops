@@ -15,6 +15,7 @@ import json
 import re
 
 import deps
+from lib.inventory import lookup_ci, normalize_node_fields, upper_value
 from lib.host_identity import MAX_HOST_ID, host_index, identity_errors, require_host_id
 from services import yaml_io
 
@@ -25,6 +26,19 @@ ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 HOST_KEY_ORDER = ["id", "hostname", "mgmt_ip", "group", "vendor", "role", "icon", "model", "site", "access", "credential", "notes"]
 GROUP_KEY_ORDER = ["vendor", "role", "access", "credential", "model", "site", "notes"]
 OPTIONAL_STR = {"model", "site", "notes", "icon"}
+
+
+def _gkey(groups: dict, name: str) -> str:
+    """Chave real do grupo (aceita qualquer caixa); KeyError se não existir."""
+    folded = str(name).casefold()
+    for k in groups:
+        if str(k).casefold() == folded:
+            return k
+    raise KeyError(f"grupo '{name}' não existe")
+
+
+def _same(a, b) -> bool:
+    return str(a or "").casefold() == str(b or "").casefold()
 
 
 # --------------------------------------------------------------------------- #
@@ -47,7 +61,7 @@ def list_hosts_detailed() -> dict:
     for name in sorted(hosts.keys()):
         explicit = dict(hosts[name])
         try:
-            effective, _ = resolve_host(name, data, {}, decrypt=False)
+            effective, _ = resolve_host(name, data, {}, decrypt=False, lowercase_enums=False)
         except KeyError:
             effective = explicit
         effective.pop("name", None)
@@ -62,7 +76,7 @@ def get_host(name: int | str) -> dict:
     hosts = host_index(data)
     if name not in hosts:
         raise KeyError(f"host '{name}' não existe")
-    effective, _ = resolve_host(name, data, {}, decrypt=False)
+    effective, _ = resolve_host(name, data, {}, decrypt=False, lowercase_enums=False)
     effective.pop("name", None)
     return {"id": name, "explicit": dict(hosts[name]), "effective": effective, "rev": rev}
 
@@ -85,12 +99,12 @@ def list_groups() -> dict:
 # --------------------------------------------------------------------------- #
 def validate_data(hosts_data: dict) -> list[dict]:
     import jsonschema  # noqa: PLC0415
-    from lib.inventory import list_hosts, resolve_host  # noqa: PLC0415
+    from lib.inventory import list_hosts, resolve_host, schema_view  # noqa: PLC0415
 
     errors: list[dict] = []
     schema = json.loads(deps.SCHEMA_FILE.read_text(encoding="utf-8"))
     validator = jsonschema.Draft202012Validator(schema)
-    for err in sorted(validator.iter_errors(hosts_data), key=str):
+    for err in sorted(validator.iter_errors(schema_view(hosts_data)), key=str):
         loc = "/".join(str(p) for p in err.absolute_path) or "(raiz)"
         errors.append({"loc": loc, "msg": err.message})
 
@@ -101,7 +115,7 @@ def validate_data(hosts_data: dict) -> list[dict]:
 
     for name in list_hosts(hosts_data):
         try:
-            host, _ = resolve_host(name, hosts_data, {}, decrypt=False)
+            host, _ = resolve_host(name, hosts_data, {}, decrypt=False, lowercase_enums=False)
         except KeyError as exc:
             errors.append({"loc": f"hosts/{name}", "msg": str(exc)})
             continue
@@ -134,6 +148,7 @@ def _apply_fields(node: dict, fields: dict, *, partial: bool) -> None:
     partial=True (PATCH): só mexe nas chaves presentes em `fields`.
     partial=False (PUT/POST): trata `fields` como o conjunto completo de overrides.
     """
+    fields = normalize_node_fields(fields)
     for key, val in fields.items():
         if key == "access":
             _apply_access(node, val)
@@ -173,6 +188,7 @@ def _ordered(fields: dict, order: list[str]) -> dict:
 
 
 def _clean_new(fields: dict, order: list[str]) -> dict:
+    fields = normalize_node_fields(fields)
     node = {}
     for k, v in fields.items():
         if k == "access":
@@ -305,7 +321,8 @@ def rename_host(old: str, new: str, rev: str | None) -> dict:
 def create_group(name: str, fields: dict, rev: str | None) -> dict:
     data, doc, y = _load_doc()
     groups = data.setdefault("groups", {})
-    if name in groups:
+    name = upper_value(name)
+    if any(_same(k, name) for k in groups):
         raise deps.ValidationFailed([{"loc": "name", "msg": f"grupo '{name}' já existe"}])
     before = _plain(data)
     groups[name] = _clean_new(fields, GROUP_KEY_ORDER)
@@ -318,8 +335,7 @@ def create_group(name: str, fields: dict, rev: str | None) -> dict:
 def update_group(name: str, fields: dict, rev: str | None, *, partial: bool) -> dict:
     data, doc, y = _load_doc()
     groups = data.get("groups") or {}
-    if name not in groups:
-        raise KeyError(f"grupo '{name}' não existe")
+    name = _gkey(groups, name)
     before = _plain(data)
     _apply_fields(groups[name], fields, partial=partial)
     _gate(before, _plain(data))
@@ -331,9 +347,8 @@ def update_group(name: str, fields: dict, rev: str | None, *, partial: bool) -> 
 def delete_group(name: str, rev: str | None, *, force: bool) -> dict:
     data, doc, y = _load_doc()
     groups = data.get("groups") or {}
-    if name not in groups:
-        raise KeyError(f"grupo '{name}' não existe")
-    used = [h for h, v in host_index(data).items() if v.get("group") == name]
+    name = _gkey(groups, name)
+    used = [h for h, v in host_index(data).items() if _same(v.get("group"), name)]
     if used and not force:
         raise deps.ConflictError(yaml_io.file_rev(deps.HOSTS_FILE),
                                  detail=f"grupo em uso por {len(used)} host(s): {', '.join(map(str, used))}")
@@ -347,10 +362,9 @@ def delete_group(name: str, rev: str | None, *, force: bool) -> dict:
 # --------------------------------------------------------------------------- #
 def group_references(name: str) -> dict:
     data, _ = load_hosts()
-    if name not in (data.get("groups") or {}):
-        raise KeyError(f"grupo '{name}' não existe")
+    name = _gkey(data.get("groups") or {}, name)
     refs = [{"kind": "host", "id": h, "field": "group", "label": f"host {h}"}
-            for h, v in host_index(data).items() if (v or {}).get("group") == name]
+            for h, v in host_index(data).items() if _same((v or {}).get("group"), name)]
     return {"name": name, "references": refs, "count": len(refs)}
 
 
@@ -358,10 +372,10 @@ def group_references(name: str) -> dict:
 def rename_group(old: str, new: str, rev: str | None) -> dict:
     if not ID_RE.match(new):
         raise deps.ValidationFailed([{"loc": "to", "msg": "use a-z, 0-9, ponto, hífen ou underline"}])
+    new = upper_value(new)
     data, _, y = _load_doc()
     groups = data.get("groups") or {}
-    if old not in groups:
-        raise KeyError(f"grupo '{old}' não existe")
+    old = _gkey(groups, old)
     if new == old:
         raise deps.ValidationFailed([{"loc": "to", "msg": "o novo nome é igual ao atual"}])
     if new in groups:
@@ -370,7 +384,7 @@ def rename_group(old: str, new: str, rev: str | None) -> dict:
     yaml_io.rename_key(groups, old, new)
     updated = []
     for hid, h in host_index(data).items():
-        if h and h.get("group") == old:
+        if h and _same(h.get("group"), old):
             h["group"] = new
             updated.append({"kind": "host", "id": hid, "field": "group"})
     new_rev = yaml_io.write_rt(deps.HOSTS_FILE, y, data, expected=rev, backup=True)

@@ -34,6 +34,62 @@ CREDS_FILE = NETOPS_ROOT / "network" / "credentials.yaml"
 SCHEMA_FILE = NETOPS_ROOT / "core" / "schemas" / "inventory.schema.json"
 
 
+# Padrão de cadastro: tudo em MAIÚSCULAS, exceto site e notes (livres).
+UPPER_NODE_FIELDS = ("hostname", "model", "vendor", "role", "credential", "group")
+ENUM_FIELDS = ("vendor", "role")  # + access.method; os scripts consomem em minúsculas (canônico)
+
+
+def upper_value(value):
+    return value.strip().upper() if isinstance(value, str) else value
+
+
+def normalize_node_fields(fields: dict) -> dict:
+    """Devolve cópia de `fields` (host/grupo) com o padrão MAIÚSCULAS aplicado."""
+    out = dict(fields)
+    for key in UPPER_NODE_FIELDS:
+        if key in out:
+            out[key] = upper_value(out[key])
+    if isinstance(out.get("access"), dict) and isinstance(out["access"].get("method"), str):
+        out["access"] = {**out["access"], "method": upper_value(out["access"]["method"])}
+    return out
+
+
+def lookup_ci(mapping, key):
+    """mapping[key] tolerando diferença de caixa (exato primeiro)."""
+    if not mapping or key is None:
+        return None
+    if key in mapping:
+        return mapping[key]
+    folded = str(key).casefold()
+    for k, v in mapping.items():
+        if str(k).casefold() == folded:
+            return v
+    return None
+
+
+def canonical_enums(node: dict) -> dict:
+    """Minúsculas p/ vendor/role/access.method — contrato interno dos scripts e do schema."""
+    out = dict(node)
+    for key in ENUM_FIELDS:
+        if isinstance(out.get(key), str):
+            out[key] = out[key].lower()
+    if isinstance(out.get("access"), dict) and isinstance(out["access"].get("method"), str):
+        out["access"] = {**out["access"], "method": out["access"]["method"].lower()}
+    return out
+
+
+def schema_view(hosts_data: dict) -> dict:
+    """Cópia do inventário com enums em minúsculas, só para validar contra o JSON Schema."""
+    data = dict(hosts_data)
+    if isinstance(data.get("groups"), dict):
+        data["groups"] = {k: canonical_enums(v) if isinstance(v, dict) else v for k, v in data["groups"].items()}
+    if isinstance(data.get("hosts"), list):
+        data["hosts"] = [canonical_enums(h) if isinstance(h, dict) else h for h in data["hosts"]]
+    elif isinstance(data.get("hosts"), dict):
+        data["hosts"] = {k: canonical_enums(v) if isinstance(v, dict) else v for k, v in data["hosts"].items()}
+    return data
+
+
 def _require_yaml():
     try:
         import yaml  # noqa: PLC0415
@@ -82,13 +138,16 @@ def list_hosts(hosts_data: dict) -> list[int | str]:
     return sorted(host_index(hosts_data))
 
 
-def resolve_host(name: int | str, hosts_data: dict, creds_data: dict, decrypt: bool = True) -> tuple[dict, dict]:
+def resolve_host(name: int | str, hosts_data: dict, creds_data: dict, decrypt: bool = True,
+                 lowercase_enums: bool = True) -> tuple[dict, dict]:
     """Retorna (host_resolvido, credencial_resolvida).
 
     O host herda os campos do seu 'group'; campos definidos no host vencem.
 
     decrypt=True (padrão): descriptografa segredos 'enc.v1:' (exige cofre destrancado) —
         usado pelos scripts de acesso que vão conectar.
+    lowercase_enums=True (padrão): vendor/role/access.method em minúsculas, o contrato dos scripts
+        (o inventário guarda MAIÚSCULAS). A UI passa False para exibir o valor gravado.
     decrypt=False: não descriptografa (deixa os valores como estão) — usado por operações
         que não conectam (--validate / --list / --show), para funcionarem com o cofre trancado.
     """
@@ -96,7 +155,7 @@ def resolve_host(name: int | str, hosts_data: dict, creds_data: dict, decrypt: b
     canonical = resolve_reference(name, hosts_data)
     host = dict(host_index(hosts_data)[canonical])
     group_name = host.get("group")
-    group = (hosts_data.get("groups") or {}).get(group_name, {}) if group_name else {}
+    group = (lookup_ci(hosts_data.get("groups") or {}, group_name) or {}) if group_name else {}
 
     merged = {**group, **host}
     # 'access' é aninhado: mescla chave a chave (host vence).
@@ -107,12 +166,14 @@ def resolve_host(name: int | str, hosts_data: dict, creds_data: dict, decrypt: b
         merged["id"] = canonical
 
     cred_name = merged.get("credential")
-    cred_raw = (creds_data.get("credentials") or {}).get(cred_name, {}) if cred_name else {}
+    cred_raw = (lookup_ci(creds_data.get("credentials") or {}, cred_name) or {}) if cred_name else {}
     if decrypt:
         cred = {k: (resolve_secret(v) if isinstance(v, str) else v) for k, v in cred_raw.items()}
     else:
         cred = dict(cred_raw)
 
+    if lowercase_enums:
+        merged = canonical_enums(merged)
     return merged, cred
 
 
@@ -131,7 +192,7 @@ def validate() -> tuple[bool, list[str]]:
     hosts_data, _ = load_inventory(include_credentials=False)
     schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
     validator = jsonschema.Draft202012Validator(schema)
-    for err in sorted(validator.iter_errors(hosts_data), key=str):
+    for err in sorted(validator.iter_errors(schema_view(hosts_data)), key=str):
         loc = "/".join(str(p) for p in err.absolute_path) or "(raiz)"
         errors.append(f"{loc}: {err.message}")
 

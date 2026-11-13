@@ -120,6 +120,9 @@ def resolve_reference(reference, data: dict):
                 raise KeyError(f"alias '{reference}' reservado para host excluído")
             return item["host_id"]
     matches = [key for key, host in hosts.items() if host.get("hostname") == reference]
+    if not matches:  # hostname é gravado em MAIÚSCULAS; a referência textual aceita qualquer caixa
+        matches = [key for key, host in hosts.items()
+                   if str(host.get("hostname") or "").casefold() == reference.casefold()]
     if len(matches) > 1:
         raise ValueError(f"hostname '{reference}' ambíguo; informe o ID inteiro")
     if matches:

@@ -1,9 +1,13 @@
 // Hosts e Grupos (network/hosts.yaml) — formulário ciente de herança de grupo.
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
-import { FilterBar, ResourceTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog, RenameCascadeHint, IconPicker as HostIconPicker } from "../components.js";
+import { FilterBar, DataTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog, RenameCascadeHint, IconPicker as HostIconPicker } from "../components.js";
 import { Modal, ConflictDialog } from "../ui.js";
 import { useRoute, navigate, useMenuRoute, matchText } from "../route.js";
 
+// Padrão de cadastro: tudo em MAIÚSCULAS, exceto site e notes (o backend também força).
+const UP = (v) => typeof v === "string" ? v.toUpperCase() : v;
+const upList = (l) => (l || []).map(UP);
+const UP_KEYS = new Set(["hostname", "group", "vendor", "role", "model", "credential", "method"]);
 const INHERIT = ["vendor", "role", "credential"];
 const bkLabel = (v) => v === true ? "sim" : v === false ? "não" : "padrão";
 
@@ -11,7 +15,7 @@ export function HostsPage() {
   const res = useResource("/hosts");
   // URL: #hosts[/<id>|/new][?q=&vendor=&role=&group=&sort=&dir=]  (core/rules/urls-navegacao.md)
   const route = useRoute();
-  const { q = "", vendor = "", role = "", group = "", sort = "", dir = "asc" } = route.params;
+  const { q = "", vendor = "", role = "", group = "" } = route.params;
   const setParams = (patch) => navigate({ menu: "hosts", segments: route.segments, params: { ...route.params, ...patch } }, { replace: true });
   const [confirm, setConfirm] = useState(null);
   const [deleteRefs, setDeleteRefs] = useState(null);
@@ -56,8 +60,7 @@ export function HostsPage() {
                  { key: "role", label: "Role", value: role, options: opts((h) => h.effective.role) },
                  { key: "group", label: "Grupo", value: group, options: opts((h) => h.explicit.group) }]} />
     ${seg && seg !== "new" && !editing && html`<div class="card">Host '${seg}' não encontrado. <a href="#hosts">Voltar aos hosts</a></div>`}
-    <${ResourceTable} tableId="hosts" columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
-      sortState=${{ key: sort || null, dir }} onSortChange=${(n) => setParams({ sort: n.key || "", dir: n.dir === "desc" ? "desc" : "" })}
+    <${DataTable} tableId="hosts" urlSort columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
       onRowClick=${(r) => setEditing(r)}
       actions=${(r) => html`<button class="sm danger" onClick=${() => setConfirm(r.id)}>Excluir</button>`}
       empty="Nenhum host. Clique em + Novo host." />
@@ -75,7 +78,8 @@ export function HostsPage() {
 
 export function HostForm({ host, groups, rev, onClose, onSaved, placement, initial = {} }) {
   const isNew = !!host.__new;
-  const enums = useEnums();
+  const enums0 = useEnums();
+  const enums = enums0 && { ...enums0, vendor: upList(enums0.vendor), role: upList(enums0.role), method: upList(enums0.method) };
   const [groupDetails, setGroupDetails] = useState({});
   const [creds, setCreds] = useState([]);
   const [conflict, setConflict] = useState(false);
@@ -85,20 +89,20 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   const [mapChoice, setMapChoice] = useState("");
   const explicit = isNew ? initial : host.explicit;
   const [form, setForm] = useState({
-    hostname: explicit.hostname || "", mgmt_ip: explicit.mgmt_ip || "",
-    group: explicit.group || "", vendor: explicit.vendor ?? null, role: explicit.role ?? null,
-    model: explicit.model || "", site: explicit.site || "", notes: explicit.notes || "", icon: explicit.icon || "",
-    credential: explicit.credential ?? null,
-    method: (explicit.access || {}).method ?? null, port: (explicit.access || {}).port ?? "",
+    hostname: UP(explicit.hostname) || "", mgmt_ip: explicit.mgmt_ip || "",
+    group: UP(explicit.group) || "", vendor: UP(explicit.vendor) ?? null, role: UP(explicit.role) ?? null,
+    model: UP(explicit.model) || "", site: explicit.site || "", notes: explicit.notes || "", icon: explicit.icon || "",
+    credential: UP(explicit.credential) ?? null,
+    method: UP((explicit.access || {}).method) ?? null, port: (explicit.access || {}).port ?? "",
   });
 
   useEffect(() => {
     if (isNew && !placement) api.get("/maps").then(setMapOptions).catch(() => {});
-    api.get("/groups").then((g) => setGroupDetails(Object.fromEntries(g.groups.map((x) => [x.name, x.fields]))));
-    api.get("/credentials").then((c) => setCreds(c.credentials.map((x) => x.name)));
+    api.get("/groups").then((g) => setGroupDetails(Object.fromEntries(g.groups.map((x) => [UP(x.name), x.fields]))));
+    api.get("/credentials").then((c) => setCreds(c.credentials.map((x) => UP(x.name))));
   }, []);
 
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: UP_KEYS.has(k) ? UP(v) : v }));
   const gfields = groupDetails[form.group] || {};
   const inh = (k) => gfields[k];                                  // valor herdado do grupo
   const inhAccess = (k) => (gfields.access || {})[k];
@@ -154,7 +158,7 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
         <input value=${form.mgmt_ip} onInput=${(e) => set("mgmt_ip", e.target.value)} /><//>
     </div>
     <${Field} label="Grupo (herança de defaults)">
-      <${RefSelect} value=${form.group} options=${groups} placeholder="(sem grupo)" onChange=${(v) => set("group", v)} /><//>
+      <${RefSelect} value=${form.group} options=${upList(groups)} placeholder="(sem grupo)" onChange=${(v) => set("group", v)} /><//>
     <div class="row">
       <${Field} label=${html`Vendor ${tag("vendor")}`} error=${errFor("/vendor")}>
         <${EnumSelect} value=${form.vendor} options=${enums?.vendor} allowInherit=${!!form.group}
@@ -208,7 +212,7 @@ export function GroupsPage() {
   const groups = allGroups.filter((g) => (!vendor || g.fields.vendor === vendor) && (!role || g.fields.role === role) && matchText(q, g.name, g.fields.credential));
   const optsOf = (f) => [...new Set(allGroups.map((g) => g.fields[f]).filter(Boolean))].sort();
   const cols = [
-    { key: "name", label: "Grupo", sort: (r) => r.name || "", render: (r) => html`<a href=${"#groups/" + encodeURIComponent(r.name)} onClick=${(e) => e.stopPropagation()}><b>${r.name}</b></a>` },
+    { key: "name", label: "Grupo", hideable: false, sort: (r) => r.name || "", render: (r) => html`<a href=${"#groups/" + encodeURIComponent(r.name)} onClick=${(e) => e.stopPropagation()}><b>${r.name}</b></a>` },
     { key: "vendor", label: "Vendor", sort: (r) => r.fields.vendor || "", render: (r) => r.fields.vendor || "—" },
     { key: "role", label: "Role", sort: (r) => r.fields.role || "", render: (r) => r.fields.role || "—" },
     { key: "access", label: "Acesso", sort: (r) => (r.fields.access || {}).method || "", render: (r) => { const a = r.fields.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
@@ -221,7 +225,7 @@ export function GroupsPage() {
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar grupo" count=${groups.length} total=${allGroups.length}
       selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: optsOf("vendor") }, { key: "role", label: "Role", value: role, options: optsOf("role") }]} />
     ${seg && seg !== "new" && !editing && html`<div class="card">Grupo '${seg}' não encontrado. <a href="#groups">Voltar aos grupos</a></div>`}
-    <${ResourceTable} columns=${cols} rows=${groups.map((g) => ({ ...g, _key: g.name }))}
+    <${DataTable} tableId="groups" urlSort columns=${cols} rows=${groups.map((g) => ({ ...g, _key: g.name }))}
       onRowClick=${(r) => setEditing(r)}
       actions=${(r) => html`<button class="sm danger" onClick=${() => setConfirm(r)}>Excluir</button>`}
       empty="Nenhum grupo." />
@@ -238,16 +242,17 @@ export function GroupsPage() {
 
 function GroupForm({ group, rev, onClose, onSaved }) {
   const isNew = !!group.__new;
-  const enums = useEnums();
+  const enums0 = useEnums();
+  const enums = enums0 && { ...enums0, vendor: upList(enums0.vendor), role: upList(enums0.role), method: upList(enums0.method) };
   const [creds, setCreds] = useState([]);
   const f0 = isNew ? {} : group.fields;
   const a0 = f0.access || {};
   const [form, setForm] = useState({
-    name: isNew ? "" : group.name, vendor: f0.vendor ?? null, role: f0.role ?? null,
-    credential: f0.credential ?? null, method: a0.method ?? null, port: a0.port ?? "",
+    name: isNew ? "" : UP(group.name), vendor: UP(f0.vendor) ?? null, role: UP(f0.role) ?? null,
+    credential: UP(f0.credential) ?? null, method: UP(a0.method) ?? null, port: a0.port ?? "",
   });
-  useEffect(() => { api.get("/credentials").then((c) => setCreds(c.credentials.map((x) => x.name))); }, []);
-  const set = (k, v) => setForm((x) => ({ ...x, [k]: v }));
+  useEffect(() => { api.get("/credentials").then((c) => setCreds(c.credentials.map((x) => UP(x.name)))); }, []);
+  const set = (k, v) => setForm((x) => ({ ...x, [k]: UP_KEYS.has(k) || k === "name" ? UP(v) : v }));
   async function save() {
     const acc = {}; if (form.method) acc.method = form.method;
     if (form.port !== "" && form.port != null) acc.port = Number(form.port);

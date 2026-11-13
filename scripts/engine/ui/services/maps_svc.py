@@ -24,7 +24,7 @@ def _hosts(data=None):
     result = {}
     for name, explicit in host_index(data).items():
         try:
-            host, _ = resolve_host(name, data, {}, decrypt=False)
+            host, _ = resolve_host(name, data, {}, decrypt=False, lowercase_enums=False)
         except KeyError:
             host = explicit
         result[name] = {"id": name, **{k: host.get(k, "") for k in ("hostname", "mgmt_ip", "vendor", "role", "site", "icon")}}
