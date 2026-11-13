@@ -215,9 +215,32 @@ function sanitize(htmlStr) {
     .replace(/\son\w+='[^']*'/gi, "")
     .replace(/javascript:/gi, "");
 }
+// Blocos de código ganham cabeçalho com a linguagem e botão "Copiar" (delegação de clique em .md).
+function wrapCodeBlocks(h) {
+  return h.replace(/<pre>(<code(?: class="language-([\w+-]+)")?[^>]*>)([\s\S]*?)<\/code><\/pre>/g,
+    (_, open, lang, body) => `<div class="md-codeblock"><div class="md-codehead"><span>${lang || "código"}</span>` +
+      `<button type="button" class="md-copy sm">Copiar</button></div><pre>${open}${body}</code></pre></div>`);
+}
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch (_) {}
+  const ta = document.createElement("textarea");
+  ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch (_) {}
+  ta.remove(); return ok;
+}
+function onMdClick(e) {
+  const btn = e.target.closest && e.target.closest(".md-copy");
+  if (!btn) return;
+  const code = btn.closest(".md-codeblock")?.querySelector("pre");
+  copyText(code ? code.innerText.replace(/\n$/, "") : "").then((ok) => {
+    btn.textContent = ok ? "Copiado ✓" : "Falhou";
+    setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
+  });
+}
 export function MarkdownView({ text }) {
-  const out = sanitize(marked.parse(text || "", { breaks: true }));
-  return html`<div class="md" dangerouslySetInnerHTML=${{ __html: out }}></div>`;
+  const out = wrapCodeBlocks(sanitize(marked.parse(text || "", { breaks: true })));
+  return html`<div class="md" onClick=${onMdClick} dangerouslySetInnerHTML=${{ __html: out }}></div>`;
 }
 
 // Visualização read-only de markdown: formatado por padrão; toggle revela o código-fonte.
