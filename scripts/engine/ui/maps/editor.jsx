@@ -182,6 +182,10 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
   const [shapeColor, setShapeColor] = useState('#dbeafe'), [shapeStroke, setShapeStroke] = useState('#2563eb');
   const [noteText, setNoteText] = useState(''), [noteFill, setNoteFill] = useState(''), [noteStroke, setNoteStroke] = useState('');
   const [multiSelect, setMultiSelect] = useState(false);
+  // Cadeado: começa travado; sobrevive ao F5 (sessionStorage) e volta a travado ao sair da página.
+  const [locked, setLocked] = useState(() => { try { return sessionStorage.getItem('netops.map.unlocked') !== '1'; } catch { return true; } });
+  useEffect(() => { try { if (locked) sessionStorage.removeItem('netops.map.unlocked'); else sessionStorage.setItem('netops.map.unlocked', '1'); } catch {} }, [locked]);
+  useEffect(() => () => { try { sessionStorage.removeItem('netops.map.unlocked'); } catch {} }, []);
   const speed = '10G';
   const flow = useReactFlow();
   useEffect(() => { onBusy(!!dialog || !!menu || linkMode || multiSelect); }, [dialog, menu, linkMode, multiSelect]);
@@ -432,6 +436,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
         <SaveBadge readOnly={readOnly} saving={saving} status={status} saveError={saveError} onRetry={onRetry} onReload={onReload} />
         <div className="map-tools">{!readOnly && <><button aria-label="Desfazer (Ctrl+Z)" title={`Desfazer (Ctrl+Z) — ${history.undo} de 10`} disabled={!history.undo} onClick={undo}>↶</button>
           <button aria-label="Refazer (Ctrl+Shift+Z)" title="Refazer (Ctrl+Shift+Z ou Ctrl+Y)" disabled={!history.redo} onClick={redo}>↷</button></>}
+          {!readOnly && <button className={`map-lock ${locked ? 'locked' : ''}`} aria-pressed={locked} aria-label={locked ? 'Destravar edição do mapa' : 'Travar edição do mapa'} title={locked ? 'Mapa travado — clique para destravar' : 'Mapa destravado — clique para travar'} onClick={() => { setLocked(!locked); clearSelection(); }}>{locked ? '🔒' : '🔓'}</button>}
           <button onClick={exportMap}>Exportar JSON</button>
           <button className="map-touch-actions" aria-label="Ações do mapa" aria-haspopup="menu" aria-expanded={!!menu} onClick={menuFromButton}>⋯</button>
         </div>
@@ -455,7 +460,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     }
   }}>
     {slot ? createPortal(<div className="netops-maps netops-maps-bar">{toolbar}</div>, slot) : toolbar}
-    <div className="map-workspace"><div ref={canvas} className="map-canvas" data-testid="map-canvas" tabIndex={0}
+    <div className="map-workspace"><div ref={canvas} className={`map-canvas ${locked ? 'map-locked' : ''}`} data-testid="map-canvas" tabIndex={0}
       onPointerDownCapture={event => {
         paneTouch.current = event.pointerType === 'touch' && event.isPrimary && event.target.classList.contains('react-flow__pane')
           ? { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false } : null;
@@ -471,8 +476,8 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       }} onPointerCancelCapture={() => { paneTouch.current = null; }} onPointerDown={event => {
       if (!event.target.closest('input, textarea, select, button, .react-flow__node')) event.currentTarget.focus({ preventScroll: true });
     }}>
-      <LineEditing.Provider value={{ selected, select: selectLine, save: saveLine, disabled: readOnly || linkMode, busy: onBusy, contextMenu: (event, id, corner) => context(event, 'edge', id, corner), focus, focusCorner: (id, corner) => setFocus({ id, corner }) }}>
-        <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={changes} nodesDraggable={!readOnly && !multiSelect && !linkMode} selectNodesOnDrag={!multiSelect && !linkMode} elementsSelectable={!multiSelect && !linkMode} nodesConnectable={false} connectionMode={ConnectionMode.Loose}
+      <LineEditing.Provider value={{ selected, select: selectLine, save: saveLine, disabled: readOnly || linkMode || locked, busy: onBusy, contextMenu: (event, id, corner) => context(event, 'edge', id, corner), focus, focusCorner: (id, corner) => setFocus({ id, corner }) }}>
+        <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={changes} nodesDraggable={!readOnly && !locked && !multiSelect && !linkMode} selectNodesOnDrag={!multiSelect && !linkMode} elementsSelectable={!multiSelect && !linkMode} nodesConnectable={false} connectionMode={ConnectionMode.Loose}
           onNodeClick={nodeClick} onNodeDoubleClick={(e, n) => { if (!multiSelect && !linkMode && Date.now() > ignoreDoubleClick.current) { if (n.data.mapId) onSwitch(n.data.mapId); else if (!readOnly) edit(n); } }}
           onEdgeClick={(e, edge) => { setMenu(null); selectLine(edge.id); }} onEdgeContextMenu={(event, edge) => context(event, 'edge', edge.id)} onPaneClick={() => { clearSelection(); setMenu(null); setMultiSelect(false); }}
           onNodeContextMenu={(event, node) => context(event, 'node', node.id)}

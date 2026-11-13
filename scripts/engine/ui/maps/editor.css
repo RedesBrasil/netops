@@ -118,3 +118,5 @@
   .netops-maps.netops-maps-bar .map-picker select { max-width:120px; }
   .netops-maps.netops-maps-bar button, .netops-maps.netops-maps-bar select { min-height:30px; padding:2px 6px; font-size:12px; }
 }
+.netops-maps .map-locked .react-flow__resize-control{display:none}
+.netops-maps .map-lock{font-size:1rem}
