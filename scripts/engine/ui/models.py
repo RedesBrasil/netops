@@ -13,7 +13,7 @@ Vendor = Literal[
     "vmware", "datacom", "linux", "fiberhome", "intelbras", "other",
 ]
 Role = Literal["core", "distribution", "access", "firewall", "wireless", "server", "other"]
-Method = Literal["ssh", "telnet", "api", "winbox"]
+Method = Literal["ssh", "telnet", "api", "winbox", "web", "ftp", "snmp"]
 Port = Annotated[int, Field(ge=1, le=65535)]
 HostId = Annotated[StrictInt, Field(ge=1, le=2**53 - 1)]
 
