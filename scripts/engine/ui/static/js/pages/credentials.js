@@ -1,7 +1,7 @@
 // Credenciais (network/credentials.yaml). Senhas sempre mascaradas; encrypt-on-write.
 import { html, useState, api, useResource, Spinner, Badge, toast, handleError, useStore, vaultStore } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
-import { FilterBar, ResourceTable, Field, Modal, ConfirmDialog, RenameCascadeHint } from "../components.js";
+import { FilterBar, DataTable, Field, Modal, ConfirmDialog, RenameCascadeHint } from "../components.js";
 import { vaultWritable } from "../components.js";
 
 // URL: #credentials[/<nome>|/new|/<nome>/password|/<nome>/secret][?q=]  (core/rules/urls-navegacao.md)
@@ -27,10 +27,10 @@ export function CredentialsPage() {
     : s.encrypted ? html`<${Badge} kind="ok">🔒 cifrado<//>` : html`<${Badge} kind="warn">⚠ texto puro<//>`;
 
   const cols = [
-    { key: "name", label: "Credencial", render: (r) => html`<a href=${"#credentials/" + encodeURIComponent(r.name)} onClick=${(e) => e.stopPropagation()}><b>${r.name}</b></a>` },
-    { key: "username", label: "Usuário", render: (r) => r.username || "—" },
-    { key: "password", label: "Senha", render: (r) => secretBadge(r.password) },
-    { key: "secret", label: "Secret", render: (r) => r.secret ? secretBadge(r.secret) : "—" },
+    { key: "name", label: "Credencial", hideable: false, sort: true, render: (r) => html`<a href=${"#credentials/" + encodeURIComponent(r.name)} onClick=${(e) => e.stopPropagation()}><b>${r.name}</b></a>` },
+    { key: "username", label: "Usuário", sort: true, render: (r) => r.username || "—" },
+    { key: "password", label: "Senha", sort: (r) => !r.password ? 0 : r.password.encrypted ? 2 : 1, render: (r) => secretBadge(r.password) },
+    { key: "secret", label: "Secret", sort: (r) => !r.secret ? 0 : r.secret.encrypted ? 2 : 1, render: (r) => r.secret ? secretBadge(r.secret) : "—" },
     { key: "extra", label: "Outros", render: (r) => html`${r.key_file ? html`<${Badge}>key_file<//> ` : ""}${r.api_ssl != null ? html`<${Badge}>api_ssl=${String(r.api_ssl)}<//>` : ""}` },
   ];
 
@@ -41,7 +41,7 @@ export function CredentialsPage() {
       rode no terminal: <code>python3 scripts/engine/vault/cli.py init</code> e depois <code>encrypt</code>.</div>`}
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar credencial" count=${credentials.length} total=${allCreds.length} />
     ${seg && seg !== "new" && !found && html`<div class="card">Credencial '${seg}' não encontrada. <a href="#credentials">Voltar às credenciais</a></div>`}
-    <${ResourceTable} columns=${cols} rows=${credentials.map((c) => ({ ...c, _key: c.name }))}
+    <${DataTable} tableId="credentials" urlSort columns=${cols} rows=${credentials.map((c) => ({ ...c, _key: c.name }))}
       onRowClick=${(r) => setEditing(r)}
       actions=${(r) => html`
         <button class="sm" disabled=${!writable} title=${writable ? "" : "Destranque o cofre na aba Terminal"}

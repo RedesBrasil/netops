@@ -1,7 +1,7 @@
 // Conhecimento: best-practices/ e config-examples/ (catálogo + editores de arquivo).
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
-import { FilterBar, ResourceTable, Field, Modal, MarkdownEditor, CodeTextEditor, MarkdownView, EnumSelect, useEnums } from "../components.js";
+import { FilterBar, DataTable, Field, Modal, MarkdownEditor, CodeTextEditor, MarkdownView, EnumSelect, useEnums } from "../components.js";
 
 // Página de uma única seção (boas práticas OU exemplos de config), sem abas.
 // URL: #<menu>[/<vendor>/<arquivo>|/new][?q=&vendor=]  (core/rules/urls-navegacao.md)
@@ -36,21 +36,21 @@ function KnowledgeKind({ kind, r }) {
   const rows = all.filter((e) => (!vendor || e.vendor === vendor) && matchText(q, e.titulo, e.topico, e.file, e.quando_usar, e.descricao))
     .map((e) => ({ ...e, _key: e.file }));
   const cols = kind === "best-practices"
-    ? [{ key: "titulo", label: "Título", render: (r) => html`<b>${r.titulo}</b>` },
-       { key: "vendor", label: "Vendor", render: (r) => html`<${Badge}>${r.vendor}<//>` },
-       { key: "file", label: "Arquivo", render: (r) => html`<span class="mono">${r.file}</span>` },
-       { key: "quando_usar", label: "Quando usar", render: (r) => r.quando_usar }]
-    : [{ key: "topico", label: "Tópico", render: (r) => html`<b>${r.topico}</b>` },
-       { key: "vendor", label: "Vendor", render: (r) => html`<${Badge}>${r.vendor}<//>` },
-       { key: "file", label: "Arquivo", render: (r) => html`<span class="mono">${r.file}</span>` },
-       { key: "descricao", label: "Descrição", render: (r) => r.descricao }];
+    ? [{ key: "titulo", hideable: false, sort: true, label: "Título", render: (r) => html`<b>${r.titulo}</b>` },
+       { key: "vendor", sort: true, label: "Vendor", render: (r) => html`<${Badge}>${r.vendor}<//>` },
+       { key: "file", sort: true, label: "Arquivo", render: (r) => html`<span class="mono">${r.file}</span>` },
+       { key: "quando_usar", sort: true, label: "Quando usar", render: (r) => r.quando_usar }]
+    : [{ key: "topico", hideable: false, sort: true, label: "Tópico", render: (r) => html`<b>${r.topico}</b>` },
+       { key: "vendor", sort: true, label: "Vendor", render: (r) => html`<${Badge}>${r.vendor}<//>` },
+       { key: "file", sort: true, label: "Arquivo", render: (r) => html`<span class="mono">${r.file}</span>` },
+       { key: "descricao", sort: true, label: "Descrição", render: (r) => r.descricao }];
   function split(rel) { const [vendor, ...rest] = rel.split("/"); return { vendor, name: rest.join("/") }; }
   const link = (r0, label) => html`<a href=${"#" + (kind === "best-practices" ? "practices" : "configs") + "/" + r0.file.split("/").map(encodeURIComponent).join("/")} onClick=${(e) => e.stopPropagation()}>${label}</a>`;
   cols[0].render = (r0) => link(r0, html`<b>${r0.titulo || r0.topico}</b>`);
   return html`<div>
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar arquivo" count=${rows.length} total=${all.length}
-      selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: [...new Set(all.map((e) => e.vendor))].sort() }]} />
-    <${ResourceTable} columns=${cols} rows=${rows} onRowClick=${(r) => setOpen(split(r.file))} empty="Catálogo vazio." />
+      selects=${[{ key: "vendor", sort: true, label: "Vendor", value: vendor, options: [...new Set(all.map((e) => e.vendor))].sort() }]} />
+    <${DataTable} tableId=${kind} urlSort columns=${cols} rows=${rows} onRowClick=${(r) => setOpen(split(r.file))} empty="Catálogo vazio." />
     ${files?.length ? html`<div class="help" style="margin-top:8px">Arquivos em disco: ${files.join(", ")}</div>` : ""}
     ${open && html`<${FileEditor} key=${open.vendor + "/" + open.name} kind=${kind} target=${open} onClose=${() => setOpen(null)} onSaved=${() => { setOpen(null); res.reload(); }} />`}
     ${creating && html`<${NewFile} kind=${kind} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); res.reload(); }} />`}

@@ -1,7 +1,7 @@
 // Scripts / Skills (scripts/tools/) — cada pasta é uma skill (SKILL.md + scripts). CRUD, sem execução.
 import { html, useState, useEffect, useMemo, api, useResource, Spinner, Badge, toast, handleError, Tabs } from "../ui.js";
 import { useMenuRoute } from "../route.js";
-import { FilterBar, Field, Modal, ConfirmDialog, CodeTextEditor, MarkdownPanel, MarkdownEditor } from "../components.js";
+import { FilterBar, DataTable, Field, Modal, ConfirmDialog, CodeTextEditor, MarkdownPanel, MarkdownEditor } from "../components.js";
 
 const LANG_ICON = { python: "🐍", shell: "🐚" };
 
@@ -19,9 +19,8 @@ const enc = (p) => p.split("/").map(encodeURIComponent).join("/");
 export function ScriptsPage() {
   const res = useResource("/scripts");
   const r = useMenuRoute("scripts");
-  const { q = "", location = "", lang = "", sort: sortKey = "name", dir: sortDir = "asc", doc = null, tab = "" } = r.params;
+  const { q = "", location = "", lang = "", doc = null, tab = "" } = r.params;
   const onScriptsTab = tab === "scripts";
-  const sort = { key: sortKey, dir: sortDir === "desc" ? -1 : 1 };
   const creating = r.segments[0] === "new";
   const [confirm, setConfirm] = useState(null);
   const [newPrefix, setNewPrefix] = useState("");
@@ -45,68 +44,50 @@ export function ScriptsPage() {
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const loc = skill ? skill.id : location;
-    const filtered = all.filter((s) => (!loc || s.location === loc) && (!lang || s.lang === lang) && (!needle ||
-      [s.name, s.path, s.location, s.lang, s.desc].some((v) => (v || "").toLowerCase().includes(needle))));
-    const k = sort.key;
-    return [...filtered].sort((a, b) => String(a[k] || "").localeCompare(String(b[k] || ""), "pt", { numeric: true }) * sort.dir);
-  }, [all, q, location, lang, sortKey, sortDir, skill?.id]);
+    return all.filter((s) => (!loc || s.location === loc) && (!lang || s.lang === lang) && (!needle ||
+      [s.name, s.path, s.location, s.lang, s.desc].some((v) => (v || "").toLowerCase().includes(needle))))
+      .map((s) => ({ ...s, _key: s.path }));
+  }, [all, q, location, lang, skill?.id]);
 
   const skillRows = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const filtered = skills.filter((k) => !needle || [k.name, k.id, k.description].some((v) => (v || "").toLowerCase().includes(needle)));
-    const k = ["name", "id", "scripts", "description"].includes(sortKey) ? sortKey : "name";
-    return [...filtered].sort((a, b) => String(a[k] ?? "").localeCompare(String(b[k] ?? ""), "pt", { numeric: true }) * sort.dir);
-  }, [skills, q, sortKey, sortDir]);
+    return skills.filter((k) => !needle || [k.name, k.id, k.description].some((v) => (v || "").toLowerCase().includes(needle)))
+      .map((k) => ({ ...k, _key: k.id }));
+  }, [skills, q]);
 
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
 
-  const th = (key, label) => html`<th class="clickable" onClick=${() => r.setParams(sort.key === key ? { sort: key, dir: sort.dir > 0 ? "desc" : "" } : { sort: key, dir: "" })}>
-    ${label}${sort.key === key ? (sort.dir > 0 ? " ▲" : " ▼") : ""}</th>`;
-
-  const table = html`${rows.length === 0 ? html`<div class="card"><div class="empty">Nenhum script${skill ? " nesta skill — ela é só documentação" : ""}.</div></div>` : html`
-    <table>
-      <thead><tr>
-        ${th("name", "Script")}
-        ${!skill && th("location", "Skill")}
-        ${th("lang", "Tipo")}
-        ${th("desc", "Descrição")}
-        <th></th>
-      </tr></thead>
-      <tbody>
-        ${rows.map((s) => html`<tr key=${s.path} class="clickable" onClick=${() => r.open(s.path.split("/"))}>
-          <td><a href=${"#scripts/" + enc(s.path) + (onScriptsTab ? "?tab=scripts" : "")} onClick=${(e) => e.stopPropagation()}><b>${s.name}</b></a>${s.doc && !s.doc.endsWith("/SKILL.md") ? html` <span title="Ver documentação" class="doc-icon"
-              onClick=${(e) => { e.stopPropagation(); setDoc(s.doc); }} style="cursor:pointer">📄</span>` : ""}
-            <div class="help mono">${s.path}</div></td>
-          ${!skill && html`<td>${skills.some((k) => k.id === s.location)
-            ? html`<a href=${"#scripts/" + encodeURIComponent(s.location)} onClick=${(e) => e.stopPropagation()}><${Badge}>${s.location}<//></a>`
-            : html`<${Badge}>${s.location}<//>`}</td>`}
-          <td>${LANG_ICON[s.lang] || ""} ${s.lang}</td>
-          <td>${s.desc || "—"}</td>
-          <td class="actions" onClick=${(e) => e.stopPropagation()}>
-            <button class="sm danger" onClick=${() => setConfirm(s.path)}>Excluir</button></td>
-        </tr>`)}
-      </tbody>
-    </table>`}`;
+  const NAME_SORT = { key: "name", dir: "asc" };
+  const scriptCols = [
+    { key: "name", label: "Script", hideable: false, sort: true, render: (s) => html`<a href=${"#scripts/" + enc(s.path) + (onScriptsTab ? "?tab=scripts" : "")} onClick=${(e) => e.stopPropagation()}><b>${s.name}</b></a>${s.doc && !s.doc.endsWith("/SKILL.md") ? html` <span title="Ver documentação" class="doc-icon"
+        onClick=${(e) => { e.stopPropagation(); setDoc(s.doc); }} style="cursor:pointer">📄</span>` : ""}
+      <div class="help mono">${s.path}</div>` },
+    ...(skill ? [] : [{ key: "location", label: "Skill", sort: true, render: (s) => skills.some((k) => k.id === s.location)
+      ? html`<a href=${"#scripts/" + encodeURIComponent(s.location)} onClick=${(e) => e.stopPropagation()}><${Badge}>${s.location}<//></a>`
+      : html`<${Badge}>${s.location}<//>` }]),
+    { key: "lang", label: "Tipo", sort: true, render: (s) => `${LANG_ICON[s.lang] || ""} ${s.lang}` },
+    { key: "desc", label: "Descrição", sort: true, render: (s) => s.desc || "—" },
+  ];
+  const table = html`<${DataTable} tableId="scripts" urlSort defaultSort=${NAME_SORT} columns=${scriptCols} rows=${rows}
+    onRowClick=${(s) => r.open(s.path.split("/"))}
+    actions=${(s) => html`<button class="sm danger" onClick=${() => setConfirm(s.path)}>Excluir</button>`}
+    empty=${"Nenhum script" + (skill ? " nesta skill — ela é só documentação" : "") + "."} />`;
 
   const filters = html`<${FilterBar} q=${q} onChange=${r.setParams} placeholder=${skill ? "Pesquisar scripts da skill…" : "Pesquisar nome, skill, descrição…"}
       count=${rows.length} total=${skill ? all.filter((s) => s.location === skill.id).length : all.length}
       selects=${[...(skill ? [] : [{ key: "location", label: "Skill", value: location, options: locations.filter((l) => l !== "(raiz)") }]),
         { key: "lang", label: "Tipo", value: lang, options: [...new Set(all.map((s) => s.lang).filter(Boolean))].sort() }]} />`;
 
-  const skillsTable = skillRows.length === 0 ? html`<div class="card"><div class="empty">Nenhuma skill.</div></div>` : html`
-    <table>
-      <thead><tr>${th("name", "Skill")}${th("description", "Descrição")}${th("scripts", "Scripts")}<th>Doc</th></tr></thead>
-      <tbody>
-        ${skillRows.map((k) => html`<tr key=${k.id} class="clickable" onClick=${() => r.openWith(k.id, { q: "", sort: "", dir: "" })}>
-          <td><a href=${"#scripts/" + encodeURIComponent(k.id)} onClick=${(e) => e.stopPropagation()}><b>${k.name}</b></a>
-            <div class="help mono">${k.id}/</div></td>
-          <td>${k.description || "—"}</td>
-          <td><${Badge}>${k.scripts}<//></td>
-          <td>${k.doc ? "SKILL.md" : html`<span class="help">⚠ sem SKILL.md</span>`}</td>
-        </tr>`)}
-      </tbody>
-    </table>`;
+  const skillsTable = html`<${DataTable} tableId="skills" urlSort defaultSort=${NAME_SORT} rows=${skillRows} empty="Nenhuma skill."
+    onRowClick=${(k) => r.openWith(k.id, { q: "", sort: "", dir: "" })}
+    columns=${[
+      { key: "name", label: "Skill", hideable: false, sort: true, render: (k) => html`<a href=${"#scripts/" + encodeURIComponent(k.id)} onClick=${(e) => e.stopPropagation()}><b>${k.name}</b></a>
+        <div class="help mono">${k.id}/</div>` },
+      { key: "description", label: "Descrição", sort: true, render: (k) => k.description || "—" },
+      { key: "scripts", label: "Scripts", sort: true, render: (k) => html`<${Badge}>${k.scripts}<//>` },
+      { key: "doc", label: "Doc", sort: (k) => (k.doc ? 1 : 0), render: (k) => k.doc ? "SKILL.md" : html`<span class="help">⚠ sem SKILL.md</span>` },
+    ]} />`;
 
   const overview = html`<div>
     <div class="page-title"><h1>Scripts / Skills</h1><span class="spacer"></span>

@@ -3,7 +3,7 @@
 // URL: #memory[/<arquivo>][?q=]  — #memory = MEMORY.md  (core/rules/urls-navegacao.md)
 import { html, useState, useEffect, api, useResource, Spinner, toast, handleError, Tabs } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
-import { MarkdownEditor, FilterBar } from "../components.js";
+import { MarkdownEditor, FilterBar, DataTable } from "../components.js";
 
 const HELP = {
   "MEMORY.md": html`<b>MEMORY.md</b> — índice da memória: preferências, fatos da rede e lições aprendidas (uma linha por nota).`,
@@ -35,11 +35,11 @@ export function MemoryPage() {
         <div class="help" style="margin-bottom:8px">Notas detalhadas em <span class="mono">memory/</span> — o índice MEMORY.md aponta para elas.</div>
         <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar nota" count=${shown.length} total=${notes.length} />
         ${files.loading ? html`<${Spinner} />` : shown.length === 0 ? html`<div class="card"><div class="empty">Nenhuma nota.</div></div>` : html`
-        <table><thead><tr><th>Nota</th><th>Título</th></tr></thead><tbody>
-          ${shown.map((n) => html`<tr key=${n.name} class="clickable" onClick=${() => r.open(n.name)}>
-            <td><a class="mono" href=${"#memory/" + encodeURIComponent(n.name)} onClick=${(e) => e.stopPropagation()}>${n.name}</a></td>
-            <td>${n.title || "—"}</td></tr>`)}
-        </tbody></table>`}
+        <${DataTable} tableId="memory-notes" urlSort rows=${shown.map((n) => ({ ...n, _key: n.name }))} onRowClick=${(n) => r.open(n.name)}
+          columns=${[
+            { key: "name", label: "Nota", hideable: false, sort: true, render: (n) => html`<a class="mono" href=${"#memory/" + encodeURIComponent(n.name)} onClick=${(e) => e.stopPropagation()}>${n.name}</a>` },
+            { key: "title", label: "Título", sort: true, render: (n) => n.title || "—" },
+          ]} />`}
       </div>`
     : !known ? html`<div class="card">'${current}' não encontrado. <a href="#memory">Voltar à memória</a></div>`
     : html`<div>

@@ -2,7 +2,7 @@
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
 import { UpdatesControl } from "./updates.js";
 import { useMenuRoute, matchText } from "../route.js";
-import { FilterBar, ResourceTable, Field, Modal, MarkdownPanel, CodeTextEditor } from "../components.js";
+import { FilterBar, DataTable, Field, Modal, MarkdownPanel, CodeTextEditor } from "../components.js";
 
 // URL: #reports[/<arquivo>][?q=]  (core/rules/urls-navegacao.md)
 export function ReportsPage() {
@@ -14,13 +14,13 @@ export function ReportsPage() {
   if (res.loading) return html`<${Spinner} />`;
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
   const cols = [
-    { key: "file", label: "Relatório", render: (x) => html`<a href=${"#reports/" + encodeURIComponent(x.file)} onClick=${(e) => e.stopPropagation()}><b>${x.file}</b></a>` },
-    { key: "size", label: "Tamanho", render: (r) => `${r.size} B` },
+    { key: "file", label: "Relatório", hideable: false, sort: true, render: (x) => html`<a href=${"#reports/" + encodeURIComponent(x.file)} onClick=${(e) => e.stopPropagation()}><b>${x.file}</b></a>` },
+    { key: "size", label: "Tamanho", sort: true, render: (r) => `${r.size} B` },
   ];
   return html`<div>
     <div class="page-title"><h1>Relatórios</h1></div>
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar relatório" count=${res.data.reports.filter((x) => matchText(q, x.file)).length} total=${res.data.reports.length} />
-    <${ResourceTable} columns=${cols} rows=${res.data.reports.filter((x) => matchText(q, x.file)).map((x) => ({ ...x, _key: x.file }))}
+    <${DataTable} tableId="reports" urlSort columns=${cols} rows=${res.data.reports.filter((x) => matchText(q, x.file)).map((x) => ({ ...x, _key: x.file }))}
       onRowClick=${(r) => setOpen(r.file)} empty="Nenhum relatório em reports/." />
     ${open && html`<${ReportView} key=${open} file=${open} onClose=${() => setOpen(null)} />`}
   </div>`;
@@ -45,14 +45,14 @@ export function RunsPage() {
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
   const dot = (s) => ({ completed: "var(--ok)", failed: "var(--danger)", in_progress: "var(--warn)" }[s] || "var(--muted)");
   const cols = [
-    { key: "id", label: "Execução", render: (x) => html`<a href=${"#runs/" + encodeURIComponent(x.id)} onClick=${(e) => e.stopPropagation()}><b>${x.id}</b></a>` },
-    { key: "status", label: "Status", render: (x) => html`<span class="statedot" style=${`background:${dot(x.status)}`}></span>${x.status || "—"}` },
+    { key: "id", label: "Execução", hideable: false, sort: true, render: (x) => html`<a href=${"#runs/" + encodeURIComponent(x.id)} onClick=${(e) => e.stopPropagation()}><b>${x.id}</b></a>` },
+    { key: "status", label: "Status", sort: true, render: (x) => html`<span class="statedot" style=${`background:${dot(x.status)}`}></span>${x.status || "—"}` },
   ];
   return html`<div>
     <div class="page-title"><h1>Execuções</h1></div>
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar execução" count=${res.data.runs.filter((x) => (!status || x.status === status) && matchText(q, x.id)).length} total=${res.data.runs.length}
       selects=${[{ key: "status", label: "Status", value: status, options: [...new Set(res.data.runs.map((x) => x.status).filter(Boolean))].sort() }]} />
-    <${ResourceTable} columns=${cols} rows=${res.data.runs.filter((x) => (!status || x.status === status) && matchText(q, x.id)).map((x) => ({ ...x, _key: x.id }))}
+    <${DataTable} tableId="runs" urlSort columns=${cols} rows=${res.data.runs.filter((x) => (!status || x.status === status) && matchText(q, x.id)).map((x) => ({ ...x, _key: x.id }))}
       onRowClick=${(r) => setOpen(r.id)} empty="Nenhuma execução em runs/ (criadas durante workflows)." />
     ${open && html`<${RunView} key=${open} id=${open} onClose=${() => setOpen(null)} />`}
   </div>`;

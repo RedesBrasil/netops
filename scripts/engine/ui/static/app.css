@@ -698,11 +698,14 @@ tr.sc-unread td { font-weight: 600; }
 .rt-wrap > table.rt tbody tr:last-child td { border-bottom: 0; }
 /* coluna de ações (⚙ Colunas / Excluir) sempre visível, mesmo com rolagem horizontal */
 table.rt th.rt-act-th, table.rt td.actions { position: sticky; right: 0; z-index: 2; background: var(--surface); }
-table.rt th.rt-act-th { background: var(--surface-2); }
+table.rt th.rt-act-th { background: var(--surface-2); z-index: 4; }
+table.rt th.rt-pinned, table.rt td.bk-col-check { text-align: center; padding-left: 6px; padding-right: 6px; }
 table.rt tbody tr:hover td.actions { background: var(--surface-2); }
+table.rt tbody tr.on td.actions, table.rt tbody tr.on:hover td.actions { background: var(--accent-weak); }
 table.rt-fixed { table-layout: fixed; }
 table.rt-fixed td:not(.actions) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-table.rt th.rt-th { position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 16px; }
+table.rt thead th { position: sticky; top: 0; z-index: 3; }
+table.rt th.rt-th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 16px; }
 table.rt th.rt-th[draggable="true"] { cursor: grab; }
 table.rt th.rt-th.sortable { cursor: pointer; }
 table.rt .rt-fill { padding: 0; }

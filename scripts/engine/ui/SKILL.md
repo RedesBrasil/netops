@@ -527,3 +527,20 @@ checklist em `core/rules/urls-navegacao.md` — leia antes de criar ou alterar q
 (`sync` recopia o código; `down` encerra). Depois:
 `PLAYWRIGHT_MODULE=... CHROMIUM_EXECUTABLE=... node tests/urls.browser.mjs [menu ...]` (sem args = todos).
 Cobre item aberto, deep link (F5), Voltar, id inexistente, filtros na URL e limpeza. Unitário: `tests/route.test.mjs`.
+
+## Tabelas: DataTable (padrão de todas as listagens)
+
+Todas as tabelas do console usam `DataTable` (`static/js/table.js`; `ResourceTable` é um alias antigo).
+São 16 tabelas: hosts, grupos, credenciais, boas práticas, configs, workflows, agentes, relatórios, execuções,
+notas da memória, skills, scripts, execuções agendadas e as quatro de backups. É código próprio, sem biblioteca:
+o console é Preact+htm, offline e sem build. Uma grade pronta traria o próprio DOM e quebraria as células
+Preact, o tema e as URLs.
+
+- **Para o usuário:** redimensionar arrastando a borda (duplo clique ajusta ao conteúdo), mover arrastando o
+  cabeçalho (ou ↑↓ no menu), mostrar/ocultar e "Restaurar padrão" no **⚙ Colunas**. O cabeçalho fica fixo no
+  topo e a coluna de ações fica fixa à direita.
+- **Persistência:** `localStorage["netops.table.<tableId>"]` = `{order, vis, widths}`, por navegador. A ordenação
+  fica na URL quando a tabela usa `urlSort`.
+- **Regra para telas novas:** `core/rules/tabelas-console.md` (sem `<table>` cru, `tableId` único, `sort` nas colunas).
+- **Testes:** `node --test tests/table-core.test.mjs` (núcleo puro + guarda do padrão), `tests/tables-all.browser.mjs`
+  (smoke em todas as telas) e `tests/table-columns.browser.mjs` (interações, desktop e celular), contra `tests/e2e-env.sh up`.

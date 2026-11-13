@@ -6,7 +6,7 @@
 //   #schedules/runs[?task=&status=&unread=1]   #schedules/runs/<tarefa>/<run>
 import { html, useState, useEffect, api, useResource, Spinner, toast, handleError, Modal, Tabs, ConfirmDialog } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
-import { FilterBar, MarkdownView, Toggle } from "../components.js";
+import { FilterBar, MarkdownView, Toggle, DataTable } from "../components.js";
 
 export const KINDS = [
   { key: "script", label: "Determinística / script", short: "Script", cls: "sc-k-script",
@@ -421,20 +421,19 @@ export function SchedulesPage() {
     </div>
     ${!runsRes.data ? html`<${Spinner} />` : shownRuns.length === 0
       ? html`<div class="card bk-empty">Nenhuma execução${allRuns.length ? " com esses filtros" : " ainda"}.</div>`
-      : html`<div class="card bk-tablewrap"><table>
-        <thead><tr><th></th><th>Quando</th><th>Tarefa</th><th>Tipo</th><th>Status</th><th>Resultado</th></tr></thead>
-        <tbody>${shownRuns.map((x) => html`<tr key=${x.task_id + x.run_id} class=${"clickable" + (x.unread ? " sc-unread" : "")}
-            onClick=${() => r.open(["runs", x.task_id, x.run_id])}>
-          <td>${x.unread ? html`<span class="sc-dot" title="não lida"></span>` : ""}</td>
-          <td><a href=${"#schedules/runs/" + encodeURIComponent(x.task_id) + "/" + x.run_id} onClick=${(e) => e.stopPropagation()}>${fmtTs(x.started_at)}</a>
-            <div class="help">${x.trigger === "manual" ? "manual" : "agendada"}</div></td>
-          <td>${x.task_name}</td>
-          <td><${KindBadge} kind=${x.kind} /></td>
-          <td>${x.state === "running" ? html`<span class="badge accent">rodando…</span>` : html`<${StatusBadge} status=${x.status} />`}
-            ${x.silent && x.status === "ok" ? html` <span class="help">sem novidade</span>` : ""}</td>
-          <td class="sc-excerpt">${x.error ? html`<span class="err">${x.error}</span> ` : ""}${x.excerpt}</td>
-        </tr>`)}</tbody>
-      </table></div>`}
+      : html`<${DataTable} tableId="schedule-runs" urlSort defaultSort=${{ key: "when", dir: "desc" }}
+          rows=${shownRuns.map((x) => ({ ...x, _key: x.task_id + x.run_id }))}
+          rowClass=${(x) => (x.unread ? "sc-unread" : "")} onRowClick=${(x) => r.open(["runs", x.task_id, x.run_id])}
+          columns=${[
+            { key: "unread", label: "", menuLabel: "Não lida", width: 34, sort: (x) => (x.unread ? 1 : 0), render: (x) => x.unread ? html`<span class="sc-dot" title="não lida"></span>` : "" },
+            { key: "when", label: "Quando", hideable: false, sort: (x) => x.started_at || "", render: (x) => html`<a href=${"#schedules/runs/" + encodeURIComponent(x.task_id) + "/" + x.run_id} onClick=${(e) => e.stopPropagation()}>${fmtTs(x.started_at)}</a>
+              <div class="help">${x.trigger === "manual" ? "manual" : "agendada"}</div>` },
+            { key: "task", label: "Tarefa", sort: (x) => x.task_name || "", render: (x) => x.task_name },
+            { key: "kind", label: "Tipo", sort: true, render: (x) => html`<${KindBadge} kind=${x.kind} />` },
+            { key: "status", label: "Status", sort: (x) => (x.state === "running" ? "running" : x.status || ""), render: (x) => html`${x.state === "running" ? html`<span class="badge accent">rodando…</span>` : html`<${StatusBadge} status=${x.status} />`}
+              ${x.silent && x.status === "ok" ? html` <span class="help">sem novidade</span>` : ""}` },
+            { key: "result", label: "Resultado", tdClass: "sc-excerpt", sort: (x) => x.error || x.excerpt || "", render: (x) => html`${x.error ? html`<span class="err">${x.error}</span> ` : ""}${x.excerpt}` },
+          ]} />`}
   </div>`;
 
   return html`<div>

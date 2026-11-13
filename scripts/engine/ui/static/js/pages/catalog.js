@@ -2,7 +2,7 @@
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
 import { WorkflowForm } from "../workflow-form.js";
-import { FilterBar, ResourceTable, Field, Modal, CodeTextEditor, MarkdownEditor } from "../components.js";
+import { FilterBar, DataTable, Field, Modal, CodeTextEditor, MarkdownEditor } from "../components.js";
 
 // Página de um único tipo (workflows OU agentes), sem abas.
 // URL: #workflows|#agents[/<arquivo>|/new][?q=]  (core/rules/urls-navegacao.md)
@@ -34,17 +34,17 @@ function Kind({ kind, r }) {
   if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
   const items = (res.data[kind] || []).filter((i) => matchText(q, i.name, i.file, i.id, i.function));
   const cols = kind === "workflows"
-    ? [{ key: "name", label: "Nome", render: (r) => html`<b>${r.name || r.file}</b><div class="help">${r.file}</div>` },
-       { key: "id", label: "ID", render: (r) => r.id || "—" },
-       { key: "steps", label: "Passos", render: (r) => html`<${Badge}>${r.steps}<//>` }]
-    : [{ key: "name", label: "Agente", render: (r) => html`${r.icon || ""} <b>${r.name || r.file}</b><div class="help">${r.file}</div>` },
-       { key: "id", label: "ID", render: (r) => r.id || "—" },
-       { key: "function", label: "Função", render: (r) => r.function || "—" }];
+    ? [{ key: "name", label: "Nome", hideable: false, sort: (r) => r.name || r.file, render: (r) => html`<b>${r.name || r.file}</b><div class="help">${r.file}</div>` },
+       { key: "id", label: "ID", sort: true, render: (r) => r.id || "—" },
+       { key: "steps", label: "Passos", sort: true, render: (r) => html`<${Badge}>${r.steps}<//>` }]
+    : [{ key: "name", label: "Agente", hideable: false, sort: (r) => r.name || r.file, render: (r) => html`${r.icon || ""} <b>${r.name || r.file}</b><div class="help">${r.file}</div>` },
+       { key: "id", label: "ID", sort: true, render: (r) => r.id || "—" },
+       { key: "function", label: "Função", sort: true, render: (r) => r.function || "—" }];
   cols[0].render = ((orig) => (row) => html`<a href=${"#" + kind + "/" + encodeURIComponent(row.file)} onClick=${(e) => e.stopPropagation()}>${orig(row)}</a>`)(cols[0].render);
   if (open) return html`<${Detail} key=${open} kind=${kind} file=${open} onClose=${() => setOpen(null)} onSaved=${() => res.reload()} />`;
   return html`<div>
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar" count=${items.length} total=${(res.data[kind] || []).length} />
-    <${ResourceTable} columns=${cols} rows=${items.map((i) => ({ ...i, _key: i.file }))}
+    <${DataTable} tableId=${kind} urlSort columns=${cols} rows=${items.map((i) => ({ ...i, _key: i.file }))}
       onRowClick=${(r) => setOpen(r.file)} empty="Nada aqui." />
     ${creating && html`<${Creator} kind=${kind} onClose=${() => setCreating(false)} onSaved=${() => { setCreating(false); res.reload(); }} />`}
   </div>`;

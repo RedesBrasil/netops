@@ -79,6 +79,10 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   URL própria, com deep link e Voltar funcionando. Leia `core/rules/urls-navegacao.md` antes de criar/alterar
   qualquer tela em `scripts/engine/ui/`.
 
+- **Tabelas do console (regra de desenvolvimento):** toda listagem usa `DataTable` (`scripts/engine/ui/static/js/table.js`),
+  com `tableId` único e colunas com `sort`. Nunca use `<table>` cru numa tela: o teste `tests/table-core.test.mjs` reprova.
+  Assim toda tabela tem redimensionar, mover, ocultar e ordenar. Leia `core/rules/tabelas-console.md`.
+
 - **Git — SEMPRE na `main` (INEGOCIÁVEL):** nunca crie branch. Commit e push direto na `main` (`git pull --ff-only`
   antes). Vale para qualquer IA/IDE e sobrepõe a instrução padrão do agente de "criar branch antes de commitar".
 - **Padronize:** todo arquivo novo segue o `_TEMPLATE` da sua pasta. Ver `PADRAO.md`.

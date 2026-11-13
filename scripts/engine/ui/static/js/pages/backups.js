@@ -5,7 +5,7 @@
 import { html, useState, useEffect, useRef, api, useResource, Spinner, toast, handleError, Modal, Tabs, ConfirmDialog } from "../ui.js";
 import { authToken } from "../api.js";
 import { useMenuRoute, matchText } from "../route.js";
-import { FilterBar } from "../components.js";
+import { FilterBar, DataTable } from "../components.js";
 
 const FREQS = [["daily", "Diária"], ["weekly", "Semanal"], ["hourly", "De hora em hora"]];
 const WEEKDAYS = [["mon", "Seg"], ["tue", "Ter"], ["wed", "Qua"], ["thu", "Qui"],
@@ -183,30 +183,19 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
         ${hasFilter && html`<button class="sm" onClick=${clearFilters}>limpar filtros</button>`}
         <span class="badge accent bk-selcount">${hosts.length} selecionado(s)</span>
       </div>
-      <div class="bk-tablewrap">
-        <table>
-          <thead><tr>
-            <th class="bk-col-check"><input type="checkbox" title="selecionar todos os visíveis"
-              checked=${allShownOn} onChange=${toggleAllShown} /></th>
-            <th>Host</th><th>Vendor</th><th>Função</th><th>Grupo</th><th>IP</th>
-          </tr></thead>
-          <tbody>
-            ${shown.length === 0 && html`<tr><td colspan="6" class="help" style="padding:12px">Nenhum host com esses filtros.</td></tr>`}
-            ${shown.map((h) => {
-              const on = hosts.includes(h.id);
-              return html`<tr key=${h.id} class=${on ? "on" : ""} onClick=${() => toggle(hosts, setHosts, h.id)}>
-                <td class="bk-col-check"><input type="checkbox" checked=${on}
-                  onClick=${(e) => e.stopPropagation()} onChange=${() => toggle(hosts, setHosts, h.id)} /></td>
-                <td>${h.hostname || h.mgmt_ip || "Host " + h.id}</td>
-                <td>${h.vendor || ""}</td>
-                <td>${h.role || ""}</td>
-                <td>${h.group || ""}</td>
-                <td>${h.mgmt_ip || ""}</td>
-              </tr>`;
-            })}
-          </tbody>
-        </table>
-      </div>
+      <${DataTable} tableId="backup-service-hosts" wrapClass="bk-tablewrap" rows=${shown.map((h) => ({ ...h, _key: h.id }))}
+        empty="Nenhum host com esses filtros." rowClass=${(h) => (hosts.includes(h.id) ? "on" : "")}
+        onRowClick=${(h) => toggle(hosts, setHosts, h.id)}
+        columns=${[
+          { key: "check", pinned: true, width: 40, tdClass: "bk-col-check",
+            label: html`<input type="checkbox" title="selecionar todos os visíveis" checked=${allShownOn} onChange=${toggleAllShown} />`,
+            render: (h) => html`<input type="checkbox" checked=${hosts.includes(h.id)} onClick=${(e) => e.stopPropagation()} onChange=${() => toggle(hosts, setHosts, h.id)} />` },
+          { key: "hostname", label: "Host", hideable: false, sort: (h) => h.hostname || h.mgmt_ip || "", render: (h) => h.hostname || h.mgmt_ip || "Host " + h.id },
+          { key: "vendor", label: "Vendor", sort: true, render: (h) => h.vendor || "" },
+          { key: "role", label: "Função", sort: true, render: (h) => h.role || "" },
+          { key: "group", label: "Grupo", sort: true, render: (h) => h.group || "" },
+          { key: "mgmt_ip", label: "IP", sort: true, render: (h) => h.mgmt_ip || "" },
+        ]} />
     </div>
 
     <div class="modal-actions">
@@ -240,20 +229,13 @@ function RunModal({ runId, onClose, onDone }) {
       <div class="help" style="margin-bottom:8px">
         ${done ? "Concluído" : "Em execução…"} — ${finished}/${hosts.length} host(s)${st.note ? " · " + st.note : ""}
       </div>
-      <div class="bk-tablewrap">
-        <table>
-          <thead><tr><th style="width:34px"></th><th>Host</th><th>Estado</th><th>Detalhe</th></tr></thead>
-          <tbody>
-            ${hosts.length === 0 && html`<tr><td colspan="4" class="help" style="padding:12px">Serviço sem alvos.</td></tr>`}
-            ${hosts.map((h) => html`<tr key=${h.id}>
-              <td class=${"bk-run-" + h.state} style="text-align:center; font-weight:700">${ic(h.state)}</td>
-              <td>${h.hostname || "Host " + h.id}</td>
-              <td class=${"bk-run-" + h.state}>${h.state}</td>
-              <td class="help">${h.detail || ""}</td>
-            </tr>`)}
-          </tbody>
-        </table>
-      </div>
+      <${DataTable} tableId="backup-run-progress" wrapClass="bk-tablewrap" rows=${hosts.map((h) => ({ ...h, _key: h.id }))} empty="Serviço sem alvos."
+        columns=${[
+          { key: "icon", label: "", menuLabel: "Ícone", width: 40, render: (h) => html`<span class=${"bk-run-" + h.state} style="font-weight:700">${ic(h.state)}</span>` },
+          { key: "hostname", label: "Host", hideable: false, sort: (h) => h.hostname || "", render: (h) => h.hostname || "Host " + h.id },
+          { key: "state", label: "Estado", sort: true, render: (h) => html`<span class=${"bk-run-" + h.state}>${h.state}</span>` },
+          { key: "detail", label: "Detalhe", sort: true, render: (h) => html`<span class="help">${h.detail || ""}</span>` },
+        ]} />
     </div>`}
     <div class="modal-actions" style="margin-top:10px">
       <button onClick=${onClose}>Fechar${st && !done ? " (continua em segundo plano)" : ""}</button>
@@ -322,30 +304,19 @@ function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, 
       <button class="danger" disabled=${sel.length === 0}
         onClick=${() => setConfirming(true)}>Apagar (${sel.length})</button>
     </div>
-    <div class="bk-tablewrap">
-      <table>
-        <thead><tr>
-          <th class="bk-col-check"><input type="checkbox" checked=${allOn} onChange=${toggleAll} /></th>
-          <th>Backup</th><th>Tamanho</th><th>Data</th><th style="text-align:right">Ações</th>
-        </tr></thead>
-        <tbody>
-          ${items.map((b) => {
-            const on = sel.includes(b.path);
-            return html`<tr key=${b.path} class=${on ? "on" : ""} onClick=${() => toggle(b.path)}>
-              <td class="bk-col-check"><input type="checkbox" checked=${on}
-                onClick=${(e) => e.stopPropagation()} onChange=${() => toggle(b.path)} /></td>
-              <td class="bk-id">${b.name}</td>
-              <td>${fmtSize(b.size)}</td>
-              <td>${fmtDate(b.mtime)}</td>
-              <td><div class="bk-actions" onClick=${(e) => e.stopPropagation()}>
-                <button class="sm" onClick=${() => onView(b.path)}>Visualizar</button>
-                <button class="sm btn-ok" onClick=${() => onDownloadOne(b.path)}>Baixar</button>
-              </div></td>
-            </tr>`;
-          })}
-        </tbody>
-      </table>
-    </div>
+    <${DataTable} tableId="backup-host-files" wrapClass="bk-tablewrap" rows=${items.map((b) => ({ ...b, _key: b.path }))}
+      defaultSort=${{ key: "mtime", dir: "desc" }} rowClass=${(b) => (sel.includes(b.path) ? "on" : "")} onRowClick=${(b) => toggle(b.path)}
+      actions=${(b) => html`<div class="bk-actions">
+        <button class="sm" onClick=${() => onView(b.path)}>Visualizar</button>
+        <button class="sm btn-ok" onClick=${() => onDownloadOne(b.path)}>Baixar</button></div>`}
+      columns=${[
+        { key: "check", pinned: true, width: 40, tdClass: "bk-col-check",
+          label: html`<input type="checkbox" checked=${allOn} onChange=${toggleAll} />`,
+          render: (b) => html`<input type="checkbox" checked=${sel.includes(b.path)} onClick=${(e) => e.stopPropagation()} onChange=${() => toggle(b.path)} />` },
+        { key: "name", label: "Backup", hideable: false, sort: true, tdClass: "bk-id", render: (b) => b.name },
+        { key: "size", label: "Tamanho", sort: true, render: (b) => fmtSize(b.size) },
+        { key: "mtime", label: "Data", sort: true, render: (b) => fmtDate(b.mtime) },
+      ]} />
     <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>Fechar</button></div>
     ${confirming && html`<${ConfirmDialog}
       title="Apagar backups selecionados?"
@@ -521,23 +492,18 @@ export function BackupsPage() {
         ? html`<${Spinner} />`
         : backupHosts.length === 0
           ? html`<div class="bk-empty">Nenhum backup ainda. Os hosts aparecem aqui após a primeira coleta.</div>`
-          : html`<div class="bk-tablewrap">
-            <table>
-              <thead><tr><th>Host</th><th>Backups</th><th>Último</th><th>Tamanho</th><th style="text-align:right">Ações</th></tr></thead>
-              <tbody>
-                ${shownHosts.map((h) => html`<tr key=${h.host != null ? h.host : "unassigned:" + h.directory}>
-                  <td><a href=${"#backups/storage/" + encodeURIComponent(hostKey(h))}>${hostLabel(h)}</a></td>
-                  <td>${h.count}</td>
-                  <td>${fmtDate(h.latest_mtime)}</td>
-                  <td>${fmtSize(h.total_size)}</td>
-                  <td><div class="bk-actions">
-                    <button class="sm" onClick=${() => r.open(["storage", hostKey(h)])}>Ver Backups</button>
-                    <button class="sm btn-ok" onClick=${() => downloadZip(h.backups.map((b) => b.path), hostLabel(h) + "-backups")}>Baixar todos</button>
-                  </div></td>
-                </tr>`)}
-              </tbody>
-            </table>
-          </div>`}
+          : html`<${DataTable} tableId="backup-storage" urlSort wrapClass="bk-tablewrap" empty="Nenhum host com esse filtro."
+              rows=${shownHosts.map((h) => ({ ...h, _key: h.host != null ? h.host : "unassigned:" + h.directory }))}
+              onRowClick=${(h) => r.open(["storage", hostKey(h)])}
+              actions=${(h) => html`<div class="bk-actions">
+                <button class="sm" onClick=${() => r.open(["storage", hostKey(h)])}>Ver Backups</button>
+                <button class="sm btn-ok" onClick=${() => downloadZip(h.backups.map((b) => b.path), hostLabel(h) + "-backups")}>Baixar todos</button></div>`}
+              columns=${[
+                { key: "host", label: "Host", hideable: false, sort: (h) => hostLabel(h), render: (h) => html`<a href=${"#backups/storage/" + encodeURIComponent(hostKey(h))} onClick=${(e) => e.stopPropagation()}>${hostLabel(h)}</a>` },
+                { key: "count", label: "Backups", sort: true },
+                { key: "latest_mtime", label: "Último", sort: true, render: (h) => fmtDate(h.latest_mtime) },
+                { key: "total_size", label: "Tamanho", sort: true, render: (h) => fmtSize(h.total_size) },
+              ]} />`}
       <button class="sm" style="margin-top:8px" onClick=${hostsRes.reload}>Atualizar</button>
     </div>
   </div>`;
