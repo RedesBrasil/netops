@@ -5,6 +5,7 @@ import { Modal, ConflictDialog } from "../ui.js";
 import { useRoute, navigate, useMenuRoute, matchText } from "../route.js";
 
 const INHERIT = ["vendor", "role", "credential"];
+const bkLabel = (v) => v === true ? "sim" : v === false ? "não" : "padrão";
 
 export function HostsPage() {
   const res = useResource("/hosts");
@@ -32,13 +33,19 @@ export function HostsPage() {
 
   const cols = [
     { key: "id", label: "ID", sort: (r) => String(r.id), render: (r) => html`<span class="mono">${r.id}</span>` },
-    { key: "hostname", label: "Nome do host", sort: (r) => r.explicit.hostname || "", render: (r) => html`<a href=${"#hosts/" + encodeURIComponent(r.id)} onClick=${(e) => e.stopPropagation()}><b>${r.explicit.hostname}</b></a>` },
+    { key: "hostname", label: "Nome do host", hideable: false, sort: (r) => r.explicit.hostname || "", render: (r) => html`<a href=${"#hosts/" + encodeURIComponent(r.id)} onClick=${(e) => e.stopPropagation()}><b>${r.explicit.hostname}</b></a>` },
     { key: "mgmt_ip", label: "IP", sort: (r) => r.explicit.mgmt_ip || "", render: (r) => html`<span class="mono">${r.explicit.mgmt_ip}</span>` },
     { key: "vendor", label: "Vendor", sort: (r) => r.effective.vendor || "", render: (r) => html`<${Badge} kind="accent">${r.effective.vendor || "?"}<//>` },
     { key: "role", label: "Role", sort: (r) => r.effective.role || "", render: (r) => r.effective.role || "—" },
     { key: "group", label: "Grupo", sort: (r) => r.explicit.group || "", render: (r) => r.explicit.group || "—" },
     { key: "access", label: "Acesso", sort: (r) => (r.effective.access || {}).method || "", render: (r) => {
         const a = r.effective.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
+    // Ocultas por padrão — o usuário liga em ⚙ Colunas (preferência salva no navegador).
+    { key: "credential", label: "Credencial", hidden: true, sort: (r) => r.effective.credential || "", render: (r) => r.effective.credential || "—" },
+    { key: "model", label: "Modelo", hidden: true, sort: (r) => r.effective.model || "", render: (r) => r.effective.model || "—" },
+    { key: "site", label: "Site", hidden: true, sort: (r) => r.effective.site || "", render: (r) => r.effective.site || "—" },
+    { key: "backup", label: "Backup pré-mudança", hidden: true, sort: (r) => bkLabel(r.effective.backup_before_change), render: (r) => bkLabel(r.effective.backup_before_change) },
+    { key: "notes", label: "Notas", hidden: true, sort: (r) => r.effective.notes || "", render: (r) => html`<span title=${r.effective.notes || ""}>${r.effective.notes || "—"}</span>` },
   ];
 
   return html`<div>
@@ -49,7 +56,7 @@ export function HostsPage() {
                  { key: "role", label: "Role", value: role, options: opts((h) => h.effective.role) },
                  { key: "group", label: "Grupo", value: group, options: opts((h) => h.explicit.group) }]} />
     ${seg && seg !== "new" && !editing && html`<div class="card">Host '${seg}' não encontrado. <a href="#hosts">Voltar aos hosts</a></div>`}
-    <${ResourceTable} columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
+    <${ResourceTable} tableId="hosts" columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
       sortState=${{ key: sort || null, dir }} onSortChange=${(n) => setParams({ sort: n.key || "", dir: n.dir === "desc" ? "desc" : "" })}
       onRowClick=${(r) => setEditing(r)}
       actions=${(r) => html`<button class="sm danger" onClick=${() => setConfirm(r.id)}>Excluir</button>`}

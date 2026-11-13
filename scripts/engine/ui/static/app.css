@@ -693,8 +693,13 @@ tr.sc-unread td { font-weight: 600; }
 .modal .codearea { max-height: 55vh; }
 
 /* ResourceTable com layout de colunas (tableId): redimensionar, ocultar, reordenar */
-.rt-wrap { overflow-x: auto; margin-bottom: 12px; border-radius: var(--radius); }
-.rt-wrap > table.rt { margin: 0; }
+.rt-wrap { overflow-x: auto; margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.rt-wrap > table.rt { margin: 0; border: 0; border-radius: 0; overflow: visible; }
+.rt-wrap > table.rt tbody tr:last-child td { border-bottom: 0; }
+/* coluna de ações (⚙ Colunas / Excluir) sempre visível, mesmo com rolagem horizontal */
+table.rt th.rt-act-th, table.rt td.actions { position: sticky; right: 0; z-index: 2; background: var(--surface); }
+table.rt th.rt-act-th { background: var(--surface-2); }
+table.rt tbody tr:hover td.actions { background: var(--surface-2); }
 table.rt-fixed { table-layout: fixed; }
 table.rt-fixed td:not(.actions) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 table.rt th.rt-th { position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 16px; }
