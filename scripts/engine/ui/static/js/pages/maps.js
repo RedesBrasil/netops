@@ -1,6 +1,7 @@
 // O editor trabalha sobre os mesmos hosts/enlaces das páginas de inventário.
 import { html, useState, useEffect, useRef, api, Spinner, toast, handleError, Modal, ConfirmDialog } from "../ui.js";
 import { HostForm } from "./hosts.js";
+import { accessEntries, openEntry, AccessChooser } from "./host-term.js";
 import { LinkForm, IconPicker } from "../components.js";
 import { useMenuRoute, navigate, parseRoute } from "../route.js";
 import { snapshotToView, mapToWire, hostLabel } from "../host-identity.js";
@@ -108,6 +109,19 @@ export function MapsPage() {
   async function switchMap(id) { if (!await flush()) return; setCurrent(id); }
   const hostParam = r.params.host || "", linkParam = r.params.link || "";
   const hostRef = useRef(null), linkRef = useRef(null), opening = useRef(false);
+  // "Acessar" no menu do host (mesma lógica da tela de hosts: 1 método abre direto, vários abrem a escolha).
+  // Linhas do inventário em cache p/ o window.open ocorrer dentro do clique (senão o pop-up é bloqueado).
+  const hostRows = useRef(null), [accessHost, setAccessHost] = useState(null);
+  const loadHostRows = () => api.get("/hosts").then(h => { hostRows.current = h.hosts; return h.hosts; });
+  useEffect(() => { loadHostRows().catch(() => {}); }, []);
+  async function openAccess(hostId) {
+    let row = hostRows.current?.find(x => x.id === hostId);
+    if (!row) { try { row = (await loadHostRows()).find(x => x.id === hostId); } catch (e) { handleError(e); return; } }
+    const entries = row ? accessEntries(row) : [];
+    if (!entries.length) { toast.err("Host sem SSH/Telnet/HTTP(S) cadastrado."); return; }
+    if (entries.length === 1 && hostRows.current?.includes(row)) { openEntry(row.id, entries[0]); loadHostRows().catch(() => {}); return; }
+    setAccessHost(row);
+  }
   async function openHost(args, fromUrl = false) {
     if (!await flush()) return;
     if (!fromUrl) { opening.current = true; r.pushParams({ host: args.id != null ? String(args.id) : "new", link: "" }); }
@@ -177,11 +191,12 @@ export function MapsPage() {
   const map = snapshot.maps.find(m => m.id === current) || snapshot.maps[0];
   return html`<div class="maps-page">
     <${Editor} IconPicker=${IconPicker} map=${map} maps=${snapshot.maps} hosts=${snapshot.hosts} links=${snapshot.topology.links} readOnly=${snapshot.read_only || deleting}
-      saving=${saving || !!pending.current.size || deleting} status=${status} saveError=${saveError} onSave=${save} onHost=${openHost} onLink=${openLink} onSwitch=${switchMap}
+      saving=${saving || !!pending.current.size || deleting} status=${status} saveError=${saveError} onSave=${save} onHost=${openHost} onLink=${openLink} onSwitch=${switchMap} onAccess=${openAccess}
       onNewMap=${async () => { if (await flush()) setNewMap(true); }} onDeleteMap=${() => setConfirm({ kind: "map", id: map.id })}
       onDeleteSelection=${async selection => { if (await flush()) setConfirm({ kind: "selection", ...selection }); }}
       onError=${message => toast.err(message)} onBusy=${setBusy}
       onRetry=${() => { blocked.current = false; drain(); }} onReload=${() => setConfirm({ kind: "reload" })} />
+    ${accessHost && html`<${AccessChooser} host=${accessHost} entries=${accessEntries(accessHost)} onClose=${() => setAccessHost(null)} />`}
     ${hostDialog && html`<${HostForm} ...${hostDialog} onClose=${() => { setHostDialog(null); r.pushParams({ host: "" }); reload().catch(handleError); }}
       onSaved=${() => { setHostDialog(null); r.pushParams({ host: "" }); reload().catch(handleError); }} />`}
     ${linkDialog && html`<${LinkForm} ...${linkDialog} onClose=${() => { setLinkDialog(null); r.pushParams({ link: "" }); }} onSaved=${() => { setLinkDialog(null); r.pushParams({ link: "" }); reload().catch(handleError); }} />`}

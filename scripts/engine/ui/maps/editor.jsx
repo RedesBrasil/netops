@@ -172,7 +172,7 @@ function SaveBadge({ readOnly, saving, status, saveError, onRetry, onReload }) {
     ✓ {time ? `Salvo às ${time}` : 'Salvo'}</span>;
 }
 export function MapEditor(props) { return <ReactFlowProvider><Editor {...props} /></ReactFlowProvider>; }
-function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, onSave, onHost, onLink, onSwitch, onNewMap, onDeleteMap, onDeleteSelection, onError, onRetry, onReload, onBusy, IconPicker }) {
+function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, onSave, onHost, onLink, onSwitch, onAccess, onNewMap, onDeleteMap, onDeleteSelection, onError, onRetry, onReload, onBusy, IconPicker }) {
   const [layout, setLayout] = useState(map), [nodes, setNodes] = useState(() => makeNodes(map, hosts, readOnly, links));
   const layoutRef = useRef(map), nodesRef = useRef(nodes), gesture = useRef(false), ignoreDoubleClick = useRef(0);
   function visualNodes(value) { nodesRef.current = value; setNodes(value); }
@@ -519,6 +519,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
         {action('Enquadrar mapa', () => flow.fitView({ padding: .2, maxZoom: 1.05 }))}
       </> : menuNode ? <>
         {menuNode.data.mapId && action('Abrir mapa', () => onSwitch(menuNode.data.mapId))}
+        {menuNode.data.hostId && onAccess && action('Acessar', () => onAccess(menuNode.data.hostId))}
         {!readOnly && <>
           {action('Editar', () => edit(menuNode))}
           {connectable(menuNode) && action('Ligar a outro dispositivo', () => startConnection(menuNode.id))}

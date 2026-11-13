@@ -75,7 +75,7 @@ const AUX_LOGIN_APPS = ["proxmox"];
 export async function openWebLaunch(id, entry) {
   const name = `netops-web-${id}-${entry.port}`.replace(/[^\w-]/g, "_");
   const w = window.open("about:blank", name);
-  if (!w) { toast("error", "Pop-up bloqueado: permita pop-ups para este site e tente de novo."); return; }
+  if (!w) { toast("err", "Pop-up bloqueado: permita pop-ups para este site e tente de novo."); return; }
   let aux = null;
   if (AUX_LOGIN_APPS.includes(entry.app)) {
     try { aux = window.open("about:blank", name + "-auth", "popup,width=420,height=180"); } catch (e) { aux = null; }
@@ -106,7 +106,7 @@ export async function openWebLaunch(id, entry) {
   } catch (e) {
     try { w.close(); } catch (e2) {}
     if (aux) { try { aux.close(); } catch (e2) {} }
-    toast("error", `Acesso web: ${e.message || e}`);
+    toast("err", `Acesso web: ${e.message || e}`);
   }
 }
 
