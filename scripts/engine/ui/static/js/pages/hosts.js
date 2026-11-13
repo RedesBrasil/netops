@@ -109,7 +109,7 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     // Métodos de acesso em ordem de prioridade: o 1º é o principal (grava em access/credential); os demais em extra_access.
     accesses: [
       { method: UP((explicit.access || {}).method) ?? null, port: (explicit.access || {}).port ?? "", credential: UP(explicit.credential) ?? null },
-      ...(explicit.extra_access || []).map((x) => ({ method: UP(x.method) ?? null, port: x.port ?? "", credential: UP(x.credential) ?? null })),
+      ...(explicit.extra_access || []).map((x) => ({ method: UP(x.method) ?? null, port: x.port ?? "", credential: UP(x.credential) ?? null, app: x.app || "", path: x.path || "" })),
     ],
     extra_ips: (explicit.extra_ips || []).map((x) => ({ ip: x.ip || "", role: UP(x.role) || "", description: UP(x.description) || "" })),
   });
@@ -153,6 +153,10 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
       const item = { method: a.method };
       if (a.port !== "" && a.port != null) item.port = Number(a.port);
       if (a.credential) item.credential = a.credential;
+      if (["HTTP", "HTTPS"].includes(String(a.method).toUpperCase())) {   // login web automático (lib/web_login)
+        if (a.app) item.app = a.app;
+        if (a.path && a.path !== "/") item.path = a.path;
+      }
       return item;
     });
     if (extraAcc.length) payload.extra_access = extraAcc; else if (!isNew) payload.extra_access = null;
@@ -186,7 +190,7 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   const setExtra = (i, k, v) => setForm((f) => ({ ...f, extra_ips: f.extra_ips.map((x, j) => j === i ? { ...x, [k]: k === "ip" ? v : UP(v) } : x) }));
   const addExtra = () => setForm((f) => f.extra_ips.length >= MAX_EXTRA_IPS ? f : { ...f, extra_ips: [...f.extra_ips, { ip: "", role: "", description: "" }] });
   const delExtra = (i) => setForm((f) => ({ ...f, extra_ips: f.extra_ips.filter((_, j) => j !== i) }));
-  const setAcc = (i, k, v) => setForm((f) => ({ ...f, accesses: f.accesses.map((a, j) => j === i ? { ...a, [k]: k === "port" ? v : UP(v) } : a) }));
+  const setAcc = (i, k, v) => setForm((f) => ({ ...f, accesses: f.accesses.map((a, j) => j === i ? { ...a, [k]: ["port", "app", "path"].includes(k) ? v : UP(v) } : a) }));
   const addAcc = () => setForm((f) => f.accesses.length > MAX_EXTRA_ACCESS ? f : { ...f, accesses: [...f.accesses, { method: null, port: "", credential: null }] });
   const delAcc = (i) => setForm((f) => ({ ...f, accesses: f.accesses.length <= 1 ? [{ method: null, port: "", credential: null }] : f.accesses.filter((_, j) => j !== i) }));
   const [drag, setDrag] = useState({ from: null, over: null });   // arrastar para reordenar (1ª linha = principal)
@@ -256,6 +260,13 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
             placeholder=${i === 0 ? (form.group && inh("credential") ? `herdar: ${inh("credential")}` : "(credencial: nenhuma)") : "(credencial: nenhuma)"}
             onChange=${(v) => setAcc(i, "credential", v)} /></div>
         </div>
+        ${i > 0 && ["HTTP", "HTTPS"].includes(String(a.method).toUpperCase()) && html`<div class="access-fields" style="margin-top:.4rem">
+          <div class="access-cell"><select aria-label=${`App web do método ${i + 1}`} value=${a.app || ""} onChange=${(e) => setAcc(i, "app", e.target.value)}>
+            <option value="">App: abrir a página (login manual)</option>
+            <option value="proxmox">App: Proxmox (login automático)</option>
+            <option value="zabbix">App: Zabbix (login automático)</option></select></div>
+          <div class="access-cell"><input aria-label=${`Caminho do método ${i + 1}`} placeholder="caminho (ex.: /zabbix)" value=${a.path || ""} onInput=${(e) => setAcc(i, "path", e.target.value)} /></div>
+        </div>`}
         <div class="access-actions">
           <button type="button" aria-label=${`Remover método ${i + 1}`} title="Remover" onClick=${() => delAcc(i)}>×</button>
         </div>
