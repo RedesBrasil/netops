@@ -29,3 +29,4 @@ croniter>=6.0,<8         # Tarefas agendadas: expressão cron + fuso (mesma lib 
 
 # Binário fora do pip (instalar pelo SO):  sudo apt install nmap
 # nmap é usado por scripts/diagnostics/portscan.py e scripts/analysis/security_assessment.py
+requests>=2.31          # login web automático (lib/web_login)

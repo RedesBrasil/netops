@@ -57,6 +57,8 @@ Todos os menus do console seguem a regra. Helpers: `static/js/route.js` (`useMen
 | Memória | `#memory` (=MEMORY.md), `#memory/AGENTS.md`, `#memory/notas`, `#memory/<nota>.md` | `q` (lista de notas) |
 | Terminal | página única (sem item aberto) | — |
 
+**Acessar → Web** (`openWebLaunch`) é uma *ação* (abre aba externa já logada via `POST /api/hosts/<id>/web-launch`), não uma tela do console: não tem hash próprio e nunca coloca ticket/senha na URL.
+
 Filtros efêmeros dentro de formulários/modais (ex.: escolher hosts ao editar um serviço de backup) não vivem na URL.
 
 **Teste obrigatório:** `scripts/engine/ui/tests/urls.browser.mjs` (ambiente isolado: `tests/e2e-env.sh up`; ver SKILL.md).

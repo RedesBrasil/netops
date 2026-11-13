@@ -16,6 +16,7 @@ rodar comandos — de coleta (read-only) ou de mudança de configuração.
 |--------|--------|-----------|
 | `session.py` | **SSH/Telnet — o ÚNICO script de CLI** (`run` = lote; `open`/`exec`/`close` = persistente) | Netmiko + canal exec Paramiko (Linux) |
 | `api_mikrotik.py` | API RouterOS (dados estruturados, só se `access.method: api`) | librouteros |
+| (console) **Acessar → Web** | Não é script: botão do console abre Proxmox/Zabbix já logados (`lib/web_login`, ver `memory/web-launch-acessar-web-login-automatico.md`). Pedido "abre a interface web do host X" = peça ao humano clicar em Acessar → Web | — |
 | `terminal_link.py` | **Não conecta**: gera o link que abre o terminal web do host numa janela do console (pedido "abre a borda pra mim") | — |
 
 `ssh.py` e `telnet.py` **não existem mais** (removidos em 12/11/2026): o `session.py` faz tudo o que

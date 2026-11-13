@@ -51,7 +51,8 @@ def _host_ref(host_id: str):
     return int(host_id) if str(host_id).isdigit() else host_id
 
 
-def resolve_target(host_id: str, method: str | None, port: int | None) -> tuple[dict, dict, dict, str, bool]:
+def resolve_target(host_id: str, method: str | None, port: int | None,
+                   entries_fn=None) -> tuple[dict, dict, dict, str, bool]:
     """(host, entry, cred, aviso, cofre_trancado). cred pode vir vazio/parcial (sem credencial ou cofre trancado)."""
     from lib.inventory import lookup_ci, resolve_host, resolve_secret
     from lib.vault import VaultLocked
@@ -65,7 +66,7 @@ def resolve_target(host_id: str, method: str | None, port: int | None) -> tuple[
         raise TargetError(f"host '{host_id}' não está no inventário") from exc
     if not host.get("mgmt_ip"):
         raise TargetError("host sem IP de gerência (mgmt_ip)")
-    entry = pick_entry(access_entries(host), method, port)
+    entry = pick_entry((entries_fn or access_entries)(host), method, port)
 
     cred, note, locked = {}, "", False
     name = entry.get("credential")

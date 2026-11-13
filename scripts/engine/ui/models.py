@@ -60,6 +60,8 @@ class ExtraAccess(BaseModel):
     method: Method
     port: Optional[Port] = None
     credential: Optional[str] = None
+    app: Optional[str] = Field(default=None, max_length=40)    # http/https: app com login automático
+    path: Optional[str] = Field(default=None, max_length=200)  # http/https: caminho base (ex.: /zabbix)
 
     @field_validator("method", mode="before")
     @classmethod

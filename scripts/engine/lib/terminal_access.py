@@ -5,6 +5,8 @@
                           sem duplicata método+porta; extra sem credential herda a do host.
   pick_entry(entries, method, port)                       escolhe (sem porta = o 1º do método).
   terminal_url(host_id, entry)                            '#hostterm/<id>?method=..&port=..' (janela do console)
+  web_entries(host) -> [{method, port, credential, app, path}]  http/https (principal + extra_access);
+                          `app` = extra.app, senão pelo vendor (web_login.APP_BY_VENDOR), senão "" (só abre a URL).
 
 Espelho em JS: static/js/pages/host-term.js (terminalEntries) — mudar os dois juntos.
 """
@@ -52,3 +54,34 @@ def pick_entry(entries: list[dict], method: str | None, port: int | None) -> dic
 
 def terminal_url(host_id, entry: dict) -> str:
     return f"#hostterm/{host_id}?method={entry['method']}&port={entry['port']}"
+
+
+WEB_METHODS = ("http", "https")
+WEB_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def web_entries(host: dict) -> list[dict]:
+    from lib.web_login import APP_BY_VENDOR  # noqa: PLC0415
+    principal = host.get("access") or {}
+    items = [{"method": principal.get("method"), "port": principal.get("port"),
+              "credential": host.get("credential")}]
+    for extra in host.get("extra_access") or []:
+        if isinstance(extra, dict):
+            items.append({**extra, "credential": extra.get("credential") or host.get("credential")})
+    default_app = APP_BY_VENDOR.get(str(host.get("vendor") or "").lower(), "")
+    out, seen = [], set()
+    for item in items:
+        method = str(item.get("method") or "").lower()
+        if method not in WEB_METHODS:
+            continue
+        try:
+            port = int(item.get("port") or WEB_DEFAULT_PORTS[method])
+        except (TypeError, ValueError):
+            port = WEB_DEFAULT_PORTS[method]
+        if (method, port) in seen:
+            continue
+        seen.add((method, port))
+        path = str(item.get("path") or "/")
+        out.append({"method": method, "port": port, "credential": item.get("credential"),
+                    "app": str(item.get("app") or default_app or "").lower(), "path": path})
+    return out

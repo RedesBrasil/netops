@@ -3,7 +3,7 @@ import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, han
 import { FilterBar, DataTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog, RenameCascadeHint, IconPicker as HostIconPicker } from "../components.js";
 import { Modal, ConflictDialog } from "../ui.js";
 import { useRoute, navigate, useMenuRoute, matchText } from "../route.js";
-import { terminalEntries, openHostTerminal, AccessChooser } from "./host-term.js";
+import { accessEntries, openEntry, AccessChooser } from "./host-term.js";
 
 // Padrão de cadastro: tudo em MAIÚSCULAS, exceto site e notes (o backend também força).
 const UP = (v) => typeof v === "string" ? v.toUpperCase() : v;
@@ -71,14 +71,14 @@ export function HostsPage() {
     ${seg && seg !== "new" && !editing && html`<div class="card">Host '${seg}' não encontrado. <a href="#hosts">Voltar aos hosts</a></div>`}
     <${DataTable} tableId="hosts" urlSort columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
       onRowClick=${(r) => setEditing(r)}
-      actions=${(r) => { const te = terminalEntries(r);
+      actions=${(r) => { const te = accessEntries(r);
         return html`<button class="sm" disabled=${!te.length}
-            title=${te.length ? "Abrir terminal (" + te.map((e) => e.method.toUpperCase() + ":" + e.port).join(", ") + ")" : "Host sem SSH/Telnet cadastrado"}
-            onClick=${() => te.length === 1 ? openHostTerminal(r.id, te[0]) : openAccess(r.id)}>⌨ Acessar</button>
+            title=${te.length ? "Acessar (" + te.map((e) => (e.kind === "web" ? "WEB " : "") + e.method.toUpperCase() + ":" + e.port).join(", ") + ")" : "Host sem SSH/Telnet/HTTP(S) cadastrado"}
+            onClick=${() => te.length === 1 ? openEntry(r.id, te[0]) : openAccess(r.id)}>⌨ Acessar</button>
           <button class="sm danger" onClick=${() => setConfirm(r.id)}>Excluir</button>`; }}
       empty="Nenhum host. Clique em + Novo host." />
 
-    ${accessHost && html`<${AccessChooser} host=${accessHost} entries=${terminalEntries(accessHost)} onClose=${() => openAccess("")} />`}
+    ${accessHost && html`<${AccessChooser} host=${accessHost} entries=${accessEntries(accessHost)} onClose=${() => openAccess("")} />`}
     ${editing && html`<${HostForm} host=${editing} groups=${groups} rev=${rev}
         onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
     ${confirm && html`<${ConfirmDialog} title="Excluir host" danger=true

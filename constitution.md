@@ -1,6 +1,6 @@
 # Constituição do NetOps
 
-> **Versão:** 1.1.0 | **Ratificada:** 2026-05-18 | **Revisado:** 2026-07-28 (§V: proibição de manuseio de segredo em texto puro pela IA)
+> **Versão:** 1.1.0 | **Ratificada:** 2026-05-18 | **Revisado:** 2026-11-13 (§VII: exceção Zabbix no acesso web; antes 2026-07-28, §V: segredo em texto puro pela IA)
 
 Este documento define os princípios inegociáveis do NetOps. Todos os agentes, workflows e
 scripts DEVEM respeitá-los. Adaptado da `constitution.md` do AIOX para o domínio de redes e
@@ -102,6 +102,14 @@ scripts Python. Sem banco de dados, sem Docker, sem servidor (princípio do Open
   pessoa no teclado. Exigências: opt-in explícito, login com a senha-mestra, nunca em `--read-only`, e
   o framework segue funcionando 100% com ele desligado. O que se digita ali é responsabilidade
   do humano (como em qualquer SSH), fora do automatismo dos agentes.
+- **PODE:** Oferecer **"Acessar → Web"** (`POST /api/hosts/<id>/web-launch`, mesmo gate do terminal web) que abre a
+  interface web do host numa aba nova já autenticada (`scripts/engine/lib/web_login/`, um provedor por app). O login
+  roda no servidor; destino e credencial saem só do inventário/cofre. **Proxmox:** o navegador recebe só o *ticket*
+  (válido ~2 h), nunca a senha.
+- **EXCEÇÃO ÚNICA (autorizada em 13/11/2026) — Zabbix:** o cookie `zbx_session` não pode ser gravado de fora, então o
+  `Handoff` do provedor `zabbix` leva a senha ao navegador do operador, **uma vez**, em resposta a um clique explícito
+  (`Cache-Control: no-store`, formulário enviado direto ao Zabbix e removido da página, sem log nem auditoria do valor).
+  Vale **só** para o provedor `zabbix`; outro app que exija isso precisa de nova emenda aqui.
 
 ---
 

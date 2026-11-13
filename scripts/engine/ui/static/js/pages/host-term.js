@@ -2,7 +2,7 @@
 // URL: #hostterm/<id>?method=ssh|telnet&port=N  (core/rules/urls-navegacao.md)
 // WebSocket /api/term/host/<id>: teclas -> binário; resize -> JSON {resize:[c,r]};
 // servidor -> binário (saída) ou JSON {status, ...}. A senha nunca passa pelo navegador.
-import { html, useRef, useEffect, useState, Modal, api, refreshVault } from "../ui.js";
+import { html, useRef, useEffect, useState, Modal, api, refreshVault, toast } from "../ui.js";
 import { UnlockModal } from "../components.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -36,6 +36,64 @@ export function terminalEntries(row) {
   return out;
 }
 
+// Acesso web (http/https) — espelho de terminal_access.web_entries (mudar os dois juntos).
+const WEB_METHODS = ["http", "https"];
+const WEB_DEFAULT_PORT = { http: 80, https: 443 };
+const APP_BY_VENDOR = { proxmox: "proxmox" };   // = web_login.APP_BY_VENDOR
+export function webEntries(row) {
+  const eff = row.effective || {};
+  const principal = eff.access || {};
+  const defaultApp = APP_BY_VENDOR[String(eff.vendor || "").toLowerCase()] || "";
+  const items = [{ method: principal.method, port: principal.port, credential: eff.credential },
+    ...(eff.extra_access || row.explicit?.extra_access || []).map((x) => ({ ...x, credential: x.credential || eff.credential }))];
+  const out = []; const seen = new Set();
+  for (const it of items) {
+    const method = String(it.method || "").toLowerCase();
+    if (!WEB_METHODS.includes(method)) continue;
+    const port = Number(it.port) || WEB_DEFAULT_PORT[method];
+    if (seen.has(`${method}:${port}`)) continue;
+    seen.add(`${method}:${port}`);
+    out.push({ kind: "web", method, port, credential: it.credential || "", app: String(it.app || defaultApp || "").toLowerCase(), path: it.path || "/" });
+  }
+  return out;
+}
+
+export function accessEntries(row) {
+  return [...terminalEntries(row).map((e) => ({ kind: "term", ...e })), ...webEntries(row)];
+}
+
+// Abre a interface web numa ABA nova já autenticada. O servidor faz o login (POST /web-launch) e devolve o
+// "handoff": um formulário que a própria aba envia ao host (o cookie é gravado pelo host). Sem navegador
+// controlado pelo servidor. A aba é aberta ANTES do await (senão o pop-up é bloqueado).
+export async function openWebLaunch(id, entry) {
+  const name = `netops-web-${id}-${entry.port}`.replace(/[^\w-]/g, "_");
+  const w = window.open("about:blank", name);
+  if (!w) { toast("error", "Pop-up bloqueado: permita pop-ups para este site e tente de novo."); return; }
+  try { w.document.title = "Autenticando…"; w.document.body.textContent = "Autenticando…"; } catch (e) {}
+  try {
+    const r = await api.post(`/hosts/${encodeURIComponent(id)}/web-launch`, { method: entry.method, port: entry.port });
+    if (r.mode === "form_post") {
+      const f = document.createElement("form");
+      f.method = "POST"; f.action = r.action; f.target = name; f.style.display = "none";
+      for (const [k, v] of Object.entries(r.fields || {})) {
+        const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; f.appendChild(i);
+      }
+      document.body.appendChild(f); f.submit(); f.remove();     // os campos saem da página na hora
+      if (r.then_url) setTimeout(() => { try { w.location.href = r.then_url; } catch (e) {} }, r.then_delay_ms || 0);
+    } else if (r.then_url) {
+      w.location.href = r.then_url;
+      if (r.note) toast("info", r.note);
+    }
+  } catch (e) {
+    try { w.close(); } catch (e2) {}
+    toast("error", `Acesso web: ${e.message || e}`);
+  }
+}
+
+export function openEntry(id, entry) {
+  return entry.kind === "web" ? openWebLaunch(id, entry) : openHostTerminal(id, entry);
+}
+
 export function hostTermUrl(id, entry) {
   return `#hostterm/${encodeURIComponent(id)}?method=${entry.method}&port=${entry.port}`;
 }
@@ -49,12 +107,14 @@ export function openHostTerminal(id, entry) {
 export function AccessChooser({ host, entries, onClose }) {
   const name = host.explicit?.hostname || host.id;
   return html`<${Modal} title=${`Acessar ${name}`} onClose=${onClose}>
-    <p class="help">Escolha o método de acesso (ordem de prioridade do cadastro):</p>
+    <p class="help">Escolha o método de acesso (terminal ou interface web):</p>
     <div class="access-choices">
       ${entries.map((e, i) => html`<button key=${i} class=${i === 0 ? "primary" : ""}
-          onClick=${() => { openHostTerminal(host.id, e); onClose(); }}>
-        <b>${e.method.toUpperCase()}</b> <span class="mono">:${e.port}</span>
-        ${e.credential ? html` <span class="help">· ${e.credential}</span>` : html` <span class="help">· sem credencial (pede senha)</span>`}
+          onClick=${() => { openEntry(host.id, e); onClose(); }}>
+        <b>${e.kind === "web" ? "WEB " : ""}${e.method.toUpperCase()}</b> <span class="mono">:${e.port}</span>
+        ${e.kind === "web"
+          ? html` <span class="help">· ${e.app ? "login automático (" + e.app + ")" : "abre a página (login manual)"}</span>`
+          : e.credential ? html` <span class="help">· ${e.credential}</span>` : html` <span class="help">· sem credencial (pede senha)</span>`}
       </button>`)}
     </div>
     <div class="modal-actions"><button onClick=${onClose}>Cancelar</button></div>

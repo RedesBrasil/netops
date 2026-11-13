@@ -51,6 +51,7 @@ from routers import (
     config,
     credentials,
     host_term,
+    web_launch,
     hosts,
     knowledge,
     memory,
@@ -144,7 +145,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (audio, auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, terminal, host_term, claude, updates):
+    for mod in (audio, auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, terminal, host_term, web_launch, claude, updates):
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("startup")
