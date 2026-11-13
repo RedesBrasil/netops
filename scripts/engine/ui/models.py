@@ -51,6 +51,22 @@ class NodeUpsert(BaseModel):
     access: Optional[Access] = None
 
 
+MAX_EXTRA_ACCESS = 10  # métodos de acesso adicionais por host (o principal fica em `access`/`credential`)
+
+
+class ExtraAccess(BaseModel):
+    """Método de acesso adicional (ordem da lista = prioridade, depois do principal)."""
+    model_config = {"extra": "forbid"}
+    method: Method
+    port: Optional[Port] = None
+    credential: Optional[str] = None
+
+    @field_validator("method", mode="before")
+    @classmethod
+    def _method_any_case(cls, value):
+        return value.strip().lower() if isinstance(value, str) else value
+
+
 MAX_EXTRA_IPS = 20  # teto de IPs adicionais por host (evita lista descontrolada)
 
 
@@ -81,6 +97,7 @@ class HostUpsert(NodeUpsert):
     hostname: Optional[str] = Field(default=None, min_length=1)
     mgmt_ip: Optional[str] = Field(default=None, min_length=1)
     extra_ips: Optional[list[ExtraIp]] = Field(default=None, max_length=MAX_EXTRA_IPS)
+    extra_access: Optional[list[ExtraAccess]] = Field(default=None, max_length=MAX_EXTRA_ACCESS)
     group: Optional[str] = None
     icon: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 

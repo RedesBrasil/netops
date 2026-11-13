@@ -9,8 +9,9 @@ const UP = (v) => typeof v === "string" ? v.toUpperCase() : v;
 const MAX_EXTRA_IPS = 20;  // mesmo teto do backend (models.MAX_EXTRA_IPS)
 const IP_ROLES = ["público", "interno", "VIP", "loopback", "gerência secundária"];  // sugestões; o campo é livre
 const upList = (l) => (l || []).map(UP);
-const UP_KEYS = new Set(["hostname", "group", "vendor", "role", "model", "version", "credential", "method"]);
+const UP_KEYS = new Set(["hostname", "group", "vendor", "role", "model", "version", "credential", "method"]);  // (credential/method dos métodos ficam em form.accesses)
 const INHERIT = ["vendor", "role", "credential"];
+const MAX_EXTRA_ACCESS = 10;  // mesmo teto do backend (models.MAX_EXTRA_ACCESS)
 const bkLabel = (v) => v === true ? "sim" : v === false ? "não" : "padrão";
 
 export function HostsPage() {
@@ -45,7 +46,8 @@ export function HostsPage() {
     { key: "role", label: "Role", sort: (r) => r.effective.role || "", render: (r) => r.effective.role || "—" },
     { key: "group", label: "Grupo", sort: (r) => r.explicit.group || "", render: (r) => r.explicit.group || "—" },
     { key: "access", label: "Acesso", sort: (r) => (r.effective.access || {}).method || "", render: (r) => {
-        const a = r.effective.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
+        const a = r.effective.access || {}; const more = (r.explicit.extra_access || []).map((x) => `${x.method}${x.port ? ":" + x.port : ""}`);
+        return html`<span class="mono" title=${more.length ? "Alternativos: " + more.join(", ") : ""}>${a.method || "?"}:${a.port || "?"}${more.length ? ` +${more.length}` : ""}</span>`; } },
     // Ocultas por padrão — o usuário liga em ⚙ Colunas (preferência salva no navegador).
     { key: "credential", label: "Credencial", hidden: true, sort: (r) => r.effective.credential || "", render: (r) => r.effective.credential || "—" },
     { key: "model", label: "Modelo", hidden: true, sort: (r) => r.effective.model || "", render: (r) => r.effective.model || "—" },
@@ -95,9 +97,12 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     hostname: UP(explicit.hostname) || "", mgmt_ip: explicit.mgmt_ip || "",
     group: UP(explicit.group) || "", vendor: UP(explicit.vendor) ?? null, role: UP(explicit.role) ?? null,
     model: UP(explicit.model) || "", version: UP(explicit.version) || "", site: explicit.site || "", notes: explicit.notes || "", icon: explicit.icon || "",
-    credential: UP(explicit.credential) ?? null,
+    // Métodos de acesso em ordem de prioridade: o 1º é o principal (grava em access/credential); os demais em extra_access.
+    accesses: [
+      { method: UP((explicit.access || {}).method) ?? null, port: (explicit.access || {}).port ?? "", credential: UP(explicit.credential) ?? null },
+      ...(explicit.extra_access || []).map((x) => ({ method: UP(x.method) ?? null, port: x.port ?? "", credential: UP(x.credential) ?? null })),
+    ],
     extra_ips: (explicit.extra_ips || []).map((x) => ({ ip: x.ip || "", role: UP(x.role) || "", description: UP(x.description) || "" })),
-    method: UP((explicit.access || {}).method) ?? null, port: (explicit.access || {}).port ?? "",
   });
 
   useEffect(() => {
@@ -111,8 +116,8 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   const inh = (k) => gfields[k];                                  // valor herdado do grupo
   const inhAccess = (k) => (gfields.access || {})[k];
 
-  function tag(k, accessKey) {
-    const explicitVal = accessKey ? form[k] : form[k];
+  function tag(k, accessKey, value = form[k]) {
+    const explicitVal = value;
     const isSet = explicitVal !== null && explicitVal !== "" && explicitVal !== undefined;
     if (isSet) return html`<span class="tag-explicit">explícito</span>`;
     const v = accessKey ? inhAccess(accessKey) : inh(k);
@@ -127,12 +132,21 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     // obrigatórios
     payload.hostname = form.hostname; payload.mgmt_ip = form.mgmt_ip;
     if (form.group) payload.group = form.group; else if (!isNew) payload.group = null;
-    for (const k of ["vendor", "role", "credential"]) payload[k] = form[k] || null;
+    for (const k of ["vendor", "role"]) payload[k] = form[k] || null;
+    const [main, ...others] = form.accesses;
+    payload.credential = main.credential || null;
     for (const k of ["model", "version", "site", "notes", "icon"]) payload[k] = form[k] || null;
     const acc = {};
-    if (form.method) acc.method = form.method;
-    if (form.port !== "" && form.port != null) acc.port = Number(form.port);
+    if (main.method) acc.method = main.method;
+    if (main.port !== "" && main.port != null) acc.port = Number(main.port);
     payload.access = Object.keys(acc).length ? acc : null;
+    const extraAcc = others.filter((a) => a.method).map((a) => {
+      const item = { method: a.method };
+      if (a.port !== "" && a.port != null) item.port = Number(a.port);
+      if (a.credential) item.credential = a.credential;
+      return item;
+    });
+    if (extraAcc.length) payload.extra_access = extraAcc; else if (!isNew) payload.extra_access = null;
     const extras = form.extra_ips.filter((x) => x.ip.trim()).map((x) => {
       const item = { ip: x.ip.trim() };
       if (x.role.trim()) item.role = x.role.trim();
@@ -163,10 +177,27 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   const setExtra = (i, k, v) => setForm((f) => ({ ...f, extra_ips: f.extra_ips.map((x, j) => j === i ? { ...x, [k]: k === "ip" ? v : UP(v) } : x) }));
   const addExtra = () => setForm((f) => f.extra_ips.length >= MAX_EXTRA_IPS ? f : { ...f, extra_ips: [...f.extra_ips, { ip: "", role: "", description: "" }] });
   const delExtra = (i) => setForm((f) => ({ ...f, extra_ips: f.extra_ips.filter((_, j) => j !== i) }));
+  const setAcc = (i, k, v) => setForm((f) => ({ ...f, accesses: f.accesses.map((a, j) => j === i ? { ...a, [k]: k === "port" ? v : UP(v) } : a) }));
+  const addAcc = () => setForm((f) => f.accesses.length > MAX_EXTRA_ACCESS ? f : { ...f, accesses: [...f.accesses, { method: null, port: "", credential: null }] });
+  const delAcc = (i) => setForm((f) => ({ ...f, accesses: f.accesses.length <= 1 ? [{ method: null, port: "", credential: null }] : f.accesses.filter((_, j) => j !== i) }));
+  const [drag, setDrag] = useState({ from: null, over: null });   // arrastar para reordenar (1ª linha = principal)
+  const dropAcc = (to) => {
+    const from = drag.from;
+    setDrag({ from: null, over: null });
+    if (from == null || to == null || from === to) return;
+    setForm((f) => {
+      const l = [...f.accesses];
+      const [it] = l.splice(from, 1);
+      l.splice(to, 0, it);
+      return { ...f, accesses: l };
+    });
+  };
+  const accErr = (i) => Object.entries(errors).find(([k]) => k.includes(i === 0 ? "/access/" : `/extra_access/${i - 1}/`))?.[1]
+    || (i === 0 ? errFor("/credential") : null);
   const extraErr = (i) => Object.entries(errors).find(([k]) => k.includes(`/extra_ips/${i}/`))?.[1];
   const extraGeneral = Object.entries(errors).find(([k]) => k.endsWith("/extra_ips") || k === "" || k === "/")?.[1];
 
-  return html`<${Modal} title=${isNew ? "Novo host" : `Editar ${explicit.hostname}`} onClose=${onClose}>
+  return html`<${Modal} title=${isNew ? "Novo host" : `Editar ${explicit.hostname}`} cls="host-form" onClose=${onClose}>
     <div class="row">
       <${Field} label="Nome do host" error=${errFor("/hostname")}>
         <input value=${form.hostname} onInput=${(e) => set("hostname", e.target.value)} /><//>
@@ -197,18 +228,33 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
         <${EnumSelect} value=${form.role} options=${enums?.role} allowInherit=${!!form.group}
           inheritLabel=${`herdar: ${inh("role") || "—"}`} onChange=${(v) => set("role", v)} /><//>
     </div>
-    <div class="row">
-      <${Field} label=${html`Método de acesso ${tag("method", "method")}`} error=${errFor("access/method")}>
-        <${EnumSelect} value=${form.method} options=${enums?.method} allowInherit=${!!form.group}
-          inheritLabel=${`herdar: ${inhAccess("method") || "—"}`} onChange=${(v) => set("method", v)} /><//>
-      <${Field} label=${html`Porta ${tag("port", "port")}`} error=${errFor("access/port")}>
-        <input type="number" value=${form.port} placeholder=${inhAccess("port") || ""}
-          onInput=${(e) => set("port", e.target.value)} /><//>
+    <div class="field access-methods">
+      <label>Métodos de acesso <span class="muted">(${form.accesses.length}/${MAX_EXTRA_ACCESS + 1}) — o 1º é o principal; arraste ⠿ para reordenar</span></label>
+      ${form.accesses.map((a, i) => html`<div class=${"access-row" + (drag.from === i ? " dragging" : "") + (drag.over === i && drag.from !== i ? (drag.from < i ? " drop-after" : " drop-before") : "")} key=${i}
+        onDragOver=${(e) => { if (drag.from == null) return; e.preventDefault(); if (drag.over !== i) setDrag((d) => ({ ...d, over: i })); }}
+        onDrop=${(e) => { e.preventDefault(); dropAcc(i); }}>
+        <span class="access-handle" draggable="true" role="button" aria-label=${`Arrastar método ${i + 1} para reordenar`} title="Arraste para cima/baixo para mudar a prioridade"
+          onDragStart=${(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); const row = e.target.closest(".access-row"); if (row) e.dataTransfer.setDragImage(row, 10, 10); setDrag({ from: i, over: i }); }}
+          onDragEnd=${() => setDrag({ from: null, over: null })}>⠿</span>
+        <span class="access-rank ${i === 0 ? "primary" : ""}" title=${i === 0 ? "Método principal" : `Alternativo ${i}`}>${i === 0 ? "Principal" : i + 1 + "º"}</span>
+        <div class="access-fields">
+          <div class="access-cell"><${EnumSelect} value=${a.method} options=${enums?.method} allowInherit=${i === 0 && !!form.group}
+            inheritLabel=${`herdar: ${inhAccess("method") || "—"}`} onChange=${(v) => setAcc(i, "method", v)} />
+            ${i === 0 && tag("method", "method", a.method)}</div>
+          <div class="access-cell"><input type="number" min="1" max="65535" aria-label=${`Porta do método ${i + 1}`} placeholder=${i === 0 ? (inhAccess("port") ? `porta (herdada: ${inhAccess("port")})` : "porta") : "porta (padrão do método)"}
+            value=${a.port} onInput=${(e) => setAcc(i, "port", e.target.value)} /></div>
+          <div class="access-cell"><${RefSelect} value=${a.credential} options=${creds}
+            placeholder=${i === 0 ? (form.group && inh("credential") ? `herdar: ${inh("credential")}` : "(credencial: nenhuma)") : "(credencial: nenhuma)"}
+            onChange=${(v) => setAcc(i, "credential", v)} /></div>
+        </div>
+        <div class="access-actions">
+          <button type="button" aria-label=${`Remover método ${i + 1}`} title="Remover" onClick=${() => delAcc(i)}>×</button>
+        </div>
+        ${i > 0 && !a.method && html`<div class="muted">Escolha o método — linha sem método é ignorada ao salvar.</div>`}
+        ${accErr(i) && html`<div class="err">${accErr(i)}</div>`}
+      </div>`)}
+      <div><button type="button" disabled=${form.accesses.length > MAX_EXTRA_ACCESS} onClick=${addAcc}>+ Adicionar método de acesso</button></div>
     </div>
-    <${Field} label=${html`Credencial ${tag("credential")}`} error=${errFor("/credential")}>
-      <${RefSelect} value=${form.credential} options=${creds}
-        placeholder=${form.group && inh("credential") ? `herdar: ${inh("credential")}` : "(nenhuma)"}
-        onChange=${(v) => set("credential", v)} /><//>
     ${isNew && !placement && mapOptions && html`<${Field} label="Também incluir em um mapa adicional">
       <select value=${mapChoice} onChange=${e => setMapChoice(e.target.value)}><option value="">Só geral e localidade (automático)</option>
         ${mapOptions.maps.filter(m => m.kind === "custom").map(m => html`<option value=${m.id}>${m.name}</option>`)}</select><//>`}

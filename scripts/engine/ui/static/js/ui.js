@@ -106,9 +106,9 @@ export function CopyButton({ text, label = "Copiar" }) {
   }}>${done ? "copiado ✓" : label}</button>`;
 }
 
-export function Modal({ title, children, onClose, wide }) {
+export function Modal({ title, children, onClose, wide, cls = "" }) {
   return html`<div class="modal-bg" onClick=${(e) => { if (e.target.classList.contains("modal-bg")) onClose?.(); }}>
-    <div class="modal ${wide ? "wide" : ""}">
+    <div class="modal ${wide ? "wide" : ""} ${cls}">
       <h2>${title}</h2>
       ${children}
     </div>

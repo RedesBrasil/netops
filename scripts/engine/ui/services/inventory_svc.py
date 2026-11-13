@@ -23,7 +23,7 @@ from services import yaml_io
 ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 # Ordem de chaves p/ hosts/grupos novos (legibilidade do YAML).
-HOST_KEY_ORDER = ["id", "hostname", "mgmt_ip", "extra_ips", "group", "vendor", "role", "icon", "model", "version", "site", "access", "credential", "notes"]
+HOST_KEY_ORDER = ["id", "hostname", "mgmt_ip", "extra_ips", "group", "vendor", "role", "icon", "model", "version", "site", "access", "credential", "extra_access", "notes"]
 GROUP_KEY_ORDER = ["vendor", "role", "access", "credential", "model", "version", "site", "notes"]
 OPTIONAL_STR = {"model", "version", "site", "notes", "icon"}
 

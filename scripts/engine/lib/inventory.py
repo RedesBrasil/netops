@@ -51,6 +51,15 @@ def normalize_node_fields(fields: dict) -> dict:
             out[key] = upper_value(out[key])
     if isinstance(out.get("access"), dict) and isinstance(out["access"].get("method"), str):
         out["access"] = {**out["access"], "method": upper_value(out["access"]["method"])}
+    if "extra_access" in out:  # método/credencial em MAIÚSCULAS; chaves vazias somem; lista vazia => None
+        items = []
+        for item in (out["extra_access"] or []):
+            item = {k: v for k, v in item.items() if v not in (None, "")}
+            for k in ("method", "credential"):
+                if k in item:
+                    item[k] = upper_value(item[k])
+            items.append(item)
+        out["extra_access"] = items or None
     if "extra_ips" in out:  # remove chaves vazias; lista vazia => None (a chave some do YAML)
         items = [{k: v for k, v in item.items() if v not in (None, "")} for item in (out["extra_ips"] or [])]
         out["extra_ips"] = items or None
@@ -78,6 +87,9 @@ def canonical_enums(node: dict) -> dict:
             out[key] = out[key].lower()
     if isinstance(out.get("access"), dict) and isinstance(out["access"].get("method"), str):
         out["access"] = {**out["access"], "method": out["access"]["method"].lower()}
+    if isinstance(out.get("extra_access"), list):
+        out["extra_access"] = [{**i, "method": i["method"].lower()} if isinstance(i, dict) and isinstance(i.get("method"), str) else i
+                               for i in out["extra_access"]]
     return out
 
 
