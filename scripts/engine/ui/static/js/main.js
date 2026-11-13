@@ -16,6 +16,7 @@ import { BackupsPage } from "./pages/backups.js";
 import { SchedulesPage } from "./pages/schedules.js";
 import { UpdatesControl } from "./pages/updates.js";
 import { TerminalPage } from "./pages/terminal.js";
+import { HostTermPage } from "./pages/host-term.js";
 import { ClaudeCodePage, ClaudeTopbarControls, ClaudeStatusDot, ClaudeSessionTitle, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
 
 const ROUTES = {
@@ -111,6 +112,8 @@ function Shell({ onLogout, showLogout }) {
     onLogout && onLogout();
   }
 
+  // Terminal de host abre numa janela própria: tela cheia, sem barra lateral/topo.
+  if (route === "hostterm") return html`<${HostTermPage} /><${ToastHost} />`;
   const Page = (ROUTES[route] || ROUTES.hosts).comp;
   // Chat encaixado à direita: só fora da página cheia (#claude) e com conversa viva.
   const dockVisible = route !== "claude" && !!(claude && claude.hasSession);

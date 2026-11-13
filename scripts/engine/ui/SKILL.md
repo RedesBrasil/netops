@@ -132,6 +132,16 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   WebSocket (`/api/term`) é autenticado **à mão** (token + Host + Origin) porque o middleware http
   do app **não** cobre WebSocket. Sobre HTTP não-loopback, o token (na URL) trafega em texto puro
   e dá shell completo — prefira túnel SSH/VPN.
+- **Terminal de HOST (SSH/Telnet) — botão "⌨ Acessar" em Hosts:** mesmo gate do `/api/term`
+  (`--enable-terminal`, fora de `--read-only`, login + Host + Origin). WS `/api/term/host/<id>?method=&port=`;
+  abre em janela própria `#hostterm/<id>?method=ssh&port=22` (tela cheia, sem menu). Métodos = `access`
+  principal + `extra_access` (só ssh/telnet, ordem do cadastro): 1 método → abre direto; 2+ → popup de
+  escolha (`#hosts?access=<id>`). SSH = `asyncssh` (PTY xterm-256color, resize, algoritmos legados no fim
+  da lista); Telnet = `telnetlib3` (NAWS, login automático detectando `login:`/`Password:`, Enter CR LF).
+  A credencial é decifrada **no servidor** (cofre destrancado) e nunca vai ao navegador; sem credencial
+  ou cofre trancado → o terminal pede usuário/senha (não grava). Chave do host SSH: aceita e registra o
+  fingerprint no log. Auditoria em `runs/<ts>-terminal-<id>/session.log` (sem gravar teclas).
+  Código: `routers/host_term.py`, `services/host_term_svc.py`, `static/js/pages/host-term.js`.
 - **Página Claude Code (`--enable-claude`):** ⚠ dirige um **agente de IA** (via `claude-agent-sdk`)
   que **executa comandos e edita arquivos** como o usuário do servidor, com `cwd=NETOPS_ROOT` e
   herdando `AGENTS.md`/skills/agentes. Mesma postura do terminal: DESLIGADA por padrão no server.py

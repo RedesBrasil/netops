@@ -6,6 +6,8 @@ netmiko>=4.5,<5         # SSH/Telnet multi-fabricante (camada principal). Usa Pa
 napalm>=5.0,<6          # Coleta estruturada + compare_config/diff (cisco ios/xe/nxos, junos, eos)
 librouteros>=3.4,<4     # API nativa do MikroTik RouterOS
 paramiko>=3.4           # SSH de baixo nível, para casos sob medida (ex.: Linux puro)
+asyncssh>=2.21,<3       # Terminal web de host (console): SSH interativo assíncrono — services/host_term_svc.py
+telnetlib3>=2.0         # Terminal web de host (console): Telnet assíncrono (NAWS/TTYPE; Python 3.13 sem telnetlib)
 ntc-templates>=7.0      # Parsing TextFSM da saída do Netmiko (use_textfsm=True)
 
 # --- Utilitários ---

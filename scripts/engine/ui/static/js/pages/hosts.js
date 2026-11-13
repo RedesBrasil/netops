@@ -3,6 +3,7 @@ import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, han
 import { FilterBar, DataTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog, RenameCascadeHint, IconPicker as HostIconPicker } from "../components.js";
 import { Modal, ConflictDialog } from "../ui.js";
 import { useRoute, navigate, useMenuRoute, matchText } from "../route.js";
+import { terminalEntries, openHostTerminal, AccessChooser } from "./host-term.js";
 
 // Padrão de cadastro: tudo em MAIÚSCULAS, exceto site e notes (o backend também força).
 const UP = (v) => typeof v === "string" ? v.toUpperCase() : v;
@@ -31,6 +32,9 @@ export function HostsPage() {
   const { hosts: allHosts, rev, groups } = res.data;
   const seg = route.segments[0];
   const editing = seg === "new" ? { __new: true } : seg ? allHosts.find((h) => String(h.id) === seg) || null : null;
+  // Popup "SSH ou Telnet?" com URL própria (#hosts?access=<id>): Voltar fecha.
+  const accessHost = route.params.access ? allHosts.find((h) => String(h.id) === route.params.access) || null : null;
+  const openAccess = (id) => navigate({ menu: "hosts", segments: route.segments, params: { ...route.params, access: id ? String(id) : "" } }, { replace: !id });
   const setEditing = (h) => navigate({ menu: "hosts", segments: h ? [h.__new ? "new" : String(h.id)] : [], params: route.params });
   const opts = (f) => [...new Set(allHosts.map(f).filter(Boolean))].sort();
   const needle = q.trim().toLowerCase();
@@ -67,9 +71,14 @@ export function HostsPage() {
     ${seg && seg !== "new" && !editing && html`<div class="card">Host '${seg}' não encontrado. <a href="#hosts">Voltar aos hosts</a></div>`}
     <${DataTable} tableId="hosts" urlSort columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
       onRowClick=${(r) => setEditing(r)}
-      actions=${(r) => html`<button class="sm danger" onClick=${() => setConfirm(r.id)}>Excluir</button>`}
+      actions=${(r) => { const te = terminalEntries(r);
+        return html`<button class="sm" disabled=${!te.length}
+            title=${te.length ? "Abrir terminal (" + te.map((e) => e.method.toUpperCase() + ":" + e.port).join(", ") + ")" : "Host sem SSH/Telnet cadastrado"}
+            onClick=${() => te.length === 1 ? openHostTerminal(r.id, te[0]) : openAccess(r.id)}>⌨ Acessar</button>
+          <button class="sm danger" onClick=${() => setConfirm(r.id)}>Excluir</button>`; }}
       empty="Nenhum host. Clique em + Novo host." />
 
+    ${accessHost && html`<${AccessChooser} host=${accessHost} entries=${terminalEntries(accessHost)} onClose=${() => openAccess("")} />`}
     ${editing && html`<${HostForm} host=${editing} groups=${groups} rev=${rev}
         onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
     ${confirm && html`<${ConfirmDialog} title="Excluir host" danger=true

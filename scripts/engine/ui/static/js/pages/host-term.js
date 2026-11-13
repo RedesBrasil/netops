@@ -1,0 +1,142 @@
+// Terminal web de HOST (SSH/Telnet) — abre numa janela própria, já autenticado pelo servidor.
+// URL: #hostterm/<id>?method=ssh|telnet&port=N  (core/rules/urls-navegacao.md)
+// WebSocket /api/term/host/<id>: teclas -> binário; resize -> JSON {resize:[c,r]};
+// servidor -> binário (saída) ou JSON {status, ...}. A senha nunca passa pelo navegador.
+import { html, useRef, useEffect, useState, Modal } from "../ui.js";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { authToken } from "../api.js";
+import { useRoute } from "../route.js";
+
+const TERM_METHODS = ["ssh", "telnet"];
+const DEFAULT_PORT = { ssh: 22, telnet: 23 };
+const THEME = {
+  background: "#11161c", foreground: "#e6ebf1", cursor: "#4aa3e0",
+  selectionBackground: "#2a4866", black: "#11161c", brightBlack: "#5b6675",
+};
+
+// Mesma regra do backend (host_term_svc.access_entries): principal + extra_access, só ssh/telnet,
+// sem duplicata método+porta; extra sem credencial herda a do host.
+export function terminalEntries(row) {
+  const eff = row.effective || {};
+  const principal = eff.access || {};
+  const items = [{ method: principal.method || "ssh", port: principal.port, credential: eff.credential },
+    ...(eff.extra_access || row.explicit?.extra_access || []).map((x) => ({ method: x.method, port: x.port, credential: x.credential || eff.credential }))];
+  const out = []; const seen = new Set();
+  for (const it of items) {
+    const method = String(it.method || "").toLowerCase();
+    if (!TERM_METHODS.includes(method)) continue;
+    const port = Number(it.port) || DEFAULT_PORT[method];
+    if (seen.has(`${method}:${port}`)) continue;
+    seen.add(`${method}:${port}`);
+    out.push({ method, port, credential: it.credential || "" });
+  }
+  return out;
+}
+
+export function hostTermUrl(id, entry) {
+  return `#hostterm/${encodeURIComponent(id)}?method=${entry.method}&port=${entry.port}`;
+}
+
+// Janela nova (uma por host+método: clicar de novo foca a mesma janela).
+export function openHostTerminal(id, entry) {
+  const name = `netops-term-${id}-${entry.method}-${entry.port}`.replace(/[^\w-]/g, "_");
+  const w = window.open(location.pathname + hostTermUrl(id, entry), name, "popup,width=1100,height=700");
+  if (w) w.focus(); else location.hash = hostTermUrl(id, entry).slice(1);   // popup bloqueado: abre aqui
+}
+
+// Popup de escolha quando o host tem mais de um método de terminal.
+export function AccessChooser({ host, entries, onClose }) {
+  const name = host.explicit?.hostname || host.id;
+  return html`<${Modal} title=${`Acessar ${name}`} onClose=${onClose}>
+    <p class="help">Escolha o método de acesso (ordem de prioridade do cadastro):</p>
+    <div class="access-choices">
+      ${entries.map((e, i) => html`<button key=${i} class=${i === 0 ? "primary" : ""}
+          onClick=${() => { openHostTerminal(host.id, e); onClose(); }}>
+        <b>${e.method.toUpperCase()}</b> <span class="mono">:${e.port}</span>
+        ${e.credential ? html` <span class="help">· ${e.credential}</span>` : html` <span class="help">· sem credencial (pede senha)</span>`}
+      </button>`)}
+    </div>
+    <div class="modal-actions"><button onClick=${onClose}>Cancelar</button></div>
+  <//>`;
+}
+
+export function HostTermPage() {
+  const route = useRoute();
+  const id = route.segments[0] || "";
+  const method = route.params.method || "";
+  const port = route.params.port || "";
+  const hostRef = useRef(null);
+  const [status, setStatus] = useState("conectando");
+  const [info, setInfo] = useState({});
+  const [gen, setGen] = useState(0);
+
+  useEffect(() => {
+    document.title = `${(info.host || id)} · ${(method || "").toUpperCase()} — NetOps`;
+  }, [info.host, id, method]);
+
+  useEffect(() => {
+    const term = new Terminal({
+      fontFamily: 'ui-monospace, "SFMono-Regular", Consolas, monospace',
+      fontSize: 14, cursorBlink: true, scrollback: 10000, theme: THEME,
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(hostRef.current);
+    try { fit.fit(); } catch (e) {}
+
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const qs = new URLSearchParams({ method, cols: term.cols, rows: term.rows, auth: authToken() });
+    if (port) qs.set("port", port);
+    const ws = new WebSocket(`${proto}://${location.host}/api/term/host/${encodeURIComponent(id)}?${qs}`);
+    ws.binaryType = "arraybuffer";
+    const enc = new TextEncoder();
+    const sendResize = () => { if (ws.readyState === 1) ws.send(JSON.stringify({ resize: [term.cols, term.rows] })); };
+
+    ws.onopen = () => { term.focus(); };
+    ws.onmessage = (e) => {
+      if (typeof e.data !== "string") { term.write(new Uint8Array(e.data)); return; }
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.status) { setStatus(msg.status); if (msg.host || msg.ip) setInfo((o) => ({ ...o, ...msg })); }
+      } catch (err) { term.write(e.data); }
+    };
+    ws.onclose = (e) => {
+      if (e.code === 4403) {
+        setStatus("desabilitado");
+        term.write("\r\n\x1b[33mAcesso negado: faça login no console (ou o terminal está desligado: suba sem --read-only e com o terminal ligado).\x1b[0m\r\n");
+      } else {
+        setStatus((s) => (s === "erro" ? s : "desconectado"));
+        term.write("\r\n\x1b[31m— sessão encerrada —\x1b[0m\r\n");
+      }
+    };
+    ws.onerror = () => setStatus("erro");
+
+    const dataSub = term.onData((d) => { if (ws.readyState === 1) ws.send(enc.encode(d)); });
+    const onWinResize = () => { try { fit.fit(); sendResize(); } catch (e) {} };
+    addEventListener("resize", onWinResize);
+    let ro = null;
+    if (window.ResizeObserver) { ro = new ResizeObserver(onWinResize); ro.observe(hostRef.current); }
+
+    return () => {
+      removeEventListener("resize", onWinResize);
+      if (ro) ro.disconnect();
+      dataSub.dispose();
+      try { ws.close(); } catch (e) {}
+      term.dispose();
+    };
+  }, [id, method, port, gen]);
+
+  const badge = { conectado: "ok", conectando: "", desconectado: "warn", desabilitado: "danger", erro: "danger" }[status] || "";
+  return html`<div class="hostterm-page">
+    <div class="hostterm-bar">
+      <b>${info.host || `host ${id}`}</b>
+      <span class="mono">${info.ip || ""} · ${(method || "?").toUpperCase()}${port ? ":" + port : ""}${info.user ? " · " + info.user : ""}</span>
+      <span class="badge ${badge}">${status}</span>
+      <span class="spacer"></span>
+      ${(status === "desconectado" || status === "erro") &&
+        html`<button class="sm" onClick=${() => { setStatus("conectando"); setGen((g) => g + 1); }}>Reconectar</button>`}
+    </div>
+    <div class="hostterm-host" ref=${hostRef}></div>
+  </div>`;
+}
