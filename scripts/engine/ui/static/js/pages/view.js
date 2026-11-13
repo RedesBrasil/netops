@@ -81,7 +81,7 @@ export function SettingsPage() {
   const [rev, setRev] = useState(null);
   useEffect(() => { if (res.data) { setData(res.data.data); setRev(res.data.rev); } }, [res.data]);
   if (res.loading || !data) return html`<${Spinner} />`;
-  const proj = data.project || {}, ops = data.operations || {}, vault = data.vault || {};
+  const proj = data.project || {}, ops = data.operations || {}, vault = data.vault || {}, access = data.access || {};
   const upd = (sec, k, v) => setData((d) => ({ ...d, [sec]: { ...(d[sec] || {}), [k]: v } }));
   async function save() {
     try {
@@ -89,6 +89,7 @@ export function SettingsPage() {
         project: { network_name: proj.network_name, description: proj.description },
         operations: { maintenance_window: ops.maintenance_window, escalation_contact: ops.escalation_contact },
         vault: { session_ttl_seconds: vault.session_ttl_seconds ? Number(vault.session_ttl_seconds) : undefined },
+        access: { session_idle_minutes: access.session_idle_minutes ? Number(access.session_idle_minutes) : undefined },
       };
       const r = await api.put("/config", body, rev); setRev(r.rev); toast.ok("Configuração salva");
     } catch (e) { handleError(e); }
@@ -104,6 +105,8 @@ export function SettingsPage() {
       </div>
       <${Field} label="TTL da sessão do cofre (segundos)" hint="Tempo de inatividade até re-trancar (default 900)">
         <input type="number" value=${vault.session_ttl_seconds || ""} onInput=${(e) => upd("vault", "session_ttl_seconds", e.target.value)} /><//>
+      <${Field} label="Sessão de acesso aos equipamentos (minutos sem comando)" hint="Sessão aberta pelo session.py (1 login por host, vários comandos) fecha após N min sem comando. Padrão 5. Vale na hora, inclusive para sessões já abertas.">
+        <input type="number" min="1" step="1" placeholder="5" value=${access.session_idle_minutes || ""} onInput=${(e) => upd("access", "session_idle_minutes", e.target.value)} /><//>
       <button class="primary" onClick=${save}>Salvar</button>
     </div>
     <div class="card">

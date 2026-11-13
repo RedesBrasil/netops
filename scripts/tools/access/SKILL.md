@@ -27,24 +27,27 @@ não instale nada. Sempre a partir de `/opt/netops` (ou caminho absoluto). Host 
 (ID de `network/hosts.yaml`) ou `--host <nome/alias>`.
 
 ```bash
-# 1) Lote numa chamada só (já sei os comandos) — o caso mais comum
-python3 scripts/tools/access/session.py run --host-id 21 --command "/system identity print" \
-  --command "/ip address print"
+# PADRÃO — sessão persistente por host (1 login por host, N comandos, estado mantido)
+python3 scripts/tools/access/session.py exec --host-id 21 --command "/ip address print"   # login + abre
+python3 scripts/tools/access/session.py exec --host-id 22 --command "ip -br addr"         # outro host, outra sessão
+python3 scripts/tools/access/session.py exec --host-id 21 --command "/ip arp print"       # REUSA (sem login)
+python3 scripts/tools/access/session.py exec --host-id 21 --command "/ping 10.8.8.2" --timing --timeout 5
+python3 scripts/tools/access/session.py list                       # abertas, ocioso/limite
+python3 scripts/tools/access/session.py close --host-id 21         # ou close --all (ou espera o idle)
 
-# 2) Interativo (comando -> ler saída -> decidir o próximo): 1 login, N comandos
-S=$(python3 scripts/tools/access/session.py open --host-id 21)    # stdout = SESSION_ID
-python3 scripts/tools/access/session.py exec --session $S --command "/ip route print count-only"
-python3 scripts/tools/access/session.py exec --session $S --command "/ping 10.8.8.2" --timing --timeout 5
-python3 scripts/tools/access/session.py close --session $S        # ou close --all; list = abertas
+# Lote isolado (conecta, roda, desconecta — sem reuso): só p/ coleta pontual
+python3 scripts/tools/access/session.py run --host-id 21 --command "/system identity print"
 
-# Telnet (só se o usuário pedir / equipamento legado): acrescente --telnet no run ou no open
+# SESSION_ID explícito (raro): S=$(... open --host-id 21) [--new força outra] → exec --session $S → close --session $S
+# Telnet (só se o usuário pedir / equipamento legado): acrescente --telnet no exec/open/run
 ```
 
-Qual usar: **`run`** quando já sei todos os comandos (1 login, 1 shell, sai no fim). **`open/exec`** quando o
-próximo comando depende da saída do anterior (medido: Linux 0,05 s/comando, MikroTik ~0,9 s, contra
-1,4–1,6 s+ de login a cada nova conexão) — mantém estado (`enable`, contexto) e não enche o log do
-equipamento de logins. Não use `ssh`/`sshpass`/`telnet` do sistema: só o `session.py` resolve a
-credencial do cofre sem expô-la.
+Qual usar: **`exec --host-id`** sempre que houver mais de um comando no mesmo host, mesmo em chamadas
+separadas (comando → ler saída → decidir o próximo) e mesmo alternando entre vários hosts: cada host
+mantém sua sessão aberta (medido: Linux 0,02–0,05 s/comando, MikroTik ~0,9 s, contra 1,4–1,6 s+ de
+login a cada conexão nova). Mantém estado (`enable`, contexto, variáveis/`cd` no Linux) e não enche o
+log do equipamento de logins. `run` só para uma coleta isolada. Não use `ssh`/`sshpass`/`telnet` do
+sistema: só o `session.py` resolve a credencial do cofre sem expô-la.
 
 ## Comportamento
 
@@ -68,8 +71,12 @@ credencial do cofre sem expô-la.
   **nunca reenvia** o que estava em curso.
 - Comando multilinha/aspas complexas: mande em base64 (`echo <b64> | base64 -d | sh`) ou use
   `--commands-file` (um comando por linha, no `run`).
-- Sessão persistente fecha sozinha após 10 min ocioso / 2 h de vida (`NETOPS_SESSION_IDLE`,
-  `NETOPS_SESSION_MAX`). Socket em `$XDG_RUNTIME_DIR` ou `/tmp/netops-sessions-<uid>/` (0700/0600).
+- Sessão persistente fecha sozinha após **`access.session_idle_minutes`** sem comando (padrão **5 min**;
+  `core/config/project-config.yaml` ou console → **Configuração** → "Sessão de acesso aos equipamentos").
+  Relido a cada 5 s pelas sessões: mudar a config vale na hora, até para as já abertas.
+  `NETOPS_SESSION_IDLE=<segundos>` sobrepõe (testes). Vida máxima 2 h (`NETOPS_SESSION_MAX`). O cofre
+  precisa estar destrancado só para ABRIR; sessão já aberta segue funcionando se ele re-trancar.
+  Socket em `$XDG_RUNTIME_DIR` ou `/tmp/netops-sessions-<uid>/` (0700/0600); reuso sob trava por host.
 - Auditoria: todo comando/saída (run ou sessão) vai para `runs/<ts>-session-<id>/session.log` — o
   `run` imprime o caminho no fim (`[log] ...`). Esse é o "salvar a coleta"; não há `--save`.
 - A credencial só existe dentro do processo; o cofre precisa estar destrancado (senão falha com

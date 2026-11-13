@@ -86,9 +86,12 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   CLI (SSH/Telnet); `ssh.py`/`telnet.py` foram removidos e `ssh`/`sshpass`/`telnet` do sistema são proibidos.
   "Acesse/verifique/rode X no host N" → vá direto, sem preparar ambiente (já está pronto: `python3` ou `python`,
   o script entra sozinho no `.venv`; não ative venv nem instale nada). Ache o ID em `network/hosts.yaml` e rode:
-  - Lote (já sei os comandos): `python3 scripts/tools/access/session.py run --host-id <ID> --command "<c1>" --command "<c2>"`
-  - Interativo (saída decide o próximo): `S=$(python3 scripts/tools/access/session.py open --host-id <ID>)` →
-    `… exec --session $S --command "<c>"`… → `… close --session $S`.
+  - **PADRÃO = sessão persistente por host:** `python3 scripts/tools/access/session.py exec --host-id <ID> --command "<c1>" [--command "<c2>"]`.
+    A 1ª chamada faz o login e deixa a sessão aberta; as seguintes no mesmo host **reusam** (sem novo login; no Linux é o
+    mesmo shell: `export`/`cd`/`source` persistem). Vários dispositivos = uma sessão por host, todas abertas ao mesmo tempo
+    (ex.: ver IP em 3 hosts, decidir, depois ARP nos 3 — 3 logins no total). Fecha sozinha após
+    `access.session_idle_minutes` (tela **Configuração**; padrão 5 min) sem comando, ou `… close --host-id <ID>` / `close --all`.
+  - `run` (conecta, roda, desconecta) só para coleta pontual isolada; `open`/`exec --session` continuam valendo.
   SSH por padrão; `--telnet` só se o usuário pedir/for legado. Detalhes: `scripts/tools/access/SKILL.md`.
 - **Backup antes de alterar equipamento (INEGOCIÁVEL):** qualquer alteração em host (add/set/remove/restart…), mesmo num
   pedido direto sem workflow, começa com `python3 scripts/tools/backup/change.py begin --host-id <ID>` (backup "pré"; falhou =

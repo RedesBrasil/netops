@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """ÚNICO script de acesso CLI a equipamentos (SSH/Telnet) — substitui os antigos ssh.py/telnet.py.
 
-Dois modos:
-  run                → lote numa chamada só: conecta, roda os comandos, desconecta.
-  open/exec/close    → sessão persistente: autentica UMA vez e roda N comandos, um de cada vez,
-                       para o modo "roda comando -> lê a saída -> decide o próximo".
+Modo PADRÃO = sessão persistente por host:
+  exec --host-id N   → reusa a sessão VIVA do host N (sem novo login) ou abre uma; o shell remoto
+                       mantém o estado entre chamadas. Vários hosts = uma sessão por host, todas
+                       abertas ao mesmo tempo. Fecha sozinha após `access.session_idle_minutes`
+                       (project-config.yaml / tela Configuração; padrão 5 min) sem comando.
+  close --host-id N  → encerra a sessão do host (ou close --all).
+  run                → lote isolado: conecta, roda, desconecta (sem reuso). Só p/ coleta pontual.
 Na sessão persistente, um processo em background segura a conexão Netmiko e atende por um Unix
 socket local (dir 0700, socket 0600). A credencial é resolvida só dentro do processo — nunca sai dele.
 Python: `python3` (ou `python`) do sistema — o script entra sozinho no .venv do projeto.
 
 Uso:
-    python3 scripts/tools/access/session.py run   --host-id 21 --command "/system/identity/print"
-    python3 scripts/tools/access/session.py run   --host-id 21 --command "a" --command "b" [--telnet]
-    python3 scripts/tools/access/session.py open  --host-id 21          # imprime o SESSION_ID
-    python3 scripts/tools/access/session.py exec  --session <ID> --command "/ip/route/print"
+    python3 scripts/tools/access/session.py exec  --host-id 21 --command "/ip/address/print"
+    python3 scripts/tools/access/session.py exec  --host-id 21 --command "/ip/arp/print"   # mesma sessão
     python3 scripts/tools/access/session.py list
-    python3 scripts/tools/access/session.py close --session <ID>     # ou: close --all
+    python3 scripts/tools/access/session.py close --host-id 21       # ou: close --all
+    python3 scripts/tools/access/session.py open  --host-id 21       # SESSION_ID (reusa; --new força outra)
+    python3 scripts/tools/access/session.py exec  --session <ID> --command "..."
+    python3 scripts/tools/access/session.py run   --host-id 21 --command "a" --command "b" [--telnet]
 
 Linux (vendor linux/proxmox/...): 1 autenticação + 1 shell persistente (bash, ou sh) num canal do
 transporte SSH. TODOS os comandos da sessão (ou do `run`) rodam nesse MESMO shell: `export`, `cd`,
@@ -53,10 +57,42 @@ from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
 from lib.inventory import NETOPS_ROOT, load_inventory, resolve_host  # noqa: E402
 
-IDLE_TIMEOUT = int(os.environ.get("NETOPS_SESSION_IDLE", "600"))       # s sem comando -> fecha
+DEFAULT_IDLE_MINUTES = 5                                              # padrão: 5 min sem comando -> fecha
 MAX_LIFETIME = int(os.environ.get("NETOPS_SESSION_MAX", "7200"))      # s de vida máxima
 OPEN_TIMEOUT = 90                                                     # s esperando o login
 CLIENT_SLACK = 30                                                     # s além do --timeout
+
+
+_IDLE_CACHE: dict = {"mtime": None, "value": None}
+
+
+def idle_timeout() -> int:
+    """Segundos sem comando até a sessão fechar.
+
+    Fonte: core/config/project-config.yaml -> access.session_idle_minutes (tela Configuração do
+    console). Relido a cada volta do laço do servidor: mudar a config vale na hora, inclusive para as
+    sessões já abertas. NETOPS_SESSION_IDLE (segundos) sobrepõe, para testes/uso pontual.
+    """
+    env = os.environ.get("NETOPS_SESSION_IDLE")
+    if env:
+        return max(10, int(float(env)))
+    cfg_path = NETOPS_ROOT / "core" / "config" / "project-config.yaml"
+    try:
+        mtime = cfg_path.stat().st_mtime
+    except OSError:
+        return DEFAULT_IDLE_MINUTES * 60
+    if _IDLE_CACHE["mtime"] != mtime:
+        minutes = DEFAULT_IDLE_MINUTES
+        try:
+            import yaml  # noqa: PLC0415
+            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            val = (cfg.get("access") or {}).get("session_idle_minutes")
+            if val not in (None, ""):
+                minutes = float(val)
+        except Exception:  # noqa: BLE001 — config inválida não derruba sessão: usa o padrão
+            minutes = DEFAULT_IDLE_MINUTES
+        _IDLE_CACHE.update(mtime=mtime, value=max(10, int(minutes * 60)))
+    return _IDLE_CACHE["value"]
 
 
 # ----------------------------------------------------------------- diretório dos sockets
@@ -500,7 +536,8 @@ def serve(sid: str, host_ref: int | str, method: str, shell: bool) -> int:
     srv.listen(4)
     meta = {"session": sid, "host": sess.host["name"], "ip": sess.host.get("mgmt_ip"),
             "vendor": sess.host.get("vendor"), "method": method,
-            "mode": sess.mode_name(), "pid": os.getpid(),
+            "mode": sess.mode_name(), "pid": os.getpid(), "host_id": sess.host.get("id", sess.host["name"]),
+            "shell_forced": bool(shell),
             "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "log": str(sess.log_path)}
     meta_path.write_text(json.dumps(meta))
@@ -517,8 +554,9 @@ def serve(sid: str, host_ref: int | str, method: str, shell: bool) -> int:
     try:
         while not stop["flag"]:
             now = time.time()
-            if now - sess.last_used > IDLE_TIMEOUT:
-                sess.log(f"idle-timeout ({IDLE_TIMEOUT}s)"); break
+            idle_limit = idle_timeout()
+            if now - sess.last_used > idle_limit:
+                sess.log(f"idle-timeout ({idle_limit}s sem comando)"); break
             if now - sess.started > MAX_LIFETIME:
                 sess.log(f"vida máxima ({MAX_LIFETIME}s)"); break
             try:
@@ -543,7 +581,7 @@ def serve(sid: str, host_ref: int | str, method: str, shell: bool) -> int:
                                     req.get("expect"), bool(req.get("timing")))
                 elif op == "ping":
                     resp = {"status": "ok", "alive": sess.alive(), "commands": sess.count,
-                            "mode": sess.mode_name(),
+                            "mode": sess.mode_name(), "idle_limit": idle_timeout(),
                             "idle": int(time.time() - sess.last_used)}
                 elif op == "close":
                     resp, stop["flag"] = {"status": "ok"}, True
@@ -562,22 +600,45 @@ def serve(sid: str, host_ref: int | str, method: str, shell: bool) -> int:
 
 
 # ----------------------------------------------------------------- comandos do cliente
-def cmd_open(args) -> int:
-    host_ref = args.host_id if args.host_id is not None else args.host
-    try:
-        host = _canonical(host_ref)
-    except Exception as exc:  # noqa: BLE001
-        print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
-        return 1
+def _fmt_idle() -> str:
+    sec = idle_timeout()
+    return f"{sec / 60:g} min" if sec >= 60 else f"{sec} s"
+
+
+def _host_key(host: dict) -> str:
     hid = str(host.get("id", host["name"]))
-    sid = f"{''.join(c if c.isalnum() else '_' for c in hid)}-{secrets.token_hex(3)}"
-    method = "telnet" if args.telnet else "ssh"
-    if method == "telnet":
-        print("AVISO: Telnet trafega em texto puro. Prefira SSH sempre que possível.", file=sys.stderr)
+    return "".join(c if c.isalnum() else "_" for c in hid)
+
+
+def _find_session(host: dict, method: str, shell: bool) -> str | None:
+    """SESSION_ID de uma sessão VIVA para este host/método (reuso), ou None."""
+    want = str(host.get("id", host["name"]))
+    for meta_file in sorted(session_dir().glob(f"{_host_key(host)}-*.json")):
+        sid = meta_file.stem
+        try:
+            meta = json.loads(meta_file.read_text())
+        except (OSError, ValueError):
+            continue
+        if (str(meta.get("host_id", meta.get("host"))) != want or meta.get("method") != method
+                or bool(meta.get("shell_forced")) != bool(shell)):
+            continue
+        try:
+            ping = _request(sid, {"op": "ping"}, timeout=10)
+        except (OSError, ValueError, FileNotFoundError):
+            _cleanup(sid)
+            continue
+        if ping.get("status") == "ok":
+            return sid
+    return None
+
+
+def _spawn_session(host: dict, method: str, shell: bool) -> tuple[str | None, str]:
+    """Sobe o processo da sessão em background. Devolve (sid, msg) — sid None em falha."""
+    sid = f"{_host_key(host)}-{secrets.token_hex(3)}"
     proc = subprocess.Popen(
         [sys.executable, str(Path(__file__).resolve()), "_serve", sid,
          (f"id:{host['name']}" if isinstance(host["name"], int) else f"name:{host['name']}"), method,
-         "1" if args.shell else "0"],
+         "1" if shell else "0"],
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         start_new_session=True, text=True)
     deadline = time.time() + OPEN_TIMEOUT
@@ -588,12 +649,46 @@ def cmd_open(args) -> int:
             break
     if line.startswith("READY "):
         meta = json.loads(line[6:])
-        print(sid)
-        print(f"[sessão aberta] host={meta['host']} ip={meta['ip']} modo={meta['mode']} "
-              f"idle={IDLE_TIMEOUT}s log={meta['log']}", file=sys.stderr)
-        return 0
+        return sid, (f"[sessão aberta {sid}] host={meta['host']} ip={meta['ip']} modo={meta['mode']} "
+                     f"fecha após {_fmt_idle()} sem comando · log={meta['log']}")
+    if proc.poll() is not None or line:
+        try:                                   # mensagem de erro multilinha (ex.: cofre trancado + instrução)
+            line += proc.stdout.read() or ""
+        except Exception:  # noqa: BLE001
+            pass
     proc.kill()
-    print(f"FALHA ao abrir sessão em '{host_ref}': {line.strip() or 'timeout no login'}", file=sys.stderr)
+    return None, line.strip() or "timeout no login"
+
+
+def acquire_session(host_ref, method: str, shell: bool, force_new: bool = False) -> tuple[str | None, str]:
+    """Reusa a sessão viva do host ou abre uma (1 login por host). Trava por host contra corrida."""
+    import fcntl  # noqa: PLC0415
+    host = _canonical(host_ref)
+    lock_path = session_dir() / f"{_host_key(host)}.lock"
+    with open(lock_path, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not force_new:
+            sid = _find_session(host, method, shell)
+            if sid:
+                return sid, f"[sessão reutilizada {sid}] host={host['name']} (sem novo login)"
+        if method == "telnet":
+            print("AVISO: Telnet trafega em texto puro. Prefira SSH sempre que possível.", file=sys.stderr)
+        return _spawn_session(host, method, shell)
+
+
+def cmd_open(args) -> int:
+    host_ref = args.host_id if args.host_id is not None else args.host
+    try:
+        _canonical(host_ref)
+    except Exception as exc:  # noqa: BLE001
+        print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
+        return 1
+    sid, msg = acquire_session(host_ref, "telnet" if args.telnet else "ssh", args.shell, args.new)
+    if sid:
+        print(sid)
+        print(msg, file=sys.stderr)
+        return 0
+    print(f"FALHA ao abrir sessão em '{host_ref}': {msg}", file=sys.stderr)
     return 1
 
 
@@ -619,11 +714,25 @@ def _print_result(cmd: str, res: dict, multi: bool) -> int | None:
 
 
 def cmd_exec(args) -> int:
+    """Roda comando(s) numa sessão. Com --host-id/--host: reusa a sessão viva do host ou abre uma."""
+    sid = args.session
+    if sid is None:
+        host_ref = args.host_id if args.host_id is not None else args.host
+        try:
+            _canonical(host_ref)
+        except Exception as exc:  # noqa: BLE001
+            print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
+            return 1
+        sid, msg = acquire_session(host_ref, "telnet" if args.telnet else "ssh", args.shell)
+        if not sid:
+            print(f"FALHA ao abrir sessão em '{host_ref}': {msg}", file=sys.stderr)
+            return 1
+        print(msg, file=sys.stderr)
     rc = 0
     for cmd in args.command:
         try:
-            res = _request(args.session, {"op": "exec", "command": cmd, "timeout": args.timeout,
-                                          "expect": args.expect, "timing": args.timing},
+            res = _request(sid, {"op": "exec", "command": cmd, "timeout": args.timeout,
+                                 "expect": args.expect, "timing": args.timing},
                            timeout=args.timeout + CLIENT_SLACK)
         except (FileNotFoundError, OSError, ValueError) as exc:
             print(f"FALHA: {exc}", file=sys.stderr)
@@ -690,14 +799,27 @@ def cmd_list(_args) -> int:
             continue
         found = True
         print(f"{sid}  host={meta['host']} ip={meta['ip']} modo={meta['mode']} "
-              f"cmds={ping.get('commands')} ocioso={ping.get('idle')}s vivo={ping.get('alive')}")
+              f"cmds={ping.get('commands')} ocioso={ping.get('idle')}s/{ping.get('idle_limit')}s vivo={ping.get('alive')}")
     if not found:
         print("(nenhuma sessão aberta)")
     return 0
 
 
 def cmd_close(args) -> int:
-    sids = [p.stem for p in session_dir().glob("*.json")] if args.all else [args.session]
+    if args.all:
+        sids = [p.stem for p in session_dir().glob("*.json")]
+    elif args.session:
+        sids = [args.session]
+    else:
+        host_ref = args.host_id if args.host_id is not None else args.host
+        try:
+            host = _canonical(host_ref)
+        except Exception as exc:  # noqa: BLE001
+            print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
+            return 1
+        sids = [p.stem for p in session_dir().glob(f"{_host_key(host)}-*.json")]
+        if not sids:
+            print(f"(nenhuma sessão aberta para o host {host['name']})")
     for sid in sids:
         try:
             _request(sid, {"op": "close"}, timeout=30)
@@ -731,16 +853,22 @@ def main() -> int:
     p_run.add_argument("--timing", action="store_true",
                        help="Shell: lê por tempo (comando contínuo/paginado: ping, torch)")
 
-    p_open = sub.add_parser("open", help="Conecta e deixa a sessão aberta (imprime o SESSION_ID)")
+    p_open = sub.add_parser("open", help="Reusa a sessão viva do host ou abre uma (imprime o SESSION_ID)")
     sel = p_open.add_mutually_exclusive_group(required=True)
     sel.add_argument("--host-id", type=int, help="ID inteiro do host no inventário")
     sel.add_argument("--host", help="Nome único ou alias legado do host")
     p_open.add_argument("--telnet", action="store_true", help="Usa Telnet (legado) em vez de SSH")
     p_open.add_argument("--shell", action="store_true",
                         help="Linux: shell interativo do Netmiko com PTY (só p/ comando que exige terminal; sem exit code)")
+    p_open.add_argument("--new", action="store_true", help="Abre outra sessão mesmo havendo uma viva")
 
-    p_exec = sub.add_parser("exec", help="Roda comando(s) numa sessão aberta")
-    p_exec.add_argument("--session", required=True)
+    p_exec = sub.add_parser("exec", help="Roda comando(s) na sessão do host (reusa ou abre) — MODO PADRÃO")
+    esel = p_exec.add_mutually_exclusive_group(required=True)
+    esel.add_argument("--host-id", type=int, help="ID do host: reusa a sessão viva dele ou abre uma")
+    esel.add_argument("--host", help="Nome único ou alias legado do host (idem)")
+    esel.add_argument("--session", help="SESSION_ID explícito (de `open`)")
+    p_exec.add_argument("--telnet", action="store_true", help="Com --host-id: sessão Telnet (legado)")
+    p_exec.add_argument("--shell", action="store_true", help="Com --host-id: shell Netmiko com PTY")
     p_exec.add_argument("--command", action="append", required=True, help="Comando (pode repetir)")
     p_exec.add_argument("--timeout", type=float, default=60, help="Segundos por comando (padrão 60)")
     p_exec.add_argument("--expect", help="Regex do prompt esperado (shell), se ele mudar")
@@ -751,6 +879,8 @@ def main() -> int:
     p_close = sub.add_parser("close", help="Fecha sessão(ões)")
     g = p_close.add_mutually_exclusive_group(required=True)
     g.add_argument("--session")
+    g.add_argument("--host-id", type=int, help="Fecha a(s) sessão(ões) deste host")
+    g.add_argument("--host", help="Idem, por nome/alias")
     g.add_argument("--all", action="store_true")
 
     args = parser.parse_args()
