@@ -27,4 +27,4 @@ class ProxmoxProvider:
             raise WebLoginError("usuário com 2FA: login automático não suportado — entre manualmente", "unsupported")
         return Handoff(mode="form_post", action=f"{target.base}/api2/html/access/ticket",
                        fields={"username": user, "password": ticket},
-                       then_url=target.base + "/", then_delay_ms=1500)
+                       then_url=target.base + "/", then_delay_ms=700)
