@@ -28,9 +28,10 @@ export function HostsPage() {
   const needle = q.trim().toLowerCase();
   const hosts = allHosts.filter((h) =>
     (!vendor || h.effective.vendor === vendor) && (!role || h.effective.role === role) && (!group || h.explicit.group === group) &&
-    (!needle || [h.explicit.hostname, h.explicit.mgmt_ip].some((v) => String(v || "").toLowerCase().includes(needle))));
+    (!needle || [h.id, h.explicit.hostname, h.explicit.mgmt_ip].some((v) => String(v || "").toLowerCase().includes(needle))));
 
   const cols = [
+    { key: "id", label: "ID", sort: (r) => String(r.id), render: (r) => html`<span class="mono">${r.id}</span>` },
     { key: "hostname", label: "Nome do host", sort: (r) => r.explicit.hostname || "", render: (r) => html`<a href=${"#hosts/" + encodeURIComponent(r.id)} onClick=${(e) => e.stopPropagation()}><b>${r.explicit.hostname}</b></a>` },
     { key: "mgmt_ip", label: "IP", sort: (r) => r.explicit.mgmt_ip || "", render: (r) => html`<span class="mono">${r.explicit.mgmt_ip}</span>` },
     { key: "vendor", label: "Vendor", sort: (r) => r.effective.vendor || "", render: (r) => html`<${Badge} kind="accent">${r.effective.vendor || "?"}<//>` },
@@ -43,7 +44,7 @@ export function HostsPage() {
   return html`<div>
     <div class="page-title"><h1>Hosts</h1><span class="spacer"></span>
       <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Novo host</button></div>
-    <${FilterBar} q=${q} onChange=${setParams} placeholder="Buscar por nome ou IP" count=${hosts.length} total=${allHosts.length}
+    <${FilterBar} q=${q} onChange=${setParams} placeholder="Buscar por ID, nome ou IP" count=${hosts.length} total=${allHosts.length}
       selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: opts((h) => h.effective.vendor) },
                  { key: "role", label: "Role", value: role, options: opts((h) => h.effective.role) },
                  { key: "group", label: "Grupo", value: group, options: opts((h) => h.explicit.group) }]} />

@@ -36,6 +36,7 @@ export function snapshotToView(snapshot) {
 export function mapToWire(map) {
   const { host_ids, ...value } = map;
   return { ...value, members: value.members.map(parseHostId),
+    excluded: (value.excluded || []).map(parseHostId),
     positions: Object.entries(value.positions).map(([id, point]) => ({ host_id: parseHostId(id), ...point })),
     visual_links: value.visual_links.map(link => ({ ...link, source: nodeToReference(link.source), target: nodeToReference(link.target) })),
   };

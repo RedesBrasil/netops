@@ -230,6 +230,7 @@ class MapEdgeLayout(BaseModel):
     model_config = {"extra": "forbid"}
     anchors: Optional[MapAnchors] = None
     route: Optional[MapRoute] = None
+    label_offset: Optional[MapPoint] = None  # deslocamento manual da descrição em relação à posição automática
     z_index: Optional[int] = Field(default=None, strict=True, ge=-100000, le=100000)
 
 class MapObject(BaseModel):
@@ -292,6 +293,7 @@ class NetworkMap(BaseModel):
     site: Optional[str] = Field(default=None, max_length=200)
     deleted: Optional[bool] = None  # exclusão suave: some da tela, o bloco permanece no maps.yaml
     members: list[HostId] = Field(default_factory=list, max_length=5000)
+    excluded: list[HostId] = Field(default_factory=list, max_length=5000)  # map-only: hosts ocultados de um mapa all/site (não apaga do inventário)
     positions: list[MapHostPosition] = Field(default_factory=list, max_length=5000)
     objects: list[MapObject] = Field(default_factory=list, max_length=1000)
     edges: dict[str, MapEdgeLayout] = Field(default_factory=dict, max_length=10000)
@@ -304,6 +306,8 @@ class NetworkMap(BaseModel):
             raise ValueError("posições de host duplicadas")
         if len(self.members) != len(set(self.members)):
             raise ValueError("membros de host duplicados")
+        if len(self.excluded) != len(set(self.excluded)):
+            raise ValueError("hosts excluídos duplicados")
         if self.kind == "site" and not self.site:
             raise ValueError("mapa por localidade precisa de site")
         if self.kind == "all" and self.id != "all":

@@ -183,12 +183,13 @@ def _document(hosts=None):
 
 
 def host_ids(m, hosts):
+    excluded = set(m.get("excluded") or [])
     if m["kind"] == "all":
-        return sorted(hosts)
+        return sorted(h for h in hosts if h not in excluded)
     included = set(m.get("members") or [])
     if m["kind"] == "site":
         included.update(h for h, fields in hosts.items() if fields.get("site") == m.get("site"))
-    return sorted(included & hosts.keys())
+    return sorted((included & hosts.keys()) - excluded)
 
 
 @yaml_io.serialized
@@ -210,6 +211,7 @@ def snapshot():
         # Alterações externas nos arquivos canônicos não deixam referências mortas
         # no editor. A leitura é pura; a próxima gravação persiste a limpeza.
         value["members"] = [name for name in value.get("members", []) if name in hosts]
+        value["excluded"] = [name for name in value.get("excluded", []) if name in hosts]
         value["positions"] = [pos for pos in value.get("positions", []) if pos["host_id"] in hosts]
         value["objects"] = value.get("objects") or []
         value["edges"] = {ident: layout for ident, layout in value.get("edges", {}).items() if ident in known_links}

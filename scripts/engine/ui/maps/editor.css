@@ -53,6 +53,8 @@
 .netops-maps .line-label { position:absolute; min-height:0; padding:3px 7px; border:1px solid var(--border); border-radius:5px; background:var(--surface); color:var(--text); font-size:11px; font-weight:600; line-height:1.3; pointer-events:all; touch-action:none; cursor:grab; z-index:4; }
 .netops-maps .line-label-active { min-height:40px; min-width:70px; font-size:12px; padding:8px 10px; border:2px solid var(--accent); z-index:8; }
 .netops-maps .line-endpoint { position:absolute; width:40px; height:40px; min-height:40px; padding:0; border:2px solid var(--accent); border-radius:50%; background:var(--surface); color:var(--text); font-size:12px; font-weight:700; pointer-events:all; touch-action:none; cursor:grab; z-index:9; }
+.netops-maps .line-labelmove { position:absolute; width:32px; height:32px; min-height:32px; padding:0; border:2px solid var(--accent); border-radius:50%; background:var(--surface); color:var(--text); font-size:15px; pointer-events:all; touch-action:none; cursor:grab; z-index:12; }
+.netops-maps .line-labelmove:active { cursor:grabbing; }
 .netops-maps .react-flow__edgelabel-renderer { z-index:1100; }
 .netops-maps .line-corner, .netops-maps .line-segment { position:absolute; pointer-events:all; touch-action:none; padding:0; min-height:30px; width:30px; height:30px; color:var(--text); background:var(--surface); border:2px solid var(--accent); z-index:10; font-size:11px; cursor:grab; }
 .netops-maps .line-corner { border-radius:50%; }.netops-maps .line-corner.focused { background:var(--accent); color:white; }.netops-maps .line-segment { border-radius:5px; font-size:19px; z-index:9; }

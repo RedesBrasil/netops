@@ -11,7 +11,7 @@ export function StraightEdge(props) {
   const flow = useReactFlow();
   const { zoom } = useViewport();
   const [draft, setDraft] = useState(null);
-  const drag = useRef(null);
+  const drag = useRef(null), labelShift = useRef({ x: 0, y: 0 });
   if (!source || !target) return null;
   const a = nodeRect(source), b = nodeRect(target);
   const savedRoute = draft?.route === undefined ? props.data.route : draft.route;
@@ -39,7 +39,7 @@ export function StraightEdge(props) {
     editing.busy?.(true);
     if (part === 'corner') editing.focusCorner(props.id, control);
     event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { pointerId: event.pointerId, part, control, point: flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }), a, b, geometry, route, latest: null };
+    drag.current = { pointerId: event.pointerId, part, control, point: flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }), a, b, geometry, route, offset: draft?.label_offset || props.data.label_offset || { x: Math.round(labelShift.current.x), y: Math.round(labelShift.current.y) }, latest: null };
   }
   function move(event) {
     const state = drag.current;
@@ -48,7 +48,8 @@ export function StraightEdge(props) {
     const point = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
     const delta = { x: point.x - state.point.x, y: point.y - state.point.y };
     if (Math.hypot(delta.x, delta.y) * zoom < 3 && !state.latest) return;
-    state.latest = change(state, state.part, state.control, point, delta);
+    state.latest = state.part === 'label' ? { label_offset: { x: Math.round(state.offset.x + delta.x), y: Math.round(state.offset.y + delta.y) } }
+      : change(state, state.part, state.control, point, delta);
     setDraft(state.latest);
   }
   function finish(event) {
@@ -63,6 +64,7 @@ export function StraightEdge(props) {
     if (!steps[event.key] || editing.disabled) return;
     event.preventDefault(); event.stopPropagation();
     const [x, y] = steps[event.key], delta = { x: x * 8, y: y * 8 };
+    if (part === 'label') { const o = props.data.label_offset || { x: Math.round(labelShift.current.x), y: Math.round(labelShift.current.y) }; editing.save(props.id, { label_offset: { x: o.x + delta.x, y: o.y + delta.y } }); return; }
     const point = part === 'source' ? geometry.start : geometry.end;
     editing.save(props.id, change({ geometry, a, b, route }, part, control, { x: point.x + delta.x, y: point.y + delta.y }, delta));
   }
@@ -78,8 +80,14 @@ export function StraightEdge(props) {
     onKeyDown: event => keyboard(event, part, control),
   });
   const position = (x, y) => ({ transform: `translate(-50%, -50%) translate(${x}px, ${y}px)${active ? ` scale(${1 / zoom})` : ''}` });
-  const labelX = geometry.labelX + (active && route && geometry.labelAxis === 'y' ? 42 / zoom : 0);
-  const labelY = geometry.labelY - (active && route && geometry.labelAxis === 'x' ? 30 / zoom : 0);
+  // Ao selecionar, a descrição se afasta da linha só na tela (autoShift). Com posição manual o
+  // deslocamento salvo já é tudo: o texto fica exatamente onde foi solto, selecionado ou não.
+  const autoShift = { x: active && route && geometry.labelAxis === 'y' ? 42 / zoom : 0, y: active && route && geometry.labelAxis === 'x' ? -30 / zoom : 0 };
+  const manual = draft?.label_offset || props.data.label_offset;
+  labelShift.current = autoShift;
+  const offset = manual || { x: 0, y: 0 };
+  const labelX = geometry.labelX + offset.x + (manual ? 0 : autoShift.x);
+  const labelY = geometry.labelY + offset.y + (manual ? 0 : autoShift.y);
   return <>
     <g data-straight-count={count} data-straight-index={index} data-orthogonal={route ? 'true' : 'false'} className="nodrag nopan straight-line" {...events('line')}>
       <title>{`Ligação ${index + 1} de ${count}: ${props.label}. Selecione para ajustar o trajeto.`}</title>
@@ -90,6 +98,8 @@ export function StraightEdge(props) {
         data-line-id={props.id} data-line-part="line" aria-label={`Mover ligação ${index + 1}: ${props.label}`}
         title={route ? 'Arraste para mover os trechos internos' : 'Arraste para deslocar esta linha'} {...events('line')}>{active && <span aria-hidden="true">↔ </span>}{label}</button>
       {active && <>
+        {label && <button className="nodrag nopan line-labelmove" style={position(labelX, labelY - 44 / zoom)} data-line-id={props.id} data-line-part="label"
+          aria-label="Mover descrição" title="Arraste para mover só a descrição (setas do teclado: 8 px)" {...events('label')}>✥</button>}
         <button className="nodrag nopan line-endpoint" style={position(geometry.start.x, geometry.start.y)} data-line-id={props.id} data-line-part="source"
           aria-label="Mover ponta A" title="Arraste a ponta A pela borda do host" {...events('source')}>A</button>
         <button className="nodrag nopan line-endpoint" style={position(geometry.end.x, geometry.end.y)} data-line-id={props.id} data-line-part="target"

@@ -88,7 +88,7 @@ function makeEdges(map, links) {
   const nodeIds = new Set([...map.host_ids.map(hostId), ...map.objects.map(o => objectId(o.id))]);
   const visual = map.visual_links.filter(l => nodeIds.has(l.source) && nodeIds.has(l.target)).map(l => ({
     id: 'visual:' + l.id, source: l.source, target: l.target, sourceHandle: 'bottom', targetHandle: 'top', label: l.label || '',
-    data: { speed: l.speed, anchors: l.anchors, route: l.route, visual: true }, style: { stroke: speedStyle(l.speed).color, strokeDasharray: '7 5' },
+    data: { speed: l.speed, anchors: l.anchors, route: l.route, label_offset: l.label_offset, visual: true }, style: { stroke: speedStyle(l.speed).color, strokeDasharray: '7 5' },
   }));
   // Links entram na mesma pilha dos nós: qualquer item pode ficar acima ou abaixo de qualquer outro.
   const layers = layerMap(map, links);
@@ -258,7 +258,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     saveLine(id, patch); setFocus(null);
   }
   function resetLine(id = selected) {
-    if (id.startsWith('visual:')) saveLine(id, { anchors: null, route: null });
+    if (id.startsWith('visual:')) saveLine(id, { anchors: null, route: null, label_offset: null });
     else update(m => { const next = { ...m.edges }, z = next[id]?.z_index; delete next[id]; if (z != null) next[id] = { z_index: z }; return { ...m, edges: next }; });
   }
   const canvas = useRef(null), paneTouch = useRef(null);
@@ -353,7 +353,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     const old = layoutRef.current.objects.find(o => objectId(o.id) === dialog.object?.id);
     if (dialog.kind === 'existing') {
       const ident = parseHostId(f.host);
-      update(m => ({ ...m, members: [...new Set([...m.members, ident])], host_ids: [...new Set([...m.host_ids, ident])], positions: { ...m.positions, [ident]: dialog.position } }));
+      update(m => ({ ...m, members: [...new Set([...m.members, ident])], host_ids: [...new Set([...m.host_ids, ident])], excluded: (m.excluded || []).filter(hid => hid !== ident), positions: { ...m.positions, [ident]: dialog.position } }));
     } else {
       const o = { ...old, id: old?.id || uid(), type: dialog.kind, position: old ? nodes.find(n => n.id === dialog.object.id)?.position || old.position : dialog.position,
         label: f.label || maps.find(m => m.id === f.map_id)?.name || '', form: f.form || old?.form || 'rect',
@@ -375,17 +375,19 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     if (readOnly) return;
     const ids = nodesRef.current.filter(n => n.selected).map(n => n.id);
     if (!ids.length) { if (selected) removeVisual(selected); return; }
-    if (ids.some(id => id.startsWith('host:')) && layoutRef.current.kind !== 'custom') {
-      setMenu(null); onDeleteSelection({ mapId: layoutRef.current.id, hostIds: ids.filter(id => id.startsWith('host:')).map(nodeHostId),
-        objectIds: ids.filter(id => id.startsWith('object:')).map(id => id.slice(7)) }); return;
+    // O mapa nunca apaga host do inventário. Custom: tira membros/objetos do mapa.
+    // Automático (all/site): oculta hosts via lista `excluded` e remove objetos — inventário intacto.
+    if (layoutRef.current.kind === 'custom') update(m => removeMapNodes(m, ids));
+    else {
+      const hostHids = ids.filter(id => id.startsWith('host:')).map(nodeHostId);
+      update(m => { const base = removeMapNodes(m, ids); return { ...base, excluded: [...new Set([...(base.excluded || []), ...hostHids])], host_ids: base.host_ids.filter(hid => !hostHids.includes(hid)) }; });
     }
-    update(m => removeMapNodes(m, ids));
     setSelected(null); setMultiSelect(false); setMenu(null);
   }
   function removeVisual(id = selected) {
     const node = nodes.find(n => n.id === id), edge = edges.find(e => e.id === id);
     if (node?.data.hostId) {
-      if (layout.kind !== 'custom') return onDeleteSelection({ mapId: layout.id, hostIds: [node.data.hostId], objectIds: [] });
+      if (layout.kind !== 'custom') { update(m => ({ ...m, excluded: [...new Set([...(m.excluded || []), node.data.hostId])], host_ids: m.host_ids.filter(hid => hid !== node.data.hostId) })); setSelected(null); return; }
       update(m => removeMapNodes(m, [id]));
     } else if (node) update(m => removeMapNodes(m, [id]));
     else if (edge?.data.visual) update(m => ({ ...m, visual_links: m.visual_links.filter(l => 'visual:' + l.id !== id) }));
@@ -397,6 +399,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `mapa-${layout.id}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   const menuNode = nodes.find(n => n.id === menu?.id), menuEdge = edges.find(e => e.id === menu?.id);
+  const availableHosts = Object.values(hosts).filter(host => !layout.host_ids.includes(host.id));
   const action = (label, fn, danger = false) => <button type="button" role="menuitem" className={danger ? 'danger' : ''}
     onClick={() => { setMenu(null); fn(); }}>{label}</button>;
   // Geometria atual de cada camada, p/ frente/trás pularem até o próximo item sobreposto.
@@ -476,7 +479,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           onSelectionContextMenu={event => context(event, 'selection')} onSelectionStart={() => nodeGesture(true)} onSelectionEnd={() => nodeGesture(false)}
           onPaneContextMenu={event => context(event)} onMoveStart={() => setMenu(null)}
           onNodeDragStart={() => nodeGesture(true)} onNodeDragStop={() => nodeGesture(false)}
-          fitView fitViewOptions={{ padding: .2, maxZoom: 1.05 }} minZoom={.15} maxZoom={2} nodeDragThreshold={3} deleteKeyCode={null} preventScrolling selectionOnDrag={!linkMode && !multiSelect} panOnDrag={[1]} selectionKeyCode="Shift" multiSelectionKeyCode={multiSelectionKeys} elevateNodesOnSelect={false} elevateEdgesOnSelect={false} zIndexMode="manual">
+          fitView fitViewOptions={{ padding: .2, maxZoom: 1.05 }} minZoom={.15} maxZoom={2} nodeDragThreshold={3} deleteKeyCode={null} preventScrolling selectionOnDrag={!linkMode && !multiSelect} panOnDrag={[1]} panActivationKeyCode="Control" selectionKeyCode="Shift" multiSelectionKeyCode={multiSelectionKeys} elevateNodesOnSelect={false} elevateEdgesOnSelect={false} zIndexMode="manual">
           <Background gap={24} size={1} color="var(--border)" /><Controls showInteractive={false} /><MiniMap className="map-overview" pannable zoomable />
         </ReactFlow>
       </LineEditing.Provider>
@@ -493,7 +496,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     {menu && <MapContextMenu menu={menu} onClose={() => setMenu(null)}>
       {menu.kind === 'selection' ? <>
         {!readOnly && <>{action('Alinhar horizontalmente', () => align('horizontal'))}{action('Alinhar verticalmente', () => align('vertical'))}
-          {action(layout.kind === 'custom' ? 'Remover seleção do mapa' : 'Excluir seleção', removeSelection, true)}</>}
+          {action('Remover seleção do mapa', removeSelection, true)}</>}
         {action('Limpar seleção', () => { clearSelection(); setMultiSelect(false); })}
       </> : menu.kind === 'pane' ? <>
         {!readOnly && <>
@@ -514,7 +517,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           {connectable(menuNode) && action('Ligar a outro dispositivo', () => startConnection(menuNode.id))}
           {layerActions(menuNode.id)}
           {menuNode.type === 'shape' && action('Duplicar', () => duplicate(menuNode.id))}
-          {action(menuNode.data.hostId && layout.kind !== 'custom' ? 'Excluir host' : 'Remover do mapa', () => removeVisual(menuNode.id), true)}
+          {action('Remover do mapa', () => removeVisual(menuNode.id), true)}
         </>}
         {menuNode.data.hostId && action('Abrir inventário de hosts', () => { location.hash = 'hosts'; })}
       </> : menuEdge ? <>
@@ -522,6 +525,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           {action('+ Dobra', () => bend('add', menuEdge.id))}
           {menuEdge.data.route && <>{action('Remover dobra', () => bend('remove', menuEdge.id))}{action('Linha reta', () => bend('straight', menuEdge.id))}</>}
           {action('Posição automática', () => resetLine(menuEdge.id))}
+          {menuEdge.data.label_offset && action('Centralizar descrição', () => saveLine(menuEdge.id, { label_offset: null }))}
           <div role="separator" />
           {action('Editar', () => editEdge(menuEdge))}
           {layerActions(menuEdge.data.visual ? menuEdge.id : edgeLayerId(menuEdge.id))}
@@ -534,7 +538,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       <button className="map-close" aria-label="Fechar" onClick={() => setDialog(null)}>×</button>
       {dialog.kind === 'rename' ? <form onSubmit={e => { e.preventDefault(); const name = new FormData(e.currentTarget).get('name'); update(m => ({ ...m, name })); setDialog(null); }}><label>Nome do mapa<input name="name" defaultValue={layout.name} required maxLength={100} /></label><button className="primary">Salvar</button></form> : dialog.kind === 'visual' ? <form onSubmit={e => { e.preventDefault(); const label = new FormData(e.currentTarget).get('label'); update(m => ({ ...m, visual_links: m.visual_links.map(v => 'visual:' + v.id === dialog.object.id ? { ...v, label } : v) })); setDialog(null); }}><label>Descrição da referência<input name="label" defaultValue={dialog.object.label} maxLength={200} /></label><button className="primary">Salvar</button></form> : <form onSubmit={saveObject}>
         <h2>{{ note: 'Texto', shape: 'Forma', reference: 'Referência a mapa', existing: 'Adicionar host existente' }[dialog.kind]}</h2>
-        {dialog.kind === 'existing' ? <label>Host<select name="host" required><option value="">Selecione</option>{Object.values(hosts).filter(host => !layout.host_ids.includes(host.id)).map(host => <option value={host.id}>{hostLabel(host)}</option>)}</select></label> : <label>{dialog.kind === 'reference' ? 'Rótulo (opcional)' : dialog.kind === 'shape' ? 'Texto (opcional)' : 'Texto'}<textarea name="label" required={dialog.kind === 'note'} maxLength={4000} defaultValue={dialog.object?.data.label || ''} /></label>}
+        {dialog.kind === 'existing' ? (availableHosts.length ? <label>Host<select name="host" required><option value="">Selecione</option>{availableHosts.map(host => <option value={host.id}>{hostLabel(host)}</option>)}</select></label> : <p className="map-modal-hint">Todos os hosts já estão neste mapa. Use "Remover do mapa" num host para remover do mapa ou adicione um novo host.</p>) : <label>{dialog.kind === 'reference' ? 'Rótulo (opcional)' : dialog.kind === 'shape' ? 'Texto (opcional)' : 'Texto'}<textarea name="label" required={dialog.kind === 'note'} maxLength={4000} defaultValue={dialog.object?.data.label || ''} /></label>}
         {dialog.kind === 'reference' && <label>Mapa de destino<select name="map_id" required defaultValue={dialog.object?.data.map_id || ''}><option value="">Selecione</option>{maps.filter(m => m.id !== layout.id).map(m => <option value={m.id}>{m.name}</option>)}</select></label>}
         {dialog.kind === 'shape' && <><IconPicker title="Ícone da forma" defaultLabel="Sem ícone" defaultHint="Sem ícone: manter somente o formato e o texto." value={shapeIcon} onChange={setShapeIcon} /><label>Formato<select name="form" defaultValue={dialog.object?.data.form || 'rect'}><option value="rect">Retângulo</option><option value="ellipse">Elipse</option></select></label>
           <ColorField name="color" label="Preenchimento" value={shapeColor} onChange={setShapeColor} onError={onError} />
@@ -545,7 +549,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           {[['color', 'Fundo', noteFill, setNoteFill, '#fef3c7'], ['stroke', 'Borda', noteStroke, setNoteStroke, '#2563eb']].map(([name, label, value, set, init]) => value
             ? <div><ColorField name={name} label={label} value={value} onChange={set} onError={onError} /><button type="button" onClick={() => set('')}>Remover {label.toLowerCase()}</button></div>
             : <div><button type="button" onClick={() => set(init)}>Adicionar {label.toLowerCase()}</button></div>)}</>}
-        <div className="modal-actions"><button type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="primary">Salvar</button></div>
+        <div className="modal-actions"><button type="button" onClick={() => setDialog(null)}>Cancelar</button>{!(dialog.kind === 'existing' && !availableHosts.length) && <button className="primary">Salvar</button>}</div>
       </form>}
     </section></div>}
   </section>;
