@@ -1390,7 +1390,10 @@ def _norm(t: str) -> str:
 
 def fork_cut_uuid(msgs, *, uuid: str | None = None, text: str | None = None,
                   occurrence: int = 0) -> str | None:
-    """UUID da ÚLTIMA mensagem do turno do prompt escolhido (inclusive a resposta dele).
+    """UUID da última mensagem ANTES do prompt escolhido (fim do turno anterior).
+
+    O fork volta ao estágio de quando o prompt foi enviado: o prompt e a resposta dele ficam
+    de fora (o front repõe o texto no campo de digitação). "" = é o 1º prompt (nada antes).
 
     O prompt é achado pelo uuid (histórico lido do transcript) ou, na conversa ao vivo (itens
     do stream não têm uuid), pela `occurrence`-ésima ocorrência do texto — com fallback para
@@ -1410,14 +1413,12 @@ def fork_cut_uuid(msgs, *, uuid: str | None = None, text: str | None = None,
                 break
     if start is None:
         return None
-    # Mensagens injetadas (fim de tarefa em background, saída de /comando) continuam o turno.
-    nxt = next((i for i, t in prompts if i > start and not _SYNTHETIC_RE.match(t)), len(msgs))
-    return msgs[nxt - 1].uuid
+    return msgs[start - 1].uuid if start > 0 else ""
 
 
 def fork_project_session(sid: str, *, uuid: str | None = None, text: str | None = None,
                          occurrence: int = 0, title: str | None = None) -> str:
-    """Cria a conversa ramificada e devolve o novo sid. ValueError/FileNotFoundError se inválido."""
+    """Cria a conversa ramificada (até ANTES do prompt) e devolve o novo sid ("" = 1º prompt). ValueError/FileNotFoundError se inválido."""
     if not _SDK_OK:
         raise RuntimeError("SDK do Claude indisponível")
     if not project_session_exists(sid):
@@ -1427,6 +1428,8 @@ def fork_project_session(sid: str, *, uuid: str | None = None, text: str | None 
     cut = fork_cut_uuid(msgs, uuid=uuid, text=text, occurrence=occurrence)
     if cut is None:
         raise ValueError("prompt não encontrado no histórico gravado")
+    if cut == "":
+        return ""   # 1º prompt: não há histórico a copiar — o front abre conversa nova
     res = fork_session(sid, directory=str(deps.NETOPS_ROOT), up_to_message_id=cut,
                        title=(title or None))
     src = claude_prefs.get_session(sid)   # o ramo herda modelo/modo da conversa de origem

@@ -202,7 +202,7 @@ def claude_session_info(sid: str):
 
 @router.post("/claude/sessions/{sid}/fork")
 def claude_session_fork(sid: str, body: dict):
-    """Ramifica a conversa a partir de um prompt (histórico até o fim daquele turno).
+    """Ramifica a conversa ANTES de um prompt (histórico até o turno anterior; o front repõe o texto no campo).
 
     body: {uuid?, text?, occurrence?, title?} — uuid vem do histórico; text+occurrence da
     conversa ao vivo. Devolve {id} da nova conversa; a de origem fica intacta.
@@ -223,7 +223,7 @@ def claude_session_fork(sid: str, body: dict):
         return JSONResponse({"error": "fork_failed", "detail": str(e)}, status_code=400)
     except Exception as e:
         return JSONResponse({"error": "fork_failed", "detail": str(e)[:300]}, status_code=500)
-    return {"id": new}
+    return {"id": new or None, "first": not new}
 
 
 @router.put("/claude/sessions/{sid}/completed")

@@ -252,14 +252,14 @@ _FORK_MSGS = [
 ]
 
 
-def test_fork_cut_includes_whole_turn_and_skips_injected_messages():
+def test_fork_cut_is_before_the_prompt():
     cut = claude_svc.fork_cut_uuid
-    assert cut(_FORK_MSGS, uuid="u1") == "a1c"        # tool_result e task-notification são do turno
-    assert cut(_FORK_MSGS, uuid="u2") == "a2"
-    assert cut(_FORK_MSGS, uuid="u3") == "a3"         # último prompt → fim do transcript
-    assert cut(_FORK_MSGS, text="  primeiro ") == "a1c"
-    assert cut(_FORK_MSGS, text="primeiro", occurrence=1) == "a3"   # prompt repetido
-    assert cut(_FORK_MSGS, text="segun") == "a2"      # fallback "contém" (fila junta envios)
+    assert cut(_FORK_MSGS, uuid="u1") == ""           # 1º prompt: nada antes
+    assert cut(_FORK_MSGS, uuid="u2") == "a1c"        # fim do turno anterior (inclui task-notification)
+    assert cut(_FORK_MSGS, uuid="u3") == "a2"
+    assert cut(_FORK_MSGS, text="  primeiro ") == ""
+    assert cut(_FORK_MSGS, text="primeiro", occurrence=1) == "a2"   # prompt repetido
+    assert cut(_FORK_MSGS, text="segun") == "a1c"     # fallback "contém" (fila junta envios)
     assert cut(_FORK_MSGS, uuid="nope") is None
     assert cut(_FORK_MSGS, text="inexistente") is None
 
@@ -281,8 +281,8 @@ def test_fork_endpoint_calls_sdk_and_copies_prefs(client, env, monkeypatch):
     monkeypatch.setattr(claude_prefs, "get_session", lambda sid: {"model": "opus", "mode": "plan"} if sid == A else {})
     monkeypatch.setattr(claude_prefs, "set_session", lambda sid, **kw: saved.update({sid: kw}))
     r = client.post(f"/api/claude/sessions/{A}/fork", json={"uuid": "u2"})
-    assert r.status_code == 200 and r.json() == {"id": B}
-    assert calls == [(A, str(env), "a2", None)]
+    assert r.status_code == 200 and r.json() == {"id": B, "first": False}
+    assert calls == [(A, str(env), "a1c", None)]
     assert saved == {B: {"model": "opus", "mode": "plan"}}
     r = client.post(f"/api/claude/sessions/{A}/fork", json={"text": "nada disso"})
     assert r.status_code == 400 and r.json()["error"] == "fork_failed"

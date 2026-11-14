@@ -169,7 +169,12 @@ function useClaudeSession() {
     resumeIdRef.current = id || "";
     sessionIdRef.current = id || "";
     activeRef.current = true;
-    setInput(""); setAttachments([]); setShowSessions(false);
+    let pre = "";
+    try {   // fork: repõe o prompt de origem no campo de digitação da conversa aberta
+      const f = JSON.parse(localStorage.getItem("cc-fork-prefill") || "null");
+      if (f && f.id === target && Date.now() - (f.t || 0) < 120000) { pre = String(f.text || ""); localStorage.removeItem("cc-fork-prefill"); }
+    } catch (_) { /* sem prefill */ }
+    setInput(pre); setAttachments([]); setShowSessions(false);
     setShowModelPick(false); setShowRateLimit(false);
     if (!id) {   // conversa NOVA: começa nos padrões das configurações (não herda a anterior)
       const dflt = defaultsRef.current;
@@ -656,12 +661,23 @@ function useClaudeSession() {
     const norm = (t) => String(t || "").replace(/\s+/g, " ").trim();
     const occurrence = items.slice(0, idx).filter((x) => x.type === "user" && norm(x.text) === norm(it.text)).length;
     forkingRef.current = true;
+    // Abre a aba nova JÁ no clique (antes do await) para o bloqueador de pop-up não barrar;
+    // a aba atual segue intacta. Se bloquear, cai para abrir na mesma aba.
+    let win = null;
+    try { win = window.open("about:blank", "_blank"); } catch (_) { win = null; }
     try {
       const r = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/fork`,
         it.uuid ? { uuid: it.uuid } : { text: it.text, occurrence });
-      if (r && validSessionId(r.id)) { toast.ok("Conversa ramificada — abrindo o fork"); resumeSession(r.id); }
-      else toast.err("Fork falhou");
+      const setPre = (id) => { try { localStorage.setItem("cc-fork-prefill", JSON.stringify({ id, text: it.text, t: Date.now() })); } catch (_) {} };
+      const go = (hash, fallback) => {
+        if (win && !win.closed) { win.location.href = location.origin + location.pathname + hash; win.focus && win.focus(); }
+        else fallback();
+      };
+      if (r && validSessionId(r.id)) { setPre(r.id); toast.ok("Fork aberto em nova aba — prompt no campo"); go(claudeSessionHash(r.id), () => resumeSession(r.id)); }
+      else if (r && r.first) { setPre("new"); toast.ok("1º prompt — nova conversa em nova aba"); go("#claude/new", newSession); }
+      else { if (win) win.close(); toast.err("Fork falhou"); }
     } catch (e) {
+      if (win && !win.closed) win.close();
       toast.err("Fork falhou: " + ((e && e.payload && (e.payload.detail || e.payload.error)) || (e && e.message) || "erro"));
     } finally { forkingRef.current = false; }
   }
@@ -837,7 +853,7 @@ function UserMsg({ text: fullText, tag, ts, onFork }) {
     ${refs.length > 0 && html`<div class="cc-attach-row user">${refs.map((r) => html`<${AttachThumb} key=${r} path=${r} />`)}</div>`}
     ${(rest || !refs.length) && html`<div class="cc-usertext">${refs.length ? rest : text}</div>`}
     <div class="cc-user-foot">
-      ${onFork && html`<button class="cc-fork" title="Ramificar: abre uma NOVA conversa com o histórico até a resposta deste prompt (a original continua intacta)"
+      ${onFork && html`<button class="cc-fork" title="Ramificar: abre uma NOVA conversa no ponto ANTES deste prompt, com o texto já no campo (a original continua intacta)"
         onClick=${onFork}>⑂ Ramificar daqui</button>`}
       <${MsgTime} ts=${ts} /></div></div>`;
 }
