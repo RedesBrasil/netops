@@ -868,3 +868,6 @@ th.rt-drop-after { box-shadow: inset -3px 0 0 var(--accent); }
   .hostterm-files-toggle { left: auto !important; right: 10px; top: auto; bottom: 12px; transform: none; } }
 
 .term-hl-dot { width: 10px; height: 10px; border-radius: 50%; background: conic-gradient(#e040fb 0 33%, #ef5350 0 66%, #66bb6a 0); display: inline-block; }
+.fm-copy { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 13px; }
+.fm-copy:hover { border-color: var(--accent); }
+.fm-copy-txt { color: var(--muted); font-size: 12px; }

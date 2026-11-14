@@ -167,12 +167,31 @@ function NameDialog({ title, label, initial = "", ok = "OK", onOk, onClose }) {
   <//>`;
 }
 
+// Copia texto: API moderna (HTTPS/localhost) ou, em HTTP puro, o textarea + execCommand de reserva.
+export async function copyText(text) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch (e) {}
+  try {
+    const t = document.createElement("textarea");
+    t.value = text; t.setAttribute("readonly", ""); t.style.cssText = "position:fixed;top:-1000px;opacity:0";
+    document.body.appendChild(t); t.select();
+    const ok = document.execCommand("copy"); t.remove(); return ok;
+  } catch (e) { return false; }
+}
+
 function DeleteDialog({ paths, entries, onOk, onClose }) {
   const single = paths.length === 1;
   const expected = single ? baseName(paths[0]) : String(paths.length);
   const [v, setV] = useState("");
   const [busy, setBusy] = useState(false);
   const dirs = entries.filter((e) => e.is_dir && e.type !== "link").length;
+  const [copied, setCopied] = useState(false);
+  const inputRef = useRef(null);
+  async function copyExpected() {
+    const ok = await copyText(expected);
+    setCopied(ok);
+    if (!ok) toast.err("Não consegui copiar; digite o nome.");
+    inputRef.current?.focus();
+  }
   async function go(e) {
     e && e.preventDefault();
     if (v.trim() !== expected) return;
@@ -184,8 +203,11 @@ function DeleteDialog({ paths, entries, onOk, onClose }) {
       <p>Exclusão <b>definitiva</b> (sem lixeira)${dirs ? html`, incluindo <b>todo o conteúdo</b> de ${dirs} pasta(s)` : ""}.</p>
       <ul class="fm-del-list">${paths.slice(0, 12).map((p) => html`<li class="mono" key=${p}>${p}</li>`)}
         ${paths.length > 12 && html`<li>… e mais ${paths.length - 12}</li>`}</ul>
-      <label class="fm-label">Para confirmar, digite ${single ? html`o nome <b class="mono">${expected}</b>` : html`a quantidade <b>${expected}</b>`}
-        <input autoFocus value=${v} onInput=${(e) => setV(e.target.value)} /></label>
+      <div class="fm-label">Para confirmar, digite ${single ? "o nome" : "a quantidade"}
+        <button type="button" class="fm-copy" title="Clique para copiar e depois cole no campo abaixo" onClick=${copyExpected}>
+          <span class="mono">${expected}</span> <${ToolIcon} name="copy" size=${14} /> <span class="fm-copy-txt">${copied ? "copiado!" : "copiar"}</span></button></div>
+      <label class="fm-label">
+        <input ref=${inputRef} autoFocus value=${v} onInput=${(e) => setV(e.target.value)} /></label>
       <div class="modal-actions"><button type="button" onClick=${onClose}>Cancelar</button>
         <button class="danger" type="submit" disabled=${busy || v.trim() !== expected}>${busy ? "Apagando…" : "Apagar de vez"}</button></div>
     </form>

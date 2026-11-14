@@ -132,6 +132,10 @@ try {
   await page.keyboard.press('Delete');
   const del = page.locator('.modal button.danger');
   assert.ok(await del.isDisabled());
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+  await page.locator('.modal .fm-copy').click();
+  await page.locator('.modal .fm-copy', { hasText: 'copiado!' }).waitFor();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'criada');
   await page.locator('.modal input').fill('criada');
   await del.click();
   await row('criada').waitFor({ state: 'detached' });
