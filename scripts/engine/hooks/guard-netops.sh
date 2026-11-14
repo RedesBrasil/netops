@@ -16,6 +16,10 @@ except Exception:
 # Backup antes de alterar equipamento (memory/feedback-backup-antes-de-alterar.md):
 # `session.py run|exec --host-id N` com comando que ALTERA config exige `change.py begin` antes.
 if printf '%s' "$cmd" | grep -Eq 'access/session\.py[[:space:]]+(run|exec)'; then
+  # Só EXECUÇÃO real conta: "session.py ... add" citado em commit/grep/echo/heredoc não bloqueia
+  # (lib/shell_cmds.py interpreta como o shell). Exit 1 = só menção; erro do helper = regra antiga.
+  printf '%s' "$cmd" | python3 "${CLAUDE_PROJECT_DIR:-/opt/netops}/scripts/engine/lib/shell_cmds.py" --session-call 2>/dev/null
+  [ $? -eq 1 ] && exit 0
   hid=$(printf '%s' "${cmd#*access/session.py}" | grep -Eo -- '--host-id[ =][0-9]+' | head -1 | grep -Eo '[0-9]+$')
   if [ -n "$hid" ] && printf '%s' "$cmd" | grep -Eiq -- '--command[ =]+["'"'"']?[^|]*(^|[ /"'"'"'])(add|set|remove|unset|enable|disable|move|import|reset|configure|conf t|commit|write|wr mem|systemctl (restart|stop|start|reload)|sed -i|rm |mv |cp |tee |apt |qm (set|stop|start|destroy)|pct (set|stop|start|destroy)|sysctl -w|iptables|ip (addr|route|link) (add|del|set))([ "'"'"']|$)'; then
     root="${CLAUDE_PROJECT_DIR:-/opt/netops}"

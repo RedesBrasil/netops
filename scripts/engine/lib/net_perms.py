@@ -479,52 +479,48 @@ def inventory_dialect(root: Path):
 
 
 # ------------------------------------------------------------------ análise do Bash
-def _session_calls(tokens: list[str]) -> list[dict]:
-    calls = []
-    for i, t in enumerate(tokens):
-        if not t.endswith("session.py"):
-            continue
-        rest = tokens[i + 1:]
-        sub = rest[0] if rest else ""
-        if sub not in ("run", "exec"):
-            continue
-        call = {"sub": sub, "host_id": None, "host": None, "session": None, "commands": [], "files": []}
-        j = 1
-        while j < len(rest):
-            a = rest[j]
-            if a in _CTRL:
-                break
-            key, _, val = a.partition("=") if a.startswith("--") and "=" in a else (a, "", None)
-            if key in ("--host-id", "--host", "--session", "--command", "--commands-file"):
-                if val is None:
-                    val = rest[j + 1] if j + 1 < len(rest) else ""
-                    j += 1
-                if key == "--host-id":
-                    call["host_id"] = int(val) if str(val).isdigit() else val
-                elif key == "--host":
-                    call["host"] = val
-                elif key == "--session":
-                    call["session"] = val
-                elif key == "--command":
-                    call["commands"].append(val)
-                else:
-                    call["files"].append(val)
-            j += 1
-        calls.append(call)
-    return calls
+def _parse_session_argv(argv: list[str]) -> dict:
+    call = {"sub": argv[0] if argv else "", "host_id": None, "host": None, "session": None,
+            "commands": [], "files": []}
+    j = 1
+    while j < len(argv):
+        a = argv[j]
+        key, _, val = a.partition("=") if a.startswith("--") and "=" in a else (a, "", None)
+        if key in ("--host-id", "--host", "--session", "--command", "--commands-file"):
+            if val is None:
+                val = argv[j + 1] if j + 1 < len(argv) else ""
+                j += 1
+            if key == "--host-id":
+                call["host_id"] = int(val) if str(val).isdigit() else val
+            elif key == "--host":
+                call["host"] = val
+            elif key == "--session":
+                call["session"] = val
+            elif key == "--command":
+                call["commands"].append(val)
+            else:
+                call["files"].append(val)
+        j += 1
+    return call
 
 
 def analyze_bash(bash: str, host_dialect=None) -> list[dict]:
-    """Acha as chamadas `session.py run|exec` no comando Bash e classifica cada `--command`."""
+    """Acha as EXECUÇÕES reais de `session.py run|exec` (lib/shell_cmds.py: menção em commit,
+    grep, echo ou heredoc não conta) e classifica cada `--command`."""
     if "session.py" not in (bash or ""):
         return []
-    toks = _tokens(bash)
-    if toks is None:
-        return [{"sub": "?", "host_id": None, "host": None, "dialect": "unknown",
-                 "commands": [{"command": bash, "needs": ["edit"]}],
-                 "needs": ["edit"], "note": "não deu para interpretar o comando (aspas/heredoc)"}]
+    from lib import shell_cmds  # noqa: PLC0415
     out = []
-    for c in _session_calls(toks):
+    for inv in shell_cmds.invocations(bash):
+        if inv["code"] is not None:
+            if shell_cmds.python_calls_session(inv["code"]):
+                out.append({"sub": "?", "host_id": None, "host": None, "session": None, "dialect": "unknown",
+                            "commands": [{"command": "(código Python chamando session.py)", "needs": ["edit"]}],
+                            "needs": ["edit"], "note": "código Python que chama session.py: tratado como alteração"})
+            continue
+        if str(inv["prog"]).rsplit("/", 1)[-1] != "session.py" or inv["argv"][:1] not in (["run"], ["exec"]):
+            continue
+        c = _parse_session_argv(inv["argv"])
         ref = c["host_id"] if c["host_id"] is not None else c["host"]
         dialect = host_dialect(ref) if (host_dialect and ref is not None) else "unknown"
         cmds = list(c["commands"])
@@ -537,12 +533,12 @@ def analyze_bash(bash: str, host_dialect=None) -> list[dict]:
                 note = "arquivo de comandos ilegível: tratado como alteração"
         items = []
         for cmd in cmds:
-            if dialect == "unknown":
+            if cmd.startswith("<arquivo "):
+                needs = {"edit"}
+            elif dialect == "unknown":
                 # host não resolvido (ou --session sem host): o pior caso dos três dialetos
                 needs = classify(cmd, "ros") | classify(cmd, "netcli") | classify(cmd, "shell")
                 needs = needs - {"read"} or {"read"}
-            elif cmd.startswith("<arquivo "):
-                needs = {"edit"}
             else:
                 needs = classify(cmd, dialect)
             items.append({"command": cmd, "needs": _sorted(needs)})

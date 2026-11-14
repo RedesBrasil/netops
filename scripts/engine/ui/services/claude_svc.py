@@ -76,7 +76,7 @@ from pathlib import Path
 from fastapi import WebSocket, WebSocketDisconnect
 
 import deps
-from lib import net_perms
+from lib import net_perms, shell_cmds
 from services import claude_models, claude_prefs
 
 # Importado de forma preguiçosa para não quebrar a UI quando o SDK não está instalado
@@ -358,7 +358,36 @@ VALID_EFFORT = ("low", "medium", "high", "xhigh", "max")
 # Comandos Bash que resolvem credencial do cofre (acesso a equipamento, backup antes de mudança…).
 # Se o cofre estiver trancado, o hook abaixo SEGURA o comando e pede a senha na tela, em vez de
 # deixar o script falhar e o agente desistir.
-_VAULT_CMD_RE = re.compile(r"scripts/tools/|session\.py|change\.py|terminal_access")
+# Só conta EXECUÇÃO real (lib/shell_cmds.py), não menção: commit/grep/echo/heredoc com "session.py"
+# no texto não abrem o pop-up (falso positivo de 14/11/2026).
+_VAULT_NO_CRED = {"terminal_link.py"}   # scripts de scripts/tools/ que não leem credencial
+_VAULT_PY_RE = re.compile(
+    r"(subprocess|os\.system|os\.popen|Popen|check_output|check_call)[\s\S]{0,300}?(scripts/tools/|session\.py|change\.py)"
+    r"|\b(run_commands|resolve_secret|decrypt_value|vault_session|terminal_access)\s*\("
+    r"|resolve_host\((?![^)]*decrypt\s*=\s*False)")
+
+
+def _needs_vault(cmd: str) -> bool:
+    """O comando Bash executa algo que resolve credencial do cofre?"""
+    if not cmd or not _VAULT_HINT_RE.search(cmd):
+        return False   # atalho: nem menciona nada relacionado
+    for inv in shell_cmds.invocations(cmd):
+        code = inv.get("code")
+        if code is not None:
+            if _VAULT_PY_RE.search(code):
+                return True
+            continue
+        prog = str(inv.get("prog") or "")
+        base = prog.rsplit("/", 1)[-1]
+        if base in _VAULT_NO_CRED or any(a in ("-h", "--help") for a in inv.get("argv") or []):
+            continue
+        if base in ("session.py", "change.py") or (
+                "scripts/tools/" in prog and base.endswith((".py", ".sh"))):
+            return True
+    return False
+
+
+_VAULT_HINT_RE = re.compile(r"scripts/tools/|session\.py|change\.py|terminal_access|run_commands|resolve_")
 VAULT_WAIT_MAX = 30 * 60      # seg: quanto o agente espera o cofre ser destrancado
 VAULT_WAIT_POLL = 1.0
 _SEND_TIMEOUT = 10.0   # seg p/ um envio ao socket (half-open não pode travar o agente)
@@ -691,7 +720,7 @@ class ClaudeWebSession:
         fica registrado e reaparece no re-anexo (`attach`); o comando segue assim que destrancar
         (por qualquer meio: pop-up, CLI ou outra aba). Estourou VAULT_WAIT_MAX -> nega com motivo."""
         cmd = (input_data.get("tool_input") or {}).get("command") or ""
-        if not _VAULT_CMD_RE.search(cmd) or not self._vault_locked():
+        if not _needs_vault(cmd) or not self._vault_locked():
             return {}
         self._vault_waiting += 1
         try:
