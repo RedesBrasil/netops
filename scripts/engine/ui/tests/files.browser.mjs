@@ -73,8 +73,12 @@ try {
   // pasta = recriada na pasta escolhida no PC (seletor de pasta simulado em memória)
   await page.evaluate(() => {
     const mkDir = (name) => ({ kind: 'directory', name, children: {},
-      async getDirectoryHandle(n) { return (this.children[n] ||= mkDir(n)); },
-      async getFileHandle(n) { const f = (this.children[n] ||= { kind: 'file', name: n, data: '' });
+      async getDirectoryHandle(n, o = {}) { if (!this.children[n] && !o.create) throw new DOMException('x', 'NotFoundError');
+        if (this.children[n] && this.children[n].kind !== 'directory') throw new DOMException('x', 'TypeMismatchError');
+        return (this.children[n] ||= mkDir(n)); },
+      async getFileHandle(n, o = {}) { if (!this.children[n] && !o.create) throw new DOMException('x', 'NotFoundError');
+        if (this.children[n] && this.children[n].kind !== 'file') throw new DOMException('x', 'TypeMismatchError');
+        const f = (this.children[n] ||= { kind: 'file', name: n, data: '' });
         return { async createWritable() { const parts = []; return { async write(v) { parts.push(v); },
           async close() { f.data = new TextDecoder().decode(new Uint8Array(parts.flatMap((p) => [...p]))); } }; } }; } });
     window.__pc = mkDir('Downloads');
@@ -87,6 +91,16 @@ try {
   await page.locator('.toast.ok', { hasText: 'Baixado' }).waitFor();
   const saved = await page.evaluate(() => window.__pc.children.pasta.children['a.txt'].data);
   assert.equal(saved, 'alfa\n', 'pasta recriada no PC com o conteúdo');
+  // 2ª vez: vai direto para a pasta lembrada (sem aviso nem seletor) e não sobrescreve -> "pasta (2)"
+  await page.evaluate(() => { window.__pc.queryPermission = async () => 'granted'; window.__picks = 0;
+    window.showDirectoryPicker = async () => { window.__picks++; return window.__pc; }; });
+  await page.evaluate(async () => {   // o fake não é clonável no IndexedDB: injeta direto no "get"
+    const m = await import('/js/file-browser.js'); m.downloadDir.get = async () => window.__pc; });
+  await row('pasta').click();
+  await page.getByRole('button', { name: 'Baixar' }).click();
+  await page.locator('.toast.ok', { hasText: 'pasta (2)' }).waitFor();
+  assert.equal(await page.evaluate(() => window.__picks), 0, 'não abriu o seletor de novo');
+  assert.equal(await page.evaluate(() => window.__pc.children['pasta (2)'].children['a.txt'].data), 'alfa\n');
 
   // .zip continua disponível pelo menu de contexto
   await row('pasta').click({ button: 'right' });

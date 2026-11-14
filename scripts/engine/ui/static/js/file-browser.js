@@ -25,6 +25,29 @@ function useClip() {
   return c;
 }
 
+/* ------------- pasta de destino dos downloads (lembrada no navegador) ------------- */
+// O navegador não deixa gravar na raiz de Downloads; o usuário escolhe UMA vez uma pasta (ex.: Downloads\NetOps)
+// e o "handle" fica no IndexedDB: os próximos downloads de pasta vão direto para lá (como o MobaXterm).
+function idb(mode, fn) {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open("netops-files", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv");
+    r.onerror = () => reject(r.error);
+    r.onsuccess = () => {
+      let tx, req;
+      try { tx = r.result.transaction("kv", mode); req = fn(tx.objectStore("kv")); }
+      catch (e) { r.result.close(); return reject(e); }    // ex.: objeto não clonável
+      tx.oncomplete = () => { resolve(req && req.result); r.result.close(); };
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}
+export const downloadDir = {
+  get: () => idb("readonly", (st) => st.get("download-dir")).catch(() => null),
+  set: (h) => idb("readwrite", (st) => st.put(h, "download-dir")).catch(() => {}),
+  clear: () => idb("readwrite", (st) => st.delete("download-dir")).catch(() => {}),
+};
+
 /* ------------------------------- ícones -------------------------------- */
 const ICON_COLORS = {
   dir: "#e8b130", code: "#4aa3e0", conf: "#8e7cc3", text: "#93a1b1", archive: "#c0763a",
@@ -375,6 +398,23 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     const total = plan.bytes || 1;
     dlCancel.current = false;
     let done = 0, ok = 0, fail = 0;
+    // Já existe "html" no destino? Salva como "html (2)" (não mistura com o download anterior).
+    const rename = new Map();
+    for (const top of [...new Set(plan.items.map((i) => i.rel.split("/")[0]))]) {
+      let name = top, n = 1;
+      for (;;) {
+        let exists = false;
+        try { await dirHandle.getDirectoryHandle(name); exists = true; } catch (e) {
+          try { await dirHandle.getFileHandle(name); exists = true; } catch (e2) { /* livre */ }
+        }
+        if (!exists) break;
+        n++; const dot = top.lastIndexOf(".");
+        name = dot > 0 && !plan.items.find((i) => i.rel === top)?.is_dir ? `${top.slice(0, dot)} (${n})${top.slice(dot)}` : `${top} (${n})`;
+      }
+      rename.set(top, name);
+    }
+    for (const it of plan.items) { const [t, ...rest] = it.rel.split("/"); it.rel = [rename.get(t), ...rest].join("/"); }
+    const tops = [...rename.values()];
     const dirCache = new Map([["", dirHandle]]);
     async function dirOf(rel) {
       if (dirCache.has(rel)) return dirCache.get(rel);
@@ -411,7 +451,7 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       }
     } finally { setDl(null); }
     if (dlCancel.current) toast.info(`Download cancelado (${ok} arquivo(s) salvos).`);
-    else if (!fail) toast.ok(`Baixado: ${ok} arquivo(s) em "${dirHandle.name}".`);
+    else if (!fail) toast.ok(`Baixado: ${dirHandle.name}/${tops.join(", ")} (${ok} arquivo(s)).`);
   }
 
   async function download(paths = selPaths) {
@@ -419,7 +459,16 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     const info = paths.map((p) => byName[baseName(p)] && parentPath(p) === path ? byName[baseName(p)] : null);
     const hasDir = info.some((e) => e && e.is_dir);
     if (!hasDir) return downloadLoose(paths);
-    setDialog({ kind: canPickDir ? "pickdir" : "nodir", paths });
+    if (!canPickDir) return setDialog({ kind: "nodir", paths });
+    const saved = await downloadDir.get();
+    if (saved) {
+      try {
+        let perm = await saved.queryPermission({ mode: "readwrite" });
+        if (perm === "prompt") perm = await saved.requestPermission({ mode: "readwrite" });
+        if (perm === "granted") return downloadIntoDir(paths, saved);
+      } catch (e) { /* pasta apagada/movida: escolhe de novo */ }
+    }
+    setDialog({ kind: "pickdir", paths });
   }
 
   // O Chrome recusa a raiz de Downloads/Área de Trabalho/Documentos ("contém arquivos de sistema"): o aviso
@@ -432,7 +481,8 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       else toast.info("Nenhuma pasta escolhida. Lembre: crie/escolha uma SUBPASTA (ex.: Downloads\\netops), não a raiz de Downloads.");
       return;
     }
-    return downloadIntoDir(paths, handle);
+    await downloadDir.set(handle);
+    return paths ? downloadIntoDir(paths, handle) : toast.ok(`Downloads de pastas vão para "${handle.name}".`);
   }
 
   // Sem seletor de pasta: arquivos soltos com o caminho no nome (pasta_sub_arquivo.txt).
@@ -724,6 +774,7 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       ${!menu.empty && one && html`<button onClick=${() => { setMenu(null); actions.open(); }}>${one.is_dir ? "Abrir" : "Abrir / editar"}</button>`}
       ${!menu.empty && html`<button onClick=${() => { setMenu(null); download(); }}>Baixar</button>
         <button onClick=${() => { setMenu(null); downloadZip(); }}>Baixar como .zip</button>`}
+      ${canPickDir && html`<button onClick=${() => { setMenu(null); pickDirAndDownload(null); }}>Pasta de destino dos downloads…</button>`}
       ${!menu.empty && html`<hr /><button onClick=${() => { setMenu(null); actions.copy(); }}>Copiar</button>
         <button onClick=${() => { setMenu(null); actions.cut(); }}>Recortar</button>`}
       <button disabled=${!canPaste} onClick=${() => { setMenu(null); paste(one && one.is_dir && !menu.empty ? joinPath(path, one.name) : path); }}>
@@ -748,10 +799,13 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       onOk=${async (mode) => { await api.post("/files/chmod", { src, path: joinPath(path, dialog.entry.name), mode }); await load(path, { keepSel: true }); }} />`}
     ${dialog?.kind === "delete" && html`<${DeleteDialog} paths=${selPaths} entries=${selEntries} onOk=${doDelete} onClose=${() => setDialog(null)} />`}
     ${dialog?.kind === "pickdir" && html`<${Modal} title="Baixar pasta" onClose=${() => setDialog(null)}>
-      <p>O navegador vai pedir <b>onde salvar</b>. A pasta selecionada será recriada lá dentro, com subpastas e arquivos.</p>
-      <p><b>Importante:</b> o Chrome/Edge <b>não aceita a raiz</b> de <i>Downloads</i>, <i>Área de Trabalho</i> ou <i>Documentos</i>
-        (aparece "contém arquivos de sistema"). Na janela, clique em <b>Nova pasta</b> (ex.: <span class="mono">netops</span>),
-        entre nela e clique em <b>Selecionar pasta</b>.</p>
+      <p>Escolha <b>uma vez</b> a pasta onde os downloads de pastas serão salvos. Depois disso, baixar uma pasta (ex.:
+        <span class="mono">html</span>) cria <span class="mono">html</span> lá dentro direto, sem perguntar de novo.</p>
+      <p><b>Importante:</b> o navegador <b>não aceita a raiz</b> de <i>Downloads</i>, <i>Área de Trabalho</i> ou <i>Documentos</i>
+        (aparece "contém arquivos de sistema"). Na janela, abra <i>Downloads</i>, clique em <b>Nova pasta</b>
+        (ex.: <span class="mono">NetOps</span>), entre nela e clique em <b>Selecionar pasta</b>.</p>
+      <p class="help">Para trocar depois: clique direito → "Pasta de destino dos downloads…". O navegador pode pedir
+        para confirmar o acesso de novo a cada sessão (marque "Permitir em todas as visitas", se aparecer).</p>
       <div class="modal-actions">
         <button onClick=${() => setDialog(null)}>Cancelar</button>
         <button onClick=${() => { const p = dialog.paths; setDialog(null); downloadZip(p); }}>Baixar .zip</button>
