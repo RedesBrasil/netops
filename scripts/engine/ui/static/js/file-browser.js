@@ -333,16 +333,115 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     setState({ open: full }, { push: true });
   }
 
-  async function download(paths = selPaths) {
+  // Download SEM zip: arquivos saem um a um; pastas são recriadas numa pasta do PC escolhida pelo usuário
+  // (File System Access API: Chrome/Edge em HTTPS ou localhost). Sem essa API, oferece .zip ou arquivos soltos.
+  const [dl, setDl] = useState(null);   // progresso do download de pasta
+  const dlCancel = useRef(false);
+  const canPickDir = typeof window !== "undefined" && window.isSecureContext && "showDirectoryPicker" in window;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function linkFor(p) { return api.get(`/files/download-link?src=${enc(src)}&path=${enc(p)}`); }
+  function clickLink(url, name) {
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  async function downloadZip(paths = selPaths) {
     if (!paths.length) return toast.info("Selecione o que baixar.");
     try {
       const qs = paths.map((p) => "path=" + enc(p)).join("&");
       const r = await api.get(`/files/download-link?src=${enc(src)}&${qs}`);
-      const a = document.createElement("a");
-      a.href = r.url; a.download = r.name; a.rel = "noopener";
-      document.body.appendChild(a); a.click(); a.remove();
+      clickLink(r.url, r.name);
       if (r.zip) toast.info(`Compactando e baixando ${r.name}…`);
     } catch (e) { toast.err(e.message || String(e)); }
+  }
+
+  async function downloadLoose(paths) {
+    // Arquivos soltos (um download por arquivo). O navegador pode pedir 1 vez "permitir vários downloads".
+    let n = 0;
+    for (const p of paths) {
+      try { const r = await linkFor(p); clickLink(r.url, baseName(p)); n++; }
+      catch (e) { toast.err(`${baseName(p)}: ${e.message || e}`); }
+      await sleep(350);
+    }
+    if (paths.length > 1) toast.info(`${n} download(s) iniciado(s). Se só veio 1, permita "vários downloads" no navegador.`);
+  }
+
+  async function downloadIntoDir(paths, dirHandle) {
+    let plan;
+    try { plan = await api.get(`/files/download-plan?src=${enc(src)}&${paths.map((p) => "path=" + enc(p)).join("&")}`); }
+    catch (e) { return toast.err(e.message || String(e)); }
+    const files = plan.items.filter((i) => !i.is_dir);
+    const total = plan.bytes || 1;
+    dlCancel.current = false;
+    let done = 0, ok = 0, fail = 0;
+    const dirCache = new Map([["", dirHandle]]);
+    async function dirOf(rel) {
+      if (dirCache.has(rel)) return dirCache.get(rel);
+      const i = rel.lastIndexOf("/");
+      const parent = await dirOf(i < 0 ? "" : rel.slice(0, i));
+      const h = await parent.getDirectoryHandle(rel.slice(i + 1), { create: true });
+      dirCache.set(rel, h); return h;
+    }
+    try {
+      for (const d of plan.items.filter((i) => i.is_dir)) await dirOf(d.rel);
+      for (let k = 0; k < files.length; k++) {
+        if (dlCancel.current) break;
+        const f = files[k];
+        setDl({ name: f.rel, n: k + 1, of: files.length, pct: Math.round((done / total) * 100) });
+        try {
+          const i = f.rel.lastIndexOf("/");
+          const dir = await dirOf(i < 0 ? "" : f.rel.slice(0, i));
+          const fh = await dir.getFileHandle(f.rel.slice(i + 1), { create: true });
+          const r = await linkFor(f.path);
+          const res = await fetch(r.url);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const w = await fh.createWritable();
+          const reader = res.body.getReader();
+          for (;;) {
+            const { value, done: end } = await reader.read();
+            if (end) break;
+            await w.write(value);
+            done += value.length;
+            if (dlCancel.current) { await reader.cancel(); break; }
+          }
+          await w.close(); ok++;
+          setDl((x) => x && ({ ...x, pct: Math.min(100, Math.round((done / total) * 100)) }));
+        } catch (e) { fail++; toast.err(`${f.rel}: ${e.message || e}`); }
+      }
+    } finally { setDl(null); }
+    if (dlCancel.current) toast.info(`Download cancelado (${ok} arquivo(s) salvos).`);
+    else if (!fail) toast.ok(`Baixado: ${ok} arquivo(s) em "${dirHandle.name}".`);
+  }
+
+  async function download(paths = selPaths) {
+    if (!paths.length) return toast.info("Selecione o que baixar.");
+    const info = paths.map((p) => byName[baseName(p)] && parentPath(p) === path ? byName[baseName(p)] : null);
+    const hasDir = info.some((e) => e && e.is_dir);
+    if (!hasDir) return downloadLoose(paths);
+    if (canPickDir) {
+      let handle;
+      try { handle = await window.showDirectoryPicker({ id: "netops-download", mode: "readwrite", startIn: "downloads" }); }
+      catch (e) { return; }                     // usuário cancelou o seletor
+      return downloadIntoDir(paths, handle);
+    }
+    setDialog({ kind: "nodir", paths });
+  }
+
+  // Sem seletor de pasta: arquivos soltos com o caminho no nome (pasta_sub_arquivo.txt).
+  async function downloadFlat(paths) {
+    let plan;
+    try { plan = await api.get(`/files/download-plan?src=${enc(src)}&${paths.map((p) => "path=" + enc(p)).join("&")}`); }
+    catch (e) { return toast.err(e.message || String(e)); }
+    const files = plan.items.filter((i) => !i.is_dir);
+    if (files.length > 50 && !confirm(`Isso inicia ${files.length} downloads separados. Continuar?`)) return;
+    let n = 0;
+    for (const f of files) {
+      try { const r = await linkFor(f.path); clickLink(r.url, f.rel.split("/").join("_")); n++; }
+      catch (e) { toast.err(`${f.rel}: ${e.message || e}`); }
+      await sleep(350);
+    }
+    toast.info(`${n} download(s) iniciado(s).`);
   }
 
   function report(res, verb) {
@@ -601,7 +700,11 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       </div>`)}
     </div>
     <div class="fm-status">
-      ${up
+      ${dl && !up
+        ? html`<span class="fm-progress"><span style=${`width:${dl.pct}%`}></span></span>
+            <span class="fm-up-txt">Baixando ${dl.n}/${dl.of} · ${dl.pct}% · <span class="mono">${dl.name}</span></span>
+            <button class="sm" onClick=${() => { dlCancel.current = true; }}>Cancelar</button>`
+        : up
         ? html`<span class="fm-progress"><span style=${`width:${up.pct}%`}></span></span>
             <span class="fm-up-txt">Enviando ${up.n}/${up.of} · ${up.pct}% · <span class="mono">${up.name}</span></span>
             <button class="sm" onClick=${cancelUpload}>Cancelar</button>`
@@ -612,7 +715,8 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
 
     ${menu && html`<div class="fm-menu" style=${`left:${menu.x}px;top:${menu.y}px`} onClick=${(e) => e.stopPropagation()}>
       ${!menu.empty && one && html`<button onClick=${() => { setMenu(null); actions.open(); }}>${one.is_dir ? "Abrir" : "Abrir / editar"}</button>`}
-      ${!menu.empty && html`<button onClick=${() => { setMenu(null); download(); }}>Baixar${sel.length > 1 || one?.is_dir ? " (.zip)" : ""}</button>`}
+      ${!menu.empty && html`<button onClick=${() => { setMenu(null); download(); }}>Baixar</button>
+        <button onClick=${() => { setMenu(null); downloadZip(); }}>Baixar como .zip</button>`}
       ${!menu.empty && html`<hr /><button onClick=${() => { setMenu(null); actions.copy(); }}>Copiar</button>
         <button onClick=${() => { setMenu(null); actions.cut(); }}>Recortar</button>`}
       <button disabled=${!canPaste} onClick=${() => { setMenu(null); paste(one && one.is_dir && !menu.empty ? joinPath(path, one.name) : path); }}>
@@ -636,6 +740,16 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     ${dialog?.kind === "chmod" && html`<${ChmodDialog} entry=${dialog.entry} path=${joinPath(path, dialog.entry.name)} onClose=${() => setDialog(null)}
       onOk=${async (mode) => { await api.post("/files/chmod", { src, path: joinPath(path, dialog.entry.name), mode }); await load(path, { keepSel: true }); }} />`}
     ${dialog?.kind === "delete" && html`<${DeleteDialog} paths=${selPaths} entries=${selEntries} onOk=${doDelete} onClose=${() => setDialog(null)} />`}
+    ${dialog?.kind === "nodir" && html`<${Modal} title="Baixar pasta" onClose=${() => setDialog(null)}>
+      <p>Este navegador não deixa o site gravar uma <b>pasta</b> no seu computador. Isso exige Chrome ou Edge com o console
+        em <b>HTTPS</b> (ou localhost); o endereço atual é ${location.protocol === "https:" ? "HTTPS, mas o navegador não oferece o recurso" : "HTTP"}.</p>
+      <p>Escolha como baixar:</p>
+      <div class="modal-actions">
+        <button onClick=${() => setDialog(null)}>Cancelar</button>
+        <button onClick=${() => { const p = dialog.paths; setDialog(null); downloadFlat(p); }}>Arquivos soltos (pasta_arquivo)</button>
+        <button class="primary" onClick=${() => { const p = dialog.paths; setDialog(null); downloadZip(p); }}>Baixar .zip</button>
+      </div>
+    <//>`}
     ${dialog?.kind === "conflict" && html`<${ConflictDialog} names=${dialog.names} onChoice=${dialog.onChoice} onClose=${() => setDialog(null)} />`}
     ${state.open && html`<${FileEditor} src=${src} path=${state.open} onDownload=${download}
       onClose=${() => setState({ open: "" }, { back: true })} onSaved=${() => load(path, { keepSel: true })} />`}

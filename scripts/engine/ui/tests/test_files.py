@@ -261,3 +261,14 @@ def test_remote_sftp_panel_over_terminal_connection(client, env, sftp_server):
             break
         time.sleep(0.1)
     assert r.status_code == 404 and "terminal" in r.json()["detail"]
+
+
+def test_download_plan_expands_folders_for_zipless_download(client, fs):
+    r = client.get("/api/files/download-plan", params=[("path", str(fs / "pasta")), ("path", str(fs / "z.conf"))])
+    assert r.status_code == 200, r.text
+    d = r.json()
+    rels = {i["rel"]: i for i in d["items"]}
+    assert {"pasta", "pasta/a.txt", "pasta/sub", "pasta/sub/b.bin", "z.conf"} <= set(rels)
+    assert rels["pasta/sub"]["is_dir"] and not rels["pasta/sub/b.bin"]["is_dir"]
+    assert rels["pasta/sub/b.bin"]["path"] == str(fs / "pasta" / "sub" / "b.bin")
+    assert d["files"] == 3 and d["bytes"] == 5 + 2000 + 4

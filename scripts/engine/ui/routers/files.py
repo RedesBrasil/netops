@@ -290,6 +290,25 @@ async def files_upload_abort(path: str = Query(...), uid: str = Query(..., patte
     return await _do(go)
 
 
+@router.get("/files/download-plan")
+async def files_download_plan(path: list[str] = Query(...), src: str = "local"):
+    """Expande pastas em arquivos p/ baixar SEM zip: [{rel, path, size, is_dir}] (rel começa no nome
+    do item selecionado). O navegador pede um link por arquivo, na hora de baixar (o ticket vale 120 s)."""
+    async def go():
+        import asyncio
+        fs = fsvc.backend(src)
+        items: list[dict] = []
+        for p in [fsvc.norm(x) for x in path][:5000]:
+            walked = await asyncio.to_thread(lambda q=p: list(fs.sync_walk(q)))
+            for full, rel, size, is_dir in walked:
+                items.append({"rel": rel, "path": full, "size": size, "is_dir": is_dir})
+                if len(items) > 20000:
+                    raise fsvc.FsError("mais de 20.000 itens — baixe como .zip")
+        return {"items": items, "files": sum(1 for i in items if not i["is_dir"]),
+                "bytes": sum(i["size"] for i in items)}
+    return await _do(go)
+
+
 @router.get("/files/download-link")
 async def files_download_link(path: list[str] = Query(...), src: str = "local"):
     """Link de uso único (120 s). 1 arquivo = o próprio arquivo; pasta(s) ou vários = .zip em fluxo."""

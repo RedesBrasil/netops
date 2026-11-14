@@ -145,7 +145,10 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   fingerprint no log. Auditoria em `runs/<ts>-terminal-<id>/session.log` (sem gravar teclas).
   Código: `routers/host_term.py`, `services/host_term_svc.py`, `static/js/pages/host-term.js`.
 - **Arquivos (menu `#files`) e painel SFTP do terminal de host:** gerenciador de arquivos completo, com
-  navegar, enviar arquivos e pastas, baixar (vários itens ou pastas viram `.zip` em fluxo), criar, renomear,
+  navegar, enviar arquivos e pastas, baixar SEM zip (vários arquivos = um download cada; pasta = recriada numa pasta
+  do PC escolhida no seletor — File System Access API, Chrome/Edge em HTTPS ou localhost; sem ela, a tela oferece
+  .zip ou arquivos soltos `pasta_arquivo`; `GET /api/files/download-plan` expande as pastas; "Baixar como .zip" no
+  menu de contexto), criar, renomear,
   copiar, recortar, colar, editar texto (até 5 MiB) e mudar permissões. Tem **o mesmo nível de confiança do
   terminal web**: só liga com o terminal ligado (`deps.files_enabled()`; o `start.sh` liga) e nunca em
   `--read-only`. `NETOPS_UI_FILES=0` desliga só os arquivos. O menu roda **como o usuário do servidor (root na

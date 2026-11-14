@@ -59,10 +59,36 @@ try {
   assert.equal(read.content, 'k=editado\n');
   await page.locator('.fm-editor-modal').getByRole('button', { name: 'Fechar' }).click();
 
-  // baixar seleção múltipla = .zip
+  // vários arquivos = downloads separados (sem zip)
+  await page.locator('.fm input[type=file]').first().setInputFiles([{ name: 'b2.txt', mimeType: 'text/plain', buffer: Buffer.from('b2') }]);
+  await row('b2.txt').waitFor();
+  await row('renomeado.conf').click();
+  await row('b2.txt').click({ modifiers: ['Control'] });
+  const got = [];
+  page.on('download', (d) => got.push(d.suggestedFilename()));
+  await page.getByRole('button', { name: 'Baixar' }).click();
+  for (let i = 0; i < 50 && got.length < 2; i++) await page.waitForTimeout(100);
+  assert.deepEqual(got.sort(), ['b2.txt', 'renomeado.conf'], 'arquivos soltos, sem zip');
+
+  // pasta = recriada na pasta escolhida no PC (seletor de pasta simulado em memória)
+  await page.evaluate(() => {
+    const mkDir = (name) => ({ kind: 'directory', name, children: {},
+      async getDirectoryHandle(n) { return (this.children[n] ||= mkDir(n)); },
+      async getFileHandle(n) { const f = (this.children[n] ||= { kind: 'file', name: n, data: '' });
+        return { async createWritable() { const parts = []; return { async write(v) { parts.push(v); },
+          async close() { f.data = new TextDecoder().decode(new Uint8Array(parts.flatMap((p) => [...p]))); } }; } }; } });
+    window.__pc = mkDir('Downloads');
+    window.showDirectoryPicker = async () => window.__pc;
+  });
   await row('pasta').click();
-  await row('renomeado.conf').click({ modifiers: ['Control'] });
-  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Baixar' }).click()]);
+  await page.getByRole('button', { name: 'Baixar' }).click();
+  await page.locator('.toast.ok', { hasText: 'Baixado' }).waitFor();
+  const saved = await page.evaluate(() => window.__pc.children.pasta.children['a.txt'].data);
+  assert.equal(saved, 'alfa\n', 'pasta recriada no PC com o conteúdo');
+
+  // .zip continua disponível pelo menu de contexto
+  await row('pasta').click({ button: 'right' });
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('.fm-menu button', { hasText: 'Baixar como .zip' }).click()]);
   assert.match(dl.suggestedFilename(), /\.zip$/);
 
   // copiar/colar na mesma pasta = "(cópia)"; menu de contexto
