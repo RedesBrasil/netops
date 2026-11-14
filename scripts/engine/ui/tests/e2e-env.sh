@@ -36,7 +36,7 @@ Y
     mkdir -p "$D/backups/by-id/1"; printf 'v1\n' > "$D/backups/by-id/1/a.rsc"; printf 'v2\n' > "$D/backups/by-id/1/b.rsc"
     cd "$E/code"
     NETOPS_UI_DATA_ROOT="$D" NETOPS_UI_HOST=127.0.0.1 NETOPS_UI_PORT=$PORT NETOPS_UI_CLAUDE=0 NETOPS_UI_TERMINAL=0 \
-      nohup "$PY" scripts/engine/ui/server.py --host 127.0.0.1 --port "$PORT" --no-browser > "$E/server.log" 2>&1 &
+      nohup "$PY" scripts/engine/ui/server.py --host 127.0.0.1 --port "$PORT" --no-browser --enable-terminal > "$E/server.log" 2>&1 &
     echo $! > "$E/pid"
     for i in $(seq 30); do curl -sf "http://127.0.0.1:$PORT/api/config/meta" >/dev/null && break; sleep 1; done
     REV=$(curl -s "http://127.0.0.1:$PORT/api/backups" | "$PY" -c 'import sys,json;print(json.load(sys.stdin)["rev"])')

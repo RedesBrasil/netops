@@ -56,6 +56,8 @@ Todos os menus do console seguem a regra. Helpers: `static/js/route.js` (`useMen
 | Claude Code | `#claude/<id>`, `#claude/new` | — |
 | Memória | `#memory` (=MEMORY.md), `#memory/AGENTS.md`, `#memory/notas`, `#memory/<nota>.md` | `q` (lista de notas) |
 | Terminal | página única (sem item aberto) | — |
+| Arquivos | `#files?path=<pasta>` (cada pasta = uma entrada no histórico; Voltar = pasta anterior) | `path q sort hidden open` (`open=<arquivo>` = editor aberto) |
+| Terminal de host | `#hostterm/<id>?method=&port=` (janela própria) | `fpath` = pasta do painel de arquivos (gravada com replace) |
 
 **Acessar → Web** (`openWebLaunch`) é uma *ação* (abre aba externa já logada via `POST /api/hosts/<id>/web-launch`), não uma tela do console: não tem hash próprio e nunca coloca ticket/senha na URL.
 

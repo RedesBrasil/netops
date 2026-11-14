@@ -293,7 +293,11 @@ async def run_ssh(io: WsIO, host: dict, entry: dict, cred: dict, audit: AuditLog
         except Exception:  # noqa: BLE001
             pass
         audit.write(f"CONECTADO usuario={user} hostkey={fp}")
-        await io.status("conectado", user=user)
+        # Painel de arquivos (estilo MobaXterm): SFTP sobre ESTA conexão, sem segundo login.
+        # O token só vive enquanto o terminal está aberto (routers/files.py, src=<token>).
+        from services import files_svc  # noqa: PLC0415
+        sftp_token = files_svc.register_session(conn, host, user) if deps.files_enabled() else None
+        await io.status("conectado", user=user, sftp=sftp_token)
         io.on_resize = lambda c, r: proc.change_terminal_size(c, r)
 
         async def pump_out():
@@ -307,8 +311,11 @@ async def run_ssh(io: WsIO, host: dict, entry: dict, cred: dict, audit: AuditLog
             while True:
                 proc.stdin.write(await io.read())
 
-        await _bridge(pump_out(), pump_in())
-        proc.close()
+        try:
+            await _bridge(pump_out(), pump_in())
+        finally:
+            files_svc.unregister_session(sftp_token)
+            proc.close()
 
 
 # --------------------------------------------------------------------------- #

@@ -244,6 +244,13 @@ def vault_initialized() -> bool:
     return ok
 
 
+def files_enabled() -> bool:
+    """Gerenciador de arquivos (menu Arquivos + painel SFTP): mesmo nível de confiança do terminal web
+    (acesso ao sistema como o usuário do servidor). Liga junto com o terminal; NETOPS_UI_FILES=0 desliga."""
+    return (STATE.enable_terminal and not STATE.read_only
+            and os.environ.get("NETOPS_UI_FILES", "1").strip().lower() not in ("0", "false", "no", "off"))
+
+
 def auth_required() -> bool:
     """O console exige login com senha sempre que houver cofre inicializado."""
     return vault_initialized()

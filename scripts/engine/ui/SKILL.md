@@ -144,6 +144,25 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   pede a senha. Sem credencial (ou `--no-vault-unlock`) → o terminal pede usuário/senha (não grava). Chave do host SSH: aceita e registra o
   fingerprint no log. Auditoria em `runs/<ts>-terminal-<id>/session.log` (sem gravar teclas).
   Código: `routers/host_term.py`, `services/host_term_svc.py`, `static/js/pages/host-term.js`.
+- **Arquivos (menu `#files`) e painel SFTP do terminal de host:** gerenciador de arquivos completo, com
+  navegar, enviar arquivos e pastas, baixar (vários itens ou pastas viram `.zip` em fluxo), criar, renomear,
+  copiar, recortar, colar, editar texto (até 5 MiB) e mudar permissões. Tem **o mesmo nível de confiança do
+  terminal web**: só liga com o terminal ligado (`deps.files_enabled()`; o `start.sh` liga) e nunca em
+  `--read-only`. `NETOPS_UI_FILES=0` desliga só os arquivos. O menu roda **como o usuário do servidor (root na
+  instalação padrão)** e não tem jaula de diretório, nem para segredos (decisão do usuário, 13/11/2026). Proteções:
+  - apagar, mover ou renomear `/` e as pastas de sistema de 1º nível (`/etc`, `/usr`, ...) é recusado;
+  - apagar não segue link simbólico e é definitivo; a tela exige digitar o nome do item (ou a quantidade);
+  - upload em partes de 8 MiB grava num `.netops-upload-<uid>` e só renomeia no fim; a edição grava num
+    temporário e confere mtime+tamanho (409 `changed` se o arquivo mudou);
+  - toda escrita e download vai para `runs/files/audit.log` (sem conteúdo).
+  O download usa um **link de uso único** (`GET /api/files/download-link` → `/api/files/dl/<ticket>`, 120 s).
+  Esse é o único caminho de `/api` liberado sem o header de sessão (`app.py`, `AUTH_TICKET_PREFIX`), e o ticket só
+  é emitido para quem está logado. **Painel SFTP:** ao conectar por SSH, o terminal de host registra a conexão em
+  `files_svc.SFTP_SESSIONS` e manda o token no status `conectado` (`sftp`). O painel usa `src=<token>` nas mesmas
+  rotas, então não faz um segundo login, inclusive com senha digitada à mão. A sessão some quando o terminal fecha.
+  Telnet e hosts sem SFTP (Cisco/Huawei, em geral) mostram "indisponível". Código: `routers/files.py`,
+  `services/files_svc.py`, `static/js/file-browser.js`, `files-core.js`, `pages/files.js`, painel em
+  `pages/host-term.js`.
 - **Página Claude Code (`--enable-claude`):** ⚠ dirige um **agente de IA** (via `claude-agent-sdk`)
   que **executa comandos e edita arquivos** como o usuário do servidor, com `cwd=NETOPS_ROOT` e
   herdando `AGENTS.md`/skills/agentes. Mesma postura do terminal: DESLIGADA por padrão no server.py
@@ -539,6 +558,11 @@ checklist em `core/rules/urls-navegacao.md` — leia antes de criar ou alterar q
 (`sync` recopia o código; `down` encerra). Depois:
 `PLAYWRIGHT_MODULE=... CHROMIUM_EXECUTABLE=... node tests/urls.browser.mjs [menu ...]` (sem args = todos).
 Cobre item aberto, deep link (F5), Voltar, id inexistente, filtros na URL e limpeza. Unitário: `tests/route.test.mjs`.
+
+**Exceção 4: Arquivos** (`#files` e painel SFTP do terminal de host). É o mesmo passthrough do humano
+que o terminal: ele navega e altera arquivos do servidor (ou do host, pela sessão SSH que ele mesmo abriu)
+com as próprias mãos. Ver "Arquivos" em Segurança. Testes: `tests/test_files.py`,
+`tests/files-core.test.mjs`, `tests/files.browser.mjs` e o caso `files` de `tests/urls.browser.mjs`.
 
 ## Tabelas: DataTable (padrão de todas as listagens)
 

@@ -57,6 +57,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Skills = scripts operacionais + `SKILL.md` (acesso, diagnóstico, análise) | `scripts/tools/<skill>/` (console: menu **Scripts / Skills**) |
 | Motor do NetOps (lib, cofre, console web) | `scripts/engine/` |
 | Subir **ou reiniciar** o console web (SEMPRE por aqui) | `scripts/engine/ui/start.sh` |
+| Gerenciador de arquivos do console (menu **Arquivos** + painel SFTP ao lado do terminal de host) | `scripts/engine/ui/` (`routers/files.py`, `static/js/file-browser.js`; ver `SKILL.md`) |
 | Tarefas agendadas (script / agente de IA / script + agente) | `scripts/engine/scheduler/` (`SKILL.md`; console: menu **Tarefas agendadas**) |
 | Modelos de planejamento | `planning-examples/` |
 | O que o framework já aprendeu | `memory/` |

@@ -7,6 +7,10 @@ Leia antes de criar ou alterar qualquer listagem em `scripts/engine/ui/static/js
 1. **Nunca escreva `<table>` à mão numa tela.** Use `DataTable` de `static/js/table.js` (também
    exportado por `components.js`). Só ficam de fora as tabelas que não são de dados, como o modelo
    inserido pelo editor de Markdown (`wysiwyg.js`).
+   **Exceção: o explorador de arquivos** (`static/js/file-browser.js`, menu **Arquivos** e painel SFTP do
+   terminal de host) é uma lista de pastas e arquivos com ícones, no estilo do MobaXterm e do explorador do
+   sistema. Ele não é uma tabela de dados e não usa `DataTable` (decisão do usuário, 13/11/2026). A lista é
+   feita de `div` em grade, sem `<table>`. Ordenação, filtro e pasta ficam na URL (`#files?path=&q=&sort=`).
 2. **Todo `DataTable` tem um `tableId` estável e único** (ex.: `"hosts"`, `"backup-host-files"`). Ele é a
    chave da preferência salva no navegador. Trocar o id apaga o layout que o usuário montou.
 3. **Toda coluna de dados ganha `sort`**: `sort: true` ordena por `row[key]`, ou passe uma função `(row) => valor`.

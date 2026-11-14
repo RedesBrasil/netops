@@ -17,6 +17,7 @@ import { SchedulesPage } from "./pages/schedules.js";
 import { UpdatesControl } from "./pages/updates.js";
 import { TerminalPage } from "./pages/terminal.js";
 import { HostTermPage } from "./pages/host-term.js";
+import { FilesPage } from "./pages/files.js";
 import { ClaudeCodePage, ClaudeTopbarControls, ClaudeStatusDot, ClaudeSessionTitle, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
 
 const ROUTES = {
@@ -36,6 +37,7 @@ const ROUTES = {
   schedules: { label: "Tarefas agendadas", comp: SchedulesPage, group: "Sistema", badge: "schedules" },
   claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled" },
   terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled" },
+  files: { label: "Arquivos", comp: FilesPage, group: "Sistema", flag: "files_enabled" },
   settings: { label: "Configuração", comp: SettingsPage, group: "Sistema" },
 };
 const ORDER = ["Inventário", "Conhecimento", "Saída", "Sistema"];
@@ -139,7 +141,7 @@ function Shell({ onLogout, showLogout }) {
     <${Sidebar} current=${route} meta=${meta} open=${navOpen} onNavigate=${() => setNavOpen(false)} />
     <button class="sidebar-toggle" aria-label=${collapsed ? "Mostrar barra lateral" : "Esconder barra lateral"}
       title=${collapsed ? "Mostrar barra lateral" : "Esconder barra lateral"} onClick=${() => setCollapsed(!collapsed)}>${collapsed ? "›" : "‹"}</button>
-    <main class=${"content" + (route === "maps" ? " maps-content" : "")}>
+    <main class=${"content" + (route === "maps" ? " maps-content" : "") + (route === "files" ? " files-content" : "")}>
       <${Page} />
     </main>
     ${dockVisible && html`<${ChatDock} />`}

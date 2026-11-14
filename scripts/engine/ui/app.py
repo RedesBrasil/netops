@@ -50,6 +50,7 @@ from routers import (
     claude,
     config,
     credentials,
+    files,
     host_term,
     web_launch,
     hosts,
@@ -69,6 +70,8 @@ from routers import (
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 # Endpoints de bootstrap do login — alcançáveis sem sessão (a própria tela de login os chama).
 AUTH_OPEN_PATHS = {"/api/auth/login", "/api/auth/status", "/api/auth/logout", "/api/config/meta"}
+# Download por link de uso único (routers/files.py): o ticket, emitido só p/ quem está logado, é a autorização.
+AUTH_TICKET_PREFIX = "/api/files/dl/"
 
 
 def _host_ok(host_header: str | None) -> bool:
@@ -110,6 +113,7 @@ def create_app() -> FastAPI:
             # Gate de login: com cofre inicializado, todo /api exige sessão (senha-mestra),
             # exceto a allow-list de bootstrap (login/status/logout/meta).
             if (deps.auth_required() and path not in AUTH_OPEN_PATHS
+                    and not (request.method == "GET" and path.startswith(AUTH_TICKET_PREFIX))
                     and not deps.auth_session_valid(request.headers.get("x-netops-session"))):
                 return JSONResponse({"error": "auth_required"}, status_code=401)
             if request.method in MUTATING:
@@ -145,7 +149,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (audio, auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, terminal, host_term, web_launch, claude, updates):
+    for mod in (audio, auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, terminal, host_term, files, web_launch, claude, updates):
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("startup")

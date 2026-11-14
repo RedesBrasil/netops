@@ -112,5 +112,6 @@ def config_meta() -> dict:
         "isolated_data": deps.DATA_ROOT != deps.NETOPS_ROOT,
         "terminal_enabled": deps.STATE.enable_terminal,
         "claude_enabled": deps.STATE.enable_claude,
+        "files_enabled": deps.files_enabled(),
         "host_migration": host_migration_svc.status(),
     }

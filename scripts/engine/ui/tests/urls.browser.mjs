@@ -31,6 +31,19 @@ const CASES = {
   schedules: { row: ".sc-task .bk-svc-name a", open: ".modal", q: "Changelog", qRows: -1, extra: [
     ["#schedules/new", ".modal:has-text('Nova tarefa')"], ["#schedules/runs", ".tabs"],
     ["#schedules/runs?task=eco-diario", ".fb-select.on"]] },
+  files: { custom: async (page, BASE, { assert, settle, hash }) => {   // pasta, filtro, ordenação e arquivo aberto na URL
+    await page.goto(`${BASE}/#files?path=%2Fetc`); await page.locator(".fm-row").first().waitFor();
+    await page.goto(`${BASE}/#files?path=%2Fetc&q=host&sort=-mtime`); await page.locator(".fm-list").waitFor(); await settle();
+    assert.equal(await page.locator(".fm-filter").inputValue(), "host", "files: filtro vem da URL");
+    assert.ok((await page.locator(".fm-head").innerText()).includes("▼"), "files: ordenação vem da URL");
+    await page.goto(`${BASE}/#files?path=%2Fetc`); await page.locator(".fm-row").first().waitFor();
+    await page.locator(".fm-crumbs a", { hasText: "/" }).first().click(); await settle();
+    assert.match(decodeURIComponent(hash()), /path=\/(&|$)/, `files: subir muda a URL (${hash()})`);
+    await page.goBack(); await settle();
+    assert.match(decodeURIComponent(hash()), /path=\/etc/, "files: Voltar volta à pasta anterior");
+    await page.goto(`${BASE}/#files?path=%2Fetc&open=%2Fetc%2Fhostname`); await page.locator(".fm-editor-modal").waitFor();
+    await page.reload(); await page.locator(".fm-editor-modal").waitFor();
+  } },
   smoke: { custom: async (page, BASE, { assert, settle, hash }) => {   // todo menu abre sem erro, com URL e item ativo na sidebar
     await page.goto(`${BASE}/#hosts`); await page.locator(".sidebar a").first().waitFor();
     const hrefs = await page.locator(".sidebar a").evaluateAll((a) => a.map((x) => x.getAttribute("href")));

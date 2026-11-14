@@ -9,6 +9,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { authToken } from "../api.js";
 import { useRoute } from "../route.js";
 import { openTermHref } from "../term-link.js";
+import { FileBrowser, ToolIcon } from "../file-browser.js";
 
 const TERM_METHODS = ["ssh", "telnet"];
 const DEFAULT_PORT = { ssh: 22, telnet: 23 };
@@ -152,6 +153,7 @@ export function HostTermPage() {
   const [gen, setGen] = useState(0);
   const [vaultAsk, setVaultAsk] = useState(false);   // popup "Destrancar o cofre"
   const wsRef = useRef(null);
+  const [sftp, setSftp] = useState(null);              // token da sessão SFTP (painel de arquivos)
 
   useEffect(() => {
     document.title = `${(info.host || id)} · ${(method || "").toUpperCase()} — NetOps`;
@@ -183,12 +185,14 @@ export function HostTermPage() {
         const msg = JSON.parse(e.data);
         if (msg.status) {
           setStatus(msg.status); if (msg.host || msg.ip) setInfo((o) => ({ ...o, ...msg }));
+          if (msg.status === "conectado") setSftp(msg.sftp || null);
           setVaultAsk(msg.status === "vault_locked");
         }
       } catch (err) { term.write(e.data); }
     };
     ws.onclose = (e) => {
       setVaultAsk(false);
+      setSftp(null);
       if (e.code === 4403) {
         setStatus("desabilitado");
         term.write("\r\n\x1b[33mAcesso negado: faça login no console (ou o terminal está desligado: suba sem --read-only e com o terminal ligado).\x1b[0m\r\n");
@@ -224,6 +228,25 @@ export function HostTermPage() {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ vault: ["cache", "env"].includes(st.state) ? "retry" : "manual" }));
   }
 
+  // Painel de arquivos à esquerda (como o MobaXterm): aberto por padrão em tela larga; largura lembrada.
+  const [showFiles, setShowFilesRaw] = useState(() => {
+    const v = localStorage.getItem("netops_hostterm_files");
+    return v ? v === "1" : innerWidth > 900;
+  });
+  const setShowFiles = (v) => { setShowFilesRaw(v); localStorage.setItem("netops_hostterm_files", v ? "1" : "0"); };
+  const [filesW, setFilesW] = useState(() => Number(localStorage.getItem("netops_hostterm_files_w")) || 380);
+  const [dragW, setDragW] = useState(false);
+  function startResize(e) {
+    e.preventDefault();
+    setDragW(true);
+    const x0 = e.clientX, w0 = filesW;
+    let w = w0;
+    const move = (ev) => { w = Math.max(220, Math.min(innerWidth * 0.7, w0 + ev.clientX - x0)); setFilesW(w); };
+    const up = () => { setDragW(false); localStorage.setItem("netops_hostterm_files_w", String(Math.round(w)));
+      removeEventListener("pointermove", move); removeEventListener("pointerup", up); };
+    addEventListener("pointermove", move); addEventListener("pointerup", up);
+  }
+
   const badge = { conectado: "ok", conectando: "", desconectado: "warn", desabilitado: "danger", erro: "danger", vault_locked: "warn" }[status] || "";
   return html`<div class="hostterm-page">
     <div class="hostterm-bar">
@@ -231,10 +254,51 @@ export function HostTermPage() {
       <span class="mono">${info.ip || ""} · ${(method || "?").toUpperCase()}${port ? ":" + port : ""}${info.user ? " · " + info.user : ""}</span>
       <span class="badge ${badge}">${status === "vault_locked" ? "cofre trancado" : status}</span>
       <span class="spacer"></span>
+      ${(method || "ssh") === "ssh" && html`<button class=${"sm fm-toggle" + (showFiles ? " on" : "")}
+        title=${sftp ? "Painel de arquivos (SFTP) deste host" : "Arquivos: disponível com a sessão SSH conectada"}
+        onClick=${() => setShowFiles(!showFiles)}><${ToolIcon} name="files" size=${14} /> Arquivos</button>`}
       ${(status === "desconectado" || status === "erro") &&
         html`<button class="sm" onClick=${() => { setStatus("conectando"); setGen((g) => g + 1); }}>Reconectar</button>`}
     </div>
-    <div class="hostterm-host" ref=${hostRef}></div>
+    <div class="hostterm-body">
+      ${showFiles && (method || "ssh") === "ssh" && html`<${HostFilesPanel} token=${sftp} status=${status} width=${filesW} />
+        <div class=${"hostterm-resizer" + (dragW ? " drag" : "")} onPointerDown=${startResize} title="Arraste para ajustar a largura"></div>`}
+      <div class="hostterm-host" ref=${hostRef}></div>
+    </div>
     ${vaultAsk && html`<${UnlockModal} onClose=${vaultClosed} />`}
+  </div>`;
+}
+
+// Painel SFTP do terminal: mesma conexão SSH (sem novo login). Pasta inicial = home do usuário no host.
+// A pasta aberta fica na URL (?fpath=), em replace, para não poluir o Voltar da janela do terminal.
+function HostFilesPanel({ token, status, width }) {
+  const route = useRoute();
+  const [home, setHome] = useState(null);
+  const [err, setErr] = useState("");
+  const [st, setSt] = useState(() => ({ path: route.params.fpath || "", q: "", sort: "", hidden: true, open: "" }));
+  useEffect(() => {
+    setErr(""); setHome(null);
+    if (!token) return;
+    api.get(`/files/info?src=${encodeURIComponent(token)}`)
+      .then((i) => { setHome(i.home || "/"); setSt((s) => ({ ...s, path: s.path || i.home || "/" })); })
+      .catch((e) => setErr(e.message || String(e)));
+  }, [token]);
+  useEffect(() => {
+    if (!st.path) return;
+    const u = new URL(location.href);
+    const [h, q = ""] = u.hash.split("?");
+    const p = new URLSearchParams(q); p.set("fpath", st.path);
+    history.replaceState(null, "", h + "?" + p.toString());
+  }, [st.path]);
+  const setState = (patch) => setSt((s) => ({ ...s, ...patch }));
+  const box = (msg) => html`<div class="hostterm-files" style=${`width:${width}px`}><div class="fm-msg-box">${msg}</div></div>`;
+  if (!token) return box(status === "conectado"
+    ? "Arquivos indisponíveis nesta sessão (gerenciador de arquivos desligado no console)."
+    : status === "conectando" || status === "vault_locked" ? "Os arquivos aparecem aqui quando a sessão SSH conectar."
+    : "Sessão SSH encerrada — reconecte para ver os arquivos.");
+  if (err) return box(html`<span class="err">${err}</span>`);
+  if (!home) return box("Abrindo SFTP…");
+  return html`<div class="hostterm-files" style=${`width:${width}px`}>
+    <${FileBrowser} src=${token} home=${home} state=${st} setState=${setState} compact />
   </div>`;
 }
