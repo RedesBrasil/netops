@@ -97,6 +97,21 @@ try {
   assert.equal(await page.evaluate(() => window.__picks), 1, 'perguntou onde salvar de novo');
   assert.equal(await page.evaluate(() => window.__pc.children['pasta (2)'].children['a.txt'].data), 'alfa\n');
 
+  // arrastar para fora = download (DownloadURL pronto no dragstart): 1 arquivo direto; vários/pasta = .zip
+  const dragData = async (selector) => page.evaluate((sel) => {
+    const dt = new DataTransfer();
+    document.querySelector(sel).dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+    return dt.getData('DownloadURL');
+  }, selector);
+  await page.mouse.click(5, 5);
+  await row('b2.txt').click(); await page.waitForTimeout(600);
+  const one = await dragData('.fm-row.sel');
+  assert.match(one, /^application\/octet-stream:b2\.txt:http.*\/api\/files\/dl\//, one);
+  const fetched = await page.evaluate(async (u) => (await fetch(u.split(':').slice(2).join(':'))).text(), one);
+  assert.equal(fetched, 'b2');
+  await row('pasta').click(); await page.waitForTimeout(600);
+  assert.match(await dragData('.fm-row.sel'), /^application\/zip:pasta\.zip:/);
+
   // .zip continua disponível pelo menu de contexto
   await row('pasta').click({ button: 'right' });
   const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('.fm-menu button', { hasText: 'Baixar como .zip' }).click()]);

@@ -593,10 +593,49 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
 
   /* ---------------------- arrastar e soltar ---------------------- */
   const INTERNAL = "application/x-netops-files";
+  // Arrastar PARA FORA (para o Explorer/Área de Trabalho) = download. Chrome/Edge: "DownloadURL" leva 1 arquivo
+  // por arraste; vários itens/pastas vão como .zip. O link (ticket de uso único) precisa existir JÁ no dragstart
+  // (não dá para esperar a API), então é preparado ao selecionar ou passar o mouse sobre o item.
+  const dragLinks = useRef(new Map());     // chave (caminhos) -> {url, name, zip, exp}
+  const dragKey = (paths) => [...paths].sort().join("\n");
+  async function prepareDrag(paths) {
+    if (!paths.length) return;
+    const k = dragKey(paths), hit = dragLinks.current.get(k);
+    if (hit && (hit.pending || hit.exp > Date.now())) return;
+    dragLinks.current.set(k, { pending: true });
+    try {
+      const r = await api.get(`/files/download-link?src=${enc(src)}&${paths.map((p) => "path=" + enc(p)).join("&")}`);
+      dragLinks.current.set(k, { ...r, exp: Date.now() + 100000 });
+    } catch (e) { dragLinks.current.delete(k); }
+  }
+  useEffect(() => { dragLinks.current.clear(); }, [src, path]);
+  useEffect(() => {
+    if (!sel.length) return;
+    const t = setTimeout(() => prepareDrag(selPaths), 120);
+    return () => clearTimeout(t);
+  }, [sel.join("\n"), path, src]);
+  const hoverTimer = useRef(null);
+  function hoverRow(entry) {
+    clearTimeout(hoverTimer.current);
+    if (sel.includes(entry.name) || entry.type === "other") return;
+    hoverTimer.current = setTimeout(() => prepareDrag([joinPath(path, entry.name)]), 200);
+  }
+
   function onDragStartRow(e, entry) {
     const names2 = sel.includes(entry.name) ? sel : [entry.name];
     if (!sel.includes(entry.name)) { setSel([entry.name]); setAnchor(entry.name); }
-    e.dataTransfer.setData(INTERNAL, JSON.stringify({ src, paths: names2.map((n) => joinPath(path, n)) }));
+    const paths = names2.map((n) => joinPath(path, n));
+    e.dataTransfer.setData(INTERNAL, JSON.stringify({ src, paths }));
+    const k = dragKey(paths), link = dragLinks.current.get(k);
+    if (link && link.url && link.exp > Date.now()) {
+      const name = String(link.name).replace(/:/g, "_");
+      e.dataTransfer.setData("DownloadURL", `${link.zip ? "application/zip" : "application/octet-stream"}:${name}:${location.origin}${link.url}`);
+      dragLinks.current.delete(k);           // ticket é de uso único: prepara outro para o próximo arraste
+      setTimeout(() => prepareDrag(paths), 400);
+    } else {
+      prepareDrag(paths);
+      toast.info("Preparando o download… arraste de novo para soltar no computador.");
+    }
     e.dataTransfer.effectAllowed = "copyMove";
   }
   function onDragOver(e, target = "") {
@@ -743,7 +782,7 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
             + (clip && clip.op === "move" && clip.src === src && clip.paths.includes(joinPath(path, e.name)) ? " fm-cut" : "")}
           title=${e.type === "link" ? `${e.name} → ${e.target || "?"}${e.broken ? " (quebrado)" : ""}` : e.name}
           onClick=${(ev) => clickRow(ev, e)} onDblClick=${() => open(e)} onContextMenu=${(ev) => contextRow(ev, e)}
-          onDragStart=${(ev) => onDragStartRow(ev, e)}
+          onDragStart=${(ev) => onDragStartRow(ev, e)} onMouseEnter=${() => hoverRow(e)}
           onDragOver=${e.is_dir ? (ev) => onDragOver(ev, e.name) : undefined}
           onDrop=${e.is_dir ? (ev) => onDrop(ev, e.name) : undefined}>
         <span class="fm-c-name">${coarse && html`<input type="checkbox" class="fm-check" checked=${sel.includes(e.name)} />`}<${FileIcon} entry=${e} />
