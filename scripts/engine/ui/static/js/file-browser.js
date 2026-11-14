@@ -460,29 +460,26 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     const hasDir = info.some((e) => e && e.is_dir);
     if (!hasDir) return downloadLoose(paths);
     if (!canPickDir) return setDialog({ kind: "nodir", paths });
-    const saved = await downloadDir.get();
-    if (saved) {
-      try {
-        let perm = await saved.queryPermission({ mode: "readwrite" });
-        if (perm === "prompt") perm = await saved.requestPermission({ mode: "readwrite" });
-        if (perm === "granted") return downloadIntoDir(paths, saved);
-      } catch (e) { /* pasta apagada/movida: escolhe de novo */ }
-    }
-    setDialog({ kind: "pickdir", paths });
+    return pickDirAndDownload(paths);          // o clique em Baixar é o gesto que abre o seletor
   }
 
-  // O Chrome recusa a raiz de Downloads/Área de Trabalho/Documentos ("contém arquivos de sistema"): o aviso
-  // vem ANTES do seletor e o clique em "Escolher pasta" é o gesto que o navegador exige p/ abri-lo.
+  // Sempre pergunta onde salvar (o usuário quer escolher a cada vez). A janela é do navegador/SO: não dá para
+  // esconder Downloads nem trocar o texto do botão; ela só ABRE na última pasta usada (handle no IndexedDB).
+  // O Chrome recusa a raiz de Downloads/Área de Trabalho/Documentos ("contém arquivos de sistema").
   async function pickDirAndDownload(paths) {
+    const last = await downloadDir.get();
+    toast.info("Crie ou selecione uma pasta para salvar os arquivos (a raiz de Downloads, Área de Trabalho e Documentos não é aceita pelo navegador).");
     let handle;
-    try { handle = await window.showDirectoryPicker({ id: "netops-download", mode: "readwrite", startIn: "downloads" }); }
+    try { handle = await window.showDirectoryPicker({ id: "netops-download", mode: "readwrite", startIn: last || "downloads" }); }
     catch (e) {
-      if (e && e.name !== "AbortError") toast.err(`Não deu para usar essa pasta: ${e.message || e}`);
-      else toast.info("Nenhuma pasta escolhida. Lembre: crie/escolha uma SUBPASTA (ex.: Downloads\\netops), não a raiz de Downloads.");
-      return;
+      if (e && e.name === "AbortError") return;
+      if (last) {   // a última pasta sumiu/foi movida: abre em Downloads
+        try { handle = await window.showDirectoryPicker({ id: "netops-download", mode: "readwrite", startIn: "downloads" }); }
+        catch (e2) { if (e2 && e2.name !== "AbortError") toast.err(`Não deu para usar essa pasta: ${e2.message || e2}`); return; }
+      } else { toast.err(`Não deu para usar essa pasta: ${e.message || e}`); return; }
     }
     await downloadDir.set(handle);
-    return paths ? downloadIntoDir(paths, handle) : toast.ok(`Downloads de pastas vão para "${handle.name}".`);
+    return downloadIntoDir(paths, handle);
   }
 
   // Sem seletor de pasta: arquivos soltos com o caminho no nome (pasta_sub_arquivo.txt).
@@ -774,7 +771,6 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       ${!menu.empty && one && html`<button onClick=${() => { setMenu(null); actions.open(); }}>${one.is_dir ? "Abrir" : "Abrir / editar"}</button>`}
       ${!menu.empty && html`<button onClick=${() => { setMenu(null); download(); }}>Baixar</button>
         <button onClick=${() => { setMenu(null); downloadZip(); }}>Baixar como .zip</button>`}
-      ${canPickDir && html`<button onClick=${() => { setMenu(null); pickDirAndDownload(null); }}>Pasta de destino dos downloads…</button>`}
       ${!menu.empty && html`<hr /><button onClick=${() => { setMenu(null); actions.copy(); }}>Copiar</button>
         <button onClick=${() => { setMenu(null); actions.cut(); }}>Recortar</button>`}
       <button disabled=${!canPaste} onClick=${() => { setMenu(null); paste(one && one.is_dir && !menu.empty ? joinPath(path, one.name) : path); }}>
@@ -798,20 +794,6 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     ${dialog?.kind === "chmod" && html`<${ChmodDialog} entry=${dialog.entry} path=${joinPath(path, dialog.entry.name)} onClose=${() => setDialog(null)}
       onOk=${async (mode) => { await api.post("/files/chmod", { src, path: joinPath(path, dialog.entry.name), mode }); await load(path, { keepSel: true }); }} />`}
     ${dialog?.kind === "delete" && html`<${DeleteDialog} paths=${selPaths} entries=${selEntries} onOk=${doDelete} onClose=${() => setDialog(null)} />`}
-    ${dialog?.kind === "pickdir" && html`<${Modal} title="Baixar pasta" onClose=${() => setDialog(null)}>
-      <p>Escolha <b>uma vez</b> a pasta onde os downloads de pastas serão salvos. Depois disso, baixar uma pasta (ex.:
-        <span class="mono">html</span>) cria <span class="mono">html</span> lá dentro direto, sem perguntar de novo.</p>
-      <p><b>Importante:</b> o navegador <b>não aceita a raiz</b> de <i>Downloads</i>, <i>Área de Trabalho</i> ou <i>Documentos</i>
-        (aparece "contém arquivos de sistema"). Na janela, abra <i>Downloads</i>, clique em <b>Nova pasta</b>
-        (ex.: <span class="mono">NetOps</span>), entre nela e clique em <b>Selecionar pasta</b>.</p>
-      <p class="help">Para trocar depois: clique direito → "Pasta de destino dos downloads…". O navegador pode pedir
-        para confirmar o acesso de novo a cada sessão (marque "Permitir em todas as visitas", se aparecer).</p>
-      <div class="modal-actions">
-        <button onClick=${() => setDialog(null)}>Cancelar</button>
-        <button onClick=${() => { const p = dialog.paths; setDialog(null); downloadZip(p); }}>Baixar .zip</button>
-        <button class="primary" onClick=${() => { const p = dialog.paths; setDialog(null); pickDirAndDownload(p); }}>Escolher pasta…</button>
-      </div>
-    <//>`}
     ${dialog?.kind === "nodir" && html`<${Modal} title="Baixar pasta" onClose=${() => setDialog(null)}>
       <p>Este navegador não deixa o site gravar uma <b>pasta</b> no seu computador. Isso exige Chrome ou Edge com o console
         em <b>HTTPS</b> (ou localhost); o endereço atual é ${location.protocol === "https:" ? "HTTPS, mas o navegador não oferece o recurso" : "HTTP"}.</p>
