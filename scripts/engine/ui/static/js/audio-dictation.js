@@ -26,7 +26,8 @@ export async function fetchAudioConfig() {
 }
 
 async function upload(blob, signal) {
-  const form = new FormData(); form.append("audio", blob, "voice.ogg");
+  const ext = /webm/.test(blob.type) ? "webm" : /mp4|aac/.test(blob.type) ? "m4a" : "ogg";
+  const form = new FormData(); form.append("audio", blob, "voice." + ext);
   const headers = {}; const a = authToken(); if (a) headers["X-Netops-Session"] = a;
   const res = await fetch("/api/audio/transcribe", { method: "POST", headers, body: form, signal });
   const out = await res.json().catch(() => ({}));
@@ -34,6 +35,37 @@ async function upload(blob, signal) {
   const text = typeof out.transcription === "string" ? out.transcription.trim() : "";
   if (!text) throw new Error("O áudio não gerou uma transcrição.");
   return text;
+}
+
+// Formatos aceitos pelo backend/Whisper, em ordem de preferência. Chrome/Android: webm/opus;
+// Firefox: ogg/opus; Safari/iOS: mp4 (AAC). Vazio = sem MediaRecorder → opus-recorder.
+const NATIVE_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm", "audio/mp4;codecs=mp4a.40.2", "audio/mp4"];
+function nativeMime() {
+  if (typeof window.MediaRecorder !== "function" || typeof MediaRecorder.isTypeSupported !== "function") return "";
+  return NATIVE_TYPES.find((t) => { try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; } }) || "";
+}
+
+// Adaptador com a mesma interface usada do opus-recorder (start/stop/close/onstop).
+async function nativeRecorder(mime, onBlob) {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  const release = () => stream.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+  let mr;
+  try { mr = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32000 }); }
+  catch (e) { release(); throw e; }
+  const chunks = [];
+  const api = { onstop: null, closed: false };
+  mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) chunks.push(ev.data); };
+  mr.onstop = () => {
+    release();
+    try { api.onstop && api.onstop(); } catch (_) {}
+    if (!api.closed) onBlob(new Blob(chunks, { type: (mr.mimeType || mime).split(";")[0] }));
+  };
+  api.start = () => { mr.start(1000); return Promise.resolve(); };  // fatias de 1 s: não perde tudo se a aba pausar
+  api.stop = () => { if (mr.state !== "inactive") mr.stop(); else release(); };
+  api.close = () => { api.closed = true; api.stop(); };
+  return api;
 }
 
 // conversationId: muda ao trocar de conversa. onText(text): insere no rascunho. onError(msg).
@@ -81,16 +113,8 @@ export function useDictation({ conversationId, onText, onError }) {
     const s = { cancelled: false, controller: new AbortController(), conversationId: convRef.current, recorder: null, timer: 0 };
     sessionRef.current = s; setPhase("starting"); setElapsed(0);
     try {
-      await loadRecorder();
-      const rec = new window.Recorder({
-        encoderPath: BASE + "encoderWorker.min.js",
-        encoderApplication: 2048, encoderSampleRate: 48000, encoderBitRate: 24000,
-        numberOfChannels: 1, streamPages: false,
-      });
-      s.recorder = rec;
-      rec.ondataavailable = async (data) => {
+      const handle = async (blob) => {
         if (s.cancelled || sessionRef.current !== s) return;
-        const blob = new Blob([data], { type: "audio/ogg" });
         if (!blob.size) { cb.current.onError("A gravação está vazia."); reset(s); return; }
         setPhase("transcribing");
         try {
@@ -101,6 +125,22 @@ export function useDictation({ conversationId, onText, onError }) {
           if (e.name !== "AbortError" && !s.cancelled && sessionRef.current === s) cb.current.onError(e.message || "Falha ao transcrever o áudio.");
         } finally { reset(s); }
       };
+      const mime = nativeMime();
+      let rec;
+      if (mime) {
+        // MediaRecorder nativo (padrão): grava direto do microfone, sem Web Audio. No celular o
+        // opus-recorder (AudioContext/ScriptProcessor) gerava Ogg só com cabeçalhos (0 s, 0 KB).
+        rec = await nativeRecorder(mime, handle);
+      } else {
+        await loadRecorder();
+        rec = new window.Recorder({
+          encoderPath: BASE + "encoderWorker.min.js",
+          encoderApplication: 2048, encoderSampleRate: 48000, encoderBitRate: 24000,
+          numberOfChannels: 1, streamPages: false,
+        });
+        rec.ondataavailable = (data) => handle(new Blob([data], { type: "audio/ogg" }));
+      }
+      s.recorder = rec;
       rec.onstop = () => clearInterval(s.timer);
       await rec.start();
       if (s.cancelled) { teardown(s); return; }   // cancelado enquanto start() pendia: solta o microfone

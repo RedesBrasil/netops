@@ -54,9 +54,24 @@ def test_transcribe_success_via_mock(client, monkeypatch):
             return R()
 
     monkeypatch.setattr(audio_svc.httpx, "AsyncClient", C)
-    ogg = b"OggS" + b"\0" * 24 + b"OpusHead" + b"\0" * 20
+    ogg = b"OggS" + b"\0" * 24 + b"OpusHead" + b"\0" * 2000
     r = client.post("/api/audio/transcribe", files={"audio": ("v.ogg", ogg, "audio/ogg")})
     assert r.status_code == 200 and r.json() == {"transcription": "Olá."}
+    # MediaRecorder nativo: WebM (Chrome/Android) e MP4 (Safari/iOS) também são aceitos
+    webm = b"\x1a\x45\xdf\xa3" + b"\0" * 2000
+    assert client.post("/api/audio/transcribe", files={"audio": ("v.webm", webm, "audio/webm")}).status_code == 200
+    mp4 = b"\0\0\0\x20ftypM4A " + b"\0" * 2000
+    assert client.post("/api/audio/transcribe", files={"audio": ("v.m4a", mp4, "audio/mp4")}).status_code == 200
+
+
+def test_header_only_recording_is_rejected_without_calling_cloudflare(client, monkeypatch, tmp_path):
+    """Celular com opus-recorder entregava Ogg de 254 bytes (só cabeçalhos): erro claro, sem gastar chamada."""
+    client.put("/api/audio/config", json={"account_id": AID, "token": "t"})
+    monkeypatch.setattr(audio_svc, "DEBUG_FILE", tmp_path / "dbg.ogg")
+    monkeypatch.setattr(audio_svc.httpx, "AsyncClient", lambda **k: (_ for _ in ()).throw(AssertionError("chamou a CF")))
+    ogg = b"OggS" + b"\0" * 24 + b"OpusHead" + b"\0" * 200
+    r = client.post("/api/audio/transcribe", files={"audio": ("v.ogg", ogg, "audio/ogg")})
+    assert r.status_code == 422 and "sem áudio" in r.json()["detail"]
 
 
 def _fake_accounts(monkeypatch, accounts):

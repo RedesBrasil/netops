@@ -157,14 +157,37 @@ def credentials() -> tuple[str, str]:
     return aid, _unseal(tok)
 
 
+def audio_kind(content: bytes) -> str:
+    """Formato pelo cabeçalho: Ogg/Opus (opus-recorder, Firefox), WebM (Chrome/Android), MP4 (Safari/iOS)."""
+    if content.startswith(b"OggS") and b"OpusHead" in content[:128]:
+        return "ogg"
+    if content.startswith(b"\x1a\x45\xdf\xa3"):
+        return "webm"
+    if content[4:8] == b"ftyp":
+        return "mp4"
+    return ""
+
+
+def _info(content: bytes) -> str:
+    if audio_kind(content) == "ogg":
+        dur, pages = _ogg_info(content)
+        return f"{dur:.1f} s, {len(content) // 1024} KB, {pages} páginas Ogg"
+    return f"{audio_kind(content)}, {len(content) // 1024} KB"
+
+
 async def transcribe(content: bytes) -> str:
     aid, token = credentials()
     if not content:
         raise AudioError(400, "A gravação está vazia.")
     if len(content) > MAX_AUDIO_BYTES:
         raise AudioError(413, "O áudio excede o tamanho permitido.")
-    if not content.startswith(b"OggS") or b"OpusHead" not in content[:128]:
-        raise AudioError(415, "Envie um áudio no formato OGG/Opus.")
+    kind = audio_kind(content)
+    if not kind:
+        raise AudioError(415, "Envie um áudio OGG/Opus, WebM ou MP4/M4A.")
+    if len(content) < 1024:   # só cabeçalho, sem nenhum quadro de áudio: não gasta chamada na Cloudflare
+        _debug_keep(content)
+        raise AudioError(422, f"O navegador entregou a gravação sem áudio ({kind}, {len(content)} bytes). "
+                              "Tente de novo segurando um pouco mais; se repetir, recarregue a página.")
     url = f"https://api.cloudflare.com/client/v4/accounts/{aid}/ai/run/{MODEL}"
     payload = {"audio": base64.b64encode(content).decode("ascii"), "task": "transcribe", "language": "pt"}
     try:
@@ -180,9 +203,8 @@ async def transcribe(content: bytes) -> str:
         raise AudioError(429, "Limite de uso da Cloudflare atingido. Tente mais tarde.")
     if not r.is_success:
         _debug_keep(content)
-        dur, pages = _ogg_info(content)
         raise AudioError(502, f"A Cloudflare não conseguiu processar o áudio (HTTP {r.status_code}"
-                              f"{_cf_errors(r)}; {dur:.1f} s, {len(content) // 1024} KB, {pages} páginas Ogg).")
+                              f"{_cf_errors(r)}; {_info(content)}).")
     try:
         data = r.json()
     except ValueError:
@@ -194,10 +216,8 @@ async def transcribe(content: bytes) -> str:
         raise AudioError(502, "A resposta da Cloudflare não incluiu a transcrição.")
     text = res["text"].strip()
     if not text:
-        dur, pages = _ogg_info(content)
         _debug_keep(content)
-        raise AudioError(422, f"Não foi possível identificar fala no áudio "
-                              f"({dur:.1f} s gravados, {len(content) // 1024} KB, {pages} páginas Ogg).")
+        raise AudioError(422, f"Não foi possível identificar fala no áudio ({_info(content)}).")
     return text
 
 
