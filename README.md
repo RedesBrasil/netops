@@ -2,6 +2,30 @@
 
 **Framework multi-agente para operações de redes e infraestrutura.**
 
+## Instalação em uma linha (Linux)
+
+Copie, cole no terminal e pronto:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RedesBrasil/netops/main/install.sh | sudo bash
+```
+
+O instalador ([`install.sh`](install.sh)) faz tudo sozinho. Ele instala os pacotes do sistema
+(Python, nmap, cron, ping, traceroute, mtr, ssh, git e gh). Depois baixa a última release, confere
+o SHA256 e extrai em `/opt/netops`. Cria o `.venv` com as dependências, cria o usuário `netops` do
+terminal web e instala o agente `claude`. Pede a **senha-mestra**, que é o login do console. Por fim,
+registra o serviço de boot, sobe o console, testa tudo e mostra o endereço `http://IP:porta/`.
+Debian 12+, Ubuntu 22.04+, RHEL/Rocky/Alma 9+, Fedora, openSUSE Tumbleweed e Arch.
+Rodar de novo é seguro: numa instalação existente ele só confere e repara, sem tocar em código nem
+em dados.
+
+Opções (`sudo VAR=valor bash` no fim do pipe): `NETOPS_DIR`, `NETOPS_PORT`, `NETOPS_HOST`,
+`NETOPS_VERSION`. Com o repositório privado, passe um token com acesso de leitura:
+
+```bash
+curl -fsSL -H "Authorization: Bearer SEU_TOKEN" https://raw.githubusercontent.com/RedesBrasil/netops/main/install.sh | sudo GITHUB_TOKEN=SEU_TOKEN bash
+```
+
 Abra esta pasta no Claude Code, Codex, Cursor ou Antigravity e peça, em português, tarefas
 de rede — agentes de IA executam de ponta a ponta: leem o inventário, conectam nos
 equipamentos (SSH/Telnet/API), coletam dados, consultam a documentação interna, aplicam
@@ -15,7 +39,7 @@ mudanças, testam e geram relatórios.
 
 ## Como começar
 
-1. **Instale as dependências** (camada de acesso aos equipamentos):
+1. **Instale** com a linha do topo. Instalação manual, sem o instalador:
    ```bash
    python3 -m venv .venv
    . .venv/bin/activate

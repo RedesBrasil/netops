@@ -4,6 +4,8 @@
 
 ### Novidades
 
+- **Instalação em uma linha (Linux):** `curl -fsSL https://raw.githubusercontent.com/RedesBrasil/netops/main/install.sh | sudo bash`. O `install.sh` instala os pacotes do sistema, baixa a última release e a confere (SHA256 e manifesto), grava `.netops-update/installed.json` para o atualizador e cria o `.venv`. Também cria o usuário `netops`, instala o agente `claude`, pede a senha-mestra e registra o serviço `netops-console` no boot. Depois sobe o console pelo `start.sh`, testa e mostra a URL. Suporta apt, dnf/yum, zypper e pacman. Rodar de novo só repara: não substitui código nem dados e não reinicia um console que já está rodando.
+
 - **Tarefas agendadas** (menu Sistema → Tarefas agendadas, `#schedules`). Permite criar, editar, pausar, remover e executar tarefas. São três tipos: **determinística/script**, **agente de IA** (Claude Code headless) e **script + agente** (o script coleta e o agente analisa; saída vazia não aciona a IA). Quem dispara é o cron do sistema (`/etc/cron.d/netops-scheduler`), mesmo com o console desligado. As agendas são avaliadas no fuso do cadastro (padrão `America/Sao_Paulo`). Há histórico por execução e contador de não lidas no menu. O agente que responde `[SILENT]` não notifica; falha sempre notifica. Pelo chat, o agente agenda via `scripts/engine/scheduler/cli.py`. Desenho inspirado no cron do Hermes Agent.
 
 ### Correções
