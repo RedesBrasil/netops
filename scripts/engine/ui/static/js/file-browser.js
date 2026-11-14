@@ -419,13 +419,20 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     const info = paths.map((p) => byName[baseName(p)] && parentPath(p) === path ? byName[baseName(p)] : null);
     const hasDir = info.some((e) => e && e.is_dir);
     if (!hasDir) return downloadLoose(paths);
-    if (canPickDir) {
-      let handle;
-      try { handle = await window.showDirectoryPicker({ id: "netops-download", mode: "readwrite", startIn: "downloads" }); }
-      catch (e) { return; }                     // usuário cancelou o seletor
-      return downloadIntoDir(paths, handle);
+    setDialog({ kind: canPickDir ? "pickdir" : "nodir", paths });
+  }
+
+  // O Chrome recusa a raiz de Downloads/Área de Trabalho/Documentos ("contém arquivos de sistema"): o aviso
+  // vem ANTES do seletor e o clique em "Escolher pasta" é o gesto que o navegador exige p/ abri-lo.
+  async function pickDirAndDownload(paths) {
+    let handle;
+    try { handle = await window.showDirectoryPicker({ id: "netops-download", mode: "readwrite", startIn: "downloads" }); }
+    catch (e) {
+      if (e && e.name !== "AbortError") toast.err(`Não deu para usar essa pasta: ${e.message || e}`);
+      else toast.info("Nenhuma pasta escolhida. Lembre: crie/escolha uma SUBPASTA (ex.: Downloads\\netops), não a raiz de Downloads.");
+      return;
     }
-    setDialog({ kind: "nodir", paths });
+    return downloadIntoDir(paths, handle);
   }
 
   // Sem seletor de pasta: arquivos soltos com o caminho no nome (pasta_sub_arquivo.txt).
@@ -740,6 +747,17 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     ${dialog?.kind === "chmod" && html`<${ChmodDialog} entry=${dialog.entry} path=${joinPath(path, dialog.entry.name)} onClose=${() => setDialog(null)}
       onOk=${async (mode) => { await api.post("/files/chmod", { src, path: joinPath(path, dialog.entry.name), mode }); await load(path, { keepSel: true }); }} />`}
     ${dialog?.kind === "delete" && html`<${DeleteDialog} paths=${selPaths} entries=${selEntries} onOk=${doDelete} onClose=${() => setDialog(null)} />`}
+    ${dialog?.kind === "pickdir" && html`<${Modal} title="Baixar pasta" onClose=${() => setDialog(null)}>
+      <p>O navegador vai pedir <b>onde salvar</b>. A pasta selecionada será recriada lá dentro, com subpastas e arquivos.</p>
+      <p><b>Importante:</b> o Chrome/Edge <b>não aceita a raiz</b> de <i>Downloads</i>, <i>Área de Trabalho</i> ou <i>Documentos</i>
+        (aparece "contém arquivos de sistema"). Na janela, clique em <b>Nova pasta</b> (ex.: <span class="mono">netops</span>),
+        entre nela e clique em <b>Selecionar pasta</b>.</p>
+      <div class="modal-actions">
+        <button onClick=${() => setDialog(null)}>Cancelar</button>
+        <button onClick=${() => { const p = dialog.paths; setDialog(null); downloadZip(p); }}>Baixar .zip</button>
+        <button class="primary" onClick=${() => { const p = dialog.paths; setDialog(null); pickDirAndDownload(p); }}>Escolher pasta…</button>
+      </div>
+    <//>`}
     ${dialog?.kind === "nodir" && html`<${Modal} title="Baixar pasta" onClose=${() => setDialog(null)}>
       <p>Este navegador não deixa o site gravar uma <b>pasta</b> no seu computador. Isso exige Chrome ou Edge com o console
         em <b>HTTPS</b> (ou localhost); o endereço atual é ${location.protocol === "https:" ? "HTTPS, mas o navegador não oferece o recurso" : "HTTP"}.</p>

@@ -82,6 +82,8 @@ try {
   });
   await row('pasta').click();
   await page.getByRole('button', { name: 'Baixar' }).click();
+  await page.locator('.modal', { hasText: 'não aceita a raiz' }).waitFor();
+  await page.getByRole('button', { name: 'Escolher pasta…' }).click();
   await page.locator('.toast.ok', { hasText: 'Baixado' }).waitFor();
   const saved = await page.evaluate(() => window.__pc.children.pasta.children['a.txt'].data);
   assert.equal(saved, 'alfa\n', 'pasta recriada no PC com o conteúdo');
