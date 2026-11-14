@@ -370,6 +370,13 @@ setup_user() {
   else
     ok "usuário netops já existe"
   fi
+  # Hooks do Claude Code (guarda: backup antes de alterar etc.) em .claude/settings.json.
+  # Pacotes até a 2.3.1 não trazem scripts/engine/hooks/: aí não há o que instalar.
+  local hooks="$NETOPS_DIR/scripts/engine/hooks/install_claude_hooks.py"
+  if [ -f "$hooks" ]; then
+    if run python3 "$hooks" --root "$NETOPS_DIR"; then ok "hooks de segurança do Claude Code em .claude/settings.json"
+    else warn "não consegui gravar os hooks em $NETOPS_DIR/.claude/settings.json (veja o log)"; fi
+  fi
   if [ "$FRESH" = 1 ]; then
     chown -R netops:netops "$NETOPS_DIR"
     chown -R root:root "$NETOPS_DIR/.netops-update"
@@ -604,6 +611,12 @@ PYEOF
   elif [ "${NETOPS_SKIP_CLAUDE:-0}" != "1" ]; then printf '    %s!%s agente claude ausente (aba Claude Code indisponível)\n' "$Y" "$N"; fi
 
   if vault_ready; then ok "cofre inicializado (login exigido no console)"; else warn "cofre sem senha-mestra"; fi
+
+  if [ -f "$NETOPS_DIR/scripts/engine/hooks/install_claude_hooks.py" ]; then
+    if python3 "$NETOPS_DIR/scripts/engine/hooks/install_claude_hooks.py" --root "$NETOPS_DIR" --check >>"$LOG" 2>&1; then
+      ok "hooks de segurança do Claude Code ativos"
+    else printf '    %s✗%s hooks do Claude Code ausentes em .claude/settings.json\n' "$R" "$N"; fails=$((fails + 1)); fi
+  fi
 
   local st
   st=$(curl -s --max-time 5 "${URL}api/auth/status" 2>/dev/null || true)

@@ -113,7 +113,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 - **Projeto vivo:** toda execução termina registrando o que aprendeu em `memory/`.
 - **Memória é VINCULANTE (INEGOCIÁVEL):** no início de cada sessão, leia `memory/MEMORY.md` e as notas
   relevantes; trate toda regra marcada como "nunca rode"/INEGOCIÁVEL como **bloqueio** — não é sugestão.
-  Bloqueio ativo (também reforçado por hook em `.claude/settings.json` → `.claude/hooks/guard-netops.sh`):
+  Bloqueio ativo (também reforçado por hook em `.claude/settings.json` → `scripts/engine/hooks/guard-netops.sh`):
 - **Cofre:** se as credenciais estiverem criptografadas (`enc.v1:`), o cofre precisa estar
   **destrancado** antes de qualquer acesso — o humano roda `python3 scripts/engine/vault/cli.py unlock`
   (a IA não digita a senha-mestra). Se trancado, os scripts falham com instrução clara.
