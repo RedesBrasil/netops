@@ -124,6 +124,18 @@ try {
   await row('renomeado (cópia).conf').waitFor();
   await row('criada').click({ button: 'right' });
   await page.locator('.fm-menu').waitFor();
+  // perto da borda de baixo o menu abre para cima e fica inteiro na tela
+  await page.setViewportSize({ width: 1400, height: 420 });
+  await page.keyboard.press('Escape'); await page.mouse.click(5, 5);
+  const last = page.locator('.fm-row').last();
+  const lb = await last.boundingBox();
+  await page.mouse.click(lb.x + 40, lb.y + lb.height / 2, { button: 'right' });
+  const mb = await page.locator('.fm-menu').boundingBox();
+  assert.ok(mb.y + mb.height <= 420 && mb.y >= 0, `menu inteiro na tela (${mb.y}+${mb.height})`);
+  await page.mouse.click(5, 5);
+  await page.setViewportSize({ width: 1400, height: 860 });
+  await row('criada').click({ button: 'right' });
+  await page.locator('.fm-menu').waitFor();
   await page.keyboard.press('Escape');
   await page.mouse.click(5, 5);
 

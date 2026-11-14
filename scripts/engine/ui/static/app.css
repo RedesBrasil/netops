@@ -824,7 +824,7 @@ th.rt-drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .fm-progress { width: 120px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; flex: none; }
 .fm-progress span { display: block; height: 100%; background: var(--accent); transition: width .2s; }
 .fm-up-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fm-menu { position: absolute; z-index: 40; min-width: 180px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+.fm-menu { position: fixed; z-index: 70; max-height: calc(100vh - 12px); overflow-y: auto; min-width: 180px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0,0,0,.22); padding: 4px; display: flex; flex-direction: column; }
 .fm-menu button { text-align: left; border: 0; background: transparent; padding: 5px 10px; font-size: 13px; border-radius: 4px; }
 .fm-menu button:hover:not(:disabled) { background: var(--accent-weak); }

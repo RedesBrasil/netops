@@ -5,6 +5,7 @@
 // Lista própria (não é DataTable): exceção registrada em core/rules/tabelas-console.md.
 // Estado de navegação (path, q, sort, hidden, open) é CONTROLADO por quem usa (URL no menu Arquivos).
 import { html, useState, useEffect, useRef, useMemo, api, toast, Modal } from "./ui.js";
+import { useLayoutEffect } from "preact/hooks";
 import { CodeTextEditor } from "./components.js";
 import { authToken } from "./api.js";
 import {
@@ -690,8 +691,7 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     e.preventDefault(); e.stopPropagation();
     if (entry && !sel.includes(entry.name)) { setSel([entry.name]); setAnchor(entry.name); }
     if (!entry) { setSel([]); }
-    const box = listRef.current?.closest(".fm")?.getBoundingClientRect() || { left: 0, top: 0 };
-    setMenu({ x: e.clientX - box.left, y: e.clientY - box.top, empty: !entry });
+    setMenu({ x: e.clientX, y: e.clientY, empty: !entry });   // coordenadas da janela (menu é position: fixed)
   }
 
   const one = selEntries.length === 1 ? selEntries[0] : null;
@@ -733,6 +733,17 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       }
     }
   }
+  // Menu de contexto sempre inteiro na tela: perto da borda de baixo abre para CIMA; perto da direita, para a esquerda.
+  const menuRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!menu || !el) return;
+    const m = 6, r = el.getBoundingClientRect(), W = innerWidth, H = innerHeight;
+    let x = menu.x, y = menu.y;
+    if (x + r.width + m > W) x = Math.max(m, x - r.width);
+    if (y + r.height + m > H) y = Math.max(m, y - r.height);
+    el.style.left = x + "px"; el.style.top = y + "px";
+  }, [menu]);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -828,7 +839,7 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
           ${title && html`<span class="spacer"></span><span class="help">${title}</span>`}`}
     </div>
 
-    ${menu && html`<div class="fm-menu" style=${`left:${menu.x}px;top:${menu.y}px`} onClick=${(e) => e.stopPropagation()}>
+    ${menu && html`<div class="fm-menu" ref=${menuRef} style=${`left:${menu.x}px;top:${menu.y}px`} onClick=${(e) => e.stopPropagation()}>
       ${!menu.empty && one && html`<button onClick=${() => { setMenu(null); actions.open(); }}>${one.is_dir ? "Abrir" : "Abrir / editar"}</button>`}
       ${!menu.empty && html`<button onClick=${() => { setMenu(null); download(); }}>Baixar</button>
         <button onClick=${() => { setMenu(null); downloadZip(); }}>Baixar como .zip</button>`}
