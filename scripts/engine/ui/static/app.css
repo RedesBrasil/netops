@@ -854,7 +854,8 @@ th.rt-drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .hostterm-files-toggle { position: absolute; z-index: 6; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; padding: 0;
   border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surface); color: var(--text);
   border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,.35); font-size: 17px; line-height: 1; cursor: pointer; }
-.hostterm-files-toggle:hover { background: var(--accent-weak); border-color: var(--accent); }
+.hostterm-files-toggle { opacity: .55; }
+.hostterm-files-toggle:hover { opacity: 1; background: var(--accent-weak); border-color: var(--accent); }
 .hostterm-body .hostterm-host { flex: 1; min-width: 0; }
 .hostterm-files { flex: none; display: flex; flex-direction: column; min-width: 220px; max-width: 70vw; background: var(--surface); }
 .hostterm-files .fm { border-radius: 0; border: 0; }
@@ -865,3 +866,5 @@ th.rt-drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .hostterm-bar .fm-toggle.on { background: var(--accent-weak); border-color: var(--accent); }
 @media (max-width: 760px) { .hostterm-files { position: absolute; inset: 0; z-index: 5; max-width: none; width: auto !important; } .hostterm-resizer { display: none; }
   .hostterm-files-toggle { left: auto !important; right: 10px; top: auto; bottom: 12px; transform: none; } }
+
+.term-hl-dot { width: 10px; height: 10px; border-radius: 50%; background: conic-gradient(#e040fb 0 33%, #ef5350 0 66%, #66bb6a 0); display: inline-block; }

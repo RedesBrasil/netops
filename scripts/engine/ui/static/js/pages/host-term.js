@@ -10,12 +10,15 @@ import { authToken } from "../api.js";
 import { useRoute } from "../route.js";
 import { openTermHref } from "../term-link.js";
 import { FileBrowser, ToolIcon } from "../file-browser.js";
+import { createHighlighter } from "../term-highlight.js";
 
 const TERM_METHODS = ["ssh", "telnet"];
 const DEFAULT_PORT = { ssh: 22, telnet: 23 };
 const THEME = {
   background: "#11161c", foreground: "#e6ebf1", cursor: "#4aa3e0",
   selectionBackground: "#2a4866", black: "#11161c", brightBlack: "#5b6675",
+  // cores "bright" vivas como no MobaXterm (usadas também pelo realce de IP/MAC/erros)
+  brightRed: "#ff5f5f", brightGreen: "#5fd75f", brightYellow: "#ffd75f", brightMagenta: "#ff5fff",
 };
 
 // Mesma regra do backend (host_term_svc.access_entries): principal + extra_access, só ssh/telnet,
@@ -153,7 +156,10 @@ export function HostTermPage() {
   const [gen, setGen] = useState(0);
   const [vaultAsk, setVaultAsk] = useState(false);   // popup "Destrancar o cofre"
   const wsRef = useRef(null);
-  const [sftp, setSftp] = useState(null);              // token da sessão SFTP (painel de arquivos)
+  const [sftp, setSftp] = useState(null);
+  const [highlight, setHighlightRaw] = useState(() => localStorage.getItem("netops_term_highlight") !== "0");
+  const highlightRef = useRef(highlight);
+  const setHighlight = (v) => { highlightRef.current = v; setHighlightRaw(v); localStorage.setItem("netops_term_highlight", v ? "1" : "0"); };              // token da sessão SFTP (painel de arquivos)
 
   useEffect(() => {
     document.title = `${(info.host || id)} · ${(method || "").toUpperCase()} — NetOps`;
@@ -179,8 +185,20 @@ export function HostTermPage() {
     const sendResize = () => { if (ws.readyState === 1) ws.send(JSON.stringify({ resize: [term.cols, term.rows] })); };
 
     ws.onopen = () => { term.focus(); };
+    // Realce estilo MobaXterm (IP/MAC/erros) só no texto sem cor própria; desligável no botão "Cores".
+    const dec = new TextDecoder("utf-8");
+    const hl = createHighlighter();
+    let hlTimer = null;
+    const flushHl = () => { hlTimer = null; const t = hl.flush(); if (t) term.write(t); };
     ws.onmessage = (e) => {
-      if (typeof e.data !== "string") { term.write(new Uint8Array(e.data)); return; }
+      if (typeof e.data !== "string") {
+        if (!highlightRef.current) { const t = hl.flush(); if (t) term.write(t); term.write(new Uint8Array(e.data)); return; }
+        const out = hl.feed(dec.decode(new Uint8Array(e.data), { stream: true }));
+        if (out) term.write(out);
+        clearTimeout(hlTimer);
+        if (hl.pending) hlTimer = setTimeout(flushHl, 12);
+        return;
+      }
       try {
         const msg = JSON.parse(e.data);
         if (msg.status) {
@@ -254,6 +272,9 @@ export function HostTermPage() {
       <span class="mono">${info.ip || ""} · ${(method || "?").toUpperCase()}${port ? ":" + port : ""}${info.user ? " · " + info.user : ""}</span>
       <span class="badge ${badge}">${status === "vault_locked" ? "cofre trancado" : status}</span>
       <span class="spacer"></span>
+      <button class=${"sm fm-toggle" + (highlight ? " on" : "")} onClick=${() => setHighlight(!highlight)}
+        title="Realce de sintaxe (estilo MobaXterm): IPs e MACs em magenta, erros em vermelho, avisos em amarelo, OK em verde. Só no texto que chega sem cor.">
+        <span class="term-hl-dot"></span> Cores</button>
       ${(method || "ssh") === "ssh" && html`<button class=${"sm fm-toggle" + (showFiles ? " on" : "")}
         title=${sftp ? "Painel de arquivos (SFTP) deste host" : "Arquivos: disponível com a sessão SSH conectada"}
         onClick=${() => setShowFiles(!showFiles)}><${ToolIcon} name="files" size=${14} /> Arquivos</button>`}
