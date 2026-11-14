@@ -43,7 +43,9 @@ class NodeUpsert(BaseModel):
     vendor: Optional[Vendor] = None
     role: Optional[Role] = None
     model: Optional[str] = None
-    version: Optional[str] = Field(default=None, max_length=80)  # versão do SO/firmware (livre, mantém a caixa)
+    os: Optional[str] = Field(default=None, max_length=60)          # SO/firmware (ROUTEROS, DEBIAN, UBUNTU...)
+    os_version: Optional[str] = Field(default=None, max_length=60)  # versão do SO (7.23.4, 12.11...)
+    version: Optional[str] = Field(default=None, max_length=80)     # LEGADO: versão livre (SO ou app); a tela migra p/ os/apps
     site: Optional[str] = None
     notes: Optional[str] = None
     credential: Optional[str] = None
@@ -67,6 +69,21 @@ class ExtraAccess(BaseModel):
     @classmethod
     def _method_any_case(cls, value):
         return value.strip().lower() if isinstance(value, str) else value
+
+
+MAX_APPS = 10  # aplicações principais por host (a 1ª é a principal)
+
+
+class App(BaseModel):
+    """Aplicação que roda no host (ex.: ZABBIX SERVER 7.0.32 num CT Debian)."""
+    model_config = {"extra": "forbid"}
+    name: str = Field(min_length=1, max_length=60)
+    version: Optional[str] = Field(default=None, max_length=60)
+
+    @field_validator("name", "version", mode="before")
+    @classmethod
+    def _strip(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
 
 MAX_EXTRA_IPS = 20  # teto de IPs adicionais por host (evita lista descontrolada)
@@ -101,6 +118,8 @@ class HostUpsert(NodeUpsert):
     extra_ips: Optional[list[ExtraIp]] = Field(default=None, max_length=MAX_EXTRA_IPS)
     extra_access: Optional[list[ExtraAccess]] = Field(default=None, max_length=MAX_EXTRA_ACCESS)
     group: Optional[str] = None
+    apps: Optional[list[App]] = Field(default=None, max_length=MAX_APPS)
+    runs_on: Optional[HostId] = None  # host que hospeda este (CT/VM -> hypervisor)
     icon: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
     @field_validator("icon")

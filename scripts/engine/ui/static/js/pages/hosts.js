@@ -10,7 +10,14 @@ const UP = (v) => typeof v === "string" ? v.toUpperCase() : v;
 const MAX_EXTRA_IPS = 20;  // mesmo teto do backend (models.MAX_EXTRA_IPS)
 const IP_ROLES = ["público", "interno", "VIP", "loopback", "gerência secundária"];  // sugestões; o campo é livre
 const upList = (l) => (l || []).map(UP);
-const UP_KEYS = new Set(["hostname", "group", "vendor", "role", "model", "version", "credential", "method"]);  // (credential/method dos métodos ficam em form.accesses)
+const UP_KEYS = new Set(["hostname", "group", "vendor", "role", "model", "os", "os_version", "version", "credential", "method"]);
+const MAX_APPS = 10;  // mesmo teto do backend (models.MAX_APPS)
+// Sugestões (campos livres). Regra: SO = o que o equipamento informa (/etc/os-release, /system resource); o resto é aplicação.
+const OS_SUGGEST = ["ROUTEROS", "DEBIAN", "UBUNTU", "ROCKY LINUX", "ALMALINUX", "CENTOS", "WINDOWS SERVER", "VRP", "IOS", "IOS-XE", "NX-OS", "JUNOS", "FIRMWARE"];
+const APP_SUGGEST = ["ZABBIX SERVER", "ZABBIX PROXY", "ZABBIX FRONTEND", "ZABBIX AGENT", "PROXMOX VE", "PROXMOX BACKUP SERVER", "EVE-NG", "POSTGRESQL", "MYSQL", "MARIADB", "DOCKER", "COOLIFY", "NGINX", "APACHE", "GRAFANA", "NETOPS"];
+// Texto do SO (o campo legado `version` é tratado à parte, para hosts ainda não migrados).
+export const osText = (e) => [e.os, e.os_version].filter(Boolean).join(" ");
+const appText = (a) => [a.name, a.version].filter(Boolean).join(" ");  // (credential/method dos métodos ficam em form.accesses)
 const INHERIT = ["vendor", "role", "credential"];
 const MAX_EXTRA_ACCESS = 10;  // mesmo teto do backend (models.MAX_EXTRA_ACCESS)
 const bkLabel = (v) => v === true ? "sim" : v === false ? "não" : "padrão";
@@ -19,7 +26,7 @@ export function HostsPage() {
   const res = useResource("/hosts");
   // URL: #hosts[/<id>|/new][?q=&vendor=&role=&group=&sort=&dir=]  (core/rules/urls-navegacao.md)
   const route = useRoute();
-  const { q = "", vendor = "", role = "", group = "" } = route.params;
+  const { q = "", vendor = "", role = "", group = "", os = "", app = "" } = route.params;
   const setParams = (patch) => navigate({ menu: "hosts", segments: route.segments, params: { ...route.params, ...patch } }, { replace: true });
   const [confirm, setConfirm] = useState(null);
   const [deleteRefs, setDeleteRefs] = useState(null);
@@ -40,7 +47,10 @@ export function HostsPage() {
   const needle = q.trim().toLowerCase();
   const hosts = allHosts.filter((h) =>
     (!vendor || h.effective.vendor === vendor) && (!role || h.effective.role === role) && (!group || h.explicit.group === group) &&
-    (!needle || [h.id, h.explicit.hostname, h.explicit.mgmt_ip, ...(h.explicit.extra_ips || []).map((x) => x.ip)].some((v) => String(v || "").toLowerCase().includes(needle))));
+    (!os || h.effective.os === os) && (!app || (h.explicit.apps || []).some((a) => a.name === app)) &&
+    (!needle || [h.id, h.explicit.hostname, h.explicit.mgmt_ip, ...(h.explicit.extra_ips || []).map((x) => x.ip),
+      osText(h.effective), h.effective.version, ...(h.explicit.apps || []).map(appText)].some((v) => String(v || "").toLowerCase().includes(needle))));
+  const byId = Object.fromEntries(allHosts.map((h) => [String(h.id), h]));
 
   const cols = [
     { key: "id", label: "ID", sort: (r) => String(r.id), render: (r) => html`<span class="mono">${r.id}</span>` },
@@ -49,13 +59,21 @@ export function HostsPage() {
     { key: "vendor", label: "Vendor", sort: (r) => r.effective.vendor || "", render: (r) => html`<${Badge} kind="accent">${r.effective.vendor || "?"}<//>` },
     { key: "role", label: "Role", sort: (r) => r.effective.role || "", render: (r) => r.effective.role || "—" },
     { key: "group", label: "Grupo", sort: (r) => r.explicit.group || "", render: (r) => r.explicit.group || "—" },
+    { key: "os", label: "Sistema", sort: (r) => osText(r.effective) || r.effective.version || "", render: (r) => osText(r.effective)
+        ? html`<span class="os-cell">${r.effective.os}${r.effective.os_version && html` <span class="muted">${r.effective.os_version}</span>`}</span>`
+        : r.effective.version ? html`<span class="muted legacy" title="Campo antigo 'Versão' — edite o host para separar SO e aplicações">${r.effective.version}</span>` : "—" },
+    { key: "apps", label: "Aplicações", sort: (r) => (r.explicit.apps || []).map(appText).join(", "), render: (r) => (r.explicit.apps || []).length
+        ? html`<span class="app-chips">${r.explicit.apps.map((a, i) => html`<span key=${i} class=${"badge app-chip" + (i === 0 ? " accent" : "")} title=${i === 0 ? "Aplicação principal" : ""}>${a.name}${a.version && html` <b>${a.version}</b>`}</span>`)}</span>`
+        : "—" },
     { key: "access", label: "Acesso", sort: (r) => (r.effective.access || {}).method || "", render: (r) => {
         const a = r.effective.access || {}; const more = (r.explicit.extra_access || []).map((x) => `${x.method}${x.port ? ":" + x.port : ""}`);
         return html`<span class="mono" title=${more.length ? "Alternativos: " + more.join(", ") : ""}>${a.method || "?"}:${a.port || "?"}${more.length ? ` +${more.length}` : ""}</span>`; } },
     // Ocultas por padrão — o usuário liga em ⚙ Colunas (preferência salva no navegador).
     { key: "credential", label: "Credencial", hidden: true, sort: (r) => r.effective.credential || "", render: (r) => r.effective.credential || "—" },
     { key: "model", label: "Modelo", hidden: true, sort: (r) => r.effective.model || "", render: (r) => r.effective.model || "—" },
-    { key: "version", label: "Versão (SO/app)", hidden: true, sort: (r) => r.effective.version || "", render: (r) => r.effective.version || "—" },
+    { key: "runs_on", label: "Roda em", hidden: true, sort: (r) => byId[String(r.explicit.runs_on)]?.explicit.hostname || "", render: (r) => {
+        const p = r.explicit.runs_on != null ? byId[String(r.explicit.runs_on)] : null;
+        return p ? html`<a href=${"#hosts/" + encodeURIComponent(p.id)} onClick=${(e) => e.stopPropagation()}>${p.explicit.hostname}</a>` : "—"; } },
     { key: "site", label: "Site", hidden: true, sort: (r) => r.effective.site || "", render: (r) => r.effective.site || "—" },
     { key: "backup", label: "Backup pré-mudança", hidden: true, sort: (r) => bkLabel(r.effective.backup_before_change), render: (r) => bkLabel(r.effective.backup_before_change) },
     { key: "notes", label: "Notas", hidden: true, sort: (r) => r.effective.notes || "", render: (r) => html`<span title=${r.effective.notes || ""}>${r.effective.notes || "—"}</span>` },
@@ -67,7 +85,9 @@ export function HostsPage() {
     <${FilterBar} q=${q} onChange=${setParams} placeholder="Buscar por ID, nome ou IP" count=${hosts.length} total=${allHosts.length}
       selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: opts((h) => h.effective.vendor) },
                  { key: "role", label: "Role", value: role, options: opts((h) => h.effective.role) },
-                 { key: "group", label: "Grupo", value: group, options: opts((h) => h.explicit.group) }]} />
+                 { key: "group", label: "Grupo", value: group, options: opts((h) => h.explicit.group) },
+                 { key: "os", label: "Sistema", value: os, options: opts((h) => h.effective.os) },
+                 { key: "app", label: "Aplicação", value: app, options: [...new Set(allHosts.flatMap((h) => (h.explicit.apps || []).map((a) => a.name)))].sort() }]} />
     ${seg && seg !== "new" && !editing && html`<div class="card">Host '${seg}' não encontrado. <a href="#hosts">Voltar aos hosts</a></div>`}
     <${DataTable} tableId="hosts" urlSort columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
       onRowClick=${(r) => setEditing(r)}
@@ -101,11 +121,14 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   const [saving, setSaving] = useState(false);
   const [mapOptions, setMapOptions] = useState(null);
   const [mapChoice, setMapChoice] = useState("");
+  const [hostOpts, setHostOpts] = useState([]);
   const explicit = isNew ? initial : host.explicit;
   const [form, setForm] = useState({
     hostname: UP(explicit.hostname) || "", mgmt_ip: explicit.mgmt_ip || "",
     group: UP(explicit.group) || "", vendor: UP(explicit.vendor) ?? null, role: UP(explicit.role) ?? null,
-    model: UP(explicit.model) || "", version: UP(explicit.version) || "", site: explicit.site || "", notes: explicit.notes || "", icon: explicit.icon || "",
+    model: UP(explicit.model) || "", os: UP(explicit.os) || "", os_version: UP(explicit.os_version) || "",
+    apps: (explicit.apps || []).map((a) => ({ name: UP(a.name) || "", version: UP(a.version) || "" })),
+    runs_on: explicit.runs_on != null ? String(explicit.runs_on) : "", site: explicit.site || "", notes: explicit.notes || "", icon: explicit.icon || "",
     // Métodos de acesso em ordem de prioridade: o 1º é o principal (grava em access/credential); os demais em extra_access.
     accesses: [
       { method: UP((explicit.access || {}).method) ?? null, port: (explicit.access || {}).port ?? "", credential: UP(explicit.credential) ?? null },
@@ -118,9 +141,13 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     if (isNew && !placement) api.get("/maps").then(setMapOptions).catch(() => {});
     api.get("/groups").then((g) => setGroupDetails(Object.fromEntries(g.groups.map((x) => [UP(x.name), x.fields]))));
     api.get("/credentials").then((c) => setCreds(c.credentials.map((x) => UP(x.name))));
+    api.get("/hosts").then((h) => setHostOpts(h.hosts.filter((x) => String(x.id) !== String(host.id))
+      .map((x) => ({ id: String(x.id), label: `${x.explicit.hostname} (#${x.id})` }))
+      .sort((a, b) => a.label.localeCompare(b.label)))).catch(() => {});
   }, []);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: UP_KEYS.has(k) ? UP(v) : v }));
+  const legacyVersion = explicit.version || "";  // campo antigo: some ao salvar com SO/aplicação preenchidos
   const gfields = groupDetails[form.group] || {};
   const inh = (k) => gfields[k];                                  // valor herdado do grupo
   const inhAccess = (k) => (gfields.access || {})[k];
@@ -144,7 +171,11 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     for (const k of ["vendor", "role"]) payload[k] = form[k] || null;
     const [main, ...others] = form.accesses;
     payload.credential = main.credential || null;
-    for (const k of ["model", "version", "site", "notes", "icon"]) payload[k] = form[k] || null;
+    for (const k of ["model", "os", "os_version", "site", "notes", "icon"]) payload[k] = form[k] || null;
+    const apps = form.apps.filter((a) => a.name.trim()).map((a) => (a.version.trim() ? { name: a.name.trim(), version: a.version.trim() } : { name: a.name.trim() }));
+    if (apps.length) payload.apps = apps; else if (!isNew) payload.apps = null;
+    if (form.runs_on) payload.runs_on = Number(form.runs_on); else if (!isNew) payload.runs_on = null;
+    if (legacyVersion && (form.os || apps.length)) payload.version = null;  // migrou: remove o campo antigo
     const acc = {};
     if (main.method) acc.method = main.method;
     if (main.port !== "" && main.port != null) acc.port = Number(main.port);
@@ -190,6 +221,10 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   const setExtra = (i, k, v) => setForm((f) => ({ ...f, extra_ips: f.extra_ips.map((x, j) => j === i ? { ...x, [k]: k === "ip" ? v : UP(v) } : x) }));
   const addExtra = () => setForm((f) => f.extra_ips.length >= MAX_EXTRA_IPS ? f : { ...f, extra_ips: [...f.extra_ips, { ip: "", role: "", description: "" }] });
   const delExtra = (i) => setForm((f) => ({ ...f, extra_ips: f.extra_ips.filter((_, j) => j !== i) }));
+  const setApp = (i, k, v) => setForm((f) => ({ ...f, apps: f.apps.map((a, j) => j === i ? { ...a, [k]: UP(v) } : a) }));
+  const addApp = () => setForm((f) => f.apps.length >= MAX_APPS ? f : { ...f, apps: [...f.apps, { name: "", version: "" }] });
+  const delApp = (i) => setForm((f) => ({ ...f, apps: f.apps.filter((_, j) => j !== i) }));
+  const appErr = (i) => Object.entries(errors).find(([k]) => k.includes(`/apps/${i}`))?.[1];
   const setAcc = (i, k, v) => setForm((f) => ({ ...f, accesses: f.accesses.map((a, j) => j === i ? { ...a, [k]: ["port", "app", "path"].includes(k) ? v : UP(v) } : a) }));
   const addAcc = () => setForm((f) => f.accesses.length > MAX_EXTRA_ACCESS ? f : { ...f, accesses: [...f.accesses, { method: null, port: "", credential: null }] });
   const delAcc = (i) => setForm((f) => ({ ...f, accesses: f.accesses.length <= 1 ? [{ method: null, port: "", credential: null }] : f.accesses.filter((_, j) => j !== i) }));
@@ -278,11 +313,31 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     ${isNew && !placement && mapOptions && html`<${Field} label="Também incluir em um mapa adicional">
       <select value=${mapChoice} onChange=${e => setMapChoice(e.target.value)}><option value="">Só geral e localidade (automático)</option>
         ${mapOptions.maps.filter(m => m.kind === "custom").map(m => html`<option value=${m.id}>${m.name}</option>`)}</select><//>`}
-    <div class="row">
-      <${Field} label="Modelo"><input value=${form.model} onInput=${(e) => set("model", e.target.value)} /><//>
-      <${Field} label="Versão (SO ou aplicação)"><input placeholder="ex.: RouterOS 7.16.2, Debian 12, Zabbix 7.0.32" maxlength="80" value=${form.version} onInput=${(e) => set("version", e.target.value)} /><//>
-      <${Field} label="Site"><input value=${form.site} onInput=${(e) => set("site", e.target.value)} /><//>
-    </div>
+    <fieldset class="sys-box">
+      <legend>Sistema e aplicações</legend>
+      <datalist id="os-suggest">${OS_SUGGEST.map((o) => html`<option value=${o}></option>`)}</datalist>
+      <datalist id="app-suggest">${APP_SUGGEST.map((o) => html`<option value=${o}></option>`)}</datalist>
+      <div class="sys-grid">
+        <${Field} label="Modelo / tipo"><input placeholder="ex.: RB1100AHX4, LXC, VM KVM" value=${form.model} onInput=${(e) => set("model", e.target.value)} /><//>
+        <${Field} label="Sistema operacional" error=${errFor("/os")}><input list="os-suggest" placeholder="ex.: DEBIAN, ROUTEROS" maxlength="60" value=${form.os} onInput=${(e) => set("os", e.target.value)} /><//>
+        <${Field} label="Versão do SO" error=${errFor("/os_version")}><input class="mono" placeholder="ex.: 12.11, 7.23.4" maxlength="60" value=${form.os_version} onInput=${(e) => set("os_version", e.target.value)} /><//>
+        <${Field} label="Roda em (hospedeiro)" error=${errFor("/runs_on")}>
+          <${RefSelect} value=${form.runs_on} options=${hostOpts} placeholder="(físico / não informado)" onChange=${(v) => set("runs_on", v || "")} /><//>
+      </div>
+      ${legacyVersion && html`<div class="legacy-note">Campo antigo <b>Versão</b>: <span class="mono">${legacyVersion}</span> — separe em SO e aplicações; ao salvar com algum deles preenchido, o campo antigo é removido.</div>`}
+      <div class="field apps-list">
+        <label>Aplicações <span class="muted">(${form.apps.length}/${MAX_APPS}) — o que roda em cima do SO; a 1ª é a principal</span></label>
+        ${form.apps.map((a, i) => html`<div class="app-row" key=${i}>
+          <span class=${"access-rank" + (i === 0 ? " primary" : "")}>${i === 0 ? "Principal" : i + 1 + "º"}</span>
+          <input list="app-suggest" placeholder="Aplicação (ex.: ZABBIX SERVER)" maxlength="60" aria-label=${`Aplicação ${i + 1}`} value=${a.name} onInput=${(e) => setApp(i, "name", e.target.value)} />
+          <input class="mono" placeholder="Versão (ex.: 7.0.32)" maxlength="60" aria-label=${`Versão da aplicação ${i + 1}`} value=${a.version} onInput=${(e) => setApp(i, "version", e.target.value)} />
+          <button type="button" aria-label=${`Remover aplicação ${i + 1}`} title="Remover" onClick=${() => delApp(i)}>×</button>
+          ${appErr(i) && html`<div class="err">${appErr(i)}</div>`}
+        </div>`)}
+        <div><button type="button" disabled=${form.apps.length >= MAX_APPS} onClick=${addApp}>+ Adicionar aplicação</button></div>
+      </div>
+    </fieldset>
+    <${Field} label="Site"><input value=${form.site} onInput=${(e) => set("site", e.target.value)} /><//>
     <${HostIconPicker} value=${form.icon} onChange=${value => set("icon", value)} error=${errFor("/icon") || errors.icon} />
     <${Field} label="Notas"><textarea value=${form.notes} onInput=${(e) => set("notes", e.target.value)}></textarea><//>
     <div class="modal-actions">

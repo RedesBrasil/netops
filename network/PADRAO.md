@@ -44,7 +44,11 @@ Campos de um host:
 | `extra_ips` | opcional | Até 20 IPs adicionais, cada um `{ip, role?, description?}` (ex.: público, interno, VIP). `ip` aceita IPv4/IPv6 com máscara opcional; sem repetir entre si nem o `mgmt_ip`. Apenas informativo: os scripts conectam pelo `mgmt_ip` |
 | `vendor` | sim (host ou grupo) | `mikrotik`, `unifi`, `ubiquiti`, `cisco`, `huawei`, `proxmox`, `vmware`, `datacom`, `linux`, `fiberhome`, `intelbras`, `zabbix` |
 | `model` | recomendado | Modelo do equipamento |
-| `version` | opcional | Versão do SO/firmware, ou da aplicação quando o host é uma aplicação (Zabbix, EVE-NG, PVE, PBS…) (texto livre, até 80 caracteres; ex.: `RouterOS 7.16.2`, `Debian 12`, `Zabbix 7.0.32`). Herdável do grupo |
+| `os` | recomendado | Sistema operacional/firmware **como o próprio equipamento informa** (`/etc/os-release`, `/system resource`): `ROUTEROS`, `DEBIAN`, `UBUNTU`. Herdável do grupo |
+| `os_version` | recomendado | Versão do SO (`7.23.4`, `12.15`, `22.04.5`). Herdável do grupo |
+| `apps` | opcional | Lista do que roda **em cima** do SO, a 1ª é a principal: `[{name: ZABBIX SERVER, version: 7.0.32}]` (máx. 10). Ex.: CT Debian com Zabbix → `os: DEBIAN`, `apps: [ZABBIX SERVER]`; Proxmox → `os: DEBIAN` + `apps: [PROXMOX VE]`; MikroTik → só `os: ROUTEROS` |
+| `runs_on` | opcional | ID do host que hospeda este (CT/VM → hypervisor). Só informativo; excluir o hospedeiro limpa a referência |
+| `version` | legado | Campo antigo (SO **ou** app num texto só). Ainda é lido; a tela mostra em cinza e remove ao salvar com SO/aplicações preenchidos |
 | `icon` | opcional | ID da biblioteca local: `router`, `switch`, `linux-server`, `windows-server`, `access-point`, `olt`, `cloud`, `pc`, `proxmox`, `vmware` |
 | `role` | recomendado | `core`, `distribution`, `access`, `firewall`, `wireless`, `server`, `other` |
 | `access.method` | sim (host ou grupo) | `ssh`, `telnet`, `api`, `winbox` |

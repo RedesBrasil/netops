@@ -75,7 +75,19 @@
               }
             }
           },
-          "group": {"type": "string"}
+          "group": {"type": "string"},
+          "apps": {
+            "type": "array", "maxItems": 10,
+            "description": "Aplicações principais que rodam no host (ex.: ZABBIX SERVER 7.0.32 num CT Debian). A 1ª é a principal.",
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["name"],
+              "properties": {
+                "name": {"type": "string", "minLength": 1, "maxLength": 60},
+                "version": {"type": "string", "maxLength": 60}
+              }
+            }
+          },
+          "runs_on": {"allOf": [{"$ref": "#/$defs/hostId"}], "description": "ID do host que hospeda este (CT/VM -> hypervisor). Só informativo."}
         }
       }]
     },
@@ -93,7 +105,9 @@
         },
         "icon": { "type": "string", "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "description": "ID do ícone local de rede (ex.: router, switch)." },
         "model": { "type": "string" },
-        "version": { "type": "string", "maxLength": 80, "description": "Versão do SO/firmware OU da aplicação principal do host (ex.: RouterOS 7.16.2, Debian 12, Zabbix 7.0.32, EVE-NG 6.2.0-4, PVE 8.4.21)." },
+        "os": { "type": "string", "maxLength": 60, "description": "Sistema operacional/firmware como o próprio equipamento informa (/etc/os-release, /system resource): ROUTEROS, DEBIAN, UBUNTU. O que roda em cima vai em apps." },
+        "os_version": { "type": "string", "maxLength": 60, "description": "Versão do SO/firmware (ex.: 7.23.4, 12.11, 22.04.5)." },
+        "version": { "type": "string", "maxLength": 80, "description": "LEGADO (substituído por os/os_version/apps): versão livre do SO ou da aplicação. Ainda é lido; a tela migra ao salvar." },
         "site": { "type": "string" },
         "notes": { "type": "string" },
         "credential": { "type": "string" },

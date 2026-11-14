@@ -23,9 +23,9 @@ from services import yaml_io
 ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 # Ordem de chaves p/ hosts/grupos novos (legibilidade do YAML).
-HOST_KEY_ORDER = ["id", "hostname", "mgmt_ip", "extra_ips", "group", "vendor", "role", "icon", "model", "version", "site", "access", "credential", "extra_access", "notes"]
-GROUP_KEY_ORDER = ["vendor", "role", "access", "credential", "model", "version", "site", "notes"]
-OPTIONAL_STR = {"model", "version", "site", "notes", "icon"}
+HOST_KEY_ORDER = ["id", "hostname", "mgmt_ip", "extra_ips", "group", "vendor", "role", "icon", "model", "os", "os_version", "apps", "runs_on", "version", "site", "access", "credential", "extra_access", "notes"]
+GROUP_KEY_ORDER = ["vendor", "role", "access", "credential", "model", "os", "os_version", "version", "site", "notes"]
+OPTIONAL_STR = {"model", "os", "os_version", "version", "site", "notes", "icon"}
 
 
 def _gkey(groups: dict, name: str) -> str:
@@ -125,6 +125,7 @@ def validate_data(hosts_data: dict) -> list[dict]:
                                "msg": f"campo '{field}' ausente (nem no host nem no grupo)"})
         if not (host.get("access") or {}).get("method"):
             errors.append({"loc": f"hosts/{name}/access/method", "msg": "'access.method' ausente"})
+    errors.extend(_check_runs_on(hosts_data))
     return errors
 
 
@@ -155,11 +156,46 @@ def _apply_fields(node: dict, fields: dict, *, partial: bool) -> None:
             continue
         if val is None or (key in OPTIONAL_STR and val == ""):
             node.pop(key, None)
-        elif key == "extra_ips" and key not in node and "mgmt_ip" in node and hasattr(node, "insert"):
-            # chave nova entra logo após o mgmt_ip (e não depois do espaço em branco no fim do host)
-            node.insert(list(node.keys()).index("mgmt_ip") + 1, key, val)
+        elif key not in node and hasattr(node, "insert") and _insert_pos(node, key) is not None:
+            # chave nova entra na posição da ordem padrão (e não depois do espaço em branco no fim do host)
+            node.insert(_insert_pos(node, key), key, val)
         else:
             node[key] = val
+
+
+def _insert_pos(node: dict, key: str) -> int | None:
+    """Índice onde uma chave NOVA deve entrar: logo após a última chave existente que a precede
+    em HOST_KEY_ORDER. None = sem âncora (vai para o fim)."""
+    if key not in HOST_KEY_ORDER:
+        return None
+    before = HOST_KEY_ORDER[:HOST_KEY_ORDER.index(key)]
+    keys = list(node.keys())
+    idx = [i for i, k in enumerate(keys) if k in before]
+    return idx[-1] + 1 if idx else None
+
+
+def _check_runs_on(data: dict) -> list[dict]:
+    """runs_on precisa apontar para outro host existente, sem ciclo (A roda em B que roda em A)."""
+    hosts = host_index(data)
+    errors = []
+    for hid, h in hosts.items():
+        target = (h or {}).get("runs_on")
+        if target is None:
+            continue
+        loc = f"hosts/{hid}/runs_on"
+        if target == hid:
+            errors.append({"loc": loc, "msg": "um host não pode rodar nele mesmo"})
+        elif target not in hosts:
+            errors.append({"loc": loc, "msg": f"host {target} não existe"})
+        else:
+            seen, cur = {hid}, target
+            while cur is not None and cur in hosts:
+                if cur in seen:
+                    errors.append({"loc": loc, "msg": "ciclo em 'roda em' (um host hospeda o outro e vice-versa)"})
+                    break
+                seen.add(cur)
+                cur = (hosts[cur] or {}).get("runs_on")
+    return errors
 
 
 def _apply_access(node: dict, access: dict | None) -> None:
@@ -262,6 +298,9 @@ def delete_host(host_id: int, rev: str | None) -> dict:
     if host_id not in hosts:
         raise KeyError(f"host '{host_id}' não existe")
     data["hosts"].remove(hosts[host_id])
+    for other in data["hosts"]:  # quem rodava neste host perde a referência (não fica apontando p/ nada)
+        if other.get("runs_on") == host_id:
+            other.pop("runs_on", None)
     from services import maps_svc, topology_svc, backups_svc
     writes = [(deps.HOSTS_FILE, yaml_io.dump_rt(y, data), 0o644)]
     checks = [(deps.HOSTS_FILE, rev)]
@@ -307,7 +346,9 @@ def host_references(host_id: int | str) -> dict:
     if host_id not in host_index(data):
         raise KeyError(f"host '{host_id}' não existe")
     from services import maps_svc
-    refs = _topology_host_refs(host_id) + maps_svc.host_references(host_id)
+    guests = [{"kind": "runs-on", "id": hid, "field": "runs_on", "label": f"{h.get('hostname') or hid} roda neste host"}
+              for hid, h in host_index(data).items() if (h or {}).get("runs_on") == host_id]
+    refs = _topology_host_refs(host_id) + maps_svc.host_references(host_id) + guests
     return {"id": host_id, "references": refs, "count": len(refs)}
 
 
