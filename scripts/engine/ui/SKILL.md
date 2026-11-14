@@ -163,6 +163,7 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   é emitido para quem está logado. **Painel SFTP:** ao conectar por SSH, o terminal de host registra a conexão em
   `files_svc.SFTP_SESSIONS` e manda o token no status `conectado` (`sftp`). O painel usa `src=<token>` nas mesmas
   rotas, então não faz um segundo login, inclusive com senha digitada à mão. A sessão some quando o terminal fecha.
+  O painel começa SEMPRE recolhido; abre e recolhe pelo botão redondo ‹/› da borda ou por "Arquivos" no topo.
   Telnet e hosts sem SFTP (Cisco/Huawei, em geral) mostram "indisponível". Código: `routers/files.py`,
   `services/files_svc.py`, `static/js/file-browser.js`, `files-core.js`, `pages/files.js`, painel em
   `pages/host-term.js`.

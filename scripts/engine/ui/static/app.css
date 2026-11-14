@@ -849,7 +849,12 @@ th.rt-drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 }
 
 /* painel de arquivos ao lado do terminal de host (estilo MobaXterm) */
-.hostterm-body { flex: 1; min-height: 0; display: flex; }
+.hostterm-body { position: relative; flex: 1; min-height: 0; display: flex; }
+.hostterm-files-wrap { display: flex; flex: none; }
+.hostterm-files-toggle { position: absolute; z-index: 6; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; padding: 0;
+  border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,.35); font-size: 17px; line-height: 1; cursor: pointer; }
+.hostterm-files-toggle:hover { background: var(--accent-weak); border-color: var(--accent); }
 .hostterm-body .hostterm-host { flex: 1; min-width: 0; }
 .hostterm-files { flex: none; display: flex; flex-direction: column; min-width: 220px; max-width: 70vw; background: var(--surface); }
 .hostterm-files .fm { border-radius: 0; border: 0; }
@@ -858,4 +863,5 @@ th.rt-drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .hostterm-resizer:hover, .hostterm-resizer.drag { background: var(--accent); }
 .hostterm-bar .fm-toggle { display: inline-flex; align-items: center; gap: 5px; }
 .hostterm-bar .fm-toggle.on { background: var(--accent-weak); border-color: var(--accent); }
-@media (max-width: 760px) { .hostterm-files { position: absolute; inset: 40px 0 0 0; z-index: 5; max-width: none; } .hostterm-resizer { display: none; } }
+@media (max-width: 760px) { .hostterm-files { position: absolute; inset: 0; z-index: 5; max-width: none; width: auto !important; } .hostterm-resizer { display: none; }
+  .hostterm-files-toggle { left: auto !important; right: 10px; top: auto; bottom: 12px; transform: none; } }

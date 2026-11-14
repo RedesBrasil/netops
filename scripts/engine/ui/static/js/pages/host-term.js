@@ -228,12 +228,12 @@ export function HostTermPage() {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ vault: ["cache", "env"].includes(st.state) ? "retry" : "manual" }));
   }
 
-  // Painel de arquivos à esquerda (como o MobaXterm): aberto por padrão em tela larga; largura lembrada.
-  const [showFiles, setShowFilesRaw] = useState(() => {
-    const v = localStorage.getItem("netops_hostterm_files");
-    return v ? v === "1" : innerWidth > 900;
-  });
-  const setShowFiles = (v) => { setShowFilesRaw(v); localStorage.setItem("netops_hostterm_files", v ? "1" : "0"); };
+  // Painel de arquivos à esquerda (como o MobaXterm): SEMPRE começa recolhido ao abrir um host (pedido do
+  // usuário, 14/11/2026); abre pelo botão redondo da borda (igual ao do menu do NetOps) ou por "Arquivos" no topo.
+  // Recolher só esconde: a pasta aberta continua. Largura lembrada.
+  const [showFiles, setShowFiles] = useState(false);
+  const [filesUsed, setFilesUsed] = useState(false);     // já foi aberto nesta janela (mantém montado)
+  useEffect(() => { if (showFiles) setFilesUsed(true); }, [showFiles]);
   const [filesW, setFilesW] = useState(() => Number(localStorage.getItem("netops_hostterm_files_w")) || 380);
   const [dragW, setDragW] = useState(false);
   function startResize(e) {
@@ -261,8 +261,12 @@ export function HostTermPage() {
         html`<button class="sm" onClick=${() => { setStatus("conectando"); setGen((g) => g + 1); }}>Reconectar</button>`}
     </div>
     <div class="hostterm-body">
-      ${showFiles && (method || "ssh") === "ssh" && html`<${HostFilesPanel} token=${sftp} status=${status} width=${filesW} />
-        <div class=${"hostterm-resizer" + (dragW ? " drag" : "")} onPointerDown=${startResize} title="Arraste para ajustar a largura"></div>`}
+      ${filesUsed && (method || "ssh") === "ssh" && html`<div class="hostterm-files-wrap" style=${showFiles ? "" : "display:none"}>
+          <${HostFilesPanel} token=${sftp} status=${status} width=${filesW} /></div>
+        ${showFiles && html`<div class=${"hostterm-resizer" + (dragW ? " drag" : "")} onPointerDown=${startResize} title="Arraste para ajustar a largura"></div>`}`}
+      ${(method || "ssh") === "ssh" && html`<button class="hostterm-files-toggle" style=${`left:${showFiles ? filesW - 12 : 6}px`}
+        aria-label=${showFiles ? "Recolher arquivos" : "Mostrar arquivos"} title=${showFiles ? "Recolher arquivos" : "Mostrar arquivos (SFTP)"}
+        onClick=${() => setShowFiles(!showFiles)}>${showFiles ? "‹" : "›"}</button>`}
       <div class="hostterm-host" ref=${hostRef}></div>
     </div>
     ${vaultAsk && html`<${UnlockModal} onClose=${vaultClosed} />`}
