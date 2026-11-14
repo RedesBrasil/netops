@@ -357,6 +357,23 @@ Limites estáticos: anotação com mais de 30 min é ignorada; até 2 retomadas 
 (anti-loop); respeita `claude_max_sessions`. Kill-switch: `NETOPS_UI_CLAUDE_AUTORESUME=0`.
 Testes: `tests/test_claude_autoresume.py`.
 
+## Permissões de rede (🔐 Rede) na aba Claude
+
+Seletor ao lado do modo (Bypass/Plano): **Full** ou as 4 categorias **Ler, Criar, Editar, Apagar**, só para o que o
+agente faz **nos equipamentos** (`session.py run|exec`). O modo do Claude continua governando o servidor local.
+
+- Classificador: `scripts/engine/lib/net_perms.py` (dialeto pelo inventário: `ros` MikroTik, `netcli` Cisco/Huawei/…,
+  `shell` Linux/Proxmox). Critério: "altera estado?"; ping/traceroute = Ler. Desconhecido = Editar. Config Cisco/Huawei
+  sem `no`/`undo` exige Criar+Editar (não dá para distinguir). Reboot/restart = Editar.
+- Hook `PreToolUse(Bash)` `_hook_netperms` em `services/claude_svc.py`: falta categoria → cartão "Fora das permissões"
+  (aprovar só aquele comando). Negado, sessão encerrada ou timeout de pergunta com a aba fechada = bloqueia com motivo.
+  Timeout do hook é enorme de propósito: hook que estoura deixaria a ferramenta seguir.
+- `UserPromptSubmit` injeta as permissões no contexto do turno quando restritas (ou quando voltam a Full).
+- Estado por conversa em `runs/claude/prefs.json` (`netperms`), padrão em `default_netperms` (modal **Padrões**).
+  Conversa nova manda `?netperms=` no WebSocket; troca ao vivo `set_netperms` → `netperms_changed`. Sem registro = Full.
+- É guarda contra erro do agente, não fronteira de segurança. Claude Code no terminal (fora do console) = Full.
+- Testes: `tests/test_claude_netperms.py`.
+
 ## Mapas de rede
 
 ### Identidade inteira dos hosts

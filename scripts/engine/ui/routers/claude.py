@@ -163,7 +163,8 @@ def claude_prefs_get(sid: str = ""):
 
 @router.put("/claude/prefs")
 def claude_prefs_put(body: dict):
-    return claude_prefs.set_defaults(body.get("default_model"), body.get("default_mode"))
+    return claude_prefs.set_defaults(body.get("default_model"), body.get("default_mode"),
+                                     body.get("default_netperms"))
 
 
 @router.get("/claude/sessions")
@@ -236,6 +237,23 @@ def claude_session_completed(sid: str, body: dict):
     done = bool(body.get("completed"))
     claude_prefs.set_completed(sid, done)
     return {"id": sid, "completed": done}
+
+
+@router.put("/claude/sessions/{sid}/title")
+def claude_session_rename(sid: str, body: dict):
+    """Renomeia a conversa (grava o custom_title no transcript, via SDK)."""
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    title = " ".join(str(body.get("title") or "").split())[:120]
+    if not title:
+        return JSONResponse({"error": "empty_title"}, status_code=400)
+    if not claude_svc.project_session_exists(sid):
+        return JSONResponse({"error": "session_not_found"}, status_code=404)
+    try:
+        claude_svc.rename_project_session(sid, title)
+    except Exception as e:
+        return JSONResponse({"error": "rename_failed", "detail": str(e)[:300]}, status_code=500)
+    return {"id": sid, "title": title}
 
 
 @router.delete("/claude/sessions/{sid}", status_code=204)

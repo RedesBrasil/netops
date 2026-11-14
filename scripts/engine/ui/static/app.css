@@ -445,6 +445,8 @@ th.sortable:hover { color: var(--text); }
 .vault-chip.locked { background: var(--danger-weak); color: var(--danger); }
 .vault-chip.insecure { background: var(--warn-weak); color: var(--warn); }
 .vault-chip.ok { background: var(--ok-weak); color: var(--ok); }
+.cc-topbar-title-edit { flex: 0 1 260px; min-width: 0; font-size: 13px; padding: 2px 6px; }
+.cc-sess-rename { width: 100%; font-size: 14px; padding: 2px 6px; }
 .cc-topbar-title { flex: 0 1 auto; min-width: 0; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #667); font-size: 13px; }
 .cc-topbar-chk { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; cursor: pointer; }
 .cc-topbar-chk input { width: 18px; height: 18px; margin: 0; cursor: pointer; accent-color: var(--ok); opacity: .7; }
@@ -921,3 +923,30 @@ th.rt-drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .os-cell { white-space: nowrap; }
 .os-cell .muted, td .legacy { color: var(--muted); }
 td .legacy { font-style: italic; }
+
+/* botão "Sessões" da aba Claude: roxo, para se distinguir dos demais */
+.cc-sessbtn { background: #7c4dcc; border-color: #7c4dcc; color: #fff; }
+.cc-sessbtn:hover:not(:disabled) { background: #6a3db8; border-color: #6a3db8; color: #fff; }
+
+/* Aba Claude: permissões de rede (CRUD) nos equipamentos (seletor 🔐 Rede + cartão) */
+.cc-np-pill.restricted { box-shadow: inset 0 0 0 1px var(--warn); color: var(--warn); }
+/* Celular: Rede e modo viram só ícone (o texto aparece na folha ao tocar) p/ o seletor de modelo caber. */
+@media (max-width: 760px) {
+  .cc-composer-actions .cc-pill-txt { display: none; }
+  .cc-composer-actions .cc-pill { padding: 4px 10px; }
+  .cc-composer-actions { gap: 6px; }
+}
+.cc-np { display: flex; flex-direction: column; min-width: 200px; }
+.cc-np .cc-np-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.cc-np .cc-np-row:hover { background: var(--surface-2); }
+.cc-np .cc-np-row input { margin: 0; }
+.cc-np .cc-np-row b { font-weight: 500; }
+.cc-np .cc-np-row small { margin-left: auto; padding-left: 12px; font-size: 11px; color: var(--muted); }
+.cc-np .cc-np-row.full { border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0; margin-bottom: 2px; }
+.cc-np-help { font-size: 11px; color: var(--muted); padding: 6px 8px 2px; }
+.cc-np.compact .cc-np-row { padding: 3px 4px; }
+.cc-np-call { margin-top: 6px; }
+.cc-np-cmd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 3px 0; }
+.cc-np-cmd code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 2px 6px; border-radius: 4px; word-break: break-all; }
+.cc-np-badge { font-size: 11px; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); }
+.cc-np-badge.miss { border-color: var(--danger); color: var(--danger); background: var(--danger-weak); }

@@ -2,8 +2,9 @@
 """Preferências da aba Claude Code: padrões p/ conversas novas + último modelo/modo POR conversa.
 
 Arquivo único `runs/claude/prefs.json` (só IDs de modelo/modo, nada sensível):
-  {"default_model": "", "default_mode": "default",
-   "sessions": {"<sid>": {"model": "...", "mode": "..."}}}
+  {"default_model": "", "default_mode": "default", "default_netperms": ["read", ...],
+   "sessions": {"<sid>": {"model": "...", "mode": "...", "netperms": [...]}}}
+`netperms` = permissões de rede CRUD (lib/net_perms.py); ausente = Full.
 Vazio em default_model = padrão automático do catálogo (Sonnet mais recente).
 """
 from __future__ import annotations
@@ -12,6 +13,7 @@ import json
 import threading
 
 import deps
+from lib import net_perms
 
 _FILE = deps.RUNS_DIR / "claude" / "prefs.json"
 _LOCK = threading.Lock()
@@ -44,16 +46,20 @@ def defaults() -> dict:
         d = _load()
     mode = d.get("default_mode")
     return {"default_model": d.get("default_model") or "",
-            "default_mode": mode if mode in _MODES else "default"}
+            "default_mode": mode if mode in _MODES else "default",
+            # Permissões de rede (CRUD) p/ conversas novas; ausente = Full (comportamento histórico).
+            "default_netperms": net_perms.normalize(d.get("default_netperms"))}
 
 
-def set_defaults(model: str | None, mode: str | None) -> dict:
+def set_defaults(model: str | None, mode: str | None, netperms=None) -> dict:
     with _LOCK:
         d = _load()
         if model is not None:
             d["default_model"] = str(model)[:200]
         if mode is not None and mode in _MODES:
             d["default_mode"] = mode
+        if isinstance(netperms, list):
+            d["default_netperms"] = net_perms.normalize(netperms)
         _save(d)
     return defaults()
 
@@ -65,7 +71,8 @@ def get_session(sid: str | None) -> dict:
         return dict(_load()["sessions"].get(sid) or {})
 
 
-def set_session(sid: str | None, *, model: str | None = None, mode: str | None = None) -> None:
+def set_session(sid: str | None, *, model: str | None = None, mode: str | None = None,
+                netperms=None) -> None:
     if not sid:
         return
     with _LOCK:
@@ -75,6 +82,8 @@ def set_session(sid: str | None, *, model: str | None = None, mode: str | None =
             s["model"] = str(model)[:200]
         if mode in _MODES:
             s["mode"] = mode
+        if isinstance(netperms, list):
+            s["netperms"] = net_perms.normalize(netperms)
         if len(d["sessions"]) > _MAX_SESSIONS:   # poda as mais antigas (ordem de inserção)
             for k in list(d["sessions"])[: len(d["sessions"]) - _MAX_SESSIONS]:
                 d["sessions"].pop(k, None)

@@ -15,7 +15,7 @@ import { authToken } from "../api.js";
 import { buildCatalog, findMentionToken, searchMentions, applyMention, expandMentions, stripMentionNote } from "../mentions.js";
 import { classifyClaudeError, claudeErrorDetail } from "../claude-errors.js";
 import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
-  rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, claudePrefsOpen, setClaudePrefsHash, copyClaudeSessionLink } from "../claude-sessions.js";
+  rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, claudePrefsOpen, setClaudePrefsHash, claudeSessionsOpen, setClaudeSessionsHash, stripClaudeModal, copyClaudeSessionLink } from "../claude-sessions.js";
 
 // Ctrl/Cmd+clique ou clique do meio (roda do mouse): abre o destino (#hash) em nova aba e NÃO altera a sessão atual.
 // O clique do meio dispara `auxclick` (não `click`): ligue também onAuxClick e onMouseDown=${noAutoscroll}.
@@ -49,6 +49,26 @@ const MODES = [
   { value: "dontAsk", label: "Não perguntar", short: "Não perguntar", icon: "⌀", desc: "Nega tudo que não estiver pré-aprovado" },
   { value: "bypassPermissions", label: "Bypass — full-auto ⚠", short: "Bypass", icon: "⚡", desc: "Executa sem pedir aprovação, até comandos perigosos" },
 ];
+
+// Permissões de rede (CRUD) do agente NOS EQUIPAMENTOS (session.py). O backend classifica cada
+// comando (scripts/engine/lib/net_perms.py) e pede aprovação na tela se faltar categoria.
+// Independe do modo acima (que governa arquivos/ferramentas locais). Full = as 4 marcadas.
+const NETPERMS = [
+  { value: "read", label: "Ler", short: "L", desc: "print, show, ping" },
+  { value: "create", label: "Criar", short: "C", desc: "add" },
+  { value: "edit", label: "Editar", short: "E", desc: "set, restart, reboot" },
+  { value: "delete", label: "Apagar", short: "A", desc: "remove, no, rm" },
+];
+const NETPERMS_ALL = NETPERMS.map((p) => p.value);
+const npNorm = (arr) => NETPERMS_ALL.filter((v) => Array.isArray(arr) ? arr.includes(v) : true);
+const npFull = (arr) => npNorm(arr).length === NETPERMS_ALL.length;
+const npShort = (arr) => {
+  const n = npNorm(arr);
+  if (n.length === NETPERMS_ALL.length) return "Full";
+  if (!n.length) return "Nada";
+  if (n.length === 1 && n[0] === "read") return "Só leitura";
+  return NETPERMS.filter((p) => n.includes(p.value)).map((p) => p.short).join("·");
+};
 
 // Catálogo anunciado pelo mesmo CLI/provider que executa a conversa. Se indisponível,
 // o CLI resolve seu próprio padrão; a UI não presume versões ou acesso da conta.
@@ -112,6 +132,9 @@ function useClaudeSession() {
   const [queue, setQueue] = useState([]);             // fila do SERVIDOR [{id,text}] (roda ao fim do turno)
   const [pendingSend, setPendingSend] = useState(null); // {text} aguardando a escolha "agora" x "fila"
   const [mode, setMode] = useState("default");
+  const [netperms, setNetpermsState] = useState(NETPERMS_ALL);   // permissões de rede da conversa
+  const netpermsRef = useRef(NETPERMS_ALL);
+  const setNetperms = useCallback((v) => { const n = npNorm(v); netpermsRef.current = n; setNetpermsState(n); }, []);
   const [effort, setEffort] = useState(() => { try { return localStorage.getItem("cc-effort") || ""; } catch (_) { return ""; } });
   const effortRef = useRef(effort);
   const [ctxUse, setCtxUse] = useState(null);      // {total,max,percentage} do contexto
@@ -124,7 +147,8 @@ function useClaudeSession() {
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState([]);   // [{path,name}] já enviados, ainda não mandados ao agente
   const [gen, setGen] = useState(0);                  // bump => reconecta
-  const [showSessions, setShowSessions] = useState(false);
+  const [showSessions, setShowSessionsState] = useState(() => claudeSessionsOpen());
+  const setShowSessions = useCallback((v) => { setClaudeSessionsHash(!!v); }, []);
   const [active, setActive] = useState(false);        // há sessão ligada? (independe da rota)
   const [auth, setAuth] = useState(null);             // login do `claude` {loggedIn, email, store…}
   const [showAuth, setShowAuth] = useState(false);    // modal do fluxo de login
@@ -138,12 +162,12 @@ function useClaudeSession() {
   const liveTurnRef = useRef(String(Date.now()));
   const fileRef = useRef(null);
   const sessionIdRef = useRef("");      // sid vigente (p/ retomar na reconexao automatica)
-  const defaultsRef = useRef({ model: "", mode: "default", catalogModel: "" }); // padrões p/ conversas novas
-  const [prefs, setPrefs] = useState({ default_model: "", default_mode: "default" });
+  const defaultsRef = useRef({ model: "", mode: "default", catalogModel: "", netperms: NETPERMS_ALL }); // padrões p/ conversas novas
+  const [prefs, setPrefs] = useState({ default_model: "", default_mode: "default", default_netperms: NETPERMS_ALL });
   const [showPrefs, setShowPrefsState] = useState(() => claudePrefsOpen());
   const setShowPrefs = useCallback((v) => { setClaudePrefsHash(!!v); }, []);
   useEffect(() => {
-    const on = () => setShowPrefsState(claudePrefsOpen());
+    const on = () => { setShowPrefsState(claudePrefsOpen()); setShowSessionsState(claudeSessionsOpen()); };
     addEventListener("hashchange", on); on();
     return () => removeEventListener("hashchange", on);
   }, []);
@@ -180,6 +204,7 @@ function useClaudeSession() {
       const dflt = defaultsRef.current;
       const m = dflt.model || dflt.catalogModel || "";
       modelRef.current = m; setModelSel(m); setMode(dflt.mode || "default");
+      setNetperms(dflt.netperms || NETPERMS_ALL);
     }
     setSessionId(id || ""); setItems([]); setWorking(false); setStatus("conectando");
     setActive(true); setGen((g) => g + 1);
@@ -257,11 +282,11 @@ function useClaudeSession() {
 
   // O provider acompanha também voltar/avançar: a página cheia não remonta entre UUIDs.
   useEffect(() => {
-    const baseOf = (h) => (claudePrefsOpen(h) ? h.slice(0, -"/padroes".length) : h);
+    const baseOf = stripClaudeModal;
     let lastBase = baseOf(location.hash);
     const onRoute = () => {
       const b = baseOf(location.hash);
-      if (b === lastBase && sessionIdRef.current !== undefined && activeRef.current) return; // só o popup de Padrões abriu/fechou
+      if (b === lastBase && sessionIdRef.current !== undefined && activeRef.current) return; // só um popup (Padrões/Sessões) abriu/fechou
       lastBase = b; openRoute();
     };
     addEventListener("hashchange", onRoute);
@@ -314,20 +339,22 @@ function useClaudeSession() {
   useEffect(() => {
     Promise.all([api.get("/claude/models").catch(() => ({})), api.get("/claude/prefs").catch(() => ({}))]).then(([d, p]) => {
       if (Array.isArray(d.models) && d.models.length) setModels(d.models);
-      defaultsRef.current = { model: p.default_model || "", mode: p.default_mode || "default", catalogModel: d.default || "" };
-      setPrefs({ default_model: p.default_model || "", default_mode: p.default_mode || "default" });
+      defaultsRef.current = { model: p.default_model || "", mode: p.default_mode || "default", catalogModel: d.default || "",
+        netperms: npNorm(p.default_netperms) };
+      setPrefs({ default_model: p.default_model || "", default_mode: p.default_mode || "default", default_netperms: npNorm(p.default_netperms) });
       if (!modelRef.current && !sessionIdRef.current) {
         const m = defaultsRef.current.model || defaultsRef.current.catalogModel;
         if (m) { setModelSel(m); modelRef.current = m; }
-        if (!activeRef.current || !sessionIdRef.current) setMode(defaultsRef.current.mode);
+        if (!activeRef.current || !sessionIdRef.current) { setMode(defaultsRef.current.mode); setNetperms(defaultsRef.current.netperms); }
       }
     });
   }, []);
 
   const savePrefs = useCallback(async (next) => {
     const p = await api.put("/claude/prefs", next);
-    defaultsRef.current = { ...defaultsRef.current, model: p.default_model || "", mode: p.default_mode || "default" };
-    setPrefs({ default_model: p.default_model || "", default_mode: p.default_mode || "default" });
+    defaultsRef.current = { ...defaultsRef.current, model: p.default_model || "", mode: p.default_mode || "default",
+      netperms: npNorm(p.default_netperms) };
+    setPrefs({ default_model: p.default_model || "", default_mode: p.default_mode || "default", default_netperms: npNorm(p.default_netperms) });
     return p;
   }, []);
 
@@ -383,6 +410,7 @@ function useClaudeSession() {
           const sv = p.session || {};
           if (sv.model) { modelRef.current = sv.model; setModelSel(sv.model); }
           if (sv.mode) setMode(sv.mode);
+          setNetperms(Array.isArray(sv.netperms) ? sv.netperms : NETPERMS_ALL);
         } catch (_) {}
       }
       if (resume) {
@@ -398,7 +426,7 @@ function useClaudeSession() {
         + `?auth=${encodeURIComponent(authToken())}`
         + (effortRef.current ? `&effort=${encodeURIComponent(effortRef.current)}` : "")
         + (modelRef.current ? `&model=${encodeURIComponent(modelRef.current)}` : "")
-        + (resume ? `&resume=${encodeURIComponent(resume)}` : ""));
+        + (resume ? `&resume=${encodeURIComponent(resume)}` : `&netperms=${encodeURIComponent(netpermsRef.current.join(","))}`));
       wsRef.current = ws;
       const currentSocket = () => current() && wsRef.current === ws;
 
@@ -447,6 +475,7 @@ function useClaudeSession() {
               // do usuário (modelRef) manda no seletor — antes isto o fazia "pular" sozinho.
               if (d.model) { setModel(d.model); if (!modelRef.current) { setModelSel(d.model); modelRef.current = d.model; } }
               if (d.permissionMode) setMode(d.permissionMode);
+              if (Array.isArray(d.netPerms)) setNetperms(d.netPerms);
               if (d.session_id) identifySession(d.session_id);
               if (Array.isArray(d.slash_commands)) setSlash(d.slash_commands);
             }
@@ -492,6 +521,9 @@ function useClaudeSession() {
             break;
           case "mode_changed":
             setMode(ev.mode);
+            break;
+          case "netperms_changed":
+            if (Array.isArray(ev.perms)) setNetperms(ev.perms);
             break;
           case "reattached":
             setWorking(!!ev.busy);   // re-anexou a uma sessão viva: reflete se há turno rodando
@@ -714,6 +746,11 @@ function useClaudeSession() {
         : it));
   }
 
+  function changeNetperms(next) {
+    setNetperms(next);                // otimista; confirma em netperms_changed
+    send({ type: "set_netperms", perms: npNorm(next) });
+  }
+
   function changeMode(m) {
     setMode(m);                       // otimista; confirma em mode_changed
     send({ type: "set_mode", mode: m });
@@ -765,7 +802,7 @@ function useClaudeSession() {
   return {
     effort, changeEffort, ctxUse, lastUsage,
     queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove,
-    status, items, working, mode, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
+    status, items, working, mode, netperms, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
     send, submit, stop, newSession, resumeSession, forkFrom, answerPermission, changeMode, changeModel, uploadFile,
@@ -873,7 +910,7 @@ function loadMentionCatalog(force) {
 // Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
-  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments,
+  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, netperms, changeNetperms, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments,
     queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove, sessionId } = useClaude();
   const taRef = useRef(null);
   // Menções "#host:…" / "#group:…": menu junto ao cursor, ↑↓ navega, Enter/Tab escolhe, Esc fecha.
@@ -1011,8 +1048,13 @@ function Composer() {
           <//>
         </div>
         <div class="cc-composer-actions">
+          <${Popover} up=${true} align="right" btnClass=${"cc-pill cc-np-pill" + (npFull(netperms) ? "" : " restricted")}
+            title="Permissões de rede: o que o agente pode fazer nos equipamentos"
+            label=${html`<span class="cc-pill-ico">🔐</span><span class="cc-pill-txt"> Rede: ${npShort(netperms)}</span>`}>
+            ${() => html`<${NetPermsPicker} value=${netperms} onChange=${changeNetperms} />`}
+          <//>
           <${Popover} up=${true} align="right" btnClass="cc-pill" disabled=${disabled} title="Modo de permissão do agente"
-            label=${html`<span class="cc-pill-ico">${(MODES.find((m) => m.value === mode) || MODES[0]).icon}</span> ${(MODES.find((m) => m.value === mode) || MODES[0]).short}`}>
+            label=${html`<span class="cc-pill-ico">${(MODES.find((m) => m.value === mode) || MODES[0]).icon}</span><span class="cc-pill-txt"> ${(MODES.find((m) => m.value === mode) || MODES[0]).short}</span>`}>
             ${(close) => html`
               <div class="cc-pop-title">Modos</div>
               ${MODES.map((m) => html`<button key=${m.value} class=${"cc-pop-item" + (m.value === mode ? " sel" : "")}
@@ -1234,10 +1276,24 @@ export function ClaudeSessionTitle() {
     try { await api.put(`/claude/sessions/${encodeURIComponent(s.sessionId)}/completed`, { completed: v }); }
     catch (_) { setDone(!v); toast.err("Falha ao salvar a marca de concluída"); }
   }
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  function startEdit() { if (!validSessionId(s.sessionId) || !title) return; setDraft(title); setEditing(true); }
+  async function commit() {
+    const v = draft.trim();
+    setEditing(false);
+    if (!v || v === title) return;
+    try { await api.put(`/claude/sessions/${encodeURIComponent(s.sessionId)}/title`, { title: v }); setTitle(v.slice(0, 80)); toast.ok("Sessão renomeada"); }
+    catch (_) { toast.err("Falha ao renomear a sessão"); }
+  }
   return html`${validSessionId(s.sessionId) && html`<label class="cc-topbar-chk"
       title=${done ? "Sessão concluída por completo (clique para desmarcar)" : "Marcar sessão como concluída por completo"}>
       <input type="checkbox" aria-label="Sessão concluída por completo" checked=${done} onChange=${toggle} />
-    </label>`}${title && html`<span class="cc-topbar-title" title=${title}>${title}</span>`}`;
+    </label>`}${editing
+      ? html`<input class="cc-topbar-title-edit" value=${draft} autoFocus maxlength="120" aria-label="Renomear sessão"
+          onInput=${(e) => setDraft(e.target.value)} onBlur=${commit}
+          onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") { setEditing(false); } }} />`
+      : title && html`<span class="cc-topbar-title" title=${title + " — duplo clique para renomear"} onDblClick=${startEdit}>${title}</span>`}`;
 }
 
 // Bolinha de status sempre visível na barra do topo (no celular o resto vai p/ a folha "⋯").
@@ -1254,7 +1310,7 @@ export function ClaudeTopbarControls() {
     <button class="sm primary" onClick=${(e) => { if (!openInNewWindow(e, "#claude/new")) s.newSession(); }}
       onAuxClick=${(e) => openInNewWindow(e, "#claude/new")} onMouseDown=${noAutoscroll}
       title="Encerra esta sessão e abre uma nova (Ctrl+clique abre em nova janela)">＋ Nova sessão</button>
-    <button class="sm" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
+    <button class="sm cc-sessbtn" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
     <span class="badge ${s.badge} desk-only">${s.status}</span>
     ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
     <div class="keep-open"><${VaultBanner} compact=${true} /></div>
@@ -1289,8 +1345,9 @@ export function ClaudeCodePage() {
 function PrefsModal({ prefs, models, onSave, onClose }) {
   const [model, setM] = useState(prefs.default_model || "");
   const [mode, setMd] = useState(prefs.default_mode || "default");
+  const [np, setNp] = useState(npNorm(prefs.default_netperms));
   async function save() {
-    try { await onSave({ default_model: model, default_mode: mode }); toast.ok("Padrões salvos"); onClose(); }
+    try { await onSave({ default_model: model, default_mode: mode, default_netperms: np }); toast.ok("Padrões salvos"); onClose(); }
     catch (_) { toast.err("Falha ao salvar"); }
   }
   return html`<${Modal} title="Padrões para novas conversas" onClose=${onClose}>
@@ -1304,6 +1361,9 @@ function PrefsModal({ prefs, models, onSave, onClose }) {
       <select value=${mode} onChange=${(e) => setMd(e.target.value)}>
         ${MODES.map((m) => html`<option key=${m.value} value=${m.value}>${m.label}</option>`)}
       </select><//>
+    <${Field} label="Permissões nos equipamentos"
+      hint="Para conversas novas. Desmarcado: pede aprovação.">
+      <${NetPermsPicker} value=${np} onChange=${setNp} compact=${true} /><//>
     <div class="modal-actions">
       <button onClick=${onClose}>Cancelar</button>
       <button class="primary" onClick=${save}>Salvar</button>
@@ -1560,6 +1620,9 @@ function SessionsModal({ currentId, onClose, onResume }) {
   const [list, setList] = useState(null);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
+  // filtro "só pendentes" (não concluídas); lembrado entre aberturas do modal
+  const [onlyPending, setOnlyPending] = useState(() => { try { return localStorage.getItem("netops.cc.sessOnlyPending") === "1"; } catch (_) { return false; } });
+  const setPending = (v) => { setOnlyPending(v); try { localStorage.setItem("netops.cc.sessOnlyPending", v ? "1" : "0"); } catch (_) {} };
 
   const load = (query, silent) => {
     const term = (query || "").trim();
@@ -1595,29 +1658,61 @@ function SessionsModal({ currentId, onClose, onResume }) {
     }
   }
 
+  const [menu, setMenu] = useState(null);       // {x, y, s}
+  const [renaming, setRenaming] = useState(null); // {id, draft}
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    addEventListener("click", close); addEventListener("scroll", close, true);
+    return () => { removeEventListener("click", close); removeEventListener("scroll", close, true); };
+  }, [menu]);
+  async function commitRename() {
+    const r = renaming; setRenaming(null);
+    if (!r) return;
+    const v = r.draft.trim();
+    const cur = (list || []).find((x) => x.id === r.id);
+    if (!v || (cur && v === cur.title)) return;
+    try {
+      await api.put(`/claude/sessions/${encodeURIComponent(r.id)}/title`, { title: v });
+      setList((l) => (l || []).map((x) => (x.id === r.id ? { ...x, title: v.slice(0, 80) } : x)));
+      toast.ok("Sessão renomeada");
+    } catch (_) { toast.err("Falha ao renomear a sessão"); }
+  }
+
   const term = q.trim();
+  const shown = list && onlyPending ? list.filter((x) => !x.completed) : list;
   return html`<${Modal} title="Sessões anteriores" onClose=${onClose} wide=${true}>
     <input class="cc-sess-search" type="search" value=${q} autoFocus
       placeholder="Buscar por título ou conteúdo da conversa…"
       onInput=${(e) => setQ(e.target.value)} />
-    ${list == null
+    <label class="cc-sess-filter help" style="display:flex;gap:6px;align-items:center;margin:6px 0">
+      <input type="checkbox" checked=${onlyPending} onChange=${(e) => setPending(e.target.checked)} />
+      Mostrar somente as sessões pendentes (não concluídas)
+    </label>
+    ${shown == null
       ? html`<div class="help">Carregando…</div>`
-      : list.length === 0
-      ? html`<div class="help">${term ? "Nenhuma sessão casa com a busca." : "Nenhuma sessão neste projeto ainda."}</div>`
+      : shown.length === 0
+      ? html`<div class="help">${onlyPending ? "Nenhuma sessão pendente." : term ? "Nenhuma sessão casa com a busca." : "Nenhuma sessão neste projeto ainda."}</div>`
       : html`<div class="cc-sess-list">
-        ${list.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "") + (s.completed ? " concluida" : "")}
-            onClick=${(e) => { if (!openInNewWindow(e, claudeSessionHash(s.id))) onResume(s.id); }}
+        ${shown.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "") + (s.completed ? " concluida" : "")}
+            onClick=${(e) => { if (renaming && renaming.id === s.id) return; if (!openInNewWindow(e, claudeSessionHash(s.id))) onResume(s.id); }}
+            onContextMenu=${(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, s }); }}
             onAuxClick=${(e) => openInNewWindow(e, claudeSessionHash(s.id))} onMouseDown=${noAutoscroll}
             title="Retomar esta sessão (Ctrl+clique ou clique do meio abre em nova aba)">
           <span class=${"cc-sess-st " + (s.running ? "run" : "done")}
             title=${s.running ? "Em andamento" : "Finalizada"} aria-label=${s.running ? "Em andamento" : "Finalizada"}>${s.running ? "" : "✓"}</span>
           <div class="cc-sess-main">
-            <div class="cc-sess-title"><a href=${claudeSessionHash(s.id)} onAuxClick=${(e) => e.stopPropagation()} onClick=${(e) => {
+            <div class="cc-sess-title">${renaming && renaming.id === s.id
+              ? html`<input class="cc-sess-rename" value=${renaming.draft} autoFocus maxlength="120" aria-label="Renomear sessão"
+                  onClick=${(e) => e.stopPropagation()} onInput=${(e) => setRenaming({ id: s.id, draft: e.target.value })}
+                  onBlur=${commitRename}
+                  onKeyDown=${(e) => { e.stopPropagation(); if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setRenaming(null); }} />`
+              : html`<a href=${claudeSessionHash(s.id)} onAuxClick=${(e) => e.stopPropagation()} onClick=${(e) => {
               e.stopPropagation();
               if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.button === 0) {
                 e.preventDefault(); onResume(s.id);
               }
-            }}>${hl(s.title, term)}</a>${s.id === currentId ? html` <span class="badge ok">atual</span>` : ""}</div>
+            }}>${hl(s.title, term)}</a>`}${s.id === currentId ? html` <span class="badge ok">atual</span>` : ""}</div>
             ${s.preview && html`<div class="cc-sess-prev help">${hl(s.preview, term)}</div>`}
             ${s.snippet && html`<div class="cc-sess-snip help">${hl(s.snippet, term)}</div>`}
             <div class="cc-sess-meta help mono">${fmtShort(s.mtime)} · ${(s.id || "").slice(0, 8)}</div>
@@ -1631,6 +1726,12 @@ function SessionsModal({ currentId, onClose, onResume }) {
           </div>
         </div>`)}
       </div>`}
+    ${menu && html`<div class="fm-menu" style=${`left:${Math.min(menu.x, innerWidth - 190)}px;top:${Math.min(menu.y, innerHeight - 130)}px`} onClick=${(e) => e.stopPropagation()}>
+      <button onClick=${() => { const m = menu.s; setMenu(null); setRenaming({ id: m.id, draft: m.title }); }}>Renomear</button>
+      <button onClick=${() => { const m = menu.s; setMenu(null); onResume(m.id); }}>Retomar</button>
+      <button onClick=${() => { const m = menu.s; setMenu(null); copySessionLink(m.id); }}>Copiar link</button>
+      <hr /><button class="fm-danger" onClick=${(e) => { const m = menu.s; setMenu(null); del(m.id, e); }}>Excluir</button>
+    </div>`}
   <//>`;
 }
 
@@ -1681,6 +1782,7 @@ function Item({ it, onPermission, onFork }) {
 
   if (it.type === "permission") {
     if (it.tool === "AskUserQuestion") return html`<${AskQuestion} it=${it} onPermission=${onPermission} />`;
+    if (it.tool === "NetPerms") return html`<${NetPermsCard} it=${it} onPermission=${onPermission} />`;
     const ctx = it.context || {};
     return html`<div class="cc-perm ${it.resolved ? "resolved" : ""}">
       <div class="cc-perm-head">🔑 permissão: <b>${it.tool}</b>${ctx.title ? " — " + ctx.title : ""}</div>
@@ -1704,6 +1806,51 @@ function Item({ it, onPermission, onFork }) {
     return html`<div class="cc-error">erro: ${it.detail}</div>`;
 
   return null;
+}
+
+// Seletor das permissões de rede: "Full" + as 4 categorias (checkbox). Usado no composer e nos Padrões.
+function NetPermsPicker({ value, onChange, compact }) {
+  const cur = npNorm(value);
+  const full = cur.length === NETPERMS_ALL.length;
+  const toggle = (v) => onChange(cur.includes(v) ? cur.filter((x) => x !== v) : npNorm([...cur, v]));
+  return html`<div class=${"cc-np" + (compact ? " compact" : "")}>
+    ${!compact && html`<div class="cc-pop-title">Nos equipamentos</div>`}
+    <label class="cc-np-row full">
+      <input type="checkbox" checked=${full} onChange=${() => onChange(full ? [] : NETPERMS_ALL)} />
+      <b>Full</b>
+    </label>
+    ${NETPERMS.map((p) => html`<label key=${p.value} class="cc-np-row">
+      <input type="checkbox" checked=${cur.includes(p.value)} onChange=${() => toggle(p.value)} />
+      <b>${p.label}</b><small>${p.desc}</small>
+    </label>`)}
+    ${!compact && html`<div class="cc-np-help">Desmarcado: pede sua aprovação.</div>`}
+  </div>`;
+}
+
+// Pedido de aprovação de um comando fora das permissões de rede (hook NetPerms do backend).
+function NetPermsCard({ it, onPermission }) {
+  const inp = it.input || {};
+  const lbl = (v) => (NETPERMS.find((p) => p.value === v) || { label: v }).label;
+  const missing = inp.missing || [];
+  const calls = inp.calls || [];
+  return html`<div class="cc-perm cc-np-card ${it.resolved ? "resolved" : ""}">
+    <div class="cc-perm-head">🔐 <b>Fora das permissões</b>
+      ${missing.map((m) => html` <span class="cc-np-badge miss">${lbl(m)}</span>`)}</div>
+    ${calls.length ? calls.map((c, i) => html`<div key=${i} class="cc-np-call">
+        <div class="help">host ${c.host_id != null ? "#" + c.host_id : (c.host || c.session || "?")}${c.note ? " · " + c.note : ""}</div>
+        ${(c.commands || []).map((x, j) => html`<div key=${j} class="cc-np-cmd">
+          <code>${x.command}</code>
+          ${(x.needs || []).map((n) => html`<span class=${"cc-np-badge" + (missing.includes(n) ? " miss" : "")}>${lbl(n)}</span>`)}
+        </div>`)}
+      </div>`)
+      : html`<${Collapsible} text=${inp.command || ""} max=${4} />`}
+    ${it.resolved
+      ? html`<div class="cc-perm-done ${it.decision}">${it.decision === "allow" ? "✓ liberado" : "✗ negado"}</div>`
+      : html`<div class="cc-perm-actions">
+          <button class="sm" onClick=${() => onPermission(it.id, "deny")}>Negar</button>
+          <button class="sm primary" onClick=${() => onPermission(it.id, "allow")}>Aprovar este</button>
+        </div>`}
+  </div>`;
 }
 
 function fmt(obj) {

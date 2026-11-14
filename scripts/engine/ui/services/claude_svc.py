@@ -35,6 +35,7 @@ Protocolo (JSON nos dois sentidos) — ver scripts/engine/ui/static/js/pages/cla
                                                       hora — roda no fim do próximo turno ou via ⚡
     {"type":"set_mode","mode":...}                    troca o permission_mode em tempo real
     {"type":"set_model","model":...}                  troca o modelo (None = padrão)
+    {"type":"set_netperms","perms":["read",...]}      permissões de rede CRUD (lib/net_perms.py), na hora
     {"type":"permission","id":...,"decision":"allow|deny","updated_input":{...},"message":...}
     {"type":"interrupt"}                              aborta o turno atual
     {"type":"bye"}                                    fechamento DELIBERADO (encerra a sessão viva;
@@ -48,6 +49,7 @@ Protocolo (JSON nos dois sentidos) — ver scripts/engine/ui/static/js/pages/cla
     {"type":"assistant_end"}                           fim de uma mensagem do assistente
     {"type":"permission_request","id":..,"tool":..,"input":{...},"context":{...}}
     {"type":"mode_changed","mode":...}
+    {"type":"netperms_changed","perms":[...]}          permissões de rede vigentes (troca e re-anexo)
     {"type":"reattached","busy":bool}                  re-anexou a uma sessão viva (persist)
     {"type":"queue","items":[{"id":..,"text":..}]}     estado da fila (a cada mudança e no re-anexo)
     {"type":"queue","items":[],"fresh":true}           sessão NOVA neste socket (fila do servidor vazia
@@ -74,6 +76,7 @@ from pathlib import Path
 from fastapi import WebSocket, WebSocketDisconnect
 
 import deps
+from lib import net_perms
 from services import claude_models, claude_prefs
 
 # Importado de forma preguiçosa para não quebrar a UI quando o SDK não está instalado
@@ -360,6 +363,12 @@ VAULT_WAIT_MAX = 30 * 60      # seg: quanto o agente espera o cofre ser destranc
 VAULT_WAIT_POLL = 1.0
 _SEND_TIMEOUT = 10.0   # seg p/ um envio ao socket (half-open não pode travar o agente)
 MAX_QUEUE = 20   # teto de mensagens na fila por sessão (estático)
+# Permissões de rede (CRUD, seletor "🔐 Rede" da aba): o hook PreToolUse(Bash) classifica cada
+# `session.py run|exec` (lib/net_perms.py) e, se faltar categoria, pede aprovação NA TELA só p/
+# aquele comando. Sem resposta com a aba fechada = timeout de pergunta = negado. O timeout do hook
+# precisa ser GRANDE: hook que estoura deixa a ferramenta seguir (seria liberar sem aprovação).
+NETPERMS_HOOK_TIMEOUT = 7 * 24 * 3600
+SDK_MAX_BUFFER = 64 * 1024 * 1024   # bytes: maior linha JSON aceita do CLI (padrão do SDK = 1 MiB)
 
 
 class ClaudeWebSession:
@@ -386,6 +395,16 @@ class ClaudeWebSession:
         elif not self._model and dflt["default_model"] and not self._resume:
             self._model = dflt["default_model"]
         self._mode = saved.get("mode") or (dflt["default_mode"] if not self._resume else "default")
+        # Permissões de rede: a aba manda o estado atual (?netperms=read,edit); sem isso, o salvo da
+        # conversa; conversa nova usa o padrão; conversa antiga sem registro = Full (histórico).
+        _np = ws.query_params.get("netperms") if ws else None
+        if _np is not None:
+            self._netperms = net_perms.normalize([x for x in _np.split(",") if x])
+        elif saved.get("netperms") is not None:
+            self._netperms = net_perms.normalize(saved["netperms"])
+        else:
+            self._netperms = net_perms.normalize(None if self._resume else dflt["default_netperms"])
+        self._netperms_told: tuple | None = None   # último estado avisado ao agente (UserPromptSubmit)
         self._last_turn: dict | None = None   # {t, usage, ctx} do último turno (re-anexo restaura cache/contexto)
         self.client: ClaudeSDKClient | None = None
         self._pending: dict[str, asyncio.Future] = {}   # id de permissão -> Future
@@ -496,9 +515,17 @@ class ClaudeWebSession:
                 HookMatcher(matcher="AskUserQuestion", hooks=[self._hook_ask_question]),
                 # timeout > VAULT_WAIT_MAX: o hook espera o humano digitar a senha-mestra.
                 HookMatcher(matcher="Bash", hooks=[self._hook_vault_gate], timeout=VAULT_WAIT_MAX + 60),
-            ]},
+                HookMatcher(matcher="Bash", hooks=[self._hook_netperms], timeout=NETPERMS_HOOK_TIMEOUT),
+            ],
+                # Avisa o agente das permissões de rede vigentes (só quando restritas ou quando mudaram).
+                "UserPromptSubmit": [HookMatcher(hooks=[self._hook_prompt_netperms])],
+            },
             cli_path=claude_path(),
             stderr=self._on_stderr,
+            # Teto de UMA linha JSON do CLI. O padrão do SDK (1 MiB) estoura quando o Read devolve
+            # um print/JPG em base64 (~1,3 MB): o leitor morre e a sessão fica "em andamento" p/
+            # sempre (incidente 14/11/2026). 64 MiB cobre imagens e PDFs com folga.
+            max_buffer_size=SDK_MAX_BUFFER,
         )
 
     # ------------------------------------------------------------- stderr do agente
@@ -585,6 +612,65 @@ class ClaudeWebSession:
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
             "permissionDecisionReason": reason or "Usuário pulou a pergunta.",
+        }}
+
+    # ------------------------------------------------------ permissões de rede (CRUD)
+    def _netperms_context(self) -> str:
+        p = self._netperms
+        if net_perms.is_full(p):
+            return ("[NetOps — permissões de rede] Agora em Full: ler, criar, editar e apagar liberados nos "
+                    "equipamentos, sem pedir aprovação (salvo se o usuário pedir no prompt). Backup "
+                    "(change.py begin/end), rollback e teste pós-mudança continuam obrigatórios.")
+        denied = [net_perms.LABELS[c] for c in net_perms.CATEGORIES if c not in p]
+        return ("[NetOps — permissões de rede desta conversa, definidas pelo usuário no seletor 🔐 Rede] "
+                + net_perms.describe(p) + ". "
+                + "Nos equipamentos (session.py), NÃO execute o que exige: " + ", ".join(denied) + ". "
+                "Ler e diagnosticar = não altera estado (print/show/ping/traceroute). Se a tarefa exigir uma "
+                "categoria bloqueada, colete o que puder, planeje e entregue os comandos prontos ao usuário, "
+                "sem aplicar. Um comando bloqueado abre um pedido de aprovação na tela do usuário; "
+                "nunca tente contornar (outro script, API, comando equivalente).")
+
+    async def _hook_prompt_netperms(self, input_data: dict, tool_use_id, context):
+        """UserPromptSubmit: injeta as permissões de rede no contexto do turno (restritas, ou mudaram)."""
+        cur = tuple(self._netperms)
+        if net_perms.is_full(cur) and self._netperms_told in (None, cur):
+            return {}
+        self._netperms_told = cur
+        return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                       "additionalContext": self._netperms_context()}}
+
+    async def _hook_netperms(self, input_data: dict, tool_use_id, context):
+        """PreToolUse(Bash): `session.py run|exec` com comando de categoria desmarcada -> pede
+        aprovação na tela (só este comando). Negado / sem resposta (timeout) / sessão encerrada =
+        bloqueia com motivo p/ o agente. Full ou comando que não toca equipamento = segue."""
+        cmd = (input_data.get("tool_input") or {}).get("command") or ""
+        if "session.py" not in cmd or net_perms.is_full(self._netperms):
+            return {}
+        try:
+            res = await asyncio.to_thread(net_perms.check, cmd, self._netperms,
+                                          net_perms.inventory_dialect(deps.NETOPS_ROOT))
+        except Exception as e:   # erro no classificador: na dúvida, pede aprovação
+            res = {"ok": False, "needed": ["edit"], "missing": ["edit"], "calls": [], "error": str(e)}
+        if res["ok"]:
+            return {}
+        missing = [net_perms.LABELS[c] for c in res["missing"]]
+        answer = await self._ask_ui("NetPerms", {
+            "command": cmd,
+            "missing": res["missing"],
+            "allowed": list(self._netperms),
+            "calls": res["calls"],
+        }, {"title": "fora das permissões de rede (falta: " + ", ".join(missing) + ")"})
+        if answer is not None and answer.get("decision") == "allow":
+            return {}   # liberado SÓ este comando; o modo de permissão do Claude segue valendo
+        why = (answer or {}).get("message") or ("sessão encerrada" if answer is None else "negado")
+        return {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": (
+                f"BLOQUEADO pelas permissões de rede desta conversa ({why}). O comando exige: "
+                + ", ".join(missing) + f" — permitido agora: {net_perms.describe(self._netperms)}. "
+                "Não tente contornar. Entregue o plano e os comandos prontos ao usuário e peça que habilite "
+                "a categoria no seletor 🔐 Rede (ou aprove quando o pedido aparecer)."),
         }}
 
     # ------------------------------------------------------------ cofre trancado
@@ -738,6 +824,7 @@ class ClaudeWebSession:
         else:
             # Estado inicial só para ESTE socket (as outras abas já o têm).
             await self._send({"type": "reattached", "busy": self._busy}, only=ws)
+            await self._send({"type": "netperms_changed", "perms": self._netperms}, only=ws)
             await self._send_queue(only=ws)
             if self._restore_pending:
                 items, self._restore_pending = self._restore_pending, []
@@ -851,6 +938,12 @@ class ClaudeWebSession:
                         await self._send({"type": "mode_changed", "mode": mode})
                     except Exception as e:
                         await self._send({"type": "error", "detail": f"set_mode: {e}"})
+            elif kind == "set_netperms":
+                perms = raw.get("perms")
+                if isinstance(perms, list):
+                    self._netperms = net_perms.normalize(perms)
+                    claude_prefs.set_session(self.sid, netperms=self._netperms)
+                    await self._send({"type": "netperms_changed", "perms": self._netperms})
             elif kind == "set_model":
                 try:
                     self._model = raw.get("model") or None
@@ -967,6 +1060,14 @@ class ClaudeWebSession:
             if tail:
                 detail += f"\n\n— stderr recente do agente —\n{tail}"
             await self._send({"type": "error", "detail": detail})
+            # O leitor do SDK morreu: o subprocesso `claude` segue vivo, mas nenhuma resposta de
+            # permissão/hook chega mais — sem isto a sessão ficava "em andamento" para sempre.
+            # Encerra (task separada: teardown cancela esta própria task); a aba reconecta com
+            # resume e a conversa continua num processo novo.
+            if not self._closing_done:
+                self._busy = False
+                self._track()
+                asyncio.get_running_loop().create_task(self.teardown())
 
     # -------------------------------------------------------------- tradução
     async def _translate(self, msg) -> None:
@@ -984,7 +1085,10 @@ class ClaudeWebSession:
                 # grava o modelo/modo vigentes desta conversa se ainda não há registro
                 if sid and not claude_prefs.get_session(sid):
                     claude_prefs.set_session(sid, model=self._model, mode=self._mode)
-                data = {**(data or {}), "permissionMode": self._mode}   # o CLI sempre diz "default"
+                if sid:
+                    claude_prefs.set_session(sid, netperms=self._netperms)
+                data = {**(data or {}), "permissionMode": self._mode,   # o CLI sempre diz "default"
+                        "netPerms": self._netperms}
             await self._send({"type": "system", "subtype": msg.subtype, "data": data})
 
         elif isinstance(msg, StreamEvent):
@@ -1183,6 +1287,12 @@ def _real_activity_ts(sid: str, fallback: float) -> float:
         return found
     except Exception:
         return fallback
+
+
+def rename_project_session(sid: str, title: str) -> None:
+    """Define o título (custom_title) da conversa pelo SDK."""
+    from claude_agent_sdk import rename_session  # noqa: PLC0415
+    rename_session(sid, title, directory=str(deps.NETOPS_ROOT))
 
 
 def list_project_sessions(limit: int | None = 60) -> list[dict]:

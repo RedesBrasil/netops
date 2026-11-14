@@ -8,18 +8,25 @@ export function claudeSessionHash(id) {
   return validSessionId(id) ? "#claude/" + id : "#claude";
 }
 
-// Sufixo que abre o popup de Padrões como URL própria (ex.: #claude/<id>/padroes).
+// Sufixos que abrem popups como URL própria (ex.: #claude/<id>/padroes, #claude/<id>/sessoes).
 const PREFS_SUFFIX = "/padroes";
-export function claudePrefsOpen(hash = location.hash) { return hash.endsWith(PREFS_SUFFIX) && hash.startsWith("#claude"); }
-export function setClaudePrefsHash(open) {
-  const base = location.hash.endsWith(PREFS_SUFFIX) ? location.hash.slice(0, -PREFS_SUFFIX.length) : location.hash;
-  if (open) { location.hash = (base === "#claude" ? "#claude" : base) + PREFS_SUFFIX; return; }
-  if (location.hash.endsWith(PREFS_SUFFIX)) history.replaceState(null, "", base || "#claude");
+const SESSIONS_SUFFIX = "/sessoes";
+const SUFFIXES = [PREFS_SUFFIX, SESSIONS_SUFFIX];
+function modalSuffix(hash) { return hash.startsWith("#claude") ? SUFFIXES.find((x) => hash.endsWith(x)) || "" : ""; }
+export function stripClaudeModal(hash) { const x = modalSuffix(hash); return x ? hash.slice(0, -x.length) : hash; }
+export function claudePrefsOpen(hash = location.hash) { return modalSuffix(hash) === PREFS_SUFFIX; }
+export function claudeSessionsOpen(hash = location.hash) { return modalSuffix(hash) === SESSIONS_SUFFIX; }
+function setModalHash(suffix, open) {
+  const base = stripClaudeModal(location.hash);
+  if (open) { location.hash = (base || "#claude") + suffix; return; }
+  if (modalSuffix(location.hash) === suffix) history.replaceState(null, "", base || "#claude");
   dispatchEvent(new Event("hashchange"));
 }
+export function setClaudePrefsHash(open) { setModalHash(PREFS_SUFFIX, open); }
+export function setClaudeSessionsHash(open) { setModalHash(SESSIONS_SUFFIX, open); }
 
 export function readClaudeRoute(hash) {
-  if (claudePrefsOpen(hash)) hash = hash.slice(0, -PREFS_SUFFIX.length);
+  hash = stripClaudeModal(hash);
   if (hash === "#claude" || hash === "#claude/") return { kind: "last" };
   if (!hash.startsWith("#claude/")) return null;
   if (hash === "#claude/new") return { kind: "new" };
@@ -46,7 +53,7 @@ export function forgetClaudeSession(id) {
 }
 
 export function replaceClaudeHash(hash) {
-  if (claudePrefsOpen()) hash += PREFS_SUFFIX;   // não fecha o popup de Padrões
+  hash += modalSuffix(location.hash);   // não fecha o popup aberto (Padrões/Sessões)
   if (location.hash === hash) return;
   history.replaceState(null, "", hash);
   dispatchEvent(new Event("hashchange"));

@@ -108,6 +108,13 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   não altere) e termina com `... change.py end --host-id <ID>` (backup "pós" + diff; 1 par por host por sessão). Padrão ligado
   p/ mikrotik/cisco/huawei/linux/proxmox; `backup_before_change: false` no host/grupo desliga. Retenção: `backups.keep_versions`
   (10). O hook `guard-netops.sh` bloqueia o `session.py` de alteração sem o `begin` — pode ir encadeado na mesma linha: `change.py begin --host-id N && session.py run ... ; change.py end --host-id N` (o `&&` é exigido; `;` não vale).
+- **Nada pesado em `/tmp` (INEGOCIÁVEL):** venv de teste, Node portátil, Playwright/Chromium, `pytest --basetemp`,
+  worktree e build de release vão para `/var/tmp/netops-<tarefa>/` (disco) e são **apagados no fim da tarefa**. Em 14/11/2026 o
+  O `tmp.mount` foi mascarado, mas a regra vale mesmo assim: disco também enche.
+- **Permissões de rede da conversa (seletor 🔐 Rede da aba Claude):** Full ou Ler/Criar/Editar/Apagar nos equipamentos.
+  Respeite o aviso "[NetOps — permissões de rede]": categoria desmarcada = colete, planeje e entregue os comandos sem aplicar;
+  comando fora disso abre aprovação na tela e, negado, **não contorne**. Full = sem pedir aprovação (salvo se o prompt pedir);
+  backup/rollback/teste seguem obrigatórios. Ver `scripts/engine/ui/SKILL.md`.
 - **Inventário é a verdade:** nunca conecte em host fora de `network/hosts.yaml`.
 - **Segurança:** baseline antes de mudar, rollback pronto, rollback automático em falha.
 - **Projeto vivo:** toda execução termina registrando o que aprendeu em `memory/`.
