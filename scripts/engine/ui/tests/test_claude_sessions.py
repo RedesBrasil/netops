@@ -296,3 +296,24 @@ def test_history_user_items_carry_uuid_for_fork(env, monkeypatch):
         get_session_messages=lambda sid, directory: _FORK_MSGS))
     users = [i for i in claude_svc.session_items(A) if i["type"] == "user"]
     assert [u["uuid"] for u in users] == ["u1", "n1", "u2", "u3"]
+
+
+def test_running_ids_inclui_claude_headless_externo(env):
+    """`claude -p --resume <sid>` fora do console conta como em andamento; o interativo ocioso não."""
+    import subprocess
+    import sys
+    from services import claude_svc
+    sid = "11111111-2222-3333-4444-555555555555"
+    idle = "99999999-2222-3333-4444-555555555555"
+    # exec -a claude: o argv[0] vira "claude" como no binário real
+    run = ['exec -a claude "%s" -c "import time; time.sleep(30)" "$@"' % sys.executable, "_"]
+    p1 = subprocess.Popen(["bash", "-c", run[0], run[1], "-p", "--resume", sid, "x"])
+    p2 = subprocess.Popen(["bash", "-c", run[0], run[1], "--output-format", "stream-json", f"--resume={idle}"])
+    try:
+        import time
+        time.sleep(0.5)
+        found = claude_svc._external_running_ids()
+        assert sid in found and idle not in found
+        assert sid in claude_svc.running_session_ids()
+    finally:
+        p1.kill(); p2.kill()

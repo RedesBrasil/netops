@@ -5,13 +5,14 @@
 // e um chat compacto encaixado à direita (ChatDock), que aparece quando você navega para
 // outra rota com uma conversa viva — dá p/ acompanhar o streaming, enviar e aprovar.
 // Protocolo JSON nos dois sentidos (ver scripts/engine/ui/services/claude_svc.py).
-import { html, useState, useEffect, useRef, useCallback, toast, api } from "../ui.js";
+import { html, useState, useEffect, useRef, useCallback, toast, api, refreshVault } from "../ui.js";
 import { useDictation, MAX_SECONDS } from "../audio-dictation.js";
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
-import { MarkdownView, VaultBanner, Modal, Field } from "../components.js";
+import { MarkdownView, VaultBanner, Modal, Field, UnlockModal } from "../components.js";
 import { autoOpenFromText } from "../term-link.js";
 import { authToken } from "../api.js";
+import { buildCatalog, findMentionToken, searchMentions, applyMention, expandMentions, stripMentionNote } from "../mentions.js";
 import { classifyClaudeError, claudeErrorDetail } from "../claude-errors.js";
 import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
   rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, claudePrefsOpen, setClaudePrefsHash, copyClaudeSessionLink } from "../claude-sessions.js";
@@ -92,7 +93,13 @@ export function useClaude() { return useContext(ClaudeCtx); }
 
 export function ClaudeProvider({ children }) {
   const value = useClaudeSession();
-  return html`<${ClaudeCtx.Provider} value=${value}>${children}<//>`;
+  // Cofre trancado no meio de um pedido: o servidor segura o comando e manda `vault_request`;
+  // o pop-up vale em QUALQUER rota/visão (página cheia, dock, celular). Destrancou -> o servidor
+  // libera o comando sozinho (`vault_resolved`). Fechar o pop-up só o dispensa; o agente segue
+  // aguardando e o pop-up volta ao reabrir/voltar à aba.
+  return html`<${ClaudeCtx.Provider} value=${value}>${children}
+    ${value.vaultAsk && html`<${UnlockModal} reason="O agente precisa de uma credencial do cofre para continuar. Destranque para liberar o comando — ele está aguardando."
+      onClose=${() => value.setVaultAsk(false)} />`}<//>`;
 }
 
 // Hook que concentra TODO o ciclo de vida da sessão (WS + transcrição + ações). Roda uma
@@ -125,6 +132,7 @@ function useClaudeSession() {
   const [modelErr, setModelErr] = useState("");       // mensagem do erro de modelo (mostrada no modal)
   const [showRateLimit, setShowRateLimit] = useState(false); // modal de limite de uso (429 disfarçado)
   const [rateLimitDetail, setRateLimitDetail] = useState(""); // mensagem crua do erro
+  const [vaultAsk, setVaultAsk] = useState(false);    // pop-up "cofre trancado — destrancar" (agente aguardando)
   const wsRef = useRef(null);
   const liveTextRef = useRef("");       // texto do agente no turno ao vivo (abertura automática de terminal)
   const liveTurnRef = useRef(String(Date.now()));
@@ -469,6 +477,8 @@ function useClaudeSession() {
               return next;
             });
             break;
+          case "vault_request": setVaultAsk(true); break;
+          case "vault_resolved": setVaultAsk(false); refreshVault(); break;
           case "cache_state":   // re-anexo: usa a IDADE real do último turno, não "agora"
             if (ev.usage) setLastUsage({ ...ev.usage, _at: Date.now() - (ev.age || 0) * 1000 });
             break;
@@ -582,7 +592,7 @@ function useClaudeSession() {
   function submit() {
     const typed = input.trim();
     if (!typed && !attachments.length) return;
-    const text = [...attachments.map((a) => "@" + a.path), typed].filter(Boolean).join(" ");
+    const text = [...attachments.map((a) => "@" + a.path), expandMentions(typed, mentionCatalog)].filter(Boolean).join(" ");
     // /login, /logout, /auth são resolvidos AQUI (o SDK não os conhece) e funcionam mesmo
     // com a sessão caída — que é exatamente quando você precisa deles.
     if (LOCAL_SLASH_RE.test(text)) { setInput(""); setShowAuth(true); return; }
@@ -747,6 +757,7 @@ function useClaudeSession() {
     auth, showAuth, setShowAuth, refreshAuth, relaunch, refreshModels,
     showModelPick, setShowModelPick, modelErr, pickModelAndRelaunch,
     showRateLimit, setShowRateLimit, rateLimitDetail,
+    vaultAsk, setVaultAsk,
   };
 }
 
@@ -818,7 +829,8 @@ function MsgTime({ ts }) {
   const label = same ? hm : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hm}`;
   return html`<time class="cc-time" title=${d.toLocaleString("pt-BR")}>${label}</time>`;
 }
-function UserMsg({ text, tag, ts, onFork }) {
+function UserMsg({ text: fullText, tag, ts, onFork }) {
+  const text = stripMentionNote(fullText);   // bloco de IDs das menções "#" só vai ao agente
   const refs = [...text.matchAll(UPLOAD_REF_RE)].map((m) => m[1]);
   const rest = text.replace(UPLOAD_REF_RE, "").replace(/[ \t]{2,}/g, " ").trim();
   return html`<div class="cc-msg user"><div class="cc-role">você${tag && html` · <em>${tag}</em>`}</div>
@@ -830,12 +842,44 @@ function UserMsg({ text, tag, ts, onFork }) {
       <${MsgTime} ts=${ts} /></div></div>`;
 }
 
+// Catálogo de hosts/grupos para as menções "#": uma busca por abertura do menu (TTL curto);
+// o envio usa o que já está em cache (sincronamente) para expandir grupos em IDs.
+let mentionCatalog = null, mentionLoadedAt = 0, mentionLoading = null;
+function loadMentionCatalog(force) {
+  if (!force && mentionCatalog && Date.now() - mentionLoadedAt < 30000) return Promise.resolve(mentionCatalog);
+  if (!mentionLoading) {
+    mentionLoading = api.get("/hosts").then((r) => { mentionCatalog = buildCatalog(r); mentionLoadedAt = Date.now(); return mentionCatalog; })
+      .catch(() => mentionCatalog).finally(() => { mentionLoading = null; });
+  }
+  return mentionLoading;
+}
+
 // Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
   const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments,
     queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove, sessionId } = useClaude();
   const taRef = useRef(null);
+  // Menções "#host:…" / "#group:…": menu junto ao cursor, ↑↓ navega, Enter/Tab escolhe, Esc fecha.
+  const [caret, setCaret] = useState(0);
+  const [catalog, setCatalog] = useState(mentionCatalog);
+  const [mSel, setMSel] = useState(0);
+  const [mOff, setMOff] = useState("");                 // token fechado com Esc (reabre ao mudar o texto dele)
+  const mTok = findMentionToken(input, Math.min(caret, input.length));
+  const mKey = mTok ? `${mTok.start}|${mTok.kind}|${mTok.query}` : "";
+  const mItems = mTok && mKey !== mOff && catalog ? searchMentions(catalog, mTok.query, mTok.kind) : [];
+  useEffect(() => { if (mTok) loadMentionCatalog(!catalog).then((c) => c && setCatalog(c)); }, [!!mTok]);
+  useEffect(() => { setMSel(0); }, [mTok && mTok.query, mTok && mTok.kind]);
+  useEffect(() => { if (mOff && mKey !== mOff) setMOff(""); }, [mKey]);   // mudou o token: o Esc anterior não vale mais
+  function pickMention(item) {
+    const r = applyMention(input, mTok, item);
+    setInput(r.text); setCaret(r.caret);
+    setTimeout(() => {                                // só reposiciona se ninguém digitou nesse meio-tempo
+      const el = taRef.current;
+      if (el) { el.focus(); if (el.value === r.text) el.setSelectionRange(r.caret, r.caret); }
+    }, 0);
+  }
+  const syncCaret = (e) => setCaret(e.target.selectionStart);
   // Ditado: a transcrição só preenche o rascunho (acrescenta ao fim); o envio segue manual.
   const dict = useDictation({
     conversationId: sessionId || "new",
@@ -867,6 +911,12 @@ function Composer() {
   }
 
   function onKeyDown(e) {
+    if (mItems.length && !e.isComposing) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setMSel((mSel + 1) % mItems.length); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setMSel((mSel - 1 + mItems.length) % mItems.length); return; }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickMention(mItems[Math.min(mSel, mItems.length - 1)]); return; }
+      if (e.key === "Escape") { e.preventDefault(); setMOff(mKey); return; }
+    }
     if (e.key === "Escape" && working) { e.preventDefault(); stop(); return; }
     // Celular/tablet (toque como ponteiro principal): Enter quebra linha, envia só pelo botão ↑.
     // Desktop: Enter envia, Shift+Enter quebra linha.
@@ -894,6 +944,14 @@ function Composer() {
     ${slashMatches.length > 0 && html`<div class="cc-slash-menu">
       ${slashMatches.map((c) => html`<button key=${c} class="cc-slash" onClick=${() => setInput("/" + c + " ")}>/${c}</button>`)}
     </div>`}
+    ${mItems.length > 0 && html`<div class="cc-mention-menu" role="listbox" aria-label="Hosts e grupos">
+      ${mItems.map((m, i) => html`<button key=${m.token} role="option" aria-selected=${i === mSel}
+          class=${"cc-mention" + (i === mSel ? " sel" : "")}
+          onMouseDown=${(e) => e.preventDefault()} onMouseEnter=${() => setMSel(i)} onClick=${() => pickMention(m)}>
+        <span class=${"cc-mention-kind " + m.kind}>${m.kind === "group" ? "group" : "host"}</span>
+        <b>${m.label}</b><small>${m.detail}</small>
+      </button>`)}
+    </div>`}
     <div class="cc-composer">
       ${attachments.length > 0 && html`<div class="cc-attach-row">
         ${attachments.map((a) => html`<div class="cc-attach" key=${a.path}>
@@ -904,9 +962,9 @@ function Composer() {
       <textarea ref=${taRef} rows="1"
         placeholder=${disabled
           ? "Sem sessão — digite /login para entrar, ou aguarde a reconexão"
-          : (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? "Mensagem (Enter quebra linha · ↑ envia · / para comandos)" : "Mensagem (Enter envia · Shift+Enter quebra linha · / para comandos)")}
+          : (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? "Mensagem (Enter quebra linha · ↑ envia · / comandos · # hosts)" : "Mensagem (Enter envia · Shift+Enter quebra linha · / comandos · # hosts e grupos)")}
         value=${input}
-        onInput=${(e) => setInput(e.target.value)} onKeyDown=${onKeyDown} onPaste=${onPaste}></textarea>
+        onInput=${(e) => { setInput(e.target.value); syncCaret(e); }} onKeyDown=${onKeyDown} onKeyUp=${syncCaret} onClick=${syncCaret} onPaste=${onPaste}></textarea>
       <div class="cc-composer-bar">
         <div class="cc-composer-left">
           <input type="file" ref=${fileRef} style="display:none"
@@ -1143,16 +1201,27 @@ function CacheClock({ usage }) {
 export function ClaudeSessionTitle() {
   const s = useClaude();
   const [title, setTitle] = useState("");
+  const [done, setDone] = useState(false);
   useEffect(() => {
-    if (!s.sessionId) { setTitle(""); return; }
+    if (!s.sessionId) { setTitle(""); setDone(false); return; }
     let dead = false;
     api.get("/claude/sessions").then((d) => {
       const f = (d.sessions || []).find((x) => x.id === s.sessionId);
-      if (!dead) setTitle(f && f.title ? f.title : "");
+      if (!dead) { setTitle(f && f.title ? f.title : ""); setDone(!!(f && f.completed)); }
     }).catch(() => {});
     return () => { dead = true; };
   }, [s.sessionId, s.working]);
-  return title ? html`<span class="cc-topbar-title" title=${title}>${title}</span>` : null;
+  useEffect(() => { if (s.working) setDone(false); }, [s.working]);   // novo pedido reabre a sessão (o servidor também desmarca)
+  async function toggle(e) {
+    const v = e.target.checked;
+    setDone(v);
+    try { await api.put(`/claude/sessions/${encodeURIComponent(s.sessionId)}/completed`, { completed: v }); }
+    catch (_) { setDone(!v); toast.err("Falha ao salvar a marca de concluída"); }
+  }
+  return html`${validSessionId(s.sessionId) && html`<label class="cc-topbar-chk"
+      title=${done ? "Sessão concluída por completo (clique para desmarcar)" : "Marcar sessão como concluída por completo"}>
+      <input type="checkbox" aria-label="Sessão concluída por completo" checked=${done} onChange=${toggle} />
+    </label>`}${title && html`<span class="cc-topbar-title" title=${title}>${title}</span>`}`;
 }
 
 // Bolinha de status sempre visível na barra do topo (no celular o resto vai p/ a folha "⋯").
@@ -1476,10 +1545,10 @@ function SessionsModal({ currentId, onClose, onResume }) {
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
 
-  const load = (query) => {
+  const load = (query, silent) => {
     const term = (query || "").trim();
     if (!term) {
-      setList(null);
+      if (!silent) setList(null);
       api.get("/claude/sessions").then((d) => setList(d.sessions || [])).catch(() => setList([]));
     } else {
       api.get("/claude/sessions/search?q=" + encodeURIComponent(term))
@@ -1489,6 +1558,8 @@ function SessionsModal({ currentId, onClose, onResume }) {
   useEffect(() => { load(""); }, []);
   // debounce: busca por título + conteúdo da conversa enquanto digita
   useEffect(() => { const h = setTimeout(() => load(q), 250); return () => clearTimeout(h); }, [q]);
+  // atualiza o status (em andamento × finalizada) enquanto o modal está aberto
+  useEffect(() => { const h = setInterval(() => load(q, true), 4000); return () => clearInterval(h); }, [q]);
 
   async function del(id, e) {
     e.stopPropagation();
@@ -1496,6 +1567,16 @@ function SessionsModal({ currentId, onClose, onResume }) {
     try { await api.del(`/claude/sessions/${encodeURIComponent(id)}`); forgetClaudeSession(id); load(q); }
     catch (_) { toast.err("Falha ao excluir"); }
     finally { setBusy(false); }
+  }
+
+  // checkbox manual "concluída por completo" (persiste no servidor); atualiza a lista na hora
+  async function toggleDone(id, completed) {
+    setList((cur) => (cur || []).map((x) => (x.id === id ? { ...x, completed } : x)));
+    try { await api.put(`/claude/sessions/${encodeURIComponent(id)}/completed`, { completed }); }
+    catch (_) {
+      toast.err("Falha ao salvar a marca de concluída");
+      setList((cur) => (cur || []).map((x) => (x.id === id ? { ...x, completed: !completed } : x)));
+    }
   }
 
   const term = q.trim();
@@ -1508,10 +1589,12 @@ function SessionsModal({ currentId, onClose, onResume }) {
       : list.length === 0
       ? html`<div class="help">${term ? "Nenhuma sessão casa com a busca." : "Nenhuma sessão neste projeto ainda."}</div>`
       : html`<div class="cc-sess-list">
-        ${list.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "")}
+        ${list.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "") + (s.completed ? " concluida" : "")}
             onClick=${(e) => { if (!openInNewWindow(e, claudeSessionHash(s.id))) onResume(s.id); }}
             onAuxClick=${(e) => openInNewWindow(e, claudeSessionHash(s.id))} onMouseDown=${noAutoscroll}
             title="Retomar esta sessão (Ctrl+clique ou clique do meio abre em nova aba)">
+          <span class=${"cc-sess-st " + (s.running ? "run" : "done")}
+            title=${s.running ? "Em andamento" : "Finalizada"} aria-label=${s.running ? "Em andamento" : "Finalizada"}>${s.running ? "" : "✓"}</span>
           <div class="cc-sess-main">
             <div class="cc-sess-title"><a href=${claudeSessionHash(s.id)} onAuxClick=${(e) => e.stopPropagation()} onClick=${(e) => {
               e.stopPropagation();
@@ -1521,10 +1604,15 @@ function SessionsModal({ currentId, onClose, onResume }) {
             }}>${hl(s.title, term)}</a>${s.id === currentId ? html` <span class="badge ok">atual</span>` : ""}</div>
             ${s.preview && html`<div class="cc-sess-prev help">${hl(s.preview, term)}</div>`}
             ${s.snippet && html`<div class="cc-sess-snip help">${hl(s.snippet, term)}</div>`}
-            <div class="cc-sess-meta help mono">${fmtTime(s.mtime)} · ${(s.id || "").slice(0, 8)}${s.branch ? " · " + s.branch : ""}</div>
+            <div class="cc-sess-meta help mono">${fmtShort(s.mtime)} · ${(s.id || "").slice(0, 8)}</div>
           </div>
-          <button class="sm" title="Copiar link da sessão" onClick=${(e) => { e.stopPropagation(); copySessionLink(s.id); }}>Copiar link</button>
-          <button class="sm danger" disabled=${busy} title="Excluir sessão" onClick=${(e) => del(s.id, e)}>🗑</button>
+          <div class="cc-sess-acts" onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()}>
+            <label class="cc-sess-chk" title=${s.completed ? "Concluída por completo (clique para desmarcar)" : "Marcar como concluída por completo"}>
+              <input type="checkbox" aria-label="Concluída por completo" checked=${!!s.completed} onChange=${(e) => toggleDone(s.id, e.target.checked)} />
+            </label>
+            <button class="sm cc-sess-ib" title="Copiar link da sessão" aria-label="Copiar link da sessão" onClick=${(e) => { e.stopPropagation(); copySessionLink(s.id); }}>🔗</button>
+            <button class="sm danger cc-sess-ib" disabled=${busy} title="Excluir sessão" aria-label="Excluir sessão" onClick=${(e) => del(s.id, e)}>🗑</button>
+          </div>
         </div>`)}
       </div>`}
   <//>`;
@@ -1546,6 +1634,16 @@ function hl(text, term) {
     i = idx + qq.length;
   }
   return parts;
+}
+
+// "14/11 10:08" (ano só se não for o corrente) — cabe na linha do celular.
+function fmtShort(ms) {
+  if (!ms) return "";
+  try {
+    const d = new Date(ms), p2 = (n) => String(n).padStart(2, "0");
+    const y = d.getFullYear() === new Date().getFullYear() ? "" : "/" + d.getFullYear();
+    return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}${y} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  } catch (_) { return ""; }
 }
 
 function fmtTime(ms) {
@@ -1695,20 +1793,28 @@ function primaryString(input) {
   return null;
 }
 
-// Card de ferramenta compacto: cabeçalho com resumo (1 linha) + entrada/saída recolhidas.
+// Card de ferramenta compacto: recolhido = 1 linha (ícone + nome + resumo truncado); clicar no
+// cabeçalho expande entrada/saída completas. Cada card expande de forma independente.
 function ToolCard({ it }) {
+  const [open, setOpen] = useState(false);
   const icon = { running: "⏳", done: "✓", error: "✗" }[it.tstatus] || "•";
   const prim = primaryString(it.input);
   const hasBigExtra = ["content", "new_string", "old_string"].some(
     (k) => typeof (it.input || {})[k] === "string" && it.input[k].length > 120);
   const headLine = (prim != null ? prim : fmt(it.input)).split("\n")[0] || "";
-  const headShort = headLine.length > 120 ? headLine.slice(0, 120) + "…" : headLine;
   const detail = (prim != null && !hasBigExtra) ? prim : fmt(it.input);
-  const detailBig = detail.split("\n").length > 2 || detail.length > 120 || hasBigExtra;
-  return html`<div class="cc-tool ${it.tstatus}">
-    <div class="cc-tool-head"><span>${icon}</span> <b>${it.name}</b>
-      ${headShort && html`<span class="cc-tool-desc mono">${headShort}</span>`}</div>
-    ${detailBig && html`<${Collapsible} text=${detail} max=${2} />`}
-    ${it.result != null && html`<${Collapsible} text=${it.result} max=${2} kind=${it.isError ? "err" : ""} />`}
+  const resLines = it.result != null ? String(it.result).split("\n").length : 0;
+  return html`<div class="cc-tool ${it.tstatus} ${open ? "open" : ""}">
+    <button type="button" class="cc-tool-head" aria-expanded=${open}
+        onClick=${() => setOpen((o) => !o)}>
+      <span class="cc-tool-ico">${icon}</span><b>${it.name}</b>
+      ${headLine && html`<span class="cc-tool-desc mono">${headLine}</span>`}
+      ${!open && resLines > 0 && html`<span class="cc-tool-n">${resLines}\u00a0l</span>`}
+      <span class="cc-tool-caret">${open ? "▾" : "▸"}</span>
+    </button>
+    ${open && html`<div class="cc-tool-body">
+      <pre class="cc-pre">${detail}</pre>
+      ${it.result != null && html`<${Collapsible} text=${it.result} max=${12} kind=${it.isError ? "err" : ""} />`}
+    </div>`}
   </div>`;
 }

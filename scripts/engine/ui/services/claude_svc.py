@@ -352,6 +352,12 @@ async def shutdown_all() -> None:
 
 
 VALID_EFFORT = ("low", "medium", "high", "xhigh", "max")
+# Comandos Bash que resolvem credencial do cofre (acesso a equipamento, backup antes de mudança…).
+# Se o cofre estiver trancado, o hook abaixo SEGURA o comando e pede a senha na tela, em vez de
+# deixar o script falhar e o agente desistir.
+_VAULT_CMD_RE = re.compile(r"scripts/tools/|session\.py|change\.py|terminal_access")
+VAULT_WAIT_MAX = 30 * 60      # seg: quanto o agente espera o cofre ser destrancado
+VAULT_WAIT_POLL = 1.0
 _SEND_TIMEOUT = 10.0   # seg p/ um envio ao socket (half-open não pode travar o agente)
 MAX_QUEUE = 20   # teto de mensagens na fila por sessão (estático)
 
@@ -386,9 +392,10 @@ class ClaudeWebSession:
         self._pending_payloads: dict[str, dict] = {}     # id -> card (p/ reemitir no re-anexo)
         self._counter = 0
         self._ask_tool_ids: set[str] = set()            # tool_use_ids de AskUserQuestion (suprimir card)
+        self._vault_waiting = 0                          # comandos aguardando o cofre ser destrancado
         self._stderr_tail: deque[str] = deque(maxlen=60)  # últimas linhas de stderr do agente (diagnóstico)
         self._busy = False               # turno em andamento? (controla a carência de teardown)
-        self._closing = False            # cliente mandou "bye" (fechamento deliberado)
+        self._closing = False            # (legado) o "bye" agora é devolvido por _ws_pump -> serve
         self._closing_done = False       # teardown já executado (idempotência)
         self._started = False            # client já conectado?
         self._sdk_task: asyncio.Task | None = None
@@ -485,7 +492,11 @@ class ClaudeWebSession:
             # AskUserQuestion é o modelo PERGUNTANDO ao usuário — não deve obedecer ao modo de
             # permissão. Um hook PreToolUse a intercepta em QUALQUER modo (até dontAsk/bypass),
             # abre o seletor na UI e devolve a escolha em updatedInput.answers.
-            hooks={"PreToolUse": [HookMatcher(matcher="AskUserQuestion", hooks=[self._hook_ask_question])]},
+            hooks={"PreToolUse": [
+                HookMatcher(matcher="AskUserQuestion", hooks=[self._hook_ask_question]),
+                # timeout > VAULT_WAIT_MAX: o hook espera o humano digitar a senha-mestra.
+                HookMatcher(matcher="Bash", hooks=[self._hook_vault_gate], timeout=VAULT_WAIT_MAX + 60),
+            ]},
             cli_path=claude_path(),
             stderr=self._on_stderr,
         )
@@ -576,6 +587,45 @@ class ClaudeWebSession:
             "permissionDecisionReason": reason or "Usuário pulou a pergunta.",
         }}
 
+    # ------------------------------------------------------------ cofre trancado
+    @staticmethod
+    def _vault_locked() -> bool:
+        """True só se o cofre existe, está trancado e dá p/ destrancar pela web."""
+        try:
+            if not (deps.STATE.allow_vault_unlock and deps.vault_initialized()):
+                return False
+            from lib import vault_session  # noqa: PLC0415
+            return vault_session.session_status().get("state") == "locked"
+        except Exception:
+            return False   # na dúvida não bloqueia: o script falha com instrução clara
+
+    async def _hook_vault_gate(self, input_data: dict, tool_use_id, context):
+        """Hook PreToolUse (Bash): comando que precisa do cofre + cofre trancado -> abre o pop-up
+        "Destrancar o cofre" em todas as abas anexadas e AGUARDA a senha. Sem aba aberta, o pedido
+        fica registrado e reaparece no re-anexo (`attach`); o comando segue assim que destrancar
+        (por qualquer meio: pop-up, CLI ou outra aba). Estourou VAULT_WAIT_MAX -> nega com motivo."""
+        cmd = (input_data.get("tool_input") or {}).get("command") or ""
+        if not _VAULT_CMD_RE.search(cmd) or not self._vault_locked():
+            return {}
+        self._vault_waiting += 1
+        try:
+            await self._send({"type": "vault_request"})
+            deadline = time.monotonic() + VAULT_WAIT_MAX
+            while self._vault_locked():
+                if self._closing_done or not self._busy or time.monotonic() >= deadline:   # fim/interrupção do turno também solta
+                    await self._send({"type": "vault_resolved"})
+                    return {"hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": "Cofre de credenciais continua trancado (ninguém destrancou a tempo). "
+                                                    "Peça ao usuário para destrancar e repita o comando.",
+                    }}
+                await asyncio.sleep(VAULT_WAIT_POLL)
+            await self._send({"type": "vault_resolved"})
+            return {}
+        finally:
+            self._vault_waiting -= 1
+
     # ----------------------------------------------------- attach / detach / timers
     def attach(self, ws: WebSocket) -> None:
         """(Re)anexa um socket. Cancela os timers de carência/pergunta e reemite os cards de
@@ -587,6 +637,8 @@ class ClaudeWebSession:
         self._cancel_ask_timers()               # você voltou: perguntas voltam a esperar sem pressa
         for payload in list(self._pending_payloads.values()):
             asyncio.create_task(self._send(payload, only=ws))
+        if self._vault_waiting and self._vault_locked():   # agente parado esperando a senha do cofre
+            asyncio.create_task(self._send({"type": "vault_request"}, only=ws))
 
     def detach(self, ws=None) -> None:
         """Solta um socket (ou todos, sem argumento) SEM matar o agente. Só arma a carência e o
@@ -696,13 +748,22 @@ class ClaudeWebSession:
                                   "age": max(0.0, time.monotonic() - lt["t"])}, only=ws)
                 if lt.get("ctx"):
                     await self._send(lt["ctx"], only=ws)
+        said_bye = False
         try:
-            await self._ws_pump(ws)
+            said_bye = bool(await self._ws_pump(ws))
         finally:
-            if self._closing:
+            # "bye" (trocar de conversa / ✕) só encerra de verdade uma sessão OCIOSA e sem outras
+            # abas. Com turno rodando, fila, pergunta aberta ou outra aba anexada, apenas solta
+            # este socket: o turno TERMINA em segundo plano (contrato da persistência) e a
+            # carência (_maybe_arm_grace) encerra o processo depois que ficar ocioso.
+            if said_bye and self._can_close_on_bye(ws):
                 await self.teardown()
             else:                      # solta só ESTE socket; as outras abas seguem
                 self.detach(ws)
+
+    def _can_close_on_bye(self, ws) -> bool:
+        return (not self._busy and not self._queue and not self._pending
+                and not [w for w in self._wss if w is not ws])
 
     async def teardown(self) -> None:
         """Mata o subprocesso `claude`, cancela timers/futures e sai do registro. Idempotente."""
@@ -777,10 +838,9 @@ class ClaudeWebSession:
                     await self._send({"type": "queue_dispatched", **item})
                     await self._query(item["text"])
             elif kind == "bye":
-                # Fechamento DELIBERADO (encerrar / trocar de sessão): mata a sessão viva.
+                # Fechamento DELIBERADO (encerrar / trocar de sessão): serve() só encerra se ociosa e sozinha.
                 # Um drop por standby NÃO manda "bye" — por isso lá a gente só desanexa.
-                self._closing = True
-                return
+                return True
             elif kind == "set_mode":
                 mode = raw.get("mode")
                 if mode in VALID_MODES:
@@ -816,6 +876,13 @@ class ClaudeWebSession:
 
     # ------------------------------------------------------------------ fila
     async def _query(self, text: str) -> None:
+        # Novo pedido numa sessão marcada como "concluída" => ela volta a estar em aberto
+        # (a retomada automática pós-restart não conta: não é pedido do usuário).
+        if self.sid and text != RESUME_PROMPT:
+            try:
+                claude_prefs.clear_completed(self.sid)
+            except Exception:
+                pass
         self._busy = True
         self._tracked = True
         self._track()
@@ -1015,6 +1082,109 @@ def project_session_exists(sid: str) -> bool:
         return False
 
 
+def running_session_ids() -> set[str]:
+    """Sessões com turno em andamento. Fontes: (1) sessão viva no processo (_busy/fila);
+    (2) anotação em resume-on-restart.json (busy=true, dentro de _RESUME_MAX_AGE) — cobre a
+    janela de um restart, em que a sessão ainda não voltou para _LIVE mas vai ser retomada."""
+    out: set[str] = set()
+    live_ids: set[str] = set()
+    for sid, s in list(_LIVE.items()):
+        if s._closing_done:
+            continue
+        live_ids.add(sid)
+        if s._busy or s._queue:
+            out.add(sid)
+    now = time.time()
+    for sid, e in _resume_load().items():
+        if sid in live_ids or not isinstance(e, dict) or not e.get("busy"):
+            continue   # viva: o estado em memória manda
+        try:
+            if now - float(e.get("t") or 0) <= _RESUME_MAX_AGE:
+                out.add(sid)
+        except (TypeError, ValueError):
+            continue
+    out |= _external_running_ids() - live_ids
+    return out
+
+
+def _external_running_ids() -> set[str]:
+    """Sessões rodando FORA do console: `claude -p/--print --resume <sid>` (retomada manual por
+    script, agendador, outro terminal). O console não as vê em _LIVE; sem isto a lista mostraria
+    "finalizada" enquanto o turno ainda executa. Só modo headless (-p): o `claude` interativo
+    ocioso de um editor também usa --resume e não é "em andamento"."""
+    out: set[str] = set()
+    try:
+        pids = [p for p in os.listdir("/proc") if p.isdigit()]
+    except OSError:
+        return out
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                args = fh.read().decode("utf-8", "replace").split("\0")
+        except OSError:
+            continue
+        if not args or os.path.basename(args[0]) != "claude" or not ({"-p", "--print"} & set(args)):
+            continue
+        for i, a in enumerate(args):
+            sid = (a.split("=", 1)[1] if a.startswith("--resume=")
+                   else args[i + 1] if a in ("--resume", "-r") and i + 1 < len(args) else "")
+            if sid and re.fullmatch(r"[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}", sid):
+                out.add(sid)
+    return out
+
+
+_ACTIVITY_CACHE: dict[str, tuple[float, int, float]] = {}
+
+
+def _real_activity_ts(sid: str, fallback: float) -> float:
+    """Última atividade REAL (mensagem user/assistant) do transcript, em ms.
+
+    O `claude` acrescenta linhas de metadados (cost-state, mode, last-prompt, tools-used) ao
+    simplesmente ABRIR/retomar uma sessão, o que muda o mtime do .jsonl. Só abrir uma conversa
+    antiga não pode levá-la ao topo da lista: ordenamos pela última mensagem de verdade."""
+    from datetime import datetime  # noqa: PLC0415
+    try:
+        base = Path(os.path.expanduser("~")) / ".claude" / "projects"
+        f = next((d / (sid + ".jsonl") for d in base.iterdir() if (d / (sid + ".jsonl")).is_file()), None)
+        if f is None:
+            return fallback
+        st = f.stat()
+        c = _ACTIVITY_CACHE.get(sid)
+        if c and c[0] == st.st_mtime and c[1] == st.st_size:
+            return c[2]
+        found = fallback
+        with open(f, "rb") as fh:
+            size = st.st_size
+            chunk = 256 * 1024
+            while True:
+                start = max(0, size - chunk)
+                fh.seek(start)
+                lines = fh.read(size - start).splitlines()
+                if start:
+                    lines = lines[1:]    # 1ª linha pode estar cortada
+                hit = None
+                for ln in reversed(lines):
+                    if b'"timestamp"' not in ln or not (b'"type":"user"' in ln or b'"type":"assistant"' in ln):
+                        continue
+                    try:
+                        d = json.loads(ln)
+                    except ValueError:
+                        continue
+                    if d.get("type") in ("user", "assistant") and d.get("timestamp"):
+                        hit = datetime.fromisoformat(str(d["timestamp"]).replace("Z", "+00:00")).timestamp() * 1000
+                        break
+                if hit is not None:
+                    found = hit
+                    break
+                if start == 0 or chunk >= 16 * 1024 * 1024:
+                    break
+                chunk *= 4
+        _ACTIVITY_CACHE[sid] = (st.st_mtime, st.st_size, found)
+        return found
+    except Exception:
+        return fallback
+
+
 def list_project_sessions(limit: int | None = 60) -> list[dict]:
     """Sessões Claude Code deste projeto (cwd=NETOPS_ROOT), mais recentes primeiro."""
     if not _SDK_OK:
@@ -1025,17 +1195,22 @@ def list_project_sessions(limit: int | None = 60) -> list[dict]:
     except Exception:
         return []
     out = []
+    running = running_session_ids()
+    completed = claude_prefs.completed_ids()
     for x in sess:
         title = (x.custom_title or x.summary or x.first_prompt or "").strip()
         out.append({
             "id": x.session_id,
+            "running": x.session_id in running,
+            "completed": x.session_id in completed,
             "title": (title or "(sem título)")[:80],
             "preview": (x.first_prompt or "").strip()[:140],
-            "mtime": x.last_modified,
+            "mtime": _real_activity_ts(x.session_id, x.last_modified),
             "created": x.created_at,
             "tag": x.tag,
             "branch": x.git_branch,
         })
+    out.sort(key=lambda r: r["mtime"] or 0, reverse=True)
     return out
 
 
@@ -1183,6 +1358,8 @@ def delete_project_session(sid: str) -> None:
         delete_session(sid, directory=str(deps.NETOPS_ROOT))
     except Exception:
         pass
+    finally:
+        claude_prefs.forget_session(sid)
 
 
 # --------------------------------------------------------------------------- #

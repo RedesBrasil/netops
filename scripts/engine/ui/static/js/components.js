@@ -321,7 +321,8 @@ export function PasswordInput({ value, onInput, ...rest }) {
   return html`<span class="pw-wrap">
     <input ...${rest} type=${show ? "text" : "password"} value=${value} onInput=${onInput} />
     <button type="button" class="pw-eye" tabindex="-1" title=${show ? "Ocultar senha" : "Mostrar senha"}
-      aria-label=${show ? "Ocultar senha" : "Mostrar senha"} onClick=${() => setShow(!show)}>${show ? "🙈" : "👁"}</button>
+      aria-label=${show ? "Ocultar senha" : "Mostrar senha"} onMouseDown=${(e) => e.preventDefault()}
+      onClick=${() => setShow(!show)}>${show ? "🙈" : "👁"}</button>
   </span>`;
 }
 
@@ -365,7 +366,7 @@ export function LoginScreen({ onAuthed }) {
 /* ---------------------------- UnlockModal ------------------------------- */
 // Destranca o cofre digitando a senha-mestra. A senha vai só nesta request (POST
 // /vault/unlock), deriva a chave no servidor e é descartada — nunca volta ao browser.
-export function UnlockModal({ onClose }) {
+export function UnlockModal({ onClose, reason }) {
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -390,6 +391,7 @@ export function UnlockModal({ onClose }) {
 
   return html`<${Modal} title="Destrancar o cofre" onClose=${onClose}>
     <form onSubmit=${submit}>
+      ${reason && html`<p class="vault-reason">🔒 ${reason}</p>`}
       <p class="help">A senha-mestra é usada só para derivar a chave nesta sessão; não é gravada,
         registrada nem devolvida. A sessão vale também para a CLI e os agentes.</p>
       <div class="field">

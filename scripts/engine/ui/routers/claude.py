@@ -226,6 +226,18 @@ def claude_session_fork(sid: str, body: dict):
     return {"id": new}
 
 
+@router.put("/claude/sessions/{sid}/completed")
+def claude_session_completed(sid: str, body: dict):
+    """Marca/desmarca a conversa como concluída por completo (checkbox manual do usuário)."""
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    if not claude_svc.project_session_exists(sid):
+        return JSONResponse({"error": "session_not_found"}, status_code=404)
+    done = bool(body.get("completed"))
+    claude_prefs.set_completed(sid, done)
+    return {"id": sid, "completed": done}
+
+
 @router.delete("/claude/sessions/{sid}", status_code=204)
 def claude_session_delete(sid: str):
     if not deps.STATE.enable_claude:

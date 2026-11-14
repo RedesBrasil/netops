@@ -123,7 +123,7 @@ function Shell({ onLogout, showLogout }) {
     <div class="topbar">
       <button class="sm mob-only nav-toggle" aria-label="Menu" onClick=${() => { setMoreOpen(false); setNavOpen(!navOpen); }}>☰</button>
       ${route === "claude"
-        ? html`<span class="brand">Claude Code</span><${ClaudeSessionTitle} />`
+        ? html`<${ClaudeSessionTitle} />`
         : html`<span class="brand">NetOps Console</span><span class="net">· ${meta.network_name}</span>`}
       <div id="topbar-slot" class="topbar-slot"></div>
       ${route === "claude" && html`<${ClaudeStatusDot} />`}

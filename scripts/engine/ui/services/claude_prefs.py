@@ -79,3 +79,49 @@ def set_session(sid: str | None, *, model: str | None = None, mode: str | None =
             for k in list(d["sessions"])[: len(d["sessions"]) - _MAX_SESSIONS]:
                 d["sessions"].pop(k, None)
         _save(d)
+
+
+def completed_ids() -> set[str]:
+    """Conversas que o usuário marcou como concluídas por completo (checkbox da lista de sessões)."""
+    with _LOCK:
+        return {k for k, v in _load()["sessions"].items() if isinstance(v, dict) and v.get("completed")}
+
+
+def set_completed(sid: str | None, done: bool) -> None:
+    if not sid:
+        return
+    with _LOCK:
+        d = _load()
+        if done:
+            d["sessions"].setdefault(sid, {})["completed"] = True
+        else:
+            s = d["sessions"].get(sid)
+            if s is not None:
+                s.pop("completed", None)
+                if not s:
+                    d["sessions"].pop(sid, None)
+        _save(d)
+
+
+def forget_session(sid: str | None) -> None:
+    if not sid:
+        return
+    with _LOCK:
+        d = _load()
+        if d["sessions"].pop(sid, None) is not None:
+            _save(d)
+
+
+def clear_completed(sid: str | None) -> bool:
+    """Desmarca "concluída" (novo pedido na sessão). Só grava se a marca existia; devolve se limpou."""
+    if not sid:
+        return False
+    with _LOCK:
+        d = _load()
+        s = d["sessions"].get(sid)
+        if not isinstance(s, dict) or not s.pop("completed", None):
+            return False
+        if not s:
+            d["sessions"].pop(sid, None)
+        _save(d)
+        return True
