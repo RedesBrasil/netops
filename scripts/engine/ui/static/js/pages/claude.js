@@ -1766,8 +1766,9 @@ function SessionsModal({ currentId, onClose, onResume }) {
             onContextMenu=${(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, s }); }}
             onAuxClick=${(e) => openInNewWindow(e, claudeSessionHash(s.id))} onMouseDown=${noAutoscroll}
             title="Retomar esta sessão (Ctrl+clique ou clique do meio abre em nova aba)">
-          <span class=${"cc-sess-st " + (s.running ? "run" : "done")}
-            title=${s.running ? "Em andamento" : "Finalizada"} aria-label=${s.running ? "Em andamento" : "Finalizada"}>${s.running ? "" : "✓"}</span>
+          <span class=${"cc-sess-st " + (s.waiting ? "wait" : s.running ? "run" : "done")}
+            title=${s.waiting ? "Aguardando sua resposta ou aprovação" : s.running ? "Em andamento" : "Finalizada"}
+            aria-label=${s.waiting ? "Aguardando sua resposta ou aprovação" : s.running ? "Em andamento" : "Finalizada"}>${s.waiting ? "!" : s.running ? "" : "✓"}</span>
           <div class="cc-sess-main">
             <div class="cc-sess-title">${renaming && renaming.id === s.id
               ? html`<input class="cc-sess-rename" value=${renaming.draft} autoFocus maxlength="120" aria-label="Renomear sessão"

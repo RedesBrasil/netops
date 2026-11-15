@@ -254,8 +254,10 @@ pre.raw { font-family: var(--mono); font-size: 13px; background: var(--surface-2
 .cc-sess.concluida .cc-sess-title, .cc-sess.concluida .cc-sess-prev { opacity: .6; }
 .cc-sess-st.done { background: var(--ok); color: #fff; }
 .cc-sess-st.run { border: 3px solid var(--accent); border-right-color: transparent; animation: cc-sess-spin .8s linear infinite; }
+.cc-sess-st.wait { background: var(--warn); color: #fff; animation: cc-sess-pulse 1.4s ease-in-out infinite; }
+@keyframes cc-sess-pulse { 50% { opacity: .55; } }
 @keyframes cc-sess-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .cc-sess-st.run { animation: none; border-right-color: var(--accent); } }
+@media (prefers-reduced-motion: reduce) { .cc-sess-st.run { animation: none; border-right-color: var(--accent); } .cc-sess-st.wait { animation: none; } }
 .cc-sess-title { font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; overflow-wrap: anywhere; }
 .cc-sess-prev { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cc-sess-meta { margin-top: 2px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -321,6 +321,21 @@ def test_running_ids_inclui_claude_headless_externo(env):
         p1.kill(); p2.kill()
 
 
+def test_waiting_ids_sessao_com_pergunta_ou_aprovacao_aberta(env):
+    """Sessão viva com permissão/pergunta pendente = aguardando o usuário."""
+    from types import SimpleNamespace
+    from services import claude_svc
+    sid = "aaaaaaaa-2222-3333-4444-555555555555"
+    live = SimpleNamespace(_closing_done=False, _pending_payloads={"perm1": {}}, _busy=True, _queue=[])
+    claude_svc._LIVE[sid] = live
+    try:
+        assert sid in claude_svc.waiting_session_ids()
+        live._pending_payloads = {}
+        assert sid not in claude_svc.waiting_session_ids()
+    finally:
+        claude_svc._LIVE.pop(sid, None)
+
+
 # ------------------------------------------------------------------ rewind (editar prompt)
 def _jl(**kw):
     return json.dumps(kw, ensure_ascii=False) + "\n"

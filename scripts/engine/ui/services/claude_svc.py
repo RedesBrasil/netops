@@ -1240,6 +1240,13 @@ def running_session_ids() -> set[str]:
     return out
 
 
+def waiting_session_ids() -> set[str]:
+    """Sessões vivas BLOQUEADAS esperando o usuário: pergunta (AskUserQuestion) ou aprovação de
+    permissão em aberto (`_pending_payloads`). Têm prioridade sobre "em andamento" na lista."""
+    return {sid for sid, s in list(_LIVE.items())
+            if not s._closing_done and s._pending_payloads}
+
+
 def _external_running_ids() -> set[str]:
     """Sessões rodando FORA do console: `claude -p/--print --resume <sid>` (retomada manual por
     script, agendador, outro terminal). O console não as vê em _LIVE; sem isto a lista mostraria
@@ -1335,12 +1342,14 @@ def list_project_sessions(limit: int | None = 60) -> list[dict]:
         return []
     out = []
     running = running_session_ids()
+    waiting = waiting_session_ids()
     completed = claude_prefs.completed_ids()
     for x in sess:
         title = (x.custom_title or x.summary or x.first_prompt or "").strip()
         out.append({
             "id": x.session_id,
             "running": x.session_id in running,
+            "waiting": x.session_id in waiting,
             "completed": x.session_id in completed,
             "title": (title or "(sem título)")[:80],
             "preview": (x.first_prompt or "").strip()[:140],
