@@ -69,6 +69,14 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 
 ## Regras essenciais
 
+- **Identificação de equipamentos nas respostas (INEGOCIÁVEL):** ao citar qualquer host, container (CT/VM),
+  roteador, switch, servidor ou outro equipamento, **nunca use só o ID**. Escreva sempre **nome (ID)**, com o
+  nome primeiro e o número entre parênteses: `PROXMOX REDES BRASIL (host 14)`, `pve-testes (host 18)`,
+  `PROXY-TESTE (CT 102)`, `001-REDESBRASIL-RACK-BORDA (host 2)`. O nome vem de `network/hosts.yaml`
+  (`hostname`) ou, para CT/VM, do `pct list`/`qm list`. Vale para relatórios, resumos, tabelas e mensagens
+  de status. Só o ID, sem nome, obriga o usuário a procurar no inventário: não faça. Se o nome for longo,
+  use um curto reconhecível (ex.: `pve-techify`), mas sempre com o número ao lado.
+
 - **Releases:** antes de gerar qualquer release, leia `core/rules/releases.md`, consulte a release
   atual no GitHub e escolha uma versão superior. Atualize `core/config/core-config.yaml` e
   `CHANGELOG.md`, teste o pacote e publique com changelog. Nunca reutilize tags nem inclua dados locais.
