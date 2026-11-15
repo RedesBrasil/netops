@@ -149,14 +149,14 @@ _SH_READ = {"cat", "less", "more", "head", "tail", "grep", "egrep", "fgrep", "zg
             "ip6tables-save", "nft", "sysctl", "apt", "apt-get", "apt-cache", "docker",
             "crontab", "curl", "wget", "tar", "xargs", "bash", "sh", "timeout", "sudo", "nice",
             "nohup", "time", "watch", "stdbuf", "ionice", "brctl", "bridge", "ovs-vsctl",
-            "virsh", "mysql", "unl_wrapper", "ha-manager", "pvenode", "service", "lvm",
+            "virsh", "mysql", "ha-manager", "pvenode", "service", "lvm",
             "conntrack", "chronyc", "ntpq", "resolvectl", "nmcli", "zcat"}
 # Comandos cujo efeito depende dos argumentos (tratados em _classify_simple):
 _SH_DYNAMIC = {"awk", "sed", "find", "systemctl", "qm", "pct", "ip", "iptables", "ip6tables", "nft",
                "sysctl", "apt", "apt-get", "docker", "crontab", "curl", "wget", "tar", "smartctl",
                "nvme", "zpool", "zfs", "mount", "hostname", "date", "pvesm", "pvecm", "pvesh",
                "ethtool", "route", "arp", "dpkg", "service", "brctl", "bridge", "ovs-vsctl",
-               "virsh", "mysql", "unl_wrapper", "ha-manager", "pvenode", "lvm", "conntrack",
+               "virsh", "mysql", "ha-manager", "pvenode", "lvm", "conntrack",
                "nmcli", "resolvectl", "timedatectl", "hostnamectl", "set", "export", "openssl",
                "chronyc", "crontab"}
 _SH_CREATE = {"touch", "mkdir", "useradd", "adduser", "groupadd", "addgroup", "lvcreate", "vgcreate",
@@ -373,8 +373,6 @@ def _classify_simple(words: list[str]) -> set[str]:
         if re.search(r"\b(update|alter|grant|revoke|replace|set)\b", txt) or "-e" not in a:
             return {"edit"}
         return {"read"}
-    if prog == "unl_wrapper":
-        return {"edit"}
     if prog in ("set", "export"):
         return {"read"}   # variáveis do próprio shell, não do equipamento
     if prog in _SH_READ:

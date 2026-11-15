@@ -111,8 +111,8 @@ AUTH_SESSIONS_FILE: Path | None = None   # None = DATA_ROOT/runs/.ui-auth-sessio
 
 def _auth_sessions_file() -> Path:
     # Resolvido a cada uso (não no import): quem troca DATA_ROOT (testes, instalação temporária)
-    # não pode gravar no arquivo de logins da instalação real. Incidente 11/11/2026: a suíte de
-    # testes sobrescreveu runs/.ui-auth-sessions.json e todo restart seguinte pedia login de novo.
+    # não pode gravar no arquivo de logins da instalação real. Sem isso a suíte de
+    # testes sobrescrevia runs/.ui-auth-sessions.json e todo restart seguinte pedia login de novo.
     return AUTH_SESSIONS_FILE or (DATA_ROOT / "runs" / ".ui-auth-sessions.json")
 
 

@@ -337,8 +337,8 @@ Se o turno termina entre a escolha "fila" e a chegada ao servidor, a mensagem ro
 **nova** para o socket (`queue` com `fresh:true`: reinício do console, modo clássico), a aba devolve o
 cache com `queue_add`. Os itens voltam para a fila **sem disparar** e rodam no fim do próximo turno ou
 via ⚡. No **re-anexo**, o servidor é a verdade: o que sumiu foi executado de fato, e reenviar duplicaria.
-antigo. O servidor caía calado no modo clássico e o F5 matava a sessão, levando o turno e a fila. Agora a
-reconexão renova o `attach-ticket` antes de abrir o socket.
+Depois de reiniciar o console, a reconexão renova o `attach-ticket` (cookie de dono) antes de abrir o socket;
+sem isso o servidor cairia calado no modo clássico e o F5 mataria a sessão, levando o turno e a fila.
 
 Testes: `tests/test_claude_queue.py` (pytest, client/WebSocket fictícios) e
 `tests/claude-queue.browser.mjs` (Playwright, desktop + celular, WebSocket fictício).

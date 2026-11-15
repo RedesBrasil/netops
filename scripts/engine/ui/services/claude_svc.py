@@ -553,7 +553,7 @@ class ClaudeWebSession:
             stderr=self._on_stderr,
             # Teto de UMA linha JSON do CLI. O padrão do SDK (1 MiB) estoura quando o Read devolve
             # um print/JPG em base64 (~1,3 MB): o leitor morre e a sessão fica "em andamento" p/
-            # sempre (incidente 14/11/2026). 64 MiB cobre imagens e PDFs com folga.
+            # sempre. 64 MiB cobre imagens e PDFs com folga.
             max_buffer_size=SDK_MAX_BUFFER,
         )
 

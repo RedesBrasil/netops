@@ -67,7 +67,9 @@ def _guard(command: str, *, script=GUARD) -> int:
 
 
 def test_guard_blocks_dangerous_and_allows_harmless():
-    dangerous = "unl_wrapper -a " + "fix" + "permissions"   # montado p/ não acionar o próprio hook
+    # alteração em equipamento sem `change.py begin` (host fora do inventário: o check falha ⇒ bloqueia)
+    call = "python3 scripts/tools/access/session." + "py exec --host-id 999 --command "   # montado p/ não acionar o próprio hook
     for script in (GUARD, ".claude/hooks/guard-netops.sh"):   # caminho novo + shim de compatibilidade
-        assert _guard(dangerous, script=script) == 2
+        assert _guard(call + '"set x"', script=script) == 2
+        assert _guard(call + '"print"', script=script) == 0
         assert _guard("ls -la", script=script) == 0

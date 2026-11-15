@@ -458,7 +458,7 @@ function useClaudeSession() {
         setStatus("desconectado");
         const delay = Math.min(60000, 3000 * Math.pow(2, Math.max(0, failCountRef.current - 4)));
         // Renova o cookie de dono antes de reconectar: após um reinício do console o antigo
-        // não vale mais (incidente 11/11).
+        // não vale mais.
         reconnTimerRef.current = setTimeout(() => {
           api.get("/claude/attach-ticket").then(() => open(true), () => open(true));
         }, delay);

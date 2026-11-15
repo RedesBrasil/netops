@@ -88,6 +88,7 @@ Thumbs.db
 /.cache/
 /.claude/*
 !/.claude/commands/
+# Hook de guarda (backup antes de alterar equipamento) + sua ligação: precisam ir junto ao projeto.
 !/.claude/settings.json
 !/.claude/hooks/
 

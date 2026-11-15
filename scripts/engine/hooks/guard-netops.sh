@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# NetOps — PreToolUse guard (Bash). Bloqueia comandos perigosos registrados na memória.
-#
-#   e só devolve +x a `if*`, `/opt/unetlab/scripts/*` e `*_wrapper*` → ZERA o +x do
+# NetOps — PreToolUse guard (Bash). Exige backup (`change.py begin`) antes de alterar equipamento.
 #
 # Entrada: JSON no stdin com .tool_input.command. Saída: exit 2 = bloqueia (msg vai ao modelo).
 
@@ -13,7 +11,7 @@ try:
 except Exception:
     print("")' 2>/dev/null)
 
-# Backup antes de alterar equipamento (memory/feedback-backup-antes-de-alterar.md):
+# Backup antes de alterar equipamento (ver AGENTS.md):
 # `session.py run|exec --host-id N` com comando que ALTERA config exige `change.py begin` antes.
 if printf '%s' "$cmd" | grep -Eq 'access/session\.py[[:space:]]+(run|exec)'; then
   # Só EXECUÇÃO real conta: "session.py ... add" citado em commit/grep/echo/heredoc não bloqueia

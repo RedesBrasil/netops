@@ -117,8 +117,9 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   p/ mikrotik/cisco/huawei/linux/proxmox; `backup_before_change: false` no host/grupo desliga. Retenção: `backups.keep_versions`
   (10). O hook `guard-netops.sh` bloqueia o `session.py` de alteração sem o `begin` — pode ir encadeado na mesma linha: `change.py begin --host-id N && session.py run ... ; change.py end --host-id N` (o `&&` é exigido; `;` não vale).
 - **Nada pesado em `/tmp` (INEGOCIÁVEL):** venv de teste, Node portátil, Playwright/Chromium, `pytest --basetemp`,
-  worktree e build de release vão para `/var/tmp/netops-<tarefa>/` (disco) e são **apagados no fim da tarefa**. Em 14/11/2026 o
-  O `tmp.mount` foi mascarado, mas a regra vale mesmo assim: disco também enche.
+  worktree e build de release vão para `/var/tmp/netops-<tarefa>/` (disco) e são **apagados no fim da tarefa**. O
+  `/tmp` pode ser tmpfs (RAM) e contar na memória do container: sobras de testes acumulam e derrubam o host por OOM.
+  Disco também enche, por isso apague tudo no fim.
 - **Permissões de rede da conversa (seletor 🔐 Rede da aba Claude):** Full ou Ler/Criar/Editar/Apagar nos equipamentos.
   Respeite o aviso "[NetOps — permissões de rede]": categoria desmarcada = colete, planeje e entregue os comandos sem aplicar;
   comando fora disso abre aprovação na tela e, negado, **não contorne**. Full = sem pedir aprovação (salvo se o prompt pedir);
@@ -128,7 +129,6 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 - **Projeto vivo:** toda execução termina registrando o que aprendeu em `memory/`.
 - **Memória é VINCULANTE (INEGOCIÁVEL):** no início de cada sessão, leia `memory/MEMORY.md` e as notas
   relevantes; trate toda regra marcada como "nunca rode"/INEGOCIÁVEL como **bloqueio** — não é sugestão.
-  Bloqueio ativo (também reforçado por hook em `.claude/settings.json` → `scripts/engine/hooks/guard-netops.sh`):
 - **Cofre:** se as credenciais estiverem criptografadas (`enc.v1:`), o cofre precisa estar
   **destrancado** antes de qualquer acesso — o humano roda `python3 scripts/engine/vault/cli.py unlock`
   (a IA não digita a senha-mestra). Se trancado, os scripts falham com instrução clara.
@@ -164,6 +164,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
     Aba nova que não aparece após atualizar = cache: **hard refresh** (`Ctrl+Shift+R`). Ver `scripts/engine/ui/SKILL.md`.
 - **Console NUNCA pode ficar parado (INEGOCIÁVEL):** antes de qualquer start/restart ou mudança em `start.sh`/supervisor,
   valide que o console volta (sintaxe, venv, porta) e **nunca** teste contra o ROOT real "em outra porta". Depois,
+  confirme HTTP no host:porta real. Perder o acesso web é inaceitável.
 - **Login do agente na aba Claude Code:** `/login` (e `/logout`) funcionam **na própria aba** — não são do
   SDK, a aba os resolve sozinha e abre o fluxo OAuth. Logue **por ali**, não pelo terminal web: a credencial
   vai para o `$HOME/.claude/` do **processo do servidor**, e o terminal web roda como outro usuário (`netops`),

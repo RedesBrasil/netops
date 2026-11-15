@@ -4,8 +4,8 @@
 #   - console JÁ está rodando  -> reinicia, preservando host/porta/terminal/claude.
 # Em ambos os casos: desacopla (funciona de dentro da aba Claude/terminal web), espera o
 # supervisor sair e o lock liberar, tenta até 3 vezes e só termina OK quando o HTTP responde
-# (log: /tmp/netops-restart.log). Causa do incidente de 11/11/2026: kill esperava só o filho,
-# o supervisor ainda segurava o flock e o console ficou fora — por isso nunca `kill` à mão.
+# (log: /tmp/netops-restart.log). Um `kill` só no filho deixa o supervisor segurando o flock e o
+# console fica fora — por isso nunca `kill` à mão.
 #
 # Por que um script (e não `python scripts/engine/ui/server.py` direto):
 #   - liga o TERMINAL WEB e a página CLAUDE CODE por padrão (são opt-in — sem o script, as
@@ -53,7 +53,7 @@ if [ "${1:-}" != "--foreground" ]; then
     case "$a" in -y|--yes) ASSUME_YES=1;; --no-detach) NO_DETACH=1;; *) PASS+=("$a");; esac
   done
   # Alvo = o console deste ROOT. Se host/porta foram pedidos, casa SÓ o console dessa porta: assim
-  # um teste em outra porta nunca derruba o console real (incidente 12/11/2026).
+  # um teste em outra porta nunca derruba o console real.
   if [ -n "${NETOPS_UI_PORT:-}" ]; then
     SUP=$(pgrep -of "update/supervisor.py --root $ROOT -- .*--port ${NETOPS_UI_PORT}( |\$)" || true)
   else
@@ -157,7 +157,7 @@ PYEOF
   done
 
   # O console NUNCA pode ficar no cgroup do helper: quando a unidade do helper termina, o systemd
-  # mata tudo que sobrou nela (2º erro do incidente de 11/11). Sobe numa unidade própria
+  # mata tudo que sobrou nela. Sobe numa unidade própria
   # (netops-console-*), que vive até o próximo restart.
   launch_console() {
     if command -v systemd-run >/dev/null; then
