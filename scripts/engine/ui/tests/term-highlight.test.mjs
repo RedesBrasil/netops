@@ -5,8 +5,8 @@ const E = "\x1b";
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
 test("pinta IP, MAC, erros, avisos e OK (estilo MobaXterm)", () => {
-  const out = colorize("inet 10.8.200.11  netmask 255.255.255.0 ether bc:24:11:f6:ca:f9 RX errors 0 WARNING ok");
-  assert.ok(out.includes(`${E}[95m10.8.200.11${E}[39m`));
+  const out = colorize("inet 10.0.0.11  netmask 255.255.255.0 ether bc:24:11:f6:ca:f9 RX errors 0 WARNING ok");
+  assert.ok(out.includes(`${E}[95m10.0.0.11${E}[39m`));
   assert.ok(out.includes(`${E}[95mbc:24:11:f6:ca:f9${E}[39m`));
   assert.ok(out.includes(`${E}[91merrors${E}[39m`));
   assert.ok(out.includes(`${E}[93mWARNING${E}[39m`));
@@ -31,7 +31,7 @@ test("IP partido entre dois pacotes e escape partido", () => {
   let out = h.feed("inet 10.8.2");
   assert.equal(out, "inet ");
   out += h.feed("00.11 netmask\n");
-  assert.ok(out.includes(`${E}[95m10.8.200.11${E}[39m`));
+  assert.ok(out.includes(`${E}[95m10.0.0.11${E}[39m`));
   const h2 = createHighlighter();
   let o2 = h2.feed(`a${E}[3`); o2 += h2.feed(`2mverde${E}[0m 1.1.1.1\n`);
   assert.equal(strip(o2), "averde 1.1.1.1\n");

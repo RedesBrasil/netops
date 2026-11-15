@@ -1,0 +1,33 @@
+# NetOps — Configuração do projeto/rede (MODELO)
+# O arquivo real é core/config/project-config.yaml: fica só na sua instalação (git-ignorado e
+# preservado nas atualizações). O instalador cria uma cópia deste modelo; edite pela tela Configuração.
+
+project:
+  network_name: ""                    # nome da rede/empresa
+  description: ""
+
+operations:
+  maintenance_window: ""              # ex.: "seg-sex 22:00-05:00"
+  escalation_contact: ""
+
+vault:
+  session_ttl_seconds: 900            # re-bloqueio por inatividade (padrão 900 = 15 min)
+
+access:
+  session_idle_minutes: 5             # sessão aberta fecha após N min sem comando
+
+# Firewall de acesso web do console (tela Configuração → Acesso web). Quem estiver fora das redes recebe 403.
+# Desligado por padrão: ligue depois de cadastrar as suas redes (a tela impede salvar se o seu IP ficar de fora).
+web_access:
+  enabled: false
+  allowed_networks:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - fc00::/7
+  trusted_proxies: []                 # IP do proxy reverso à frente do console (ex.: Nginx/Traefik), se houver
+
+backups:
+  keep_versions: 10                   # arquivos mantidos por host em backups/by-id/<id>/
+
+overrides: {}

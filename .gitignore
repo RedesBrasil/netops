@@ -30,6 +30,15 @@ reports/*
 # Fica local; quem o salva é o próprio backup completo agendado, não o repositório do NetOps.
 scripts/tools/backup/full_mirror.sh
 
+# >>> DADOS PESSOAIS DA INSTÂNCIA — o produto é distribuído e sai sem eles. <<<
+# Memória do projeto (notas, lições, incidentes): cada instalação começa com a sua vazia (o install.sh cria o MEMORY.md).
+memory/*
+# Configuração da instância (nome da empresa, redes liberadas, proxies). O modelo versionado é project-config.example.yaml.
+core/config/project-config.yaml
+# Ferramentas da equipe que criou o projeto (gateway de IA interno), não fazem parte do produto.
+9router-LEIAME.md
+bin/9router-*
+
 # Saídas brutas de execução (podem conter dados sensíveis dos dispositivos)
 runs/
 

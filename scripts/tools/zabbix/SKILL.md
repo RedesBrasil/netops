@@ -9,7 +9,7 @@ env: []
 
 ## O que faz
 
-Lê a API JSON-RPC do Zabbix (`10.8.200.10`) e imprime um raio-X de um template:
+Lê a API JSON-RPC do Zabbix (URL em `ZABBIX_URL`, token em `ZABBIX_API_TOKEN`) e imprime um raio-X de um template:
 itens monitorados agrupados por categoria (chave, tipo, unidade, intervalo) e triggers
 com prioridade, status e expressão. **Somente leitura** — não altera nada no Zabbix.
 

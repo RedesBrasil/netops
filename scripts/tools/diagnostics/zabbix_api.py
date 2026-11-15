@@ -3,6 +3,7 @@
 Script para interagir com a API do Zabbix
 Resolve credenciais internamente via vault
 """
+import os
 import sys
 import json
 from pathlib import Path
@@ -17,7 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "engine" / "lib"))
 
 from inventory import resolve_host
 
-ZABBIX_API_URL = "http://10.8.200.10/zabbix/api_jsonrpc.php"
+ZABBIX_API_URL = os.environ.get("ZABBIX_URL", "")
+if not ZABBIX_API_URL:
+    sys.exit("Defina ZABBIX_URL no ambiente (ex.: http://zabbix.exemplo.local/zabbix/api_jsonrpc.php).")
 
 class ZabbixAPI:
     def __init__(self):

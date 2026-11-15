@@ -82,6 +82,11 @@ cross-vendor (não pertence a um fabricante).
   nunca um segundo cadastro de hosts.
 - **workflows/** — `.workflow.yaml` com `steps` (tipo `subagent`/`inline`/`checkpoint`).
 - **memory/** — um arquivo só: `MEMORY.md` (seções: Preferências, Ambiente e convenções, Lições aprendidas).
+  **Pessoal da instância, git-ignorada:** `memory/`, `reports/`, `runs/`, `backups/`, `network/hosts.yaml`/`credentials.yaml` e
+  `core/config/project-config.yaml` nunca sobem para o repositório do produto (ele é distribuído a outras empresas); quem
+  guarda esses dados é o backup da própria instância. Instalação nova começa com `memory/` vazia e config a partir de
+  `core/config/project-config.example.yaml`. Código, docs e testes do produto não citam empresa, ISP, IP nem host reais: use
+  exemplos genéricos (RFC 5737 `192.0.2.0/24`, `203.0.113.0/24`; RFC 3849 `2001:db8::/32`).
 
 ## 5. Como adicionar um fabricante novo
 

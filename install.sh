@@ -331,6 +331,7 @@ install_code() {
   # pastas de trabalho que o pacote não traz (dados locais, git-ignorados no repositório)
   mkdir -p "$NETOPS_DIR"/{runs,reports,backups,memory}
   [ -f "$NETOPS_DIR/memory/MEMORY.md" ] || printf '# Memória — NetOps\n\n' >"$NETOPS_DIR/memory/MEMORY.md"
+  [ -f "$NETOPS_DIR/core/config/project-config.yaml" ] || cp "$NETOPS_DIR/core/config/project-config.example.yaml" "$NETOPS_DIR/core/config/project-config.yaml" 2>/dev/null || true
   ok "NetOps v$PKG_VERSION instalado em $NETOPS_DIR"
 }
 

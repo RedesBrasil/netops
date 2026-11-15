@@ -13,7 +13,9 @@ ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 import requests  # noqa: E402
 from collections import defaultdict
 
-ZABBIX_URL = "http://10.8.200.10/zabbix/api_jsonrpc.php"
+ZABBIX_URL = os.environ.get("ZABBIX_URL", "")
+if not ZABBIX_URL:
+    sys.exit("Defina ZABBIX_URL no ambiente (ex.: http://zabbix.exemplo.local/zabbix/api_jsonrpc.php).")
 API_TOKEN = os.environ.get("ZABBIX_API_TOKEN", "")
 if not API_TOKEN:
     sys.exit("Defina ZABBIX_API_TOKEN no ambiente (nunca commitar o token).")

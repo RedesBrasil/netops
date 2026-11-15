@@ -33,7 +33,7 @@ não instale nada. Sempre a partir de `/opt/netops` (ou caminho absoluto). Host 
 python3 scripts/tools/access/session.py exec --host-id 21 --command "/ip address print"   # login + abre
 python3 scripts/tools/access/session.py exec --host-id 22 --command "ip -br addr"         # outro host, outra sessão
 python3 scripts/tools/access/session.py exec --host-id 21 --command "/ip arp print"       # REUSA (sem login)
-python3 scripts/tools/access/session.py exec --host-id 21 --command "/ping 10.8.8.2" --timing --timeout 5
+python3 scripts/tools/access/session.py exec --host-id 21 --command "/ping 192.0.2.2" --timing --timeout 5
 python3 scripts/tools/access/session.py list                       # abertas, ocioso/limite
 python3 scripts/tools/access/session.py close --host-id 21         # ou close --all (ou espera o idle)
 

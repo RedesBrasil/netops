@@ -53,14 +53,9 @@ def env(tmp_path, monkeypatch):
     shutil.copy(PROJECT / "network/hosts.example.yaml", tmp_path / "network/hosts.yaml")
     shutil.copy(PROJECT / "network/topology.example.yaml", tmp_path / "network/topology.yaml")
     cp("core/schemas/inventory.schema.json")
-    cp("core/config/project-config.yaml")
-    # TestClient chega como "testclient" (não é IP): o firewall de acesso web do projeto real não vale nos testes
-    import yaml
-    pc = tmp_path / "core" / "config" / "project-config.yaml"
-    cfg = yaml.safe_load(pc.read_text()) or {}
-    cfg.pop("web_access", None)
-    pc.write_text(yaml.safe_dump(cfg, allow_unicode=True))
-    cp("memory/MEMORY.md")
+    # config e memória reais são da instância (git-ignoradas): os testes partem do modelo/vazio
+    shutil.copy(PROJECT / "core/config/project-config.example.yaml", tmp_path / "core/config/project-config.yaml")
+    (tmp_path / "memory" / "MEMORY.md").write_text("# Memória — NetOps\n\n", encoding="utf-8")
 
     monkeypatch.setattr(deps, "NETOPS_ROOT", tmp_path)
     monkeypatch.setattr(deps, "DATA_ROOT", tmp_path)
