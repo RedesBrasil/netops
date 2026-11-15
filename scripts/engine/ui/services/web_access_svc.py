@@ -5,13 +5,13 @@ Config (core/config/project-config.yaml, tela Configuração → "Acesso web"):
 
     web_access:
       enabled: true
-      allowed_networks: [10.0.0.0/8, 45.70.144.0/22, 2804:4368::/32]   # IP solto, rede v4 ou v6
-      trusted_proxies: [10.8.200.4]   # proxy reverso à frente do console (lê o IP real do X-Forwarded-For)
+      allowed_networks: [10.0.0.0/8, 203.0.113.0/24, 2001:db8::/32]   # IP solto, rede v4 ou v6
+      trusted_proxies: [10.0.0.10]    # proxy reverso à frente do console (lê o IP real do X-Forwarded-For)
 
-Pontos que importam (incidente evitado em 15/11/2026):
+Pontos que importam:
 
 * Atrás de proxy reverso o IP do socket é SEMPRE o do proxy. Se o proxy estiver numa rede liberada
-  (ex.: 10.8.200.4 em 10.0.0.0/8) e o app olhasse só o socket, o mundo inteiro entraria. Por isso o
+  (ex.: um proxy em 10.0.0.10 com a rede 10.0.0.0/8 liberada) e o app olhasse só o socket, o mundo inteiro entraria. Por isso o
   IP do cliente vem do `X-Forwarded-For`, mas SÓ quando o socket é um `trusted_proxies`
   (ou loopback). De qualquer outro, o cabeçalho é ignorado (senão qualquer um forjaria o IP).
 * No `X-Forwarded-For` vale a entrada mais à direita que não seja proxy confiável: as mais à
@@ -33,9 +33,9 @@ import deps
 
 log = logging.getLogger("netops.web_access")
 
-# Redes liberadas quando a seção existe sem lista, e botão "Restaurar padrão" da tela.
-# Topnet (AS267568): IPv4 45.70.144.0/22 e IPv6 2804:4368::/32 (RIPEstat + RDAP, 15/11/2026).
-DEFAULT_NETWORKS: tuple[str, ...] = ("10.0.0.0/8", "45.70.144.0/22", "2804:4368::/32")
+# Redes liberadas quando a seção existe sem lista, e botão "Restaurar padrão" da tela:
+# só endereços privados (RFC 1918 + ULA). Prefixos públicos da empresa são cadastrados por ela na tela.
+DEFAULT_NETWORKS: tuple[str, ...] = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")
 
 _LOOPBACK = (ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("::1/128"))
 _FORWARDED_ENV = "NETOPS_UI_FORWARDED_ALLOW_IPS"
@@ -70,7 +70,7 @@ def parse_ip(text: str | None) -> IPAddr | None:
 
 
 def parse_network(text: str) -> IPNet:
-    """`10.1.2.3` → /32, `2804::1` → /128, `10.0.0.0/8`, `2804:4368::/32`. Levanta ValueError."""
+    """`10.1.2.3` → /32, `2001:db8::1` → /128, `10.0.0.0/8`, `2001:db8::/32`. Levanta ValueError."""
     s = str(text).strip()
     if not s:
         raise ValueError("entrada vazia")
@@ -83,7 +83,7 @@ def _norm_list(items: Iterable, field: str, errors: list[dict]) -> list[str]:
         try:
             net = parse_network(str(raw))
         except ValueError:
-            errors.append({"loc": f"web_access.{field}", "msg": f"'{raw}' não é IP nem rede válida (use 10.0.0.0/8, 192.0.2.7, 2804:4368::/32)"})
+            errors.append({"loc": f"web_access.{field}", "msg": f"'{raw}' não é IP nem rede válida (use 10.0.0.0/8, 192.0.2.7, 2001:db8::/32)"})
             continue
         s = str(net)
         if s not in out:

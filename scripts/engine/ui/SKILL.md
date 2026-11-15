@@ -608,7 +608,7 @@ Tela **Configuração → Acesso web**; config em `core/config/project-config.ya
 (`enabled`, `allowed_networks`, `trusted_proxies`). Código: `services/web_access_svc.py` + `_WebAccessGate` em `app.py`
 (camada mais externa: HTTP, estáticos e WebSocket; fora da lista = 403 / WS 4403). Vale na hora (relê o arquivo por mtime).
 
-- **IP real atrás de proxy:** o socket é sempre o do proxy (Traefik do host 26 = 10.8.200.4, que está em 10.0.0.0/8!).
+- **IP real atrás de proxy:** o socket é sempre o do proxy (ex.: um Traefik em 10.0.0.10, que cai na rede 10.0.0.0/8 liberada!).
   O IP do visitante vem do `X-Forwarded-For` **só** se o socket estiver em `trusted_proxies` (ou loopback); vale a entrada
   mais à direita que não seja proxy. De qualquer outra origem o cabeçalho é ignorado. IP ilegível = negado.
   O `proxy_headers` do uvicorn ficou DESLIGADO (com `"*"` aceitava IP forjado e apagava o IP do socket).
@@ -617,7 +617,7 @@ Tela **Configuração → Acesso web**; config em `core/config/project-config.ya
   Loopback (127.0.0.1/::1) sempre entra (start.sh, agendador, shell local).
 - **Emergência (travou o acesso):** pela rede 10.x ou no servidor, `enabled: false` em `web_access` no project-config.yaml
   (vale sem reiniciar). Padrão do código quando a seção não existe: desligado.
-- **Padrão sugerido:** `10.0.0.0/8`, Topnet `45.70.144.0/22` e `2804:4368::/32` (AS267568, RIPEstat/RDAP 15/11/2026).
+- **Padrão do código:** só redes privadas (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`); os prefixos públicos de cada empresa são cadastrados por ela. O `project-config.yaml` não é distribuído pelo atualizador: a lista da instância fica lá.
 - `GET /api/web-access`: política, IP que o servidor vê p/ quem pergunta e bloqueios recentes (RAM, desde o restart).
-- Firewall do SO no CT do console NÃO resolve: ele só vê o IP do proxy. Barrar antes do app = ipAllowList no Traefik.
+- Firewall do SO no CT do console NÃO resolve: ele só vê o IP do proxy. Barrar antes do app = allowlist no próprio proxy reverso (ex.: `ipAllowList` do Traefik).
 - **Testes:** `tests/test_web_access.py` (o `conftest` remove `web_access` do config de teste: TestClient não tem IP).
