@@ -104,7 +104,11 @@ function Shell({ onLogout, showLogout }) {
   const [theme, setTheme] = useState(localStorage.getItem("netops_theme") || "light");
   useEffect(() => { startVaultPolling(); api.get("/config/meta").then(setMeta).catch(() => {}); }, []);
   useEffect(() => { document.title = meta.network_name ? `NetOps · ${meta.network_name}` : "NetOps"; }, [meta.network_name]);
-  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("netops_theme", theme); }, [theme]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme; localStorage.setItem("netops_theme", theme);
+    // PWA: cor da barra de título/status acompanha o tema (--surface).
+    const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = theme === "dark" ? "#1a212b" : "#1b78c2";
+  }, [theme]);
 
   async function doLogout() {
     const sid = authToken();
@@ -198,3 +202,8 @@ function Root() {
 }
 
 render(html`<${Root} />`, document.getElementById("app"));
+
+// PWA: service worker (só em contexto seguro: HTTPS ou localhost). Falha aqui nunca afeta o console.
+if ("serviceWorker" in navigator) {
+  addEventListener("load", () => { navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {}); });
+}

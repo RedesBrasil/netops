@@ -1,0 +1,28 @@
+{
+  "id": "/",
+  "name": "NetOps Console",
+  "short_name": "NetOps",
+  "description": "Console web do NetOps: redes e infraestrutura com agentes de IA.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f6f9",
+  "theme_color": "#1b78c2",
+  "categories": ["utilities", "productivity"],
+  "icons": [
+    { "src": "/icons/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/pwa/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/pwa/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/pwa/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Hosts", "url": "/#hosts", "icons": [{ "src": "/icons/pwa/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Mapas", "url": "/#maps", "icons": [{ "src": "/icons/pwa/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Claude Code", "url": "/#claude", "icons": [{ "src": "/icons/pwa/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Terminal", "url": "/#terminal", "icons": [{ "src": "/icons/pwa/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
