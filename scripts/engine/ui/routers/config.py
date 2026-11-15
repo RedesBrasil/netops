@@ -36,6 +36,10 @@ def put_config(body: dict, request: Request):
     if data is None:
         data = {}
     patch = {k: v for k, v in body.items() if k != "_rev"}
+    if "web_access" in patch:   # valida CIDRs e impede o auto-bloqueio (IP de quem salva tem que continuar liberado)
+        from services import web_access_svc  # noqa: PLC0415
+        patch["web_access"] = web_access_svc.validate_patch(
+            patch["web_access"], request.client.host if request.client else None)
     _deep_merge(data, patch)
     new_rev = yaml_io.write_rt(deps.PROJECT_CONFIG, y, data, expected=_rev(request), backup=True)
     return {"data": dict(data), "rev": new_rev}

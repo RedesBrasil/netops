@@ -601,3 +601,23 @@ Preact, o tema e as URLs.
 - **Regra para telas novas:** `core/rules/tabelas-console.md` (sem `<table>` cru, `tableId` único, `sort` nas colunas).
 - **Testes:** `node --test tests/table-core.test.mjs` (núcleo puro + guarda do padrão), `tests/tables-all.browser.mjs`
   (smoke em todas as telas) e `tests/table-columns.browser.mjs` (interações, desktop e celular), contra `tests/e2e-env.sh up`.
+
+## Firewall de acesso web (allowlist de IP/redes)
+
+Tela **Configuração → Acesso web**; config em `core/config/project-config.yaml` → `web_access`
+(`enabled`, `allowed_networks`, `trusted_proxies`). Código: `services/web_access_svc.py` + `_WebAccessGate` em `app.py`
+(camada mais externa: HTTP, estáticos e WebSocket; fora da lista = 403 / WS 4403). Vale na hora (relê o arquivo por mtime).
+
+- **IP real atrás de proxy:** o socket é sempre o do proxy (Traefik do host 26 = 10.8.200.4, que está em 10.0.0.0/8!).
+  O IP do visitante vem do `X-Forwarded-For` **só** se o socket estiver em `trusted_proxies` (ou loopback); vale a entrada
+  mais à direita que não seja proxy. De qualquer outra origem o cabeçalho é ignorado. IP ilegível = negado.
+  O `proxy_headers` do uvicorn ficou DESLIGADO (com `"*"` aceitava IP forjado e apagava o IP do socket).
+  Se esquecer de listar o proxy, todos parecem o IP do proxy e a regra 10/8 libera o mundo: mantenha `trusted_proxies` certo.
+- **Anti auto-bloqueio:** `PUT /config` recusa (422) salvar se o IP de quem salva ficaria fora da lista, ou lista vazia ligada.
+  Loopback (127.0.0.1/::1) sempre entra (start.sh, agendador, shell local).
+- **Emergência (travou o acesso):** pela rede 10.x ou no servidor, `enabled: false` em `web_access` no project-config.yaml
+  (vale sem reiniciar). Padrão do código quando a seção não existe: desligado.
+- **Padrão sugerido:** `10.0.0.0/8`, Topnet `45.70.144.0/22` e `2804:4368::/32` (AS267568, RIPEstat/RDAP 15/11/2026).
+- `GET /api/web-access`: política, IP que o servidor vê p/ quem pergunta e bloqueios recentes (RAM, desde o restart).
+- Firewall do SO no CT do console NÃO resolve: ele só vê o IP do proxy. Barrar antes do app = ipAllowList no Traefik.
+- **Testes:** `tests/test_web_access.py` (o `conftest` remove `web_access` do config de teste: TestClient não tem IP).

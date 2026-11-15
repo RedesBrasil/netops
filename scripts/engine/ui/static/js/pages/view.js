@@ -75,6 +75,48 @@ function RunView({ id, onClose }) {
   <//>`;
 }
 
+// Firewall de acesso web: só IP/redes da lista acessam o console (services/web_access_svc.py).
+const toLines = (t) => t.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+function WebAccessCard({ rev, setRev }) {
+  const st = useResource("/web-access");
+  const [form, setForm] = useState(null);
+  useEffect(() => {
+    if (st.data && !form) setForm({ enabled: st.data.enabled, nets: st.data.allowed_networks.join("\n"), proxies: st.data.trusted_proxies.join("\n") });
+  }, [st.data]);
+  if (st.loading && !form) return html`<div class="card"><${Spinner} /></div>`;
+  if (st.error || !form) return html`<div class="card">Erro: ${st.error?.message || "sem dados"}</div>`;
+  const d = st.data;
+  async function save() {
+    try {
+      const r = await api.put("/config", { web_access: { enabled: form.enabled, allowed_networks: toLines(form.nets), trusted_proxies: toLines(form.proxies) } }, rev);
+      setRev(r.rev); toast.ok("Acesso web salvo (vale na hora)");
+      st.reload();
+    } catch (e) { handleError(e); }
+  }
+  const cols = [
+    { key: "ip", label: "IP bloqueado", hideable: false, sort: true, render: (x) => x.ip },
+    { key: "count", label: "Tentativas", sort: true, render: (x) => x.count },
+    { key: "path", label: "Último caminho", sort: true, render: (x) => x.path },
+    { key: "last", label: "Última vez", sort: true, render: (x) => new Date(x.last * 1000).toLocaleString("pt-BR") },
+  ];
+  return html`<div class="card">
+    <h3>Acesso web (firewall do console)</h3>
+    <div class="help">Seu IP, como o servidor enxerga: <b>${d.client_ip || "?"}</b> ${d.client_allowed ? html`<${Badge} kind="ok">liberado<//>` : html`<${Badge} kind="err">fora da lista<//>`}</div>
+    <${Field} label="">
+      <label><input type="checkbox" checked=${form.enabled} onChange=${(e) => setForm({ ...form, enabled: e.target.checked })} /> Restringir o acesso ao console às redes abaixo (quem estiver fora recebe 403)</label><//>
+    <${Field} label="Redes/IPs liberados (um por linha)" hint="IPv4 ou IPv6, IP solto (192.0.2.7) ou rede (10.0.0.0/8, 2804:4368::/32). Você não consegue salvar se o seu IP atual ficar de fora. O servidor (127.0.0.1) sempre entra.">
+      <textarea rows="6" value=${form.nets} onInput=${(e) => setForm({ ...form, nets: e.target.value })}></textarea><//>
+    <${Field} label="Proxies reversos confiáveis (um por linha)" hint="Quem fica na frente do console (ex.: Traefik 10.8.200.4). Só desses o servidor aceita o X-Forwarded-For como IP real do visitante; sem isso, todos pareceriam o IP do proxy.">
+      <textarea rows="2" value=${form.proxies} onInput=${(e) => setForm({ ...form, proxies: e.target.value })}></textarea><//>
+    <div class="row">
+      <button class="primary" onClick=${save}>Salvar acesso web</button>
+      <button onClick=${() => setForm({ ...form, nets: d.defaults.join("\n") })}>Restaurar padrão (10.0.0.0/8 + Topnet v4/v6)</button>
+    </div>
+    ${d.denied.length ? html`<h4>Bloqueios recentes (desde o último restart)</h4>
+      <${DataTable} tableId="web-access-denied" columns=${cols} rows=${d.denied.map((x) => ({ ...x, _key: x.ip }))} empty="Nenhum bloqueio." />` : null}
+  </div>`;
+}
+
 export function SettingsPage() {
   const res = useResource("/config");
   const [data, setData] = useState(null);
@@ -109,6 +151,7 @@ export function SettingsPage() {
         <input type="number" min="1" step="1" placeholder="5" value=${access.session_idle_minutes || ""} onInput=${(e) => upd("access", "session_idle_minutes", e.target.value)} /><//>
       <button class="primary" onClick=${save}>Salvar</button>
     </div>
+    <${WebAccessCard} rev=${rev} setRev=${setRev} />
     <div class="card">
       <h3>Atualizações</h3>
       <${UpdatesControl} />

@@ -54,6 +54,12 @@ def env(tmp_path, monkeypatch):
     shutil.copy(PROJECT / "network/topology.example.yaml", tmp_path / "network/topology.yaml")
     cp("core/schemas/inventory.schema.json")
     cp("core/config/project-config.yaml")
+    # TestClient chega como "testclient" (não é IP): o firewall de acesso web do projeto real não vale nos testes
+    import yaml
+    pc = tmp_path / "core" / "config" / "project-config.yaml"
+    cfg = yaml.safe_load(pc.read_text()) or {}
+    cfg.pop("web_access", None)
+    pc.write_text(yaml.safe_dump(cfg, allow_unicode=True))
     cp("memory/MEMORY.md")
 
     monkeypatch.setattr(deps, "NETOPS_ROOT", tmp_path)

@@ -32,6 +32,34 @@ class _SessionGate:
             deps.STATE.active_sessions -= 1
 
 
+class _WebAccessGate:
+    """Firewall de acesso web (allowlist de IP/redes). Camada mais externa: cobre HTTP, estáticos e WebSocket.
+
+    Também resolve o IP real atrás do proxy reverso (só de proxy confiável) — ver services/web_access_svc.py.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket"):
+            return await self.app(scope, receive, send)
+        from services import web_access_svc as wa
+        policy = wa.load_policy()
+        ip = wa.resolve_client(scope, policy)
+        if wa.is_allowed(ip, policy):
+            return await self.app(scope, receive, send)
+        wa.record_denied(ip, scope.get("path", ""))
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 4403})
+            return
+        body = f"Acesso negado: o IP {ip or 'desconhecido'} não está autorizado a acessar este console.\n".encode()
+        await send({"type": "http.response.start", "status": 403, "headers": [
+            (b"content-type", b"text/plain; charset=utf-8"), (b"cache-control", b"no-store"),
+            (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+
 class _NoCacheStatic(StaticFiles):
     """Estaticos com revalidacao obrigatoria: o browser sempre checa com o servidor
     (ETag/Last-Modified -> 304 quando nao mudou), entao nunca serve JS/CSS velho de cache."""
@@ -65,6 +93,7 @@ from routers import (
     terminal,
     topology,
     updates,
+    web_access,
 )
 
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
@@ -90,6 +119,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="NetOps Console", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
     app.add_middleware(_SessionGate)
+    app.add_middleware(_WebAccessGate)  # por último = mais externo: nada passa antes dele
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
@@ -149,7 +179,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (audio, auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, terminal, host_term, files, web_launch, claude, updates):
+    for mod in (audio, auth, meta, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, terminal, host_term, files, web_launch, claude, updates, web_access):
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("startup")

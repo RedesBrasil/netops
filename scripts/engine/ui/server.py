@@ -145,12 +145,12 @@ def main() -> int:
     if not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
 
-    # Atrás de proxy reverso: confia em X-Forwarded-Proto/For (esquema https correto em redirects e
-    # URLs absolutas). O app não usa o IP do cliente p/ autorização, então o default é "*";
-    # restrinja com NETOPS_UI_FORWARDED_ALLOW_IPS=<ip-do-proxy> se quiser.
+    # Atrás de proxy reverso: X-Forwarded-For/Proto são tratados pelo próprio app (app._WebAccessGate →
+    # services/web_access_svc.resolve_client), só de proxy confiável (web_access.trusted_proxies, loopback ou
+    # NETOPS_UI_FORWARDED_ALLOW_IPS). NÃO usar proxy_headers do uvicorn: com "*" ele aceitava o IP de qualquer
+    # origem (forjável) e apagava o IP real do socket, que a allowlist de acesso web precisa.
     uvicorn.run(application, host=args.host, port=port, log_level="info", access_log=False,
-                proxy_headers=True,
-                forwarded_allow_ips=os.environ.get("NETOPS_UI_FORWARDED_ALLOW_IPS", "*"))
+                proxy_headers=False)
     return 0
 
 
