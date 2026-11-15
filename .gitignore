@@ -26,6 +26,10 @@ scripts/analysis/
 reports/*
 !reports/README.md
 
+# Espelho completo da INSTÂNCIA para o repositório privado de backup (aponta p/ o repo da empresa).
+# Fica local; quem o salva é o próprio backup completo agendado, não o repositório do NetOps.
+scripts/tools/backup/full_mirror.sh
+
 # Saídas brutas de execução (podem conter dados sensíveis dos dispositivos)
 runs/
 
