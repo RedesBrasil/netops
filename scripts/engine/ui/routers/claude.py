@@ -227,6 +227,40 @@ def claude_session_fork(sid: str, body: dict):
     return {"id": new or None, "first": not new}
 
 
+@router.post("/claude/sessions/{sid}/rewind")
+async def claude_session_rewind(sid: str, body: dict):
+    """Edita um prompt: APAGA o prompt escolhido e tudo depois dele, na MESMA conversa.
+
+    body: {uuid?, text?, occurrence?, dry?} — mesma identificação do fork. `dry` só informa o
+    que seria apagado. Encerra o `claude` vivo da conversa (as abas conectadas reconectam),
+    guarda cópia em runs/copias-seguranca/claude-rewind/ e corta o transcript. O front então
+    retoma a conversa e envia o texto editado. {first:true} = era o 1º prompt: a conversa foi
+    apagada e o front abre uma nova.
+    """
+    if not deps.STATE.enable_claude:
+        return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    try:
+        occ = int(body.get("occurrence") or 0)
+    except (TypeError, ValueError):
+        occ = 0
+    try:
+        plan = claude_svc.rewind_plan(sid, uuid=(body.get("uuid") or None),
+                                      text=(body.get("text") or None), occurrence=occ)
+        if body.get("dry"):
+            return plan
+        live = claude_svc._LIVE.get(sid)
+        if live is not None and not live._closing_done:
+            await live.teardown()   # sem subprocesso vivo escrevendo no arquivo
+        res = claude_svc.rewind_apply(sid, plan["prompt_uuid"], first=plan["first"])
+    except FileNotFoundError:
+        return JSONResponse({"error": "session_not_found"}, status_code=404)
+    except ValueError as e:
+        return JSONResponse({"error": "rewind_failed", "detail": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": "rewind_failed", "detail": str(e)[:300]}, status_code=500)
+    return {"id": sid, "first": plan["first"], "removed_prompts": plan["removed_prompts"], **res}
+
+
 @router.put("/claude/sessions/{sid}/completed")
 def claude_session_completed(sid: str, body: dict):
     """Marca/desmarca a conversa como concluída por completo (checkbox manual do usuário)."""

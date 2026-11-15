@@ -714,6 +714,43 @@ function useClaudeSession() {
     } finally { forkingRef.current = false; }
   }
 
+  // Editar prompt: APAGA este prompt e tudo depois dele NESTA conversa; o texto editado é reenviado
+  // assim que a conversa (cortada) reconecta. Primeiro prompt = conversa nova com o texto editado.
+  const editingRef = useRef(false);
+  const autoSendRef = useRef(null);   // {sid, text}: enviado quando a conversa retomada fica "pronto"
+  async function editFrom(idx, newText) {
+    const sid = sessionIdRef.current;
+    const it = items[idx];
+    const text = String(newText || "").trim();
+    if (!sid || !it || it.type !== "user" || !text || editingRef.current) return false;
+    const norm = (t) => String(t || "").replace(/\s+/g, " ").trim();
+    const occurrence = items.slice(0, idx).filter((x) => x.type === "user" && norm(x.text) === norm(it.text)).length;
+    const ident = it.uuid ? { uuid: it.uuid } : { text: it.text, occurrence };
+    editingRef.current = true;
+    try {
+      const plan = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/rewind`, { ...ident, dry: true });
+      const n = Math.max(0, (plan.removed_prompts || 1) - 1);
+      const msg = "Salvar e reenviar APAGA este prompt e tudo que veio depois"
+        + (n ? ` (mais ${n} prompt${n > 1 ? "s" : ""} seguinte${n > 1 ? "s" : ""} e as respostas)` : " (a resposta dele)")
+        + ".\nUma cópia de segurança fica no servidor. Continuar?";
+      if (!window.confirm(msg)) return false;
+      const r = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/rewind`, ident);
+      if (r && r.first) { autoSendRef.current = { sid: "", text }; newSession(); }
+      else { autoSendRef.current = { sid, text }; activateSession(sid, true); }
+      toast.ok("Conversa cortada neste ponto — gerando nova resposta");
+      return true;
+    } catch (e) {
+      toast.err("Editar falhou: " + ((e && e.payload && (e.payload.detail || e.payload.error)) || (e && e.message) || "erro"));
+      return false;
+    } finally { editingRef.current = false; }
+  }
+  useEffect(() => {
+    const a = autoSendRef.current;
+    if (!a || status !== "pronto" || sessionIdRef.current !== a.sid) return;
+    autoSendRef.current = null;
+    dispatch(expandMentions(a.text, mentionCatalog), false);
+  }, [status, sessionId]);
+
   // Pós-login: o subprocesso `claude` vivo ainda carrega a credencial velha, então é preciso
   // relançar. RETOMA o mesmo sid — a conversa continua de onde parou (o histórico é relido do
   // transcript). Sem sid ainda, cai numa sessão nova.
@@ -805,7 +842,7 @@ function useClaudeSession() {
     status, items, working, mode, netperms, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
-    send, submit, stop, newSession, resumeSession, forkFrom, answerPermission, changeMode, changeModel, uploadFile,
+    send, submit, stop, newSession, resumeSession, forkFrom, editFrom, answerPermission, changeMode, changeModel, uploadFile,
     endSession,
     auth, showAuth, setShowAuth, refreshAuth, relaunch, refreshModels,
     showModelPick, setShowModelPick, modelErr, pickModelAndRelaunch,
@@ -817,7 +854,7 @@ function useClaudeSession() {
 // --------------------------------------------------------------------- visões
 // Transcrição rolável (compartilhada). Cada instância faz seu próprio auto-scroll ao fim.
 function Transcript() {
-  const { items, status, answerPermission, auth, setShowAuth, forkFrom, sessionId } = useClaude();
+  const { items, status, answerPermission, auth, setShowAuth, forkFrom, editFrom, sessionId } = useClaude();
   const scrollRef = useRef(null);
   // Só acompanha o fim se o usuário já estiver perto dele; se rolou para cima, não puxa de volta.
   const stickRef = useRef(true);
@@ -835,7 +872,8 @@ function Transcript() {
       Página Claude Code desabilitada no servidor. Suba com <code>--enable-claude</code> (e sem <code>--read-only</code>).
     </div>`}
     ${items.map((it, i) => html`<${Item} key=${i} it=${it} onPermission=${answerPermission}
-      onFork=${sessionId && !it.queued ? () => forkFrom(i) : null} />`)}
+      onFork=${sessionId && !it.queued ? () => forkFrom(i) : null}
+      onEdit=${sessionId && !it.queued && status === "pronto" ? (t) => editFrom(i, t) : null} />`)}
   </div>`;
 }
 
@@ -882,15 +920,44 @@ function MsgTime({ ts }) {
   const label = same ? hm : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hm}`;
   return html`<time class="cc-time" title=${d.toLocaleString("pt-BR")}>${label}</time>`;
 }
-function UserMsg({ text: fullText, tag, ts, onFork }) {
+function UserMsg({ text: fullText, tag, ts, onFork, onEdit }) {
   const text = stripMentionNote(fullText);   // bloco de IDs das menções "#" só vai ao agente
   const refs = [...text.matchAll(UPLOAD_REF_RE)].map((m) => m[1]);
   const rest = text.replace(UPLOAD_REF_RE, "").replace(/[ \t]{2,}/g, " ").trim();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const startEdit = () => { setDraft(refs.length ? rest : text); setEditing(true); };
+  async function save() {
+    const t = draft.trim();
+    if (!t || busy) return;
+    setBusy(true);
+    const full = [...refs.map((r) => "@" + r), t].join(" ");   // anexos originais seguem junto
+    const ok = await onEdit(full);
+    setBusy(false);
+    if (ok) setEditing(false);
+  }
+  const onKey = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
+    else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+  };
   return html`<div class="cc-msg user"><div class="cc-role">você${tag && html` · <em>${tag}</em>`}</div>
     ${refs.length > 0 && html`<div class="cc-attach-row user">${refs.map((r) => html`<${AttachThumb} key=${r} path=${r} />`)}</div>`}
-    ${(rest || !refs.length) && html`<div class="cc-usertext">${refs.length ? rest : text}</div>`}
+    ${editing
+      ? html`<div class="cc-edit">
+          <textarea class="cc-edit-box" rows=${Math.min(12, Math.max(3, draft.split("\n").length + 1))} value=${draft} autoFocus
+            onInput=${(e) => setDraft(e.target.value)} onKeyDown=${onKey} disabled=${busy}></textarea>
+          <div class="cc-edit-note">Salvar apaga tudo que veio depois deste prompt e gera uma nova resposta.</div>
+          <div class="cc-edit-actions">
+            <button class="sm" onClick=${() => setEditing(false)} disabled=${busy}>Cancelar</button>
+            <button class="sm primary" onClick=${save} disabled=${busy || !draft.trim()}>${busy ? "Salvando…" : "Salvar e reenviar"}</button>
+          </div>
+        </div>`
+      : (rest || !refs.length) && html`<div class="cc-usertext">${refs.length ? rest : text}</div>`}
     <div class="cc-user-foot">
-      ${onFork && html`<button class="cc-fork" title="Ramificar: abre uma NOVA conversa no ponto ANTES deste prompt, com o texto já no campo (a original continua intacta)"
+      ${onEdit && !editing && html`<button class="cc-fork" title="Editar: apaga este prompt e tudo depois dele nesta conversa e gera uma nova resposta com o texto editado"
+        onClick=${startEdit}>✎ Editar</button>`}
+      ${onFork && !editing && html`<button class="cc-fork" title="Ramificar: abre uma NOVA conversa no ponto ANTES deste prompt, com o texto já no campo (a original continua intacta)"
         onClick=${onFork}>⑂ Ramificar daqui</button>`}
       <${MsgTime} ts=${ts} /></div></div>`;
 }
@@ -1768,9 +1835,9 @@ function fmtTime(ms) {
   try { return new Date(ms).toLocaleString(); } catch (_) { return ""; }
 }
 
-function Item({ it, onPermission, onFork }) {
+function Item({ it, onPermission, onFork, onEdit }) {
   if (it.type === "user")
-    return html`<${UserMsg} text=${it.text} tag=${it.interjected ? "durante a execução" : it.queued ? "da fila" : ""} ts=${it.ts} onFork=${onFork} />`;
+    return html`<${UserMsg} text=${it.text} tag=${it.interjected ? "durante a execução" : it.queued ? "da fila" : ""} ts=${it.ts} onFork=${onFork} onEdit=${onEdit} />`;
 
   if (it.type === "assistant")
     return html`<div class="cc-msg assistant"><div class="cc-role">claude</div><${MarkdownView} text=${it.text} /><${MsgTime} ts=${it.ts} /></div>`;

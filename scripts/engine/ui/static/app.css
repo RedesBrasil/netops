@@ -950,3 +950,9 @@ td .legacy { font-style: italic; }
 .cc-np-cmd code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 2px 6px; border-radius: 4px; word-break: break-all; }
 .cc-np-badge { font-size: 11px; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); }
 .cc-np-badge.miss { border-color: var(--danger); color: var(--danger); background: var(--danger-weak); }
+
+/* Editar prompt (apaga dali para baixo e reenvia) */
+.cc-edit { display: flex; flex-direction: column; gap: 6px; min-width: min(560px, 100%); }
+.cc-edit-box { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--accent); background: var(--bg, #fff); color: inherit; }
+.cc-edit-note { font-size: 11px; color: var(--muted); text-align: right; }
+.cc-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }

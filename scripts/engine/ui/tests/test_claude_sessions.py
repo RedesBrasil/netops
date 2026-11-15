@@ -1,6 +1,8 @@
 """Links individuais de conversa: consultas e sockets fictícios, sem agente real."""
 from types import SimpleNamespace
 import asyncio
+import json
+from pathlib import Path
 import sys
 
 import pytest
@@ -317,3 +319,67 @@ def test_running_ids_inclui_claude_headless_externo(env):
         assert sid in claude_svc.running_session_ids()
     finally:
         p1.kill(); p2.kill()
+
+
+# ------------------------------------------------------------------ rewind (editar prompt)
+def _jl(**kw):
+    return json.dumps(kw, ensure_ascii=False) + "\n"
+
+
+def test_rewind_cuts_transcript_in_place_with_backup(client, env, monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    pdir = home / ".claude" / "projects" / "-x"
+    pdir.mkdir(parents=True)
+    f = pdir / f"{A}.jsonl"
+    f.write_text("".join([
+        _jl(type="session-owner", sessionId=A),
+        _jl(type="user", uuid="u1", message={"content": "primeiro"}),
+        _jl(type="assistant", uuid="a1", message={"content": [{"type": "text", "text": "r1"}]}),
+        _jl(type="queue-operation", operation="enqueue", content="segundo"),
+        _jl(type="queue-operation", operation="dequeue"),
+        _jl(type="user", uuid="u2", message={"content": "segundo"}),
+        _jl(type="assistant", uuid="a2", message={"content": [{"type": "text", "text": "r2"}]}),
+        _jl(type="custom-title", customTitle="Minha conversa", sessionId=A),
+    ]), encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(deps.STATE, "enable_claude", True)
+    monkeypatch.setattr(claude_svc, "_SDK_OK", True)
+    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid: sid == A)
+    msgs = [_m("user", "u1", "primeiro"), _m("assistant", "a1", [{"type": "text", "text": "r1"}]),
+            _m("user", "u2", "segundo"), _m("assistant", "a2", [{"type": "text", "text": "r2"}])]
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", SimpleNamespace(
+        get_session_messages=lambda sid, directory: msgs))
+
+    dry = client.post(f"/api/claude/sessions/{A}/rewind", json={"uuid": "u2", "dry": True})
+    assert dry.status_code == 200 and dry.json()["removed_prompts"] == 1 and not dry.json()["first"]
+    assert "u2" in f.read_text()                                   # dry não altera nada
+
+    r = client.post(f"/api/claude/sessions/{A}/rewind", json={"uuid": "u2"})
+    assert r.status_code == 200 and r.json()["first"] is False
+    out = f.read_text()
+    assert '"u1"' in out and '"a1"' in out                          # histórico anterior fica
+    assert '"u2"' not in out and '"a2"' not in out                  # prompt + resposta somem
+    assert "queue-operation" not in out                             # enfileiramento do prompt também
+    assert "Minha conversa" in out                                  # título preservado
+    assert out.endswith("\n")
+    bk = list((env / "runs" / "copias-seguranca" / "claude-rewind").glob(f"{A}-*.jsonl"))
+    assert len(bk) == 1 and '"u2"' in bk[0].read_text()             # cópia de segurança íntegra
+
+    assert client.post(f"/api/claude/sessions/{A}/rewind", json={"uuid": "nope"}).status_code == 400
+    assert client.post(f"/api/claude/sessions/{A}/rewind", json={"text": "x"}).status_code == 400
+    assert client.post("/api/claude/sessions/33333333-3333-4333-8333-333333333333/rewind",
+                       json={"uuid": "u2"}).status_code == 404
+
+
+def test_rewind_first_prompt_deletes_session(env, monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    pdir = home / ".claude" / "projects" / "-x"
+    pdir.mkdir(parents=True)
+    f = pdir / f"{A}.jsonl"
+    f.write_text(_jl(type="user", uuid="u1", message={"content": "primeiro"}), encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(claude_svc, "_SDK_OK", True)
+    deleted = []
+    monkeypatch.setattr(claude_svc, "delete_project_session", lambda sid: deleted.append(sid))
+    res = claude_svc.rewind_apply(A, "u1", first=True)
+    assert deleted == [A] and Path(res["backup"]).is_file()

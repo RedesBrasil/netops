@@ -1538,6 +1538,15 @@ def fork_cut_uuid(msgs, *, uuid: str | None = None, text: str | None = None,
     do stream não têm uuid), pela `occurrence`-ésima ocorrência do texto — com fallback para
     prompts que CONTÊM o texto (a fila pode juntar mensagens num envio só).
     """
+    start = _find_prompt_index(msgs, uuid=uuid, text=text, occurrence=occurrence)
+    if start is None:
+        return None
+    return msgs[start - 1].uuid if start > 0 else ""
+
+
+def _find_prompt_index(msgs, *, uuid: str | None = None, text: str | None = None,
+                       occurrence: int = 0) -> int | None:
+    """Índice (em `msgs`) do prompt humano escolhido, ou None. Mesma regra do fork."""
     prompts = [(i, _prompt_text(m)) for i, m in enumerate(msgs)]
     prompts = [(i, t) for i, t in prompts if t is not None]
     start = None
@@ -1550,9 +1559,7 @@ def fork_cut_uuid(msgs, *, uuid: str | None = None, text: str | None = None,
             if hits:
                 start = hits[min(max(occurrence, 0), len(hits) - 1)]
                 break
-    if start is None:
-        return None
-    return msgs[start - 1].uuid if start > 0 else ""
+    return start
 
 
 def fork_project_session(sid: str, *, uuid: str | None = None, text: str | None = None,
@@ -1575,3 +1582,80 @@ def fork_project_session(sid: str, *, uuid: str | None = None, text: str | None 
     if src:
         claude_prefs.set_session(res.session_id, model=src.get("model"), mode=src.get("mode"))
     return res.session_id
+
+
+# --------------------------------------------------------------------------- #
+# Rewind (editar prompt) — apaga o prompt escolhido e TUDO depois dele, na MESMA conversa.
+# --------------------------------------------------------------------------- #
+_KEEP_TAIL_TYPES = {"custom-title", "ai-title"}   # título não pode se perder com o corte
+
+
+def _transcript_file(sid: str) -> Path | None:
+    base = Path(os.path.expanduser("~")) / ".claude" / "projects"
+    try:
+        return next((d / (sid + ".jsonl") for d in base.iterdir()
+                     if d.is_dir() and (d / (sid + ".jsonl")).is_file()), None)
+    except OSError:
+        return None
+
+
+def rewind_plan(sid: str, *, uuid: str | None = None, text: str | None = None,
+                occurrence: int = 0) -> dict:
+    """Valida o pedido SEM alterar nada. {prompt_uuid, first, removed}; ValueError/FileNotFoundError se inválido."""
+    if not _SDK_OK:
+        raise RuntimeError("SDK do Claude indisponível")
+    if not project_session_exists(sid):
+        raise FileNotFoundError(sid)
+    from claude_agent_sdk import get_session_messages  # noqa: PLC0415
+    msgs = get_session_messages(sid, directory=str(deps.NETOPS_ROOT))
+    idx = _find_prompt_index(msgs, uuid=uuid, text=text, occurrence=occurrence)
+    if idx is None:
+        raise ValueError("prompt não encontrado no histórico gravado")
+    removed = sum(1 for m in msgs[idx:] if _prompt_text(m) is not None)   # prompts descartados (inclui o editado)
+    return {"prompt_uuid": msgs[idx].uuid, "first": all(_prompt_text(m) is None for m in msgs[:idx]), "removed_prompts": removed,
+            "removed_messages": len(msgs) - idx}
+
+
+def rewind_apply(sid: str, prompt_uuid: str, *, first: bool = False) -> dict:
+    """Corta o transcript ANTES do prompt (a conversa NÃO pode ter `claude` vivo). Faz cópia de segurança antes.
+
+    first=True (era o 1º prompt): não sobra histórico — a conversa é apagada (o front abre outra nova).
+    Devolve {backup}.
+    """
+    src = _transcript_file(sid)
+    if src is None:
+        raise FileNotFoundError(sid)
+    lines = src.read_text(encoding="utf-8", errors="surrogateescape").splitlines(keepends=True)
+    cut = None
+    for i, ln in enumerate(lines):
+        if prompt_uuid in ln:
+            try:
+                if json.loads(ln).get("uuid") == prompt_uuid:
+                    cut = i
+                    break
+            except Exception:
+                continue
+    if cut is None:
+        raise ValueError("prompt não encontrado no transcript")
+    while cut > 0 and '"type":"queue-operation"' in lines[cut - 1].replace(" ", ""):
+        cut -= 1   # o enfileiramento do próprio prompt vem logo antes da linha dele
+    bdir = Path(deps.NETOPS_ROOT) / "runs" / "copias-seguranca" / "claude-rewind"
+    bdir.mkdir(parents=True, exist_ok=True)
+    backup = bdir / f"{sid}-{datetime.datetime.now():%Y%m%d-%H%M%S}.jsonl"
+    shutil.copy2(src, backup)
+    if first:
+        delete_project_session(sid)
+        return {"backup": str(backup)}
+    kept = lines[:cut]
+    tail_titles: dict[str, str] = {}
+    for ln in lines[cut:]:
+        for t in _KEEP_TAIL_TYPES:
+            if f'"type":"{t}"' in ln.replace(" ", ""):
+                tail_titles[t] = ln if ln.endswith("\n") else ln + "\n"
+    if kept and not kept[-1].endswith("\n"):
+        kept[-1] += "\n"
+    kept.extend(tail_titles.values())
+    tmp = src.with_suffix(".jsonl.rewind")
+    tmp.write_text("".join(kept), encoding="utf-8", errors="surrogateescape")
+    os.replace(tmp, src)
+    return {"backup": str(backup)}
