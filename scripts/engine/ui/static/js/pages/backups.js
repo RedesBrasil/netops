@@ -276,10 +276,10 @@ function DiffModal({ data, onClose }) {
       <span class="bk-d-chg" style="padding:1px 8px; border-radius:4px">${c.changed} alterada(s)</span>
     </div>
     <div class="bk-diff bk-side">
-      <div class="bk-side-head">A</div><div class="bk-side-head">B</div>
+      <div class="bk-side-head bk-col-a">A: ${data.a}</div><div class="bk-side-head bk-col-b">B: ${data.b}</div>
       ${rows.flatMap((r, i) => [
-        html`<div key=${"l" + i} class=${"bk-d-line " + r.lc}>${r.l == null ? " " : (r.l || " ")}</div>`,
-        html`<div key=${"r" + i} class=${"bk-d-line " + r.rc}>${r.r == null ? " " : (r.r || " ")}</div>`])}
+        html`<div key=${"l" + i} class=${"bk-d-line bk-col-a " + r.lc + (i === rows.length - 1 ? " bk-last" : "")}>${r.l == null ? " " : (r.l || " ")}</div>`,
+        html`<div key=${"r" + i} class=${"bk-d-line bk-col-b " + r.rc + (i === rows.length - 1 ? " bk-last" : "")}>${r.r == null ? " " : (r.r || " ")}</div>`])}
     </div>
     <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>Fechar</button></div>
   <//>`;
