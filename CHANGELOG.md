@@ -2,6 +2,19 @@
 
 ## [Não lançado]
 
+### Novidades
+
+- **Multiusuário com grupos de acesso.** Cada pessoa entra com **usuário e senha**. Os grupos definem o que cada um vê e faz no console.
+  - **Telas novas:** Usuários, Grupos de acesso, Auditoria e Minha conta.
+  - **Permissões:** são por rota, com default-deny. O menu e os botões somem para quem não tem a permissão.
+  - **Admin:** só ele usa terminal e arquivos do servidor, configuração, atualização, usuários e auditoria. Também é o único que edita scripts e tarefas agendadas, porque eles rodam como root.
+  - **Aba Claude:** liberável por grupo, com dono por conversa e teto de permissões de rede.
+  - **Cofre:** o login de cada usuário destranca o cofre pelo keyslot dele, sem ninguém conhecer a senha-mestra.
+  - **Segurança:** throttle de login, senha provisória obrigatória e auditoria, que registra inclusive as tentativas negadas.
+  - **Banco:** usuários, sessões e auditoria ficam em SQLite (`runs/netops.db`). O que a IA lê continua em arquivo.
+  - **Recuperação:** `scripts/engine/users/cli.py` (inclui `reset-admin`).
+  - **Migração automática:** sem usuários, vale a senha-mestra, e o 1º login cria o `admin`. Quem estava logado continua logado.
+
 ## [2.4.0] - 2026-11-16
 
 ### Novidades

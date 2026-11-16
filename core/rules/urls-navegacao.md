@@ -29,7 +29,7 @@ outra aba (ou após F5) deve reproduzir exatamente a mesma tela.
 7. **Links reais**: listas usam `<a href="#...">`, não `onClick` que só muda estado — permite abrir em
    nova aba e copiar o link.
 8. **Sem segredos na URL**: nunca coloque senha, token, secret ou conteúdo sensível (constituição §V).
-   Nada de token de acesso na URL — o login é por senha-mestra.
+   Nada de token de acesso na URL — o login é por usuário e senha (sid no header, nunca na URL).
 9. **Compatibilidade**: ao renomear uma rota, redirecione a antiga (ver `topology` → `maps` em `main.js`).
 10. **Helper único**: implemente/reuse um helper central (ex.: `useRoute()` em `js/ui.js`) que faz
     parse/serialize de `#menu/id?filtros`. Não espalhe `location.hash` manual pelas páginas.
@@ -55,6 +55,10 @@ Todos os menus do console seguem a regra. Helpers: `static/js/route.js` (`useMen
 | Painel | `#dashboard` (página única) | `range start end model metric` + ordenação da tabela de tarefas |
 | Configuração | `#settings/updates` (painel de atualizações) | — |
 | Claude Code | `#claude/<id>`, `#claude/new` | — |
+| Usuários | `#users/<login>`, `#users/new`, `#users/<login>/password` | `q group status sort dir` |
+| Grupos de acesso | `#access-groups/<nome>`, `#access-groups/new` | `q sort dir` |
+| Auditoria | página única (lista paginada) | `user action q page sort dir` |
+| Minha conta | `#account` (fora do menu; botão com o nome no topo) | — |
 | Memória | `#memory` (=MEMORY.md), `#memory/AGENTS.md`, `#memory/notas`, `#memory/<nota>.md` | `q` (lista de notas) |
 | Terminal | página única (sem item aberto) | — |
 | Arquivos | `#files?path=<pasta>` (cada pasta = uma entrada no histórico; Voltar = pasta anterior) | `path q sort hidden open` (`open=<arquivo>` = editor aberto) |

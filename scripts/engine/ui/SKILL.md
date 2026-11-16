@@ -38,8 +38,9 @@ NETOPS_UI_CLAUDE=0       scripts/engine/ui/start.sh # sobe SEM a página Claude 
 scripts/engine/ui/start.sh --read-only --no-vault-unlock   # flags extras viram passthrough
 ```
 
-O script imprime a URL (`http://<ip>:<porta>/`). O acesso é protegido pelo **login com a senha-mestra
-do cofre** (ver "Segurança"); não há token de transporte na URL.
+O script imprime a URL (`http://<ip>:<porta>/`). O acesso é protegido pelo **login por usuário e senha**
+(multiusuário com grupos de acesso; sem usuários cadastrados, a senha-mestra do cofre; ver "Segurança"
+e `scripts/engine/users/SKILL.md`); não há token de transporte na URL.
 
 > Por baixo o script chama `scripts/engine/ui/server.py` (flags: `--host/--port/--read-only/`
 > `--no-vault-unlock/--enable-terminal/--enable-claude/--no-browser`). A entrada operacional,
@@ -97,7 +98,20 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   Host/Origin, pois o gate é a sessão (token em header/query, nunca cookie). Sem login o console está aberto e Host/Origin
   seguem estritos (loopback, IP de bind ou `NETOPS_UI_ALLOWED_HOSTS=dom.com,.outro.com,*`). O uvicorn confia em
   `X-Forwarded-*` (`NETOPS_UI_FORWARDED_ALLOW_IPS`, default `*`). O proxy precisa repassar WebSocket (`Upgrade`/`Connection`).
-- **Login com a senha-mestra é o gate de acesso:** quando o cofre está **inicializado**, o console inteiro fica atrás de
+- **Multiusuário (usuário + senha, grupos de acesso) — ver `scripts/engine/users/SKILL.md`.**
+  - **Banco:** usuários, grupos, sessões e auditoria ficam no SQLite `runs/netops.db` (`lib/accessdb.py`).
+  - **Permissão por rota:** fica em `services/authz.py`, com default-deny. O teste reprova rota nova sem regra.
+    - Rota nova: inclua a regra em `authz.RULES`.
+    - Botão de ação: marque com a classe `needs-<perm>`.
+  - **Login:** o login de cada usuário destranca o cofre pelo keyslot dele.
+  - **Sem usuários:** vale o modo antigo (senha-mestra), descrito abaixo. O 1º login cria o `admin`.
+  - **Exclusivo do admin** (rodam como root no servidor):
+    - terminal e arquivos do servidor, configuração, atualização, usuários, auditoria;
+    - editar scripts e tarefas agendadas.
+  - **Aba Claude:** liberável por grupo, com dono por conversa e teto de `net_perms`.
+    - É proteção contra erro, não fronteira de segurança: o agente tem shell no servidor.
+  - **Endpoints:** `GET /api/auth/me`, `POST /api/auth/password`, `/api/users*`, `/api/access-groups*`, `/api/access-catalog`, `/api/audit`.
+- **Login com a senha-mestra (modo legado, sem usuários) é o gate de acesso:** quando o cofre está **inicializado**, o console inteiro fica atrás de
   uma tela de login. A senha-mestra (mesmo `derive_key`+`verify_key` do cofre) emite uma **sessão de
   login** própria (sid em memória do processo, header `X-Netops-Session`, TTL deslizante); todo `/api`
   passa a exigi-la, exceto a allow-list de bootstrap (`/api/auth/{login,status,logout}`,

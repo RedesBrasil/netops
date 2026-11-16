@@ -213,3 +213,18 @@ def test_non_root_falls_back_to_user_crontab(tmp_path, monkeypatch):
     assert text.count(store.USER_BEGIN) == 1 and "outra-coisa" in text      # preserva o resto
     assert " root " not in text.split(store.USER_BEGIN)[1]                 # crontab de usuário: sem campo usuário
     assert store.cron_status(tmp_path, check_daemon=False)["installed"] is True
+
+
+def test_never_overwrites_cron_owned_by_another_install(tmp_path, monkeypatch):
+    """Duas instalações na mesma máquina (ex.: cópia de validação): a 2ª nunca sobrescreve o
+    /etc/cron.d/netops-scheduler da 1ª (desligaria o agendador dela)."""
+    cf = tmp_path / "cron.d-netops-scheduler"
+    monkeypatch.setenv("NETOPS_SCHEDULER_CRON_FILE", str(cf))
+    other = "* * * * * root /opt/outra/.venv/bin/python3 /opt/outra/scripts/engine/scheduler/cli.py --data-root /opt/outra tick\n"
+    cf.write_text(other)
+    r = store.install_cron(tmp_path)
+    assert r["installed"] is False and "outra instalação" in r["error"]
+    assert cf.read_text() == other
+    cf.write_text(f"* * * * * root x --data-root {tmp_path.resolve()} tick\n")   # dona = esta: atualiza
+    assert store.install_cron(tmp_path)["installed"] is True
+    assert "--data-root " + str(tmp_path.resolve()) in cf.read_text()

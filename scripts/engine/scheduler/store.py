@@ -489,6 +489,15 @@ def _strip_block(text: str) -> str:
     return re.sub(re.escape(USER_BEGIN) + r".*?" + re.escape(USER_END) + r"\n?", "", text, flags=re.S)
 
 
+def _cron_owner(p: Path) -> str | None:
+    """`--data-root` gravado num arquivo de cron do despachante (None = ausente/ilegível)."""
+    try:
+        m = re.search(r"--data-root\s+(\S+)", p.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    return m.group(1) if m else None
+
+
 def install_cron(root=None) -> dict:
     """Garante a linha do despachante (idempotente). Falha não derruba o cadastro: a tela avisa."""
     try:
@@ -497,6 +506,13 @@ def install_cron(root=None) -> dict:
         if _cron_mode(root) == "file":
             p = cron_file(root)
             want = cron_text(root)
+            owner = _cron_owner(p)
+            if owner and owner != str(data_root(root)):
+                # Outra instalação do NetOps nesta máquina (cópia de validação, /opt/NetOps-X) é dona do
+                # /etc/cron.d/netops-scheduler: NUNCA sobrescrever — desligaria o agendador dela.
+                return {"installed": False, "mode": "file", "file": str(p),
+                        "error": f"o cron do agendador pertence a outra instalação do NetOps ({owner}); "
+                                 "esta não o sobrescreve — as tarefas daqui não disparam sozinhas"}
             if not p.exists() or p.read_text(encoding="utf-8") != want:
                 _atomic_write(p, want, 0o644)
             return {"installed": True, "mode": "file", "file": str(p)}
