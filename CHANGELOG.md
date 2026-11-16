@@ -6,6 +6,7 @@
 
 ### Novidades
 
+- **Instalação com repositório privado por chave SSH.** O `install.sh` aceita `NETOPS_SSH_KEY` (deploy key somente leitura): clona a tag da última release por git+SSH, com as chaves de host do GitHub obtidas por HTTPS, e monta o pacote com o motor de release do próprio código. O README traz o passo de preparo e a linha de instalação.
 - **Tarefa agendada com acesso a equipamento por chave dedicada.** `task_key.py provision/revoke-pending` cria um par ed25519 por tarefa (git-ignorado) e autoriza só nos hosts escolhidos, com backup pré/pós. O modo `ro` (padrão) restringe o equipamento a comandos de leitura pela guarda `netops-ro-shell` (`ro_shell.py`, lista de permissão). A tarefa e o agente acessam com `task_exec.py`, mesmo com o cofre trancado. A chave morre com a tarefa.
 - **Monitor de lentidão do atendimento** (`scripts/tools/diagnostics/atendimento/`): medição periódica, aviso no Telegram e agente investigador. Os arquivos de configuração e credenciais ficam git-ignorados.
 - **Aba Claude Code:** comandos de barra na conexão, prompts sintéticos (`/compact`) legíveis no histórico e melhorias de menções.

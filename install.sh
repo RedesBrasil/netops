@@ -22,6 +22,8 @@
 #   NETOPS_PORT=8765              porta do console
 #   NETOPS_HOST=10.0.0.5          IP de bind (padrão: o 1º IP da máquina)
 #   GITHUB_TOKEN=ghp_...          token, se o repositório for privado
+#   NETOPS_SSH_KEY=/root/.ssh/netops_deploy   repositório privado por chave SSH (deploy key somente leitura):
+#                                 clona a tag da release via git+SSH e monta o pacote localmente
 #   NETOPS_PACKAGE=/tmp/x.tar.gz  instala de um pacote local (offline/teste), sem baixar
 #   NETOPS_SKIP_CLAUDE=1          não instala o agente `claude`
 #   NETOPS_NO_SERVICE=1           não registra o serviço de boot (systemd)
@@ -216,6 +218,45 @@ pick_python() {
 }
 
 # ----------------------------------------------------------------------------- 4. download
+# Repositório privado por chave SSH: a API de releases não aceita chave, então clona a tag da release
+# (git+SSH, deploy key somente leitura) e monta o pacote com o próprio motor de release do código clonado.
+resolve_release_ssh() {
+  local key="$NETOPS_SSH_KEY" url="git@github.com:$REPO.git"
+  [ -r "$key" ] || die "NETOPS_SSH_KEY não encontrada ou sem leitura: $key"
+  have git && have ssh || die "git e ssh são necessários para o modo SSH."
+  # known_hosts com as chaves oficiais do GitHub, obtidas por HTTPS (TLS) em api.github.com/meta
+  local kh="$WORK/known_hosts"
+  curl -fsSL --retry 3 https://api.github.com/meta -o "$WORK/meta.json" 2>>"$LOG" \
+    && "$PY" -I - "$WORK/meta.json" >"$kh" <<'PYEOF' || die "não consegui obter as chaves de host do GitHub (api.github.com/meta)."
+import json, sys
+for k in json.load(open(sys.argv[1]))["ssh_keys"]:
+    print("github.com", k)
+PYEOF
+  export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=$kh -o StrictHostKeyChecking=yes"
+  local tag="${NETOPS_VERSION:+v${NETOPS_VERSION#v}}"
+  if [ -z "$tag" ]; then
+    tag=$(git ls-remote --tags --refs "$url" 'v*' 2>>"$LOG" | sed -E 's|.*refs/tags/||' \
+          | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || true
+    [ -n "$tag" ] || die "não consegui listar as versões em $url por SSH. Confira se a chave está cadastrada como Deploy key do repositório:
+    $(cat "$key.pub" 2>/dev/null || echo "(sem $key.pub)")"
+  fi
+  info "versão: $tag (via git+SSH)"
+  run git clone -q --depth 1 --branch "$tag" "$url" "$WORK/src" || die "git clone de $tag falhou (tag inexistente ou chave sem acesso). Veja $LOG."
+  PKG_VERSION="${tag#v}"; PKG_FILE="$WORK/netops-$PKG_VERSION.tar.gz"
+  "$PY" -I - "$WORK/src" "$PKG_FILE" "$PKG_VERSION" >>"$LOG" 2>&1 <<'PYEOF' || die "não consegui montar o pacote a partir do clone (veja o log)."
+import sys
+from pathlib import Path
+src, out, version = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+sys.path.insert(0, str(src / "scripts" / "engine"))
+from update.engine import git_files
+from update.release import build_package
+from update.common import read_version
+assert read_version(src) == version, "versão do código difere da tag"
+build_package(git_files(src), version, out)
+PYEOF
+  ok "pacote v$PKG_VERSION montado do clone SSH"
+}
+
 resolve_release() {
   if [ -n "${NETOPS_PACKAGE:-}" ]; then
     [ -f "$NETOPS_PACKAGE" ] || die "NETOPS_PACKAGE não existe: $NETOPS_PACKAGE"
@@ -227,6 +268,7 @@ resolve_release() {
     ok "pacote local: $PKG_FILE (v$PKG_VERSION)"
     return
   fi
+  if [ -n "${NETOPS_SSH_KEY:-}" ]; then resolve_release_ssh; return; fi
   local endpoint="releases/latest"
   [ -n "${NETOPS_VERSION:-}" ] && endpoint="releases/tags/v${NETOPS_VERSION#v}"
   local meta="$WORK/release.json"

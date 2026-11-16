@@ -20,11 +20,38 @@ Rodar de novo é seguro: numa instalação existente ele só confere e repara, s
 em dados.
 
 Opções (`sudo VAR=valor bash` no fim do pipe): `NETOPS_DIR`, `NETOPS_PORT`, `NETOPS_HOST`,
-`NETOPS_VERSION`. Com o repositório privado, passe um token com acesso de leitura:
+`NETOPS_VERSION`.
+
+### Repositório privado: instalação por chave SSH (deploy key)
+
+A linha acima só funciona com o repositório público. Com ele privado, use uma **deploy key**: chave SSH
+somente leitura, cadastrada só neste repositório. Quem a tem consegue clonar, mas não escrever nem ver outros repositórios.
+
+**1. Uma vez por servidor**: prepara o servidor, gera a chave e mostra a parte pública:
 
 ```bash
-curl -fsSL -H "Authorization: Bearer SEU_TOKEN" https://raw.githubusercontent.com/RedesBrasil/netops/main/install.sh | sudo GITHUB_TOKEN=SEU_TOKEN bash
+sudo bash <<'EOF'
+command -v git >/dev/null && command -v ssh-keygen >/dev/null && command -v curl >/dev/null && command -v python3 >/dev/null || {
+  apt-get update -q && apt-get install -y -q git openssh-client curl python3 ca-certificates \
+  || dnf install -y git openssh-clients curl python3 ca-certificates \
+  || zypper -n install git openssh-clients curl python3 \
+  || pacman -Sy --noconfirm git openssh curl python; }
+install -d -m 700 /root/.ssh
+[ -f /root/.ssh/netops_deploy ] || ssh-keygen -q -t ed25519 -N "" -C "netops-deploy-$(hostname)" -f /root/.ssh/netops_deploy
+curl -fsSL https://api.github.com/meta | python3 -c 'import json,sys; [print("github.com", k) for k in json.load(sys.stdin)["ssh_keys"]]' > /root/.ssh/netops_known_hosts
+printf '\nCopie a linha abaixo e cadastre em GitHub > RedesBrasil/netops > Settings > Deploy keys > Add deploy key (deixe "Allow write access" DESMARCADO):\n\n'
+cat /root/.ssh/netops_deploy.pub
+EOF
 ```
+
+**2. A linha de instalação** (depois de cadastrar a chave; vale também para o próximo servidor com a mesma chave):
+
+```bash
+sudo bash -c 'D=$(mktemp -d) && GIT_SSH_COMMAND="ssh -i /root/.ssh/netops_deploy -o IdentitiesOnly=yes -o UserKnownHostsFile=/root/.ssh/netops_known_hosts -o StrictHostKeyChecking=yes" git clone -q --depth 1 git@github.com:RedesBrasil/netops.git $D/n && NETOPS_SSH_KEY=/root/.ssh/netops_deploy bash $D/n/install.sh; rm -rf $D'
+```
+
+O instalador clona a tag da última release pela chave e monta o mesmo pacote verificado da release (use `NETOPS_VERSION=X.Y.Z`
+para outra versão). O botão de atualizar do console usa o `gh`: autentique-o no servidor com `gh auth login`.
 
 Abra esta pasta no Claude Code, Codex, Cursor ou Antigravity e peça, em português, tarefas
 de rede — agentes de IA executam de ponta a ponta: leem o inventário, conectam nos
