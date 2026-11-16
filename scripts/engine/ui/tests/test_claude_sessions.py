@@ -297,7 +297,7 @@ def test_history_user_items_carry_uuid_for_fork(env, monkeypatch):
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", SimpleNamespace(
         get_session_messages=lambda sid, directory: _FORK_MSGS))
     users = [i for i in claude_svc.session_items(A) if i["type"] == "user"]
-    assert [u["uuid"] for u in users] == ["u1", "n1", "u2", "u3"]
+    assert [u["uuid"] for u in users] == ["u1", "u2", "u3"]   # task-notification é ruído (omitida)
 
 
 def test_running_ids_inclui_claude_headless_externo(env):

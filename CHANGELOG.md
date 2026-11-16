@@ -10,9 +10,8 @@
 - **Monitor de lentidão do atendimento** (`scripts/tools/diagnostics/atendimento/`): medição periódica, aviso no Telegram e agente investigador. Os arquivos de configuração e credenciais ficam git-ignorados.
 - **Aba Claude Code:** comandos de barra na conexão, prompts sintéticos (`/compact`) legíveis no histórico e melhorias de menções.
 - **Backup de mudança:** `change.py` reusa a sessão persistente do host, com fallback para login avulso.
+- **Atualizador aceita `AGENTS.md`** (substitui `CLAUDE.md` na lista de arquivos distribuídos). Para que instalações 2.3.1 ou anteriores consigam atualizar, o pacote da 2.4.0 **não inclui** `AGENTS.md` (o atualizador antigo recusaria o pacote inteiro); ele passa a ser distribuído na release seguinte.
 - Diff de backups com A e B lado a lado; checkboxes de permissões de rede alinhados no modal Padrões.
-
-### Novidades
 
 - **Console como PWA (instalável).** `manifest.webmanifest`, ícones (192/512, maskable, iOS), `sw.js` e `offline.html` em `scripts/engine/ui/static/`; a cor da barra acompanha o tema. O service worker só intercepta navegação (página "sem conexão" quando o servidor cai) e nunca toca em `/api`, WebSockets nem guarda o front em cache. Instalar exige HTTPS (ou localhost). Teste: `tests/test_pwa.py`.
 - **Hooks de segurança do Claude Code em toda instalação.** A guarda (backup antes de alterar equipamento) passou para `scripts/engine/hooks/guard-netops.sh` e agora vai no pacote de release. O `install.sh` mescla o hook no `.claude/settings.json` com `scripts/engine/hooks/install_claude_hooks.py`, que é idempotente e preserva tema, permissões e outros hooks. `.claude/hooks/guard-netops.sh` fica como atalho de compatibilidade. O caminho foi escolhido porque o atualizador até a 2.3.1 recusa pacotes com arquivos em `.claude/hooks/` (`protected_path`).

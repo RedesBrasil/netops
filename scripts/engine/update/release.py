@@ -26,7 +26,14 @@ def release_notes(text: str, version: str) -> str:
     return match[1].strip() + "\n"
 
 
+# Atualizadores já instalados (até 2.3.1) só aceitam CLAUDE.md na lista de arquivos distribuídos e
+# recusam o pacote inteiro (protected_path) se ele trouxer AGENTS.md. Não entra no pacote até que
+# a base instalada seja >= 2.4.0 (que aceita AGENTS.md); remover esta entrada na release seguinte.
+LEGACY_HOLDBACK = {"AGENTS.md"}
+
+
 def build_package(files: dict, version: str, destination: Path) -> dict:
+    files = {p: i for p, i in files.items() if p not in LEGACY_HOLDBACK}
     manifest = {"protocol": PROTOCOL, "repository": REPOSITORY, "version": version,
                 "migrations": [], "files": {p: {k: v for k, v in info.items() if k != "raw"}
                                              for p, info in files.items()}}

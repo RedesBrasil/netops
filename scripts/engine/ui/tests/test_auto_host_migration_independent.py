@@ -25,7 +25,7 @@ import yaml
 import deps
 from update import engine
 from update.common import REPOSITORY, STATE_DIR, distributed, private_dir, write_json
-from update.release import build_package
+from update.release import LEGACY_HOLDBACK, build_package
 
 PROJECT = Path(__file__).resolve().parents[4]
 VERSION = '2.0.0'
@@ -91,7 +91,8 @@ class LegacyConsole:
         self.version = tag.removeprefix('v')
         self.phase_history = []
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        files = engine.git_files(PROJECT, tag)
+        # Instalações reais antigas nunca receberam AGENTS.md (o pacote não o levava).
+        files = {r: i for r, i in engine.git_files(PROJECT, tag).items() if r not in LEGACY_HOLDBACK}
         for rel, info in files.items():
             dest = self.root / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
