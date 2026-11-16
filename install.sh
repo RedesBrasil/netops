@@ -499,6 +499,21 @@ setup_service() {
   fi
   BIND_HOST="${BIND_HOST:-127.0.0.1}"
 
+  # Porta: se outro programa (ex.: um NetOps antigo em outra pasta) já usa a porta e o console DESTA
+  # pasta não é quem a segura, escolhe a próxima livre. Sem isso o start.sh recusa subir ("porta ocupada")
+  # e o teste de HTTP responderia com o console alheio, declarando sucesso falso.
+  if ! pgrep -f "update/supervisor.py --root $NETOPS_DIR --" >/dev/null; then
+    port_busy() { ss -ltn "sport = :$1" 2>/dev/null | grep -q LISTEN; }
+    if port_busy "$PORT"; then
+      local orig="$PORT" p
+      [ -z "${NETOPS_PORT:-}" ] || die "a porta $PORT (NETOPS_PORT) já está em uso por outro programa. Escolha outra: NETOPS_PORT=<porta>."
+      for p in $(seq $((PORT + 1)) $((PORT + 50))); do port_busy "$p" || { PORT="$p"; break; }; done
+      [ "$PORT" != "$orig" ] || die "nenhuma porta livre entre $orig e $((orig + 50))."
+      local who; who=$(ss -ltnp "sport = :$orig" 2>/dev/null | grep -oE 'users:\(\("[^"]+"' | head -1 | sed 's/users:(("//; s/"//') || true
+      warn "a porta $orig já está em uso (${who:-outro programa}; talvez outro NetOps). Este console usará a porta $PORT."
+    fi
+  fi
+
   # start.sh novo (>= 2.4) sobe desacoplado com --yes; o antigo (<= 2.3.1) roda em primeiro plano.
   local start="$NETOPS_DIR/scripts/engine/ui/start.sh"
   START_MANAGED=0; grep -q -- '--yes' "$start" && START_MANAGED=1
@@ -584,7 +599,12 @@ EOF
     sleep 1
   done
   case "$code" in
-    200|301|302|303|401|403) ok "console respondendo em $URL" ;;
+    200|301|302|303|401|403)
+      # Quem responde precisa ser o console DESTA instalação (e não outro NetOps na mesma porta).
+      pgrep -f "update/supervisor.py --root $NETOPS_DIR --" >/dev/null \
+        || die "algo responde em $URL, mas não é o console de $NETOPS_DIR (ele não subiu). Veja /tmp/netops-restart.log e $LOG.
+$(tail -15 /tmp/netops-restart.log 2>/dev/null || true)"
+      ok "console respondendo em $URL" ;;
     *) die "o console não respondeu em $URL. Veja /tmp/netops-restart.log e $LOG.
 $(tail -15 /tmp/netops-restart.log 2>/dev/null || true)" ;;
   esac
