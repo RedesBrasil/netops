@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, WebSocket
 
-from routers.terminal import _ws_authorized
+from routers.terminal import _audit_ws, _ws_authorized
 from services import host_term_svc
 
 router = APIRouter()
@@ -26,11 +26,12 @@ def _int(value, default=None):
 
 @router.websocket("/term/host/{host_id}")
 async def host_term(ws: WebSocket, host_id: str):
-    if not _ws_authorized(ws):
+    if not _ws_authorized(ws, "host.terminal"):
         await ws.close(code=4403)
         return
     await ws.accept()
     q = ws.query_params
+    _audit_ws(ws, "host_terminal_open", target=host_id)
     await host_term_svc.serve(
         ws, host_id, q.get("method"), _int(q.get("port")),
         cols=max(1, min(host_term_svc.MAX_DIM, _int(q.get("cols"), 120))),

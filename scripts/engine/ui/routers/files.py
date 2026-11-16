@@ -16,14 +16,32 @@ from __future__ import annotations
 import posixpath
 from urllib.parse import quote
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 import deps
+from services import authz
 from services import files_svc as fsvc
 
-router = APIRouter(tags=["files"])
+
+async def _files_perm(request: Request) -> None:
+    """Permissão por FONTE: `local` (este servidor) = `server.files` (só admin); token de SFTP de um
+    host = `host.files`. O `src` vem da query ou do corpo JSON (o FastAPI reaproveita o corpo lido)."""
+    if request.url.path.startswith("/api/files/dl/"):
+        return   # ticket de uso único, emitido só p/ quem já passou por aqui
+    src = request.query_params.get("src")
+    if src is None and request.method in ("POST", "PUT", "PATCH", "DELETE") and \
+            "json" in (request.headers.get("content-type") or ""):
+        try:
+            body = await request.json()
+            src = body.get("src") if isinstance(body, dict) else None
+        except Exception:  # noqa: BLE001 — corpo inválido: o próprio endpoint responde 422
+            src = None
+    authz.require(request, "server.files" if (src or "local") == "local" else "host.files")
+
+
+router = APIRouter(tags=["files"], dependencies=[Depends(_files_perm)])
 
 MAX_UPLOAD_CHUNK = 32 * 1024 * 1024
 

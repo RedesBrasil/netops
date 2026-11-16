@@ -44,6 +44,7 @@ def check_updates():
 @router.post("/updates/apply", status_code=202)
 async def apply_update(body: ApplyUpdate, request: Request):
     if not deps.auth_required() or not deps.auth_session_valid(request.headers.get("x-netops-session")):
+        # Permissão (`updates`, só admin) já foi checada no middleware; aqui só exige login de verdade.
         return JSONResponse({"error": "auth_required", "detail": "Inicialize o cofre e faça login antes de atualizar."}, status_code=401)
     if not body.confirm:
         return JSONResponse({"error": "confirmation_required"}, status_code=422)

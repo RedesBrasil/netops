@@ -35,7 +35,7 @@ _MAX_UPLOAD = 20 * 1024 * 1024  # 20 MiB
 _ATTACH_COOKIE = "netops_claude_attach"
 
 
-def _ws_authorized(ws: WebSocket, *, need_sdk: bool = True) -> bool:
+def _ws_authorized(ws: WebSocket, *, need_sdk: bool = True, perm: str = "claude.use") -> bool:
     """Mesmas defesas do middleware http (que NÃO cobre WebSocket) — ver routers/terminal.py.
 
     `need_sdk=False` no login: ali só o binário `claude` importa — e é justamente quando o
@@ -47,9 +47,45 @@ def _ws_authorized(ws: WebSocket, *, need_sdk: bool = True) -> bool:
         return False
     if not deps.host_origin_allowed(ws.headers.get("host"), ws.headers.get("origin")):
         return False
-    if deps.auth_required() and not deps.auth_session_valid(ws.query_params.get("auth")):
+    from services import authz  # noqa: PLC0415
+    p = authz.ws_principal(ws, perm)
+    if p is None:
         return False
+    ws.state.principal = p
     return True
+
+
+# ------------------------------------------------------------- dono da conversa
+# Cada conversa tem DONO (usuário do console que a criou; banco de acesso). Não-admin só vê e mexe
+# nas suas; admin vê todas. Conversa sem dono = anterior ao multiusuário -> só admin.
+def _may_access(principal, sid: str) -> bool:
+    if principal is None:
+        return False
+    if principal.is_admin:
+        return True
+    return claude_svc._owner_of(sid) == principal.username
+
+
+def _owner_guard(request: Request) -> None:
+    sid = request.path_params.get("sid")
+    if not sid:
+        return
+    from services import authz  # noqa: PLC0415
+    if not _may_access(authz.request_principal(request), sid):
+        raise authz.Forbidden("claude.use", "Esta conversa é de outro usuário.")
+
+
+def _visible(request: Request, sessions: list[dict]) -> list[dict]:
+    from lib import accessdb  # noqa: PLC0415
+    from services import authz  # noqa: PLC0415
+    p = authz.request_principal(request)
+    owners = accessdb.claude_owners(deps.db_file())
+    out = []
+    for x in sessions:
+        owner = owners.get(x.get("id"), "")
+        if p.is_admin or owner == p.username:
+            out.append({**x, "owner": owner})
+    return out
 
 
 @router.websocket("/claude")
@@ -58,6 +94,10 @@ async def claude_ws(ws: WebSocket):
         await ws.close(code=4403)
         return
     resume = ws.query_params.get("resume") or None
+    principal = ws.state.principal
+    if resume and not _may_access(principal, resume):
+        await ws.close(code=4403)   # conversa de outro usuário
+        return
     if resume and not claude_svc.project_session_exists(resume):
         # Nunca passar um UUID ausente/de outro projeto ou caminho arbitrário ao agente.
         await ws.accept()
@@ -66,7 +106,7 @@ async def claude_ws(ws: WebSocket):
     # Modo clássico (persist OFF): vida do agente = vida do socket, como sempre.
     if not deps.STATE.claude_persist:
         await ws.accept()
-        await claude_svc.ClaudeWebSession(ws).run()
+        await claude_svc.ClaudeWebSession(ws, user=principal.username).run()
         return
     # Modo persistente. O WS já passou por _ws_authorized (login). O cookie de dono NÃO é mais
     # requisito p/ persistir: antes, cookie ausente/expirado/perdido no restart degradava CALADO p/
@@ -76,7 +116,8 @@ async def claude_ws(ws: WebSocket):
     owner = ws.cookies.get(_ATTACH_COOKIE) or ""
     model = ws.query_params.get("model") or None
     session, how = claude_svc.attach_or_create(owner=owner, resume=resume, model=model,
-                                                  effort=ws.query_params.get("effort") or None)
+                                                  effort=ws.query_params.get("effort") or None,
+                                                  user=principal.username)
     if how == "too_many":
         await ws.accept()
         try:
@@ -112,7 +153,7 @@ def claude_auth_logout():
 @router.websocket("/claude/login")
 async def claude_login_ws(ws: WebSocket):
     """Conduz o `claude auth login` (OAuth com colagem de código) pela aba."""
-    if not _ws_authorized(ws, need_sdk=False):
+    if not _ws_authorized(ws, need_sdk=False, perm="config"):   # conta Claude do servidor = admin
         await ws.close(code=4403)
         return
     await ws.accept()
@@ -168,32 +209,34 @@ def claude_prefs_put(body: dict):
 
 
 @router.get("/claude/sessions")
-def claude_sessions():
+def claude_sessions(request: Request):
     """Lista as sessões Claude Code passadas deste projeto (p/ retomar)."""
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
-    return {"sessions": claude_svc.list_project_sessions()}
+    return {"sessions": _visible(request, claude_svc.list_project_sessions())}
 
 
 @router.get("/claude/sessions/search")
-def claude_sessions_search(q: str = ""):
+def claude_sessions_search(request: Request, q: str = ""):
     """Busca sessões por título/preview OU conteúdo do transcript."""
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
-    return {"sessions": claude_svc.search_project_sessions(q)}
+    return {"sessions": _visible(request, claude_svc.search_project_sessions(q))}
 
 
 @router.get("/claude/sessions/{sid}/messages")
-def claude_session_messages(sid: str):
+def claude_session_messages(sid: str, request: Request):
     """Histórico de uma sessão, já no formato da transcrição da UI."""
+    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     return {"items": claude_svc.session_items(sid)}
 
 
 @router.get("/claude/sessions/{sid}")
-def claude_session_info(sid: str):
+def claude_session_info(sid: str, request: Request):
     """Lookup individual: links antigos funcionam além do limite da lista recente."""
+    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     if not claude_svc.project_session_exists(sid):
@@ -202,12 +245,13 @@ def claude_session_info(sid: str):
 
 
 @router.post("/claude/sessions/{sid}/fork")
-def claude_session_fork(sid: str, body: dict):
+def claude_session_fork(sid: str, body: dict, request: Request):
     """Ramifica a conversa ANTES de um prompt (histórico até o turno anterior; o front repõe o texto no campo).
 
     body: {uuid?, text?, occurrence?, title?} — uuid vem do histórico; text+occurrence da
     conversa ao vivo. Devolve {id} da nova conversa; a de origem fica intacta.
     """
+    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     try:
@@ -224,11 +268,15 @@ def claude_session_fork(sid: str, body: dict):
         return JSONResponse({"error": "fork_failed", "detail": str(e)}, status_code=400)
     except Exception as e:
         return JSONResponse({"error": "fork_failed", "detail": str(e)[:300]}, status_code=500)
+    if new:
+        from lib import accessdb  # noqa: PLC0415
+        from services import authz  # noqa: PLC0415
+        accessdb.set_claude_owner(deps.db_file(), new, authz.request_principal(request).username, overwrite=True)
     return {"id": new or None, "first": not new}
 
 
 @router.post("/claude/sessions/{sid}/rewind")
-async def claude_session_rewind(sid: str, body: dict):
+async def claude_session_rewind(sid: str, body: dict, request: Request):
     """Edita um prompt: APAGA o prompt escolhido e tudo depois dele, na MESMA conversa.
 
     body: {uuid?, text?, occurrence?, dry?} — mesma identificação do fork. `dry` só informa o
@@ -237,6 +285,7 @@ async def claude_session_rewind(sid: str, body: dict):
     retoma a conversa e envia o texto editado. {first:true} = era o 1º prompt: a conversa foi
     apagada e o front abre uma nova.
     """
+    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     try:
@@ -262,8 +311,9 @@ async def claude_session_rewind(sid: str, body: dict):
 
 
 @router.put("/claude/sessions/{sid}/completed")
-def claude_session_completed(sid: str, body: dict):
+def claude_session_completed(sid: str, body: dict, request: Request):
     """Marca/desmarca a conversa como concluída por completo (checkbox manual do usuário)."""
+    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     if not claude_svc.project_session_exists(sid):
@@ -274,8 +324,9 @@ def claude_session_completed(sid: str, body: dict):
 
 
 @router.put("/claude/sessions/{sid}/title")
-def claude_session_rename(sid: str, body: dict):
+def claude_session_rename(sid: str, body: dict, request: Request):
     """Renomeia a conversa (grava o custom_title no transcript, via SDK)."""
+    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     title = " ".join(str(body.get("title") or "").split())[:120]
@@ -291,10 +342,13 @@ def claude_session_rename(sid: str, body: dict):
 
 
 @router.delete("/claude/sessions/{sid}", status_code=204)
-def claude_session_delete(sid: str):
+def claude_session_delete(sid: str, request: Request):
+    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     claude_svc.delete_project_session(sid)
+    from lib import accessdb  # noqa: PLC0415
+    accessdb.forget_claude_owner(deps.db_file(), sid)
 
 
 @router.post("/claude/upload")

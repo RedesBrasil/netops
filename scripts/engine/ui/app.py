@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Monta o app FastAPI: segurança (Origin/Host + login por senha-mestra), handlers de erro, routers, static.
+"""Monta o app FastAPI: segurança (Origin/Host + login por usuário + permissão por rota), handlers de erro, routers, static.
 
 O servidor é STATELESS — cada request lê/escreve os arquivos canônicos. Não há cache de
 inventário em RAM, nem worker, nem conexão a equipamento. (Ver scripts/engine/ui/SKILL.md e a
@@ -94,7 +94,9 @@ from routers import (
     terminal,
     topology,
     updates,
+    users,
     web_access,
+    audit,
 )
 
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
@@ -102,6 +104,21 @@ MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 AUTH_OPEN_PATHS = {"/api/auth/login", "/api/auth/status", "/api/auth/logout", "/api/config/meta"}
 # Download por link de uso único (routers/files.py): o ticket, emitido só p/ quem está logado, é a autorização.
 AUTH_TICKET_PREFIX = "/api/files/dl/"
+# Com senha provisória (must_change_password) a tela ainda precisa disto p/ abrir.
+PASSWORD_CHANGE_OPEN = {"/api/config/meta", "/api/vault/status", "/api/updates/status", "/api/meta/enums",
+                        "/api/meta/icons"}
+# Escritas que NÃO vão p/ a auditoria (ruído sem efeito: login/logout se auditam sozinhos).
+AUDIT_SKIP = {"/api/auth/login", "/api/auth/logout", "/api/schedules/notifications/read", "/api/audio/transcribe"}
+
+
+def _audit_request(request, status: int) -> None:
+    """Uma linha de auditoria por escrita (quem, de onde, o quê, resultado). Nunca o corpo (segredos)."""
+    from lib import accessdb  # noqa: PLC0415
+    p = getattr(request.state, "principal", None)
+    path = request.url.path
+    accessdb.audit(deps.db_file(), "api", username=getattr(p, "username", "") or "",
+                   ip=request.client.host if request.client else "", method=request.method,
+                   path=path, target=path[4:].split("/")[1] if path.count("/") > 2 else "", status=status)
 
 
 def _host_ok(host_header: str | None) -> bool:
@@ -141,12 +158,26 @@ def create_app() -> FastAPI:
                 migration = host_migration_svc.status()
                 return JSONResponse({"error": "host_migration", "detail": migration["detail"],
                                      "migration": migration}, status_code=503)
-            # Gate de login: com cofre inicializado, todo /api exige sessão (senha-mestra),
-            # exceto a allow-list de bootstrap (login/status/logout/meta).
-            if (deps.auth_required() and path not in AUTH_OPEN_PATHS
-                    and not (request.method == "GET" and path.startswith(AUTH_TICKET_PREFIX))
-                    and not deps.auth_session_valid(request.headers.get("x-netops-session"))):
-                return JSONResponse({"error": "auth_required"}, status_code=401)
+            # Gate de login: com cofre inicializado ou usuários cadastrados, todo /api exige sessão,
+            # exceto a allow-list de bootstrap (login/status/logout/meta) e o download por ticket.
+            from services import authz  # noqa: PLC0415
+            open_path = path in AUTH_OPEN_PATHS or (request.method == "GET" and path.startswith(AUTH_TICKET_PREFIX))
+            principal = authz.principal_for_sid(request.headers.get("x-netops-session"))
+            request.state.principal = principal
+            if not open_path:
+                if principal is None:
+                    return JSONResponse({"error": "auth_required"}, status_code=401)
+                # Senha provisória: só deixa trocar a senha (e o mínimo p/ a tela abrir).
+                if principal.must_change_password and not (path.startswith("/api/auth/") or (
+                        request.method == "GET" and path in PASSWORD_CHANGE_OPEN)):
+                    return JSONResponse({"error": "password_change_required",
+                                         "detail": "Troque a senha provisória antes de continuar."}, status_code=403)
+                perm = authz.required_perm(request.method, path[4:])
+                if perm != authz.ROUTER and not principal.can(perm):
+                    if request.method in MUTATING:
+                        _audit_request(request, 403)      # tentativa negada também fica registrada
+                    return JSONResponse({"error": "forbidden", "perm": perm,
+                                         "detail": f"Sem permissão: {authz.perm_label(perm)}."}, status_code=403)
             if request.method in MUTATING:
                 if not _origin_ok(request.headers.get("origin"), request.headers.get("host")):
                     return JSONResponse({"error": "forbidden_origin"}, status_code=403)
@@ -171,6 +202,8 @@ def create_app() -> FastAPI:
             deps.STATE.active_requests -= 1
             if is_write:
                 deps.STATE.active_writes -= 1
+        if path.startswith("/api") and request.method in MUTATING and path not in AUDIT_SKIP:
+            _audit_request(request, response.status_code)
 
         # O shell do SPA (index.html) não é cacheado: garante que o front sempre venha da rede
         # (o HTML tem ~1 KB). Os assets estáticos (js/css/vendor) seguem cacheáveis pelo ETag.
@@ -180,12 +213,19 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (audio, auth, meta, dashboard, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, terminal, host_term, files, web_launch, claude, updates, web_access):
+    for mod in (audio, auth, meta, dashboard, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, terminal, host_term, files, web_launch, claude, updates, web_access, users, audit):
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("startup")
     async def _restore_logins():
-        deps.load_auth_sessions()  # logins válidos (7 dias) sobrevivem ao restart
+        # Banco de acesso (SQLite): cria/migra, importa logins do JSON legado (1x) e poda a auditoria.
+        try:
+            from lib import accessdb  # noqa: PLC0415
+            deps.load_auth_sessions()
+            accessdb.prune_audit(deps.db_file(), keep_days=_audit_keep_days())
+        except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger("netops").exception("Banco de acesso: falha no arranque")
 
     @app.on_event("startup")
     async def _scheduler_cron():
@@ -269,9 +309,32 @@ def create_app() -> FastAPI:
     return app
 
 
+def _audit_keep_days() -> int:
+    """Retenção da auditoria (project-config.yaml -> ui.audit_keep_days; padrão 365)."""
+    try:
+        import yaml  # noqa: PLC0415
+        cfg = yaml.safe_load(deps.PROJECT_CONFIG.read_text(encoding="utf-8")) or {}
+        v = (cfg.get("ui") or {}).get("audit_keep_days")
+        if isinstance(v, int) and v > 0:
+            return v
+    except Exception:
+        pass
+    return 365
+
+
 def _register_error_handlers(app: FastAPI) -> None:
     from lib.vault import VaultLocked, VaultNotInitialized, VaultWrongKey
     from lib.inventory_lock import MigrationIncomplete
+    from lib.accessdb import AccessError
+    from services.authz import Forbidden
+
+    @app.exception_handler(Forbidden)
+    async def _forbidden(_request, exc: Forbidden):
+        return JSONResponse({"error": "forbidden", "perm": exc.perm, "detail": exc.detail}, status_code=403)
+
+    @app.exception_handler(AccessError)
+    async def _access_error(_request, exc: AccessError):
+        return JSONResponse({"error": exc.code, "detail": exc.detail}, status_code=exc.status)
 
     @app.exception_handler(MigrationIncomplete)
     async def _migration_incomplete(_request, exc: MigrationIncomplete):

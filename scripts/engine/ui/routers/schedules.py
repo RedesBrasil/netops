@@ -71,7 +71,10 @@ def script_candidates():
 
 @router.post("/schedules/tasks")
 def create(request: Request, body: dict = Body(...)):
-    return _call(store.create_task, body, _rev(request), deps.DATA_ROOT, created_by="ui")
+    from services import authz  # noqa: PLC0415
+    who = authz.request_principal(request).username or "ui"
+    return _call(store.create_task, {k: v for k, v in body.items() if k != "created_by"}, _rev(request),
+                 deps.DATA_ROOT, created_by=who)
 
 
 @router.put("/schedules/tasks/{task_id}")

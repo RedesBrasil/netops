@@ -813,22 +813,35 @@ def test_scripts_rename(client, env, monkeypatch):
 
 
 def test_auth_sessions_never_touch_real_install_and_survive_restart(env):
-    """Regressão 11/11/2026: a suíte gravava em /opt/netops/runs/.ui-auth-sessions.json e apagava
-    o login real. O arquivo tem que seguir o DATA_ROOT e o login sobreviver a um 'restart'."""
+    """Regressão 11/11/2026: a suíte gravava no arquivo de logins REAL. Agora as sessões vivem no
+    banco de acesso (SQLite) — que tem que seguir o DATA_ROOT — e sobrevivem a um 'restart'."""
+    import json
     import deps
-    assert str(deps._auth_sessions_file()).startswith(str(env))
+    assert str(deps.db_file()).startswith(str(env))
     sid = deps.create_auth_session(3600)
-    deps.STATE.auth_sessions.clear()             # processo novo: memória vazia
-    deps.load_auth_sessions()
+    deps.load_auth_sessions()                     # arranque: não perde nada
     assert deps.auth_session_valid(sid)
-    # Processo com visão velha não apaga login que não conhece (merge sob lock, não dump).
-    deps.STATE.auth_sessions.clear()
     other = deps.create_auth_session(3600)
-    deps.STATE.auth_sessions.clear()
     assert deps.auth_session_valid(sid) and deps.auth_session_valid(other)
     deps.drop_auth_session(sid)
     assert not deps.auth_session_valid(sid) and deps.auth_session_valid(other)
 
+
+def test_legacy_json_sessions_are_imported_once(env):
+    """Atualização: quem estava logado (JSON antigo) continua logado, como o admin legado."""
+    import hashlib
+    import json
+    import time
+    import deps
+    sid = "ab" * 24
+    f = deps._auth_sessions_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({hashlib.sha256(sid.encode()).hexdigest(): {"exp": time.time() + 600}}))
+    deps.load_auth_sessions()
+    assert deps.auth_session_user(sid) == "admin"
+    deps.drop_auth_session(sid)
+    deps.load_auth_sessions()                     # 2ª vez não reimporta
+    assert deps.auth_session_user(sid) is None
 
 # --------------------------------------------------------------------------- #
 # Memória: MEMORY.md + AGENTS.md + notas memory/*.md

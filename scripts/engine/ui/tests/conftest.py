@@ -37,6 +37,8 @@ def _isolated_vault_session(tmp_path_factory, monkeypatch):
                                ("services.claude_svc", "_AGENT_LOG", "agent-stderr.log"),
                                ("services.claude_svc", "_RESUME_FILE", "resume-on-restart.json")):
         monkeypatch.setattr(importlib.import_module(module), attr, claude_runs / name)
+    # Banco de acesso: nem teste que não usa `env` pode tocar o runs/netops.db da instalação.
+    monkeypatch.setattr(importlib.import_module("deps"), "DB_FILE", claude_runs / "netops.db")
 
 
 @pytest.fixture()
@@ -80,6 +82,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(deps, "PROJECT_CONFIG", tmp_path / "core" / "config" / "project-config.yaml")
     monkeypatch.setattr(deps, "MEMORY_MD", tmp_path / "memory" / "MEMORY.md")
     monkeypatch.setattr(deps, "AUTH_SESSIONS_FILE", tmp_path / "runs" / ".ui-auth-sessions.json")
+    # Banco de acesso (usuários/sessões/auditoria) isolado: nunca o runs/netops.db real.
+    monkeypatch.setattr(deps, "DB_FILE", tmp_path / "runs" / "netops.db")
     deps.STATE.read_only = False
     deps.STATE.allow_vault_unlock = True
     deps.STATE.enable_terminal = False

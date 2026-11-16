@@ -152,6 +152,17 @@ _OWNERS: dict[str, dict] = {}               # token do cookie -> {"login_sid": s
 _OWNER_TTL = 12 * 3600                        # validade do cookie de dono (renovada a cada emissão)
 
 
+def _owner_of(session_id: str | None) -> str:
+    """Usuário dono da conversa (banco de acesso) — '' se desconhecido."""
+    if not session_id:
+        return ""
+    try:
+        from lib import accessdb  # noqa: PLC0415
+        return accessdb.claude_owner(deps.db_file(), session_id) or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def mint_owner(login_sid: str | None) -> str:
     """Emite um token de DONO (vai num cookie HttpOnly) amarrado à sessão de login atual.
     O `session_id` NÃO é credencial — é só índice; o re-anexo exige ESTE token."""
@@ -277,7 +288,7 @@ async def resume_after_restart(delay: float = _RESUME_DELAY, snapshot: dict | No
                 if _detached_count() >= deps.STATE.claude_max_sessions:
                     _rlog(f"{sid}: teto de sessões, fica p/ o próximo start")
                     continue           # teto: fica anotada p/ um próximo start, não força
-                s = ClaudeWebSession(persist=True, resume=sid, model=e.get("model") or None,
+                s = ClaudeWebSession(persist=True, resume=sid, user=_owner_of(sid), model=e.get("model") or None,
                                      effort=e.get("effort") or None)
                 _LIVE[sid] = s
             await s.start()
@@ -311,7 +322,8 @@ async def resume_after_restart(delay: float = _RESUME_DELAY, snapshot: dict | No
     return done
 
 
-def attach_or_create(*, owner: str, resume: str | None, model: str | None, effort: str | None = None):
+def attach_or_create(*, owner: str, resume: str | None, model: str | None, effort: str | None = None,
+                     user: str = ""):
     """Decide entre RE-ANEXAR a uma sessão viva e CRIAR uma nova (respeitando o teto estático).
 
     Retorna (session|None, how) com how em {"reattach","new","too_many","forbidden"}.
@@ -331,7 +343,8 @@ def attach_or_create(*, owner: str, resume: str | None, model: str | None, effor
             return s, "reattach"
     if _detached_count() >= deps.STATE.claude_max_sessions:
         return None, "too_many"       # teto estático: recusa com mensagem (o cliente avisa)
-    s = ClaudeWebSession(owner=owner, persist=True, resume=resume, model=model, effort=effort)
+    s = ClaudeWebSession(owner=owner, persist=True, resume=resume, model=model, effort=effort,
+                         user=user or (_owner_of(resume) if resume else ""))
     if resume:
         # Registra JÁ (o init só chega no 1º turno): duas abas — ou a aba + a retomada automática
         # pós-restart — reconectando na mesma conversa caem na MESMA sessão, nunca em dois `claude`.
@@ -406,9 +419,18 @@ class ClaudeWebSession:
 
     def __init__(self, ws: WebSocket | None = None, *, owner: str = "",
                  persist: bool = False, resume: str | None = None, model: str | None = None,
-                 effort: str | None = None):
+                 effort: str | None = None, user: str = ""):
         self._wss: list = [ws] if ws is not None else []   # MULTI-ANEXO: várias abas na mesma sessão
         self.owner = owner
+        # USUÁRIO do console dono da conversa (multiusuário). O teto de permissões de rede vem do(s)
+        # grupo(s) dele: o seletor 🔐 Rede nunca passa disso (None = sem teto: admin / sem login).
+        self.user = user or ""
+        try:
+            from services import authz  # noqa: PLC0415
+            # Sem usuário = conversa anterior ao multiusuário (só admin a vê/retoma) ou console sem login.
+            self._netcap = authz.net_perms_cap(self.user) if self.user else None
+        except Exception:  # noqa: BLE001
+            self._netcap = []
         self.persist = persist
         # resume/model ficam na SESSÃO (não no socket), p/ (re)lançar igual em cada anexo.
         self._resume = resume if resume is not None else ((ws.query_params.get("resume") if ws else None) or None)
@@ -428,11 +450,11 @@ class ClaudeWebSession:
         # conversa; conversa nova usa o padrão; conversa antiga sem registro = Full (histórico).
         _np = ws.query_params.get("netperms") if ws else None
         if _np is not None:
-            self._netperms = net_perms.normalize([x for x in _np.split(",") if x])
+            self._netperms = self._capped([x for x in _np.split(",") if x])
         elif saved.get("netperms") is not None:
-            self._netperms = net_perms.normalize(saved["netperms"])
+            self._netperms = self._capped(saved["netperms"])
         else:
-            self._netperms = net_perms.normalize(None if self._resume else dflt["default_netperms"])
+            self._netperms = self._capped(None if self._resume else dflt["default_netperms"])
         self._netperms_told: tuple | None = None   # último estado avisado ao agente (UserPromptSubmit)
         self._last_turn: dict | None = None   # {t, usage, ctx} do último turno (re-anexo restaura cache/contexto)
         self.client: ClaudeSDKClient | None = None
@@ -532,7 +554,7 @@ class ClaudeWebSession:
             #  2) o `claude` recusa esse flag sob root/sudo (o console sobe por sudo em container).
             #     IS_SANDBOX=1 declara o ambiente isolado (LXC) e libera. Escopo mínimo: só o
             #     subprocesso `claude`. Merge com os.environ p/ preservar PATH/HOME/credenciais.
-            env={**os.environ, "IS_SANDBOX": "1"},
+            env={**os.environ, "IS_SANDBOX": "1", "NETOPS_USER": self.user or ""},
             extra_args={"dangerously-skip-permissions": None},
             permission_mode="default",                       # seguro-mas-usável; UI troca p/ qualquer um
             include_partial_messages=True,                   # streaming de texto/pensamento
@@ -683,6 +705,19 @@ class ClaudeWebSession:
         if res["ok"]:
             return {}
         missing = [net_perms.LABELS[c] for c in res["missing"]]
+        cap = getattr(self, "_netcap", None)
+        beyond = [c for c in res["missing"] if cap is not None and c not in cap]
+        if beyond:
+            # Acima do teto do GRUPO do usuário: nem pergunta (aprovar na tela seria contornar o grupo).
+            return {"hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": (
+                    "BLOQUEADO: o grupo de acesso do usuário do console não permite "
+                    + ", ".join(net_perms.LABELS[c] for c in beyond)
+                    + " nos equipamentos. Não tente contornar. Entregue o plano e os comandos prontos para "
+                    "um administrador aplicar."),
+            }}
         answer = await self._ask_ui("NetPerms", {
             "command": cmd,
             "missing": res["missing"],
@@ -874,7 +909,7 @@ class ClaudeWebSession:
             if getattr(self, "_slash", None):
                 await self._send({"type": "system", "subtype": "commands",
                                   "data": {"slash_commands": self._slash}}, only=ws)
-            await self._send({"type": "netperms_changed", "perms": self._netperms}, only=ws)
+            await self._send({"type": "netperms_changed", "perms": self._netperms, "max": self._netcap}, only=ws)
             await self._send_queue(only=ws)
             if self._restore_pending:
                 items, self._restore_pending = self._restore_pending, []
@@ -991,9 +1026,9 @@ class ClaudeWebSession:
             elif kind == "set_netperms":
                 perms = raw.get("perms")
                 if isinstance(perms, list):
-                    self._netperms = net_perms.normalize(perms)
+                    self._netperms = self._capped(perms)
                     claude_prefs.set_session(self.sid, netperms=self._netperms)
-                    await self._send({"type": "netperms_changed", "perms": self._netperms})
+                    await self._send({"type": "netperms_changed", "perms": self._netperms, "max": self._netcap})
             elif kind == "set_model":
                 try:
                     self._model = raw.get("model") or None
@@ -1119,6 +1154,12 @@ class ClaudeWebSession:
                 self._track()
                 asyncio.get_running_loop().create_task(self.teardown())
 
+    def _capped(self, perms) -> list[str]:
+        """normalize() + teto do grupo do usuário (interseção)."""
+        out = net_perms.normalize(perms)
+        cap = getattr(self, "_netcap", None)
+        return out if cap is None else [p for p in out if p in cap]
+
     # -------------------------------------------------------------- tradução
     async def _translate(self, msg) -> None:
         if isinstance(msg, SystemMessage):
@@ -1132,6 +1173,12 @@ class ClaudeWebSession:
             data = msg.data
             if msg.subtype == "init":
                 sid = (data or {}).get("session_id")
+                if sid and self.user:
+                    try:
+                        from lib import accessdb  # noqa: PLC0415
+                        accessdb.set_claude_owner(deps.db_file(), sid, self.user)
+                    except Exception:  # noqa: BLE001 — dono é rótulo; nunca derruba o turno
+                        pass
                 # grava o modelo/modo vigentes desta conversa se ainda não há registro
                 if sid and not claude_prefs.get_session(sid):
                     claude_prefs.set_session(sid, model=self._model, mode=self._mode)

@@ -93,8 +93,7 @@ class ServerState:
     claude_detach_grace: int = 300    # seg que uma sessão desanexada e OCIOSA sobrevive
     claude_ask_timeout: int = 180     # seg que uma pergunta sem resposta espera (desanexado) -> nega
     allowed_hosts: tuple[str, ...] = field(default_factory=lambda: ("127.0.0.1", "localhost"))
-    # Sessões de login do console (sha256(sid) -> {"exp": epoch}). Cache do arquivo
-    # runs/.ui-auth-sessions.json (fonte da verdade, sobrevive a restart). Ver routers/auth.py.
+    # LEGADO: as sessões de login agora vivem no SQLite (lib/accessdb.py); campo mantido p/ compat.
     auth_sessions: dict = field(default_factory=dict)
 
 
@@ -102,17 +101,23 @@ STATE = ServerState()
 
 
 # --------------------------------------------------------------------------- #
-# Sessão de login (senha-mestra -> sid). Token de transporte (acima) e login são
-# camadas independentes: o sid só é emitido por routers/auth.py após verificar a senha.
+# Sessão de login -> USUÁRIO. Fonte da verdade: banco de acesso SQLite (lib/accessdb.py,
+# DATA_ROOT/runs/netops.db). Sem usuários cadastrados vale o modo antigo (senha-mestra = admin);
+# o 1º login com a senha-mestra cria o usuário `admin` (routers/auth.py).
 # --------------------------------------------------------------------------- #
 AUTH_LOGIN_TTL_DEFAULT = 7 * 86400   # login vale 7 dias (absoluto), sobrevive a restart do backend
-AUTH_SESSIONS_FILE: Path | None = None   # None = DATA_ROOT/runs/.ui-auth-sessions.json (resolvido na hora)
+AUTH_SESSIONS_FILE: Path | None = None   # LEGADO (JSON de antes do SQLite): só lido na importação
+DB_FILE: Path | None = None              # None = DATA_ROOT/runs/netops.db (resolvido na hora)
+LEGACY_ADMIN = "admin"
+
+
+def db_file() -> Path:
+    # Resolvido a cada uso (não no import): quem troca DATA_ROOT (testes, instalação temporária)
+    # nunca grava no banco da instalação real (lição do incidente de 11/11/2026 com o JSON de logins).
+    return DB_FILE or (DATA_ROOT / "runs" / "netops.db")
 
 
 def _auth_sessions_file() -> Path:
-    # Resolvido a cada uso (não no import): quem troca DATA_ROOT (testes, instalação temporária)
-    # não pode gravar no arquivo de logins da instalação real. Sem isso a suíte de
-    # testes sobrescrevia runs/.ui-auth-sessions.json e todo restart seguinte pedia login de novo.
     return AUTH_SESSIONS_FILE or (DATA_ROOT / "runs" / ".ui-auth-sessions.json")
 
 
@@ -133,90 +138,61 @@ def login_ttl() -> int:
     return AUTH_LOGIN_TTL_DEFAULT
 
 
-def _read_auth_file(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    now = time.time()
-    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, dict)
-            and isinstance(v.get("exp"), (int, float)) and v["exp"] > now} if isinstance(data, dict) else {}
-
-
-def _update_auth_file(add: dict | None = None, drop: set | None = None, clear: bool = False) -> None:
-    """Aplica só o DELTA (add/drop) sobre o que está no disco, sob flock, e ressincroniza a memória.
-
-    Nunca despeja o dict em memória inteiro: outro processo (restart sobrepondo, CLI, testes) que
-    tenha uma visão velha não consegue apagar logins que ele não conhece. Grava só o SHA-256 dos
-    sids (nunca o sid) + expiração; 0600, atômico.
-    """
-    path = _auth_sessions_file()
-    try:
-        import fcntl  # noqa: PLC0415
-        path.parent.mkdir(parents=True, exist_ok=True)
-        lock_fd = os.open(str(path.with_suffix(".lock")), os.O_CREAT | os.O_RDWR, 0o600)
-        try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            data = {} if clear else _read_auth_file(path)
-            data.update(add or {})
-            for k in drop or ():
-                data.pop(k, None)
-            tmp = path.with_suffix(f".tmp.{os.getpid()}")
-            fd = os.open(str(tmp), os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-            os.replace(tmp, path)
-        finally:
-            os.close(lock_fd)
-    except OSError:
-        data = {} if clear else dict(STATE.auth_sessions)
-        data.update(add or {})
-        for k in drop or ():
-            data.pop(k, None)
-    STATE.auth_sessions.clear()
-    STATE.auth_sessions.update(data)
-
-
 def load_auth_sessions() -> None:
-    """Recarrega os logins ainda válidos (no arranque e quando um sid não é achado em memória)."""
-    STATE.auth_sessions.update(_read_auth_file(_auth_sessions_file()))
+    """Arranque: importa (uma vez) os logins do JSON legado p/ o SQLite, como o admin legado —
+    quem estava logado antes da atualização continua logado."""
+    from lib import accessdb  # noqa: PLC0415
+    db = db_file()
+    if accessdb.meta_get(db, "legacy_sessions_imported"):
+        return
+    try:
+        data = json.loads(_auth_sessions_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    now = time.time()
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if isinstance(k, str) and isinstance(v, dict) and isinstance(v.get("exp"), (int, float)) and v["exp"] > now:
+                accessdb.import_session_hash(db, k, LEGACY_ADMIN, float(v["exp"]))
+    accessdb.meta_set(db, "legacy_sessions_imported", str(int(now)))
 
 
-def create_auth_session(ttl: int | None = None) -> str:
-    """Emite um sid aleatório que expira em agora+ttl (absoluto) e persiste em disco."""
-    sid = os.urandom(24).hex()
-    _update_auth_file(add={_sid_key(sid): {"exp": time.time() + (ttl or login_ttl())}})
-    return sid
+def create_auth_session(ttl: int | None = None, user: str = LEGACY_ADMIN, *, ip: str = "",
+                        user_agent: str = "") -> str:
+    """Emite um sid aleatório do `user` que expira em agora+ttl (absoluto), persistido no SQLite."""
+    from lib import accessdb  # noqa: PLC0415
+    return accessdb.create_session(db_file(), user, ttl or login_ttl(), ip=ip, user_agent=user_agent)
+
+
+def auth_session_user(sid: str | None) -> str | None:
+    """Usuário dono do sid (válido, não expirado, usuário ativo) ou None."""
+    if not sid:
+        return None
+    from lib import accessdb  # noqa: PLC0415
+    return accessdb.session_user(db_file(), sid)
 
 
 def auth_session_valid(sid: str | None) -> bool:
-    """True se o sid existe e não expirou. Se não estiver em memória, relê o disco (login feito
-    por outro processo/instância continua valendo)."""
-    if not sid:
-        return False
-    key = _sid_key(sid)
-    now = time.time()
-    entry = STATE.auth_sessions.get(key)
-    if entry is None:
-        disk = _read_auth_file(_auth_sessions_file())
-        entry = disk.get(key)
-        if entry is not None:
-            STATE.auth_sessions[key] = entry
-    if entry is None:
-        return False
-    if entry.get("exp", 0) <= now:
-        _update_auth_file(drop={key})
-        return False
-    return True
+    return auth_session_user(sid) is not None
 
 
 def drop_auth_session(sid: str | None) -> None:
     if sid:
-        _update_auth_file(drop={_sid_key(sid)})
+        from lib import accessdb  # noqa: PLC0415
+        accessdb.drop_session(db_file(), sid)
 
 
 def clear_auth_sessions() -> None:
-    _update_auth_file(clear=True)
+    from lib import accessdb  # noqa: PLC0415
+    accessdb.clear_sessions(db_file())
+
+
+def has_users() -> bool:
+    from lib import accessdb  # noqa: PLC0415
+    try:
+        return accessdb.has_users(db_file())
+    except Exception:
+        return False
 
 
 _vault_init_cache: dict = {}
@@ -252,8 +228,8 @@ def files_enabled() -> bool:
 
 
 def auth_required() -> bool:
-    """O console exige login com senha sempre que houver cofre inicializado."""
-    return vault_initialized()
+    """O console exige login sempre que houver cofre inicializado OU usuário cadastrado."""
+    return vault_initialized() or has_users()
 
 
 # --------------------------------------------------------------------------- #

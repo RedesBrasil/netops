@@ -65,16 +65,26 @@ def _set_winsize(fd: int, rows: int, cols: int) -> None:
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
 
-def _ws_authorized(ws: WebSocket) -> bool:
-    """Mesmas defesas do middleware http (que NÃO cobre WebSocket)."""
+def _ws_authorized(ws: WebSocket, perm: str = "server.terminal") -> bool:
+    """Mesmas defesas do middleware http (que NÃO cobre WebSocket) + permissão do usuário.
+    Terminal do servidor = `server.terminal` (só admin); terminal de host = `host.terminal`."""
     if not deps.STATE.enable_terminal or deps.STATE.read_only:
         return False
     if not deps.host_origin_allowed(ws.headers.get("host"), ws.headers.get("origin")):
         return False
-    # Mesmo gate de login do /api (o middleware http não cobre WebSocket): exige a sessão.
-    if deps.auth_required() and not deps.auth_session_valid(ws.query_params.get("auth")):
+    from services import authz  # noqa: PLC0415
+    p = authz.ws_principal(ws, perm)
+    if p is None:
         return False
+    ws.state.principal = p
     return True
+
+
+def _audit_ws(ws: WebSocket, action: str, target: str = "") -> None:
+    from lib import accessdb  # noqa: PLC0415
+    p = getattr(ws.state, "principal", None)
+    accessdb.audit(deps.db_file(), action, username=getattr(p, "username", ""),
+                   ip=ws.client.host if ws.client else "", target=target)
 
 
 @router.websocket("/term")
@@ -83,6 +93,7 @@ async def term(ws: WebSocket):
         await ws.close(code=4403)
         return
     await ws.accept()
+    _audit_ws(ws, "server_terminal_open")
 
     drop = _drop_target()
     if drop is False:
