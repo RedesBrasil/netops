@@ -469,7 +469,10 @@ function useClaudeSession() {
         let ev; try { ev = JSON.parse(e.data); } catch (_) { return; }
         switch (ev.type) {
           case "system":
-            if (ev.subtype === "init") {
+            if (ev.subtype === "commands") {
+              const l = (ev.data || {}).slash_commands;
+              if (Array.isArray(l) && l.length) setSlash(l);
+            } else if (ev.subtype === "init") {
               const d = ev.data || {};
               // O init traz o id RESOLVIDO (pode diferir do id da lista): só informativo. A escolha
               // do usuário (modelRef) manda no seletor — antes isto o fazia "pular" sozinho.
@@ -1049,7 +1052,7 @@ function Composer() {
   const slashQuery = /^\/(\S*)$/.exec(input);
   const slashMatches = slashQuery
     ? [...LOCAL_SLASH, ...slash.filter((c) => !LOCAL_SLASH.includes(c))]
-        .filter((c) => c.startsWith(slashQuery[1])).slice(0, 8)
+        .filter((c) => c.startsWith(slashQuery[1])).slice(0, 24)
     : [];
 
   // A caixa NUNCA trava: desconectado ainda dá p/ digitar /login (é justamente aí que se precisa).
@@ -1842,6 +1845,11 @@ function Item({ it, onPermission, onFork, onEdit }) {
 
   if (it.type === "assistant")
     return html`<div class="cc-msg assistant"><div class="cc-role">claude</div><${MarkdownView} text=${it.text} /><${MsgTime} ts=${it.ts} /></div>`;
+
+  if (it.type === "note")
+    return it.title
+      ? html`<details class="cc-thinking"><summary>${it.title}</summary><${MarkdownView} text=${it.text} /></details>`
+      : html`<div class="cc-msg assistant"><div class="cc-role">sistema</div><${MarkdownView} text=${it.text} /><${MsgTime} ts=${it.ts} /></div>`;
 
   if (it.type === "thinking")
     return html`<details class="cc-thinking"><summary>pensando…</summary><pre>${it.text}</pre></details>`;

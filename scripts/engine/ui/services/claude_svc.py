@@ -833,6 +833,24 @@ class ClaudeWebSession:
                     self._mode = "default"
             self._sdk_task = asyncio.create_task(self._sdk_pump())
             self._started = True
+            await self._load_slash()
+
+    async def _load_slash(self) -> None:
+        """Lista de slash commands já na conexão (o `init` só chega após o 1º prompt, então o menu
+        de "/" ficava sem /compact etc. numa conversa nova)."""
+        try:
+            info = await self.client.get_server_info() or {}
+            names = []
+            for c in info.get("commands") or []:
+                n = c.get("name") if isinstance(c, dict) else c
+                if n and n not in names:
+                    names.append(str(n).lstrip("/"))
+            self._slash = names
+            if names:
+                await self._send({"type": "system", "subtype": "commands",
+                                  "data": {"slash_commands": names}})
+        except Exception:
+            pass
 
     async def run(self) -> None:
         """Caminho CLÁSSICO (persist OFF): vida do agente = vida do socket."""
@@ -853,6 +871,9 @@ class ClaudeWebSession:
         else:
             # Estado inicial só para ESTE socket (as outras abas já o têm).
             await self._send({"type": "reattached", "busy": self._busy}, only=ws)
+            if getattr(self, "_slash", None):
+                await self._send({"type": "system", "subtype": "commands",
+                                  "data": {"slash_commands": self._slash}}, only=ws)
             await self._send({"type": "netperms_changed", "perms": self._netperms}, only=ws)
             await self._send_queue(only=ws)
             if self._restore_pending:
@@ -1437,6 +1458,30 @@ def _transcript_timestamps(sid: str) -> dict[str, int]:
     return out
 
 
+_TAG_RE = re.compile(r"<(local-command-caveat|command-name|command-message|command-args|"
+                     r"local-command-stdout|local-command-stderr|system-reminder)>(.*?)</\1>", re.S)
+_COMPACT_SUMMARY_RE = re.compile(r"^\s*This session is being continued from a previous conversation")
+
+
+def _tidy_user_text(t: str) -> dict | None:
+    """Prompt sintético do CLI (/compact, caveat, resumo) → item amigável; None = prompt humano normal."""
+    if _COMPACT_SUMMARY_RE.match(t):
+        return {"type": "note", "title": "📋 Resumo da conversa anterior (compactada)", "text": t}
+    if not _SYNTHETIC_RE.match(t) and "<local-command-" not in t:
+        return None
+    tags: dict[str, str] = {}
+    for m in _TAG_RE.finditer(t):
+        tags.setdefault(m.group(1), m.group(2).strip())
+    if "command-name" in tags:
+        arg = tags.get("command-args", "")
+        return {"type": "user", "text": (tags["command-name"] + (" " + arg if arg else "")).strip()}
+    out = tags.get("local-command-stdout") or tags.get("local-command-stderr")
+    if out is not None:
+        out = re.sub(r"\x1b\[[0-9;]*m", "", out).strip()
+        return {"type": "note", "title": "", "text": out or "(sem saída)"} if out else None
+    return {"type": "skip"}   # caveat/system-reminder: ruído, não mostrar
+
+
 def session_items(sid: str) -> list[dict]:
     """Traduz o histórico de uma sessão para os mesmos itens da transcrição da UI."""
     if not _SDK_OK:
@@ -1456,6 +1501,11 @@ def session_items(sid: str) -> list[dict]:
         content = (sm.message or {}).get("content")
         if isinstance(content, str):
             if content.strip():
+                tidy = _tidy_user_text(content.strip()) if role_item == "user" else None
+                if tidy:
+                    if tidy["type"] != "skip":
+                        items.append({**tidy, "ts": ts})
+                    continue
                 it = {"type": role_item, "text": content.strip(), "ts": ts}
                 if role_item == "user":
                     it["uuid"] = sm.uuid   # âncora do fork ("ramificar daqui")
@@ -1470,6 +1520,11 @@ def session_items(sid: str) -> list[dict]:
             if bt == "text":
                 t = (b.get("text") or "").strip()
                 if t:
+                    tidy = _tidy_user_text(t) if role_item == "user" else None
+                    if tidy:
+                        if tidy["type"] != "skip":
+                            items.append({**tidy, "ts": ts})
+                        continue
                     it = {"type": role_item, "text": t, "ts": ts}
                     if role_item == "user":
                         it["uuid"] = sm.uuid   # âncora do fork ("ramificar daqui")
