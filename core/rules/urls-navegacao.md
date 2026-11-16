@@ -52,6 +52,7 @@ Todos os menus do console seguem a regra. Helpers: `static/js/route.js` (`useMen
 | Backups | `#backups/services[/<id>\|/new]`, `#backups/storage[/<host>]` | `q run file diffa diffb` |
 | Scripts / Skills | abas `#scripts` (Skills) e `#scripts?tab=scripts` (Scripts); `#scripts/<skill>` (página da skill), `#scripts/<skill>/<arquivo>[?tab=scripts]` (script ou `SKILL.md`), `/new` | `tab q location lang sort dir doc` |
 | Tarefas agendadas | `#schedules/<id>`, `#schedules/new`, `#schedules/runs`, `#schedules/runs/<tarefa>/<run>` | `q kind status` (tarefas); `q task rstatus unread` (execuções) |
+| Painel | `#dashboard` (página única) | `range start end model metric` + ordenação da tabela de tarefas |
 | Configuração | `#settings/updates` (painel de atualizações) | — |
 | Claude Code | `#claude/<id>`, `#claude/new` | — |
 | Memória | `#memory` (=MEMORY.md), `#memory/AGENTS.md`, `#memory/notas`, `#memory/<nota>.md` | `q` (lista de notas) |

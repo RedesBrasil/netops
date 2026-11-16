@@ -17,6 +17,7 @@ import { SchedulesPage } from "./pages/schedules.js";
 import { UpdatesControl } from "./pages/updates.js";
 import { TerminalPage } from "./pages/terminal.js";
 import { HostTermPage } from "./pages/host-term.js";
+import { DashboardPage } from "./pages/dashboard.js";
 import { FilesPage } from "./pages/files.js";
 import { ClaudeCodePage, ClaudeTopbarControls, ClaudeStatusDot, ClaudeSessionTitle, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
 
@@ -34,6 +35,7 @@ const ROUTES = {
   reports: { label: "Relatórios", comp: ReportsPage, group: "Saída" },
   runs: { label: "Execuções", comp: RunsPage, group: "Saída" },
   backups: { label: "Backups", comp: BackupsPage, group: "Saída" },
+  dashboard: { label: "Painel", comp: DashboardPage, group: "Sistema" },
   schedules: { label: "Tarefas agendadas", comp: SchedulesPage, group: "Sistema", badge: "schedules" },
   claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled" },
   terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled" },
