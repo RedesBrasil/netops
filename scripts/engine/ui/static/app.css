@@ -399,6 +399,10 @@ button.btn-ok:hover { filter: brightness(1.07); }
 .bk-d-del { background: rgba(255, 90, 90, 0.30); }    /* vermelho (translúcido) */
 .bk-d-chg { background: rgba(255, 214, 71, 0.32); }   /* amarelo (translúcido) */
 
+.bk-side { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); column-gap: 2px; }
+.bk-side-head { position: sticky; top: -8px; background: var(--surface-2); font-weight: 600; padding: 2px 4px; z-index: 1; }
+.bk-d-empty { background: rgba(128,128,128,0.12); }
+
 /* Cabeçalho de tabela ordenável (ResourceTable) */
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: var(--text); }

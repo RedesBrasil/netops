@@ -247,7 +247,26 @@ function RunModal({ runId, onClose, onDone }) {
 function DiffModal({ data, onClose }) {
   const lines = (data && data.lines) || [];
   const c = (data && data.counts) || { added: 0, removed: 0, changed: 0 };
-  const cls = (t) => t === "added" ? "bk-d-add" : t === "removed" ? "bk-d-del" : t === "changed" ? "bk-d-chg" : "";
+  // lado a lado: A (esquerda) x B (direita); blocos de removidas/adicionadas são pareados linha a linha
+  const rows = [];
+  let del = [], add = [];
+  const flush = () => {
+    const n = Math.max(del.length, add.length);
+    for (let k = 0; k < n; k++) rows.push({
+      l: k < del.length ? del[k] : null, lc: k < del.length ? "bk-d-del" : "bk-d-empty",
+      r: k < add.length ? add[k] : null, rc: k < add.length ? "bk-d-add" : "bk-d-empty" });
+    del = []; add = [];
+  };
+  for (const l of lines) {
+    if (l.type === "removed") del.push(l.text);
+    else if (l.type === "added") add.push(l.text);
+    else {
+      flush();
+      if (l.type === "changed") rows.push({ l: l.old, lc: "bk-d-chg", r: l.text, rc: "bk-d-chg" });
+      else rows.push({ l: l.text, lc: "", r: l.text, rc: "" });
+    }
+  }
+  flush();
   return html`<${Modal} title="Diferença entre backups" wide onClose=${onClose}>
     <div class="help" style="margin-bottom:8px; display:flex; gap:10px; flex-wrap:wrap; align-items:center">
       <span><b>A:</b> ${data.a}</span><span><b>B:</b> ${data.b}</span>
@@ -256,8 +275,11 @@ function DiffModal({ data, onClose }) {
       <span class="bk-d-del" style="padding:1px 8px; border-radius:4px">${c.removed} removida(s)</span>
       <span class="bk-d-chg" style="padding:1px 8px; border-radius:4px">${c.changed} alterada(s)</span>
     </div>
-    <div class="bk-diff">
-      ${lines.map((l, i) => html`<div key=${i} class=${"bk-d-line " + cls(l.type)}>${l.text || " "}</div>`)}
+    <div class="bk-diff bk-side">
+      <div class="bk-side-head">A</div><div class="bk-side-head">B</div>
+      ${rows.flatMap((r, i) => [
+        html`<div key=${"l" + i} class=${"bk-d-line " + r.lc}>${r.l == null ? " " : (r.l || " ")}</div>`,
+        html`<div key=${"r" + i} class=${"bk-d-line " + r.rc}>${r.r == null ? " " : (r.r || " ")}</div>`])}
     </div>
     <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>Fechar</button></div>
   <//>`;
