@@ -1,5 +1,5 @@
-// Cliente HTTP do NetOps Console. O acesso é autenticado pelo LOGIN (senha-mestra do cofre):
-// o sid da sessão é enviado no header X-Netops-Session em todo request.
+// Cliente HTTP do NetOps Console. O acesso é autenticado pelo LOGIN (usuário + senha; sem usuários,
+// a senha-mestra do cofre): o sid da sessão é enviado no header X-Netops-Session em todo request.
 
 // O sid é compartilhado entre abas da mesma origem; a senha nunca é armazenada.
 const AUTH_KEY = "netops_auth";
@@ -67,6 +67,11 @@ export class ValidationError extends ApiError {
   }
 }
 export class VaultLockedError extends ApiError {}
+// 403 do gate de permissões (grupo de acesso sem a permissão) ou senha provisória a trocar.
+export class ForbiddenError extends ApiError {
+  get perm() { return this.payload?.perm || ""; }
+  get passwordChange() { return this.payload?.error === "password_change_required"; }
+}
 
 async function req(method, path, { body, rev } = {}) {
   const headers = {};
@@ -85,6 +90,10 @@ async function req(method, path, { body, rev } = {}) {
   if (res.status === 409) throw new ConflictError(409, payload);
   if (res.status === 422) throw new ValidationError(422, payload);
   if (res.status === 423) throw new VaultLockedError(423, payload);
+  if (res.status === 403 && (payload?.error === "forbidden" || payload?.error === "password_change_required")) {
+    if (payload.error === "password_change_required") window.dispatchEvent(new CustomEvent("netops:password-change"));
+    throw new ForbiddenError(403, payload);
+  }
   // Sessão de login expirada/ausente: limpa e avisa o shell pra voltar ao login.
   if (res.status === 401 && payload?.error === "auth_required" && authToken() === sentAuth) {
     clearAuthToken();

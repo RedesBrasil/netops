@@ -36,7 +36,7 @@ export function CredentialsPage() {
 
   return html`<div>
     <div class="page-title"><h1>Credenciais</h1><span class="spacer"></span>
-      <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Nova credencial</button></div>
+      <button class="primary needs-credentials-edit" onClick=${() => setEditing({ __new: true })}>+ Nova credencial</button></div>
     ${!vault_initialized && html`<div class="card"><b>Cofre não inicializado.</b> Para guardar senhas cifradas,
       rode no terminal: <code>python3 scripts/engine/vault/cli.py init</code> e depois <code>encrypt</code>.</div>`}
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar credencial" count=${credentials.length} total=${allCreds.length} />
@@ -48,7 +48,7 @@ export function CredentialsPage() {
           onClick=${() => setRotating({ name: r.name, field: "password" })}>Senha…</button>
         <button class="sm" disabled=${!writable}
           onClick=${() => setRotating({ name: r.name, field: "secret" })}>Secret…</button>
-        <button class="sm danger" onClick=${() => setConfirm(r.name)}>Excluir</button>`}
+        <button class="sm danger needs-credentials-edit" onClick=${() => setConfirm(r.name)}>Excluir</button>`}
       empty="Nenhuma credencial. Crie uma e depois defina a senha." />
 
     ${editing && html`<${CredentialForm} key=${editing.name || "new"} cred=${editing} rev=${rev} onClose=${() => setEditing(null)}
@@ -102,7 +102,7 @@ function CredentialForm({ cred, rev, onClose, onSaved }) {
     <${Field}><label><input type="checkbox" checked=${form.api_ssl} onChange=${(e) => set("api_ssl", e.target.checked)} /> API com TLS (api_ssl)</label><//>
     ${isNew && html`<div class="help">A senha é definida depois, no botão "Senha…" (é cifrada no servidor; nunca trafega em texto puro de volta).</div>`}
     <div class="modal-actions"><button onClick=${onClose}>Cancelar</button>
-      <button class="primary" onClick=${save}>${isNew ? "Criar" : "Salvar"}</button></div>
+      <button class="primary needs-credentials-edit" onClick=${save}>${isNew ? "Criar" : "Salvar"}</button></div>
   <//>`;
 }
 

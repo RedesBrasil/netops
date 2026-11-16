@@ -9,7 +9,7 @@ function KnowledgeSection({ kind, title, menu }) {
   const r = useMenuRoute(menu);
   return html`<div>
     <div class="page-title"><h1>${title}</h1><span class="spacer"></span>
-      <button class="primary" onClick=${() => r.open("new")}>+ Novo arquivo</button></div>
+      <button class="primary needs-knowledge-edit" onClick=${() => r.open("new")}>+ Novo arquivo</button></div>
     <${KnowledgeKind} kind=${kind} r=${r} />
   </div>`;
 }
@@ -83,7 +83,7 @@ function FileEditor({ kind, target, onClose, onSaved }) {
     <${Field} label="Nome do arquivo (alterar = renomear, atualiza o índice)">
       <input value=${name} onInput=${(e) => setName(e.target.value)} /><//>
     ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />` : html`<${CodeTextEditor} name=${target.name} value=${text} onChange=${setText} />`}
-    <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary" onClick=${save}>Salvar</button></div>
+    <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary needs-knowledge-edit" onClick=${save}>Salvar</button></div>
   <//>`;
 }
 

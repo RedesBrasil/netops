@@ -71,7 +71,7 @@ export function ScriptsPage() {
   ];
   const table = html`<${DataTable} tableId="scripts" urlSort defaultSort=${NAME_SORT} columns=${scriptCols} rows=${rows}
     onRowClick=${(s) => r.open(s.path.split("/"))}
-    actions=${(s) => html`<button class="sm danger" onClick=${() => setConfirm(s.path)}>Excluir</button>`}
+    actions=${(s) => html`<button class="sm danger needs-scripts-edit" onClick=${() => setConfirm(s.path)}>Excluir</button>`}
     empty=${"Nenhum script" + (skill ? " nesta skill — ela é só documentação" : "") + "."} />`;
 
   const filters = html`<${FilterBar} q=${q} onChange=${r.setParams} placeholder=${skill ? "Pesquisar scripts da skill…" : "Pesquisar nome, skill, descrição…"}
@@ -91,7 +91,7 @@ export function ScriptsPage() {
 
   const overview = html`<div>
     <div class="page-title"><h1>Scripts / Skills</h1><span class="spacer"></span>
-      <button class="primary" onClick=${() => startCreate()}>+ Novo</button></div>
+      <button class="primary needs-scripts-edit" onClick=${() => startCreate()}>+ Novo</button></div>
     <div class="help" style="margin-bottom:8px">Cada pasta de <span class="mono">scripts/tools/</span> é uma <b>skill</b>: o <span class="mono">SKILL.md</span> diz o que ela faz e quando usar,
       e os scripts (Python/Shell) são as ferramentas dela. O motor do NetOps não aparece aqui. Execução: Terminal/Claude.</div>
     <${Tabs} active=${onScriptsTab ? "scripts" : "skills"} onChange=${(t) => setTab(t === "scripts" ? "scripts" : "")} tabs=${[
@@ -106,7 +106,7 @@ export function ScriptsPage() {
   const skillView = skill && html`<div>
     <div class="help"><a href="#scripts">← Skills</a></div>
     <div class="page-title"><h1>${skill.name}</h1><span class="spacer"></span>
-      <button class="primary" onClick=${() => startCreate(skill.id + "/")}>+ Novo script</button></div>
+      <button class="primary needs-scripts-edit" onClick=${() => startCreate(skill.id + "/")}>+ Novo script</button></div>
     ${skill.description && html`<div style="margin-bottom:4px">${skill.description}</div>`}
     <div class="help mono" style="margin-bottom:8px">scripts/tools/${skill.id}/</div>
     ${skill.doc ? html`<${SkillDoc} key=${skill.doc} path=${skill.doc} version=${res.data} onSaved=${res.reload} />`
@@ -154,7 +154,7 @@ function SkillDoc({ path, version, onSaved }) {
   if (text === null) return html`<${Spinner} />`;
   return html`<div>
     <${MarkdownEditor} value=${text} onChange=${setText} />
-    <div style="margin-top:12px"><button class="primary" disabled=${text === data.text} onClick=${save}>Salvar SKILL.md</button></div>
+    <div style="margin-top:12px"><button class="primary needs-scripts-edit" disabled=${text === data.text} onClick=${save}>Salvar SKILL.md</button></div>
   </div>`;
 }
 
@@ -182,7 +182,7 @@ function Editor({ path, onClose, onSaved }) {
     <${Field} label="Caminho (alterar = renomear/mover dentro de tools/)">
       <input value=${name} onInput=${(e) => setName(e.target.value)} /><//>
     <${CodeTextEditor} name=${path} value=${text} onChange=${setText} />`}
-    <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary" onClick=${save}>Salvar</button></div>
+    <div class="modal-actions"><button onClick=${onClose}>Fechar</button><button class="primary needs-scripts-edit" onClick=${save}>Salvar</button></div>
   <//>`;
 }
 

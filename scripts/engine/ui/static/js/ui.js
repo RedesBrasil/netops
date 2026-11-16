@@ -1,10 +1,10 @@
 // Núcleo compartilhado da UI: re-exports, store mínimo, toasts, hooks e componentes base.
 import { html } from "htm/preact";
 import { useState, useEffect, useRef, useCallback, useMemo } from "preact/hooks";
-import { api, ConflictError, ValidationError, VaultLockedError } from "./api.js";
+import { api, ConflictError, ValidationError, VaultLockedError, ForbiddenError } from "./api.js";
 
 export { html, useState, useEffect, useRef, useCallback, useMemo, api };
-export { ConflictError, ValidationError, VaultLockedError };
+export { ConflictError, ValidationError, VaultLockedError, ForbiddenError };
 
 /* ----------------------------- store mínimo ----------------------------- */
 export function createStore(initial) {
@@ -57,6 +57,26 @@ export function startVaultPolling() {
   }
 }
 
+/* ------------------------- usuário logado (me) -------------------------- */
+// /api/auth/me: quem sou + permissões efetivas. O front só ESCONDE o que não pode; quem bloqueia é o
+// backend (services/authz.py). `can(perm)` = admin ou permissão no(s) grupo(s).
+export const meStore = createStore(null);
+export async function refreshMe() {
+  try { meStore.set(await api.get("/auth/me")); }
+  catch (e) { if (e.status === 401) meStore.set(null); }
+  return meStore.get();
+}
+export function can(perm, me = meStore.get()) {
+  if (!perm) return true;
+  if (!me) return false;
+  return !!me.is_admin || (me.permissions || []).includes(perm);
+}
+export function useMe() { return useStore(meStore); }
+export function permLabel(perm, me = meStore.get()) {
+  const p = (me?.catalog || []).find((x) => x.key === perm);
+  return p ? p.label : "somente administradores";
+}
+
 /* ----------------------------- useResource ------------------------------ */
 export function useResource(path, deps = []) {
   const [state, setState] = useState({ data: null, loading: true, error: null });
@@ -87,6 +107,10 @@ export function handleError(e, { onConflict } = {}) {
     return [];
   }
   if (e instanceof VaultLockedError) { refreshVault(); toast.err("Cofre trancado — destranque no terminal"); return []; }
+  if (e instanceof ForbiddenError) {
+    toast.err(e.passwordChange ? "Troque a senha provisória antes de continuar." : (e.message || "Sem permissão."));
+    return [];
+  }
   toast.err(e.message || "Erro");
   return [];
 }

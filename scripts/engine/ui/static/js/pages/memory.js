@@ -69,6 +69,6 @@ function FileEditor({ name }) {
   if (text === null) return html`<${Spinner} />`;
   return html`<div>
     <${MarkdownEditor} value=${text} onChange=${setText} />
-    <div style="margin-top:12px"><button class="primary" disabled=${text === data.text} onClick=${save}>Salvar</button></div>
+    <div style="margin-top:12px"><button class="primary needs-knowledge-edit" disabled=${text === data.text} onClick=${save}>Salvar</button></div>
   </div>`;
 }

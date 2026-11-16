@@ -3,7 +3,8 @@
 # Uso: tests/e2e-env.sh up|down|sync   (sync = recopia static/ do working tree)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
-E=/tmp/netops-e2e; PORT=${NETOPS_E2E_PORT:-8771}; PY=${NETOPS_E2E_PY:-/tmp/ccq/venv/bin/python}
+# NETOPS_E2E_DIR: use /var/tmp/netops-<tarefa>/e2e (regra: nada pesado em /tmp, que pode ser tmpfs).
+E=${NETOPS_E2E_DIR:-/tmp/netops-e2e}; PORT=${NETOPS_E2E_PORT:-8771}; PY=${NETOPS_E2E_PY:-/tmp/ccq/venv/bin/python}
 sync_code() {
   mkdir -p "$E/code" && cd "$ROOT"
   rm -rf "$E/code"; mkdir -p "$E/code"
@@ -31,14 +32,23 @@ hosts:
   - {id: 3, hostname: SRV-WEB-01, mgmt_ip: 192.0.2.3, group: linux-servers}
 Y
     printf 'version: 1\ncredentials:\n  cred_demo: {username: demo}\n' > "$D/network/credentials.yaml"
+    # NETOPS_E2E_VAULT=<senha-mestra fictícia>: cofre inicializado = login ligado (testes de multiusuário).
+    if [ -n "${NETOPS_E2E_VAULT:-}" ]; then
+      (cd "$ROOT/scripts/engine" && NETOPS_E2E_VAULT="$NETOPS_E2E_VAULT" "$PY" -c 'import os,sys,yaml; sys.path.insert(0,".")
+from lib import vault
+f=sys.argv[1]; d=yaml.safe_load(open(f)); d["vault"]=vault.build_meta(os.environ["NETOPS_E2E_VAULT"])[0]; yaml.safe_dump(d,open(f,"w"))' "$D/network/credentials.yaml")
+    fi
     printf 'version: 1\nnodes: []\nlinks: []\n' > "$D/network/topology.yaml"
     printf 'project:\n  network_name: Teste\n' > "$D/core/config/project-config.yaml"
     mkdir -p "$D/backups/by-id/1"; printf 'v1\n' > "$D/backups/by-id/1/a.rsc"; printf 'v2\n' > "$D/backups/by-id/1/b.rsc"
     cd "$E/code"
-    NETOPS_UI_DATA_ROOT="$D" NETOPS_UI_HOST=127.0.0.1 NETOPS_UI_PORT=$PORT NETOPS_UI_CLAUDE=0 NETOPS_UI_TERMINAL=0 \
+    # Sessão do cofre isolada: um login de teste nunca grava chave no cofre do console real.
+    mkdir -p "$E/xdg" && chmod 700 "$E/xdg"
+    XDG_RUNTIME_DIR="$E/xdg" NETOPS_UI_DATA_ROOT="$D" NETOPS_UI_HOST=127.0.0.1 NETOPS_UI_PORT=$PORT NETOPS_UI_CLAUDE=0 NETOPS_UI_TERMINAL=0 \
       nohup "$PY" scripts/engine/ui/server.py --host 127.0.0.1 --port "$PORT" --no-browser --enable-terminal > "$E/server.log" 2>&1 &
     echo $! > "$E/pid"
     for i in $(seq 30); do curl -sf "http://127.0.0.1:$PORT/api/config/meta" >/dev/null && break; sleep 1; done
+    if [ -n "${NETOPS_E2E_VAULT:-}" ]; then echo "up :$PORT (cofre/login ligado)"; exit 0; fi
     REV=$(curl -s "http://127.0.0.1:$PORT/api/backups" | "$PY" -c 'import sys,json;print(json.load(sys.stdin)["rev"])')
     curl -s -X PUT "http://127.0.0.1:$PORT/api/backups" -H "If-Match: $REV" -H 'Content-Type: application/json' -d '{"version":3,"legacy_sources":[],"services":[
       {"id":"svc-a","name":"Servico A","enabled":true,"schedule":{"frequency":"daily","time":"03:00"},"targets":{"hosts":[1],"groups":[]},"retention":{"mode":"count","value":7}},

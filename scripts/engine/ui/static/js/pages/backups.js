@@ -201,7 +201,7 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
     <div class="modal-actions">
       ${!isNew && html`<button class="danger" style="margin-right:auto" onClick=${onDelete}>Remover</button>`}
       <button onClick=${onClose}>Cancelar</button>
-      <button class="primary" onClick=${submit}>Salvar</button>
+      <button class="primary needs-backups-edit" onClick=${submit}>Salvar</button>
     </div>
   <//>`;
 }
@@ -498,9 +498,9 @@ export function BackupsPage() {
             <div class="help">${scheduleSummary(s.schedule)} · ${targetsSummary(s.targets)} · ${retentionSummary(s.retention)}</div>
           </div>
           <div class="bk-svc-btns" onClick=${(e) => e.stopPropagation()}>
-            <button class="sm primary" onClick=${() => startRun(s.id)}>▶ Run</button>
+            <button class="sm primary needs-backups-run" onClick=${() => startRun(s.id)}>▶ Run</button>
             ${runs[s.id] && html`<button class="sm" onClick=${() => setRunModal(runs[s.id])}>acompanhar</button>`}
-            <button class="sm" onClick=${() => r.open(["services", s.id])}>Editar</button>
+            <button class="sm needs-backups-edit" onClick=${() => r.open(["services", s.id])}>Editar</button>
           </div>
         </div>`)}
       </div>`}

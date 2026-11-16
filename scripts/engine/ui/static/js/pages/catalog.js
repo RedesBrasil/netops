@@ -10,7 +10,7 @@ function CatalogSection({ kind, title }) {
   const r = useMenuRoute(kind);
   return html`<div>
     <div class="page-title"><h1>${title}</h1><span class="spacer"></span>
-      <button class="primary" onClick=${() => r.open("new")}>+ Novo</button></div>
+      <button class="primary needs-knowledge-edit" onClick=${() => r.open("new")}>+ Novo</button></div>
     <${Kind} kind=${kind} r=${r} />
   </div>`;
 }
@@ -82,7 +82,7 @@ function Detail({ kind, file, onClose, onSaved }) {
     ${isMd ? html`<${MarkdownEditor} value=${text} onChange=${setText} />`
       : html`<${YamlEditor} name=${file} value=${text} onChange=${setText} view=${kind === "workflows" ? WorkflowView : null} form=${kind === "workflows" ? WorkflowForm : null} />`}
     <div class="help">Validação no servidor: ${kind === "workflows" ? "exige workflow.steps" : "frontmatter com id/name/function"}.</div>
-    <div style="margin-top:12px"><button class="primary" disabled=${!dirty} onClick=${save}>Salvar</button></div>
+    <div style="margin-top:12px"><button class="primary needs-knowledge-edit" disabled=${!dirty} onClick=${save}>Salvar</button></div>
   </div>`;
 }
 

@@ -1020,3 +1020,19 @@ td .legacy { font-style: italic; }
 ::highlight(cc-quote-hl) { background-color: #ffd54a; color: #111; text-decoration: underline; text-decoration-color: #d97706; text-decoration-thickness: 2px; }
 .cc-qref { color: var(--accent, #3b82f6); font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
 .cc-qref:hover { text-decoration: underline; }
+
+/* ---------- Multiusuário: usuários, grupos de acesso, auditoria, conta ---------- */
+.perm-checks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.perm-check { display: inline-flex; align-items: center; gap: 6px; font-weight: normal; }
+fieldset.perm-area { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px 8px; margin: 0 0 8px; }
+fieldset.perm-area legend { font-size: 12px; color: var(--muted, #888); padding: 0 4px; }
+fieldset.perm-area .perm-check { display: flex; padding: 2px 0; }
+.user-chip { font-size: 13px; text-decoration: none; color: inherit; padding: 2px 8px; border-radius: 12px; border: 1px solid var(--border); white-space: nowrap; }
+.user-chip:hover { background: var(--accent-weak); }
+.forbidden-card { max-width: 560px; }
+.account-grid { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
+.account-grid dt { color: var(--muted, #888); }
+.account-grid dd { margin: 0; }
+.cc-np-row.capped { opacity: .45; }
+.perm-check input[type=checkbox] { width: auto; flex: none; margin: 0; }
+fieldset.perm-area .perm-check { justify-content: flex-start; color: var(--text); font-size: 14px; margin: 0; }

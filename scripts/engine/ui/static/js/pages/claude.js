@@ -135,6 +135,7 @@ function useClaudeSession() {
   const [netperms, setNetpermsState] = useState(NETPERMS_ALL);   // permissões de rede da conversa
   const netpermsRef = useRef(NETPERMS_ALL);
   const setNetperms = useCallback((v) => { const n = npNorm(v); netpermsRef.current = n; setNetpermsState(n); }, []);
+  const [netpermsMax, setNetpermsMax] = useState(null);   // teto do grupo de acesso (multiusuário)
   const [effort, setEffort] = useState(() => { try { return localStorage.getItem("cc-effort") || ""; } catch (_) { return ""; } });
   const effortRef = useRef(effort);
   const [ctxUse, setCtxUse] = useState(null);      // {total,max,percentage} do contexto
@@ -527,6 +528,7 @@ function useClaudeSession() {
             break;
           case "netperms_changed":
             if (Array.isArray(ev.perms)) setNetperms(ev.perms);
+            setNetpermsMax(Array.isArray(ev.max) ? ev.max : null);   // teto do grupo do usuário (null = sem teto)
             break;
           case "reattached":
             setWorking(!!ev.busy);   // re-anexou a uma sessão viva: reflete se há turno rodando
@@ -842,7 +844,7 @@ function useClaudeSession() {
   return {
     effort, changeEffort, ctxUse, lastUsage,
     queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove,
-    status, items, working, mode, netperms, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
+    status, items, working, mode, netperms, netpermsMax, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
     send, submit, stop, newSession, resumeSession, forkFrom, editFrom, answerPermission, changeMode, changeModel, uploadFile,
@@ -1180,7 +1182,7 @@ function loadMentionCatalog(force) {
 // Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
-  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, netperms, changeNetperms, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments,
+  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, netperms, netpermsMax, changeNetperms, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments,
     queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove, sessionId } = useClaude();
   const taRef = useRef(null);
   // Menções "#host:…" / "#group:…": menu junto ao cursor, ↑↓ navega, Enter/Tab escolhe, Esc fecha.
@@ -1321,7 +1323,7 @@ function Composer() {
           <${Popover} up=${true} align="right" btnClass=${"cc-pill cc-np-pill" + (npFull(netperms) ? "" : " restricted")}
             title="Permissões de rede: o que o agente pode fazer nos equipamentos"
             label=${html`<span class="cc-pill-ico">🔐</span><span class="cc-pill-txt"> Rede: ${npShort(netperms)}</span>`}>
-            ${() => html`<${NetPermsPicker} value=${netperms} onChange=${changeNetperms} />`}
+            ${() => html`<${NetPermsPicker} value=${netperms} max=${netpermsMax} onChange=${changeNetperms} />`}
           <//>
           <${Popover} up=${true} align="right" btnClass="cc-pill" disabled=${disabled} title="Modo de permissão do agente"
             label=${html`<span class="cc-pill-ico">${(MODES.find((m) => m.value === mode) || MODES[0]).icon}</span><span class="cc-pill-txt"> ${(MODES.find((m) => m.value === mode) || MODES[0]).short}</span>`}>
@@ -2085,21 +2087,26 @@ function Item({ it, onPermission, onFork, onEdit }) {
 }
 
 // Seletor das permissões de rede: "Full" + as 4 categorias (checkbox). Usado no composer e nos Padrões.
-function NetPermsPicker({ value, onChange, compact }) {
-  const cur = npNorm(value);
+function NetPermsPicker({ value, onChange, compact, max = null }) {
+  // max = teto do grupo de acesso do usuário (multiusuário). Acima dele: desabilitado e sem aprovação.
+  const allowed = Array.isArray(max) ? max : NETPERMS_ALL;
+  const cur = npNorm(value).filter((v) => allowed.includes(v));
   const full = cur.length === NETPERMS_ALL.length;
+  const capped = allowed.length < NETPERMS_ALL.length;
   const toggle = (v) => onChange(cur.includes(v) ? cur.filter((x) => x !== v) : npNorm([...cur, v]));
   return html`<div class=${"cc-np" + (compact ? " compact" : "")}>
     ${!compact && html`<div class="cc-pop-title">Nos equipamentos</div>`}
-    <label class="cc-np-row full">
-      <input type="checkbox" checked=${full} onChange=${() => onChange(full ? [] : NETPERMS_ALL)} />
+    <label class=${"cc-np-row full" + (capped ? " capped" : "")}>
+      <input type="checkbox" disabled=${capped} checked=${full} onChange=${() => onChange(full ? [] : NETPERMS_ALL)} />
       <b>Full</b>
     </label>
-    ${NETPERMS.map((p) => html`<label key=${p.value} class="cc-np-row">
-      <input type="checkbox" checked=${cur.includes(p.value)} onChange=${() => toggle(p.value)} />
+    ${NETPERMS.map((p) => html`<label key=${p.value} class=${"cc-np-row" + (allowed.includes(p.value) ? "" : " capped")}
+        title=${allowed.includes(p.value) ? "" : "Seu grupo de acesso não permite"}>
+      <input type="checkbox" disabled=${!allowed.includes(p.value)} checked=${cur.includes(p.value)} onChange=${() => toggle(p.value)} />
       <b>${p.label}</b><small>${p.desc}</small>
     </label>`)}
-    ${!compact && html`<div class="cc-np-help">Desmarcado: pede sua aprovação.</div>`}
+    ${!compact && html`<div class="cc-np-help">${capped ? "Desmarcado: pede sua aprovação. Cinza: fora do seu grupo (bloqueado)."
+      : "Desmarcado: pede sua aprovação."}</div>`}
   </div>`;
 }
 

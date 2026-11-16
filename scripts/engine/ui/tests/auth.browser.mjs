@@ -28,6 +28,7 @@ try {
       if (path === '/api/config/meta') return route.fulfill({ json: { network_name: 'Fixture Auth', version: '1.0.0', terminal_enabled: false, claude_enabled: false } });
       if (!sessions.has(sid)) return route.fulfill({ status: 401, json: { error: 'auth_required' } });
       if (path === '/api/vault/status') return route.fulfill({ json: { state: 'cache' } });
+      if (path === '/api/auth/me') return route.fulfill({ json: { username: 'admin', is_admin: true, groups: ['admin'], permissions: [], net_perms: [], catalog: [] } });
       if (path === '/api/updates/status') return route.fulfill({ json: { current_version: '1.0.0', managed: false, read_only: false, job: {} } });
       return route.fulfill({ json: { hosts: [], groups: [], rev: 'fixture' } });
     });

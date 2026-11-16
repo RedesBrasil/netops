@@ -238,7 +238,7 @@ function TaskEditor({ initial, scripts, onSave, onClose, onDelete }) {
     <div class="modal-actions">
       ${!isNew && html`<button class="danger" style="margin-right:auto" onClick=${() => setConfirmDel(true)}>Remover</button>`}
       <button onClick=${onClose}>Cancelar</button>
-      <button class="primary" onClick=${submit}>Salvar</button>
+      <button class="primary needs-schedules-edit" onClick=${submit}>Salvar</button>
     </div>
     ${confirmDel && html`<${ConfirmDialog} title="Remover tarefa?" danger
       message=${`A tarefa "${init.name}" deixa de rodar. O histórico de execuções fica em runs/schedules/.`}
@@ -399,7 +399,7 @@ export function SchedulesPage() {
             <div class="help sc-what mono">${t.kind === "agent" ? t.prompt : t.script}${t.kind === "hybrid" ? html` <span class="sc-arrow">→ agente:</span> ${t.prompt}` : ""}</div>
           </div>
           <div class="bk-svc-btns" onClick=${(e) => e.stopPropagation()}>
-            <button class="sm primary" onClick=${() => runNow(t)} disabled=${!!t.state.running}>▶ Executar</button>
+            <button class="sm primary needs-schedules-run" onClick=${() => runNow(t)} disabled=${!!t.state.running}>▶ Executar</button>
             <button class="sm" onClick=${() => toggle(t)}>${t.enabled === false ? "Ativar" : "Pausar"}</button>
             <button class="sm" onClick=${() => r.openWith(["runs"], { task: t.id, q: "" })}>Histórico</button>
             <button class="sm" onClick=${() => r.open([t.id])}>Editar</button>
@@ -440,7 +440,7 @@ export function SchedulesPage() {
     <div class="page-title"><h1>Tarefas agendadas</h1>
       <span class="help">fuso ${timezone}</span>
       <span style="flex:1"></span>
-      <button class="primary" onClick=${() => r.open(["new"])}>＋ Nova tarefa</button>
+      <button class="primary needs-schedules-edit" onClick=${() => r.open(["new"])}>＋ Nova tarefa</button>
     </div>
     <${Tabs} active=${tab} onChange=${(k) => r.openWith(k === "runs" ? ["runs"] : [], { q: "" })} tabs=${[
       { key: "tasks", label: `Tarefas (${tasks.length})` },

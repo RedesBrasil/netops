@@ -81,6 +81,26 @@ const CASES = {
   } },
   credentials: { row: "table a[href^='#credentials/']", open: ".modal", q: "demo", qRows: 1, deep: ["#credentials/cred_demo/password", ".modal:has-text('Definir password')"] },
   reports: { row: "table a[href^='#reports/']", open: ".modal", q: "b.md", qRows: 1 },
+  "access-groups": { row: "table a[href^='#access-groups/']", open: ".modal", q: "operador", qRows: 1,
+    extra: [["#access-groups/new", ".modal:has-text('Novo grupo')"]] },
+  users: { custom: async (page, BASE, { assert, settle, hash }) => {   // sem usuários (E2E sem login): 1º admin
+    await page.goto(`${BASE}/#users`); await page.locator("text=Modo senha-mestra").waitFor();
+    await page.getByRole("button", { name: /Novo usuário/ }).click(); await settle();
+    assert.equal(hash(), "#users/new", "users: + Novo usuário tem URL");
+    await page.locator(".modal:has-text('Primeiro administrador')").waitFor();
+    await page.reload(); await page.locator(".modal:has-text('Primeiro administrador')").waitFor();
+    await page.goBack(); await settle(); assert.equal(await page.locator(".modal").count(), 0, "users: Voltar fecha");
+    await page.goto(`${BASE}/#users/nao-existe-xyz`); await page.locator("text=não encontrado").waitFor();
+    await page.goto(`${BASE}/#users?group=admin&status=ativo`); await settle();
+    assert.equal(await page.locator(".fb-select.on").count(), 2, "users: filtros vêm da URL");
+  } },
+  audit: { custom: async (page, BASE, { assert, settle, hash }) => {
+    await page.goto(`${BASE}/#audit`); await page.locator("h1:has-text('Auditoria')").waitFor(); await settle();
+    await page.goto(`${BASE}/#audit?action=api&q=hosts`); await settle();
+    assert.equal(await page.locator("input[type=search]").inputValue(), "hosts", "audit: busca vem da URL");
+    await page.reload(); await settle();
+    assert.ok(hash().includes("action=api"), "audit: filtro sobrevive ao F5");
+  } },
   runs: { row: "table a[href^='#runs/']", open: ".modal", q: "run-b", qRows: 1 },
 };
 const want = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(CASES);

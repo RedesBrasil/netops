@@ -1,7 +1,7 @@
 // Entrypoint: router hash-based + shell (sidebar/topbar/vault banner) + mount.
 import { render } from "preact";
 import { html, useState, useEffect, api } from "./ui.js";
-import { ToastHost, startVaultPolling } from "./ui.js";
+import { ToastHost, startVaultPolling, refreshMe, useMe, can, permLabel, meStore } from "./ui.js";
 import { LoginScreen } from "./components.js";
 import { authToken, setOnAuthChange, setOnUnauthorized, clearAuthToken } from "./api.js";
 import { HostsPage, GroupsPage } from "./pages/hosts.js";
@@ -19,28 +19,36 @@ import { TerminalPage } from "./pages/terminal.js";
 import { HostTermPage } from "./pages/host-term.js";
 import { DashboardPage } from "./pages/dashboard.js";
 import { FilesPage } from "./pages/files.js";
+import { UsersPage, AccessGroupsPage } from "./pages/users.js";
+import { AuditPage } from "./pages/audit.js";
+import { AccountPage } from "./pages/account.js";
 import { ClaudeCodePage, ClaudeTopbarControls, ClaudeStatusDot, ClaudeSessionTitle, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
 
+// perm = permissão exigida (services/authz.py / lib/accessdb.PERMISSIONS); hidden = fora do menu.
 const ROUTES = {
-  hosts: { label: "Hosts", comp: HostsPage, group: "Inventário" },
-  groups: { label: "Grupos", comp: GroupsPage, group: "Inventário" },
-  credentials: { label: "Credenciais", comp: CredentialsPage, group: "Inventário" },
-  maps: { label: "Mapas", comp: MapsPage, group: "Inventário" },
-  memory: { label: "Memória", comp: MemoryPage, group: "Conhecimento" },
-  practices: { label: "Boas práticas", comp: BestPracticesPage, group: "Conhecimento" },
-  configs: { label: "Configurações", comp: ConfigsPage, group: "Conhecimento" },
-  workflows: { label: "Workflows", comp: WorkflowsPage, group: "Conhecimento" },
-  agents: { label: "Agentes", comp: AgentsPage, group: "Conhecimento" },
-  scripts: { label: "Scripts / Skills", comp: ScriptsPage, group: "Conhecimento" },
-  reports: { label: "Relatórios", comp: ReportsPage, group: "Saída" },
-  runs: { label: "Execuções", comp: RunsPage, group: "Saída" },
-  backups: { label: "Backups", comp: BackupsPage, group: "Saída" },
-  dashboard: { label: "Painel", comp: DashboardPage, group: "Sistema" },
-  schedules: { label: "Tarefas agendadas", comp: SchedulesPage, group: "Sistema", badge: "schedules" },
-  claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled" },
-  terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled" },
-  files: { label: "Arquivos", comp: FilesPage, group: "Sistema", flag: "files_enabled" },
-  settings: { label: "Configuração", comp: SettingsPage, group: "Sistema" },
+  hosts: { label: "Hosts", comp: HostsPage, group: "Inventário", perm: "hosts.view" },
+  groups: { label: "Grupos", comp: GroupsPage, group: "Inventário", perm: "hosts.view" },
+  credentials: { label: "Credenciais", comp: CredentialsPage, group: "Inventário", perm: "credentials.view" },
+  maps: { label: "Mapas", comp: MapsPage, group: "Inventário", perm: "hosts.view" },
+  memory: { label: "Memória", comp: MemoryPage, group: "Conhecimento", perm: "knowledge.view" },
+  practices: { label: "Boas práticas", comp: BestPracticesPage, group: "Conhecimento", perm: "knowledge.view" },
+  configs: { label: "Configurações", comp: ConfigsPage, group: "Conhecimento", perm: "knowledge.view" },
+  workflows: { label: "Workflows", comp: WorkflowsPage, group: "Conhecimento", perm: "knowledge.view" },
+  agents: { label: "Agentes", comp: AgentsPage, group: "Conhecimento", perm: "knowledge.view" },
+  scripts: { label: "Scripts / Skills", comp: ScriptsPage, group: "Conhecimento", perm: "scripts.view" },
+  reports: { label: "Relatórios", comp: ReportsPage, group: "Saída", perm: "knowledge.view" },
+  runs: { label: "Execuções", comp: RunsPage, group: "Saída", perm: "knowledge.view" },
+  backups: { label: "Backups", comp: BackupsPage, group: "Saída", perm: "backups.view" },
+  dashboard: { label: "Painel", comp: DashboardPage, group: "Sistema", perm: "dashboard.view" },
+  schedules: { label: "Tarefas agendadas", comp: SchedulesPage, group: "Sistema", badge: "schedules", perm: "schedules.view" },
+  claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled", perm: "claude.use" },
+  terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled", perm: "server.terminal" },
+  files: { label: "Arquivos", comp: FilesPage, group: "Sistema", flag: "files_enabled", perm: "server.files" },
+  settings: { label: "Configuração", comp: SettingsPage, group: "Sistema", perm: "config" },
+  users: { label: "Usuários", comp: UsersPage, group: "Sistema", perm: "users.manage" },
+  "access-groups": { label: "Grupos de acesso", comp: AccessGroupsPage, group: "Sistema", perm: "users.manage" },
+  audit: { label: "Auditoria", comp: AuditPage, group: "Sistema", perm: "audit.view" },
+  account: { label: "Minha conta", comp: AccountPage, group: "Sistema", hidden: true },
 };
 const ORDER = ["Inventário", "Conhecimento", "Saída", "Sistema"];
 
@@ -62,24 +70,33 @@ function useHash() {
 
 // Contador de notificações não lidas das tarefas agendadas (badge no menu). Polling leve +
 // recarga imediata quando a página de tarefas marca algo como lido (evento netops:schedules).
-function useScheduleBadge() {
+function useScheduleBadge(enabled) {
   const [n, setN] = useState(0);
   useEffect(() => {
+    if (!enabled) return undefined;
     let alive = true;
     const load = () => api.get("/schedules/notifications").then((d) => alive && setN(d.unread || 0)).catch(() => {});
     load();
     const t = setInterval(load, 30000);
     addEventListener("netops:schedules", load); addEventListener("focus", load);
     return () => { alive = false; clearInterval(t); removeEventListener("netops:schedules", load); removeEventListener("focus", load); };
-  }, []);
+  }, [enabled]);
   return { schedules: n };
 }
 
-function Sidebar({ current, meta, open, onNavigate }) {
-  const visible = ([, r]) => !r.flag || meta[r.flag];
-  const badges = useScheduleBadge();
+// Menu: some o que o servidor não liga (flag) e o que o grupo do usuário não permite (perm).
+const routeVisible = (r, meta, me) => !r.hidden && (!r.flag || meta[r.flag]) && can(r.perm, me);
+function firstAllowed(meta, me) {
+  const hit = Object.entries(ROUTES).find(([, r]) => routeVisible(r, meta, me));
+  return hit ? hit[0] : "account";
+}
+
+function Sidebar({ current, meta, me, open, onNavigate }) {
+  const visible = ([, r]) => routeVisible(r, meta, me);
+  const badges = useScheduleBadge(can("schedules.view", me));
+  const groups = ORDER.filter((g) => Object.values(ROUTES).some((r) => r.group === g && routeVisible(r, meta, me)));
   return html`<nav class=${"sidebar" + (open ? " open" : "")} onClick=${(e) => { if (e.target.closest("a")) onNavigate(); }}>
-    ${ORDER.map((g) => html`<div key=${g}>
+    ${groups.map((g) => html`<div key=${g}>
       <div class="group-label">${g}</div>
       ${Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
         <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${r.label}${r.badge && badges[r.badge] > 0
@@ -96,7 +113,8 @@ function App({ onLogout, showLogout }) {
 
 function Shell({ onLogout, showLogout }) {
   const hash = useHash();
-  const route = hash.split("/")[0];
+  const me = useMe();
+  let route = hash.split("/")[0];
   const claude = useClaude();
   const [meta, setMeta] = useState({ network_name: "NetOps" });
   const [navOpen, setNavOpen] = useState(false);     // gaveta de navegação (mobile)
@@ -105,6 +123,15 @@ function Shell({ onLogout, showLogout }) {
   const [moreOpen, setMoreOpen] = useState(false);   // folha de ações do topo (mobile)
   const [theme, setTheme] = useState(localStorage.getItem("netops_theme") || "light");
   useEffect(() => { startVaultPolling(); api.get("/config/meta").then(setMeta).catch(() => {}); }, []);
+  // Esconde botões de ação sem permissão: a página marca o botão com `needs-<perm>` (ponto vira hífen,
+  // ex.: needs-hosts-edit) e aqui vira display:none p/ cada permissão que o usuário NÃO tem.
+  // É só conforto visual — quem bloqueia é o backend (403).
+  useEffect(() => {
+    let st = document.getElementById("netops-perm-style");
+    if (!st) { st = document.createElement("style"); st.id = "netops-perm-style"; document.head.appendChild(st); }
+    const missing = (me?.catalog || []).map((p) => p.key).filter((k) => !can(k, me));
+    st.textContent = missing.map((k) => `.needs-${k.replace(/\./g, "-")}{display:none!important}`).join("\n");
+  }, [me]);
   useEffect(() => { document.title = meta.network_name ? `NetOps · ${meta.network_name}` : "NetOps"; }, [meta.network_name]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme; localStorage.setItem("netops_theme", theme);
@@ -122,9 +149,16 @@ function Shell({ onLogout, showLogout }) {
 
   // Terminal de host abre numa janela própria: tela cheia, sem barra lateral/topo.
   if (route === "hostterm") return html`<${HostTermPage} /><${ToastHost} />`;
-  const Page = (ROUTES[route] || ROUTES.hosts).comp;
+  // Senha provisória: só a troca de senha até resolver (o backend devolve 403 no resto).
+  const forced = !!(me && me.must_change_password);
+  if (forced) route = "account";
+  // Rota vazia/desconhecida -> primeira tela que o usuário pode ver (nem todo grupo vê Hosts).
+  if (!ROUTES[route] && me) route = firstAllowed(meta, me);
+  const target = ROUTES[route] || ROUTES.hosts;
+  const denied = me && !forced && !can(target.perm, me);
+  const Page = target.comp;
   // Chat encaixado à direita: só fora da página cheia (#claude) e com conversa viva.
-  const dockVisible = route !== "claude" && !!(claude && claude.hasSession);
+  const dockVisible = route !== "claude" && !!(claude && claude.hasSession) && can("claude.use", me);
   return html`<div class=${"shell" + (dockVisible ? " has-dock" : "") + (collapsed ? " nav-collapsed" : "")}>
     <div class="topbar">
       <button class="sm mob-only nav-toggle" aria-label="Menu" onClick=${() => { setMoreOpen(false); setNavOpen(!navOpen); }}>☰</button>
@@ -140,15 +174,19 @@ function Shell({ onLogout, showLogout }) {
         <div class="keep-open"><${UpdatesControl} part="version" /></div>
         <button class="sm" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}>
           ${theme === "light" ? "🌙 escuro" : "☀ claro"}</button>
+        ${me && showLogout && html`<a class="user-chip" href="#account" title=${"Minha conta — grupos: " + (me.groups || []).join(", ")}>👤 ${me.display_name || me.username}</a>`}
         ${showLogout && html`<button class="sm" onClick=${doLogout}>Sair</button>`}
       </div>
     </div>
     ${(navOpen || moreOpen) && html`<div class="mob-backdrop" onClick=${() => { setNavOpen(false); setMoreOpen(false); }}></div>`}
-    <${Sidebar} current=${route} meta=${meta} open=${navOpen} onNavigate=${() => setNavOpen(false)} />
+    <${Sidebar} current=${route} meta=${meta} me=${me} open=${navOpen} onNavigate=${() => setNavOpen(false)} />
     <button class="sidebar-toggle" aria-label=${collapsed ? "Mostrar barra lateral" : "Esconder barra lateral"}
       title=${collapsed ? "Mostrar barra lateral" : "Esconder barra lateral"} onClick=${() => setCollapsed(!collapsed)}>${collapsed ? "›" : "‹"}</button>
     <main class=${"content" + (route === "maps" ? " maps-content" : "") + (route === "files" ? " files-content" : "")}>
-      <${Page} />
+      ${denied ? html`<div class="card forbidden-card"><h2>Sem permissão</h2>
+          <p>Seu grupo de acesso não libera <b>${target.label}</b> (${permLabel(target.perm, me)}).</p>
+          <p>Peça a um administrador para incluir você num grupo com essa permissão. <a href=${"#" + firstAllowed(meta, me)}>Voltar</a></p></div>`
+        : forced ? html`<${AccountPage} forced=${true} />` : html`<${Page} />`}
     </main>
     ${dockVisible && html`<${ChatDock} />`}
     <${ToastHost} />
@@ -159,6 +197,7 @@ function Shell({ onLogout, showLogout }) {
 function Root() {
   const [gate, setGate] = useState("loading");   // "loading" | "login" | "app"
   const [authRequired, setAuthRequired] = useState(false);
+  const [multiuser, setMultiuser] = useState(false);
   const [migration, setMigration] = useState(null);
 
   useEffect(() => {
@@ -181,15 +220,23 @@ function Root() {
         if (current !== generation) return;
         if (sentAuth !== authToken()) return check();
         setAuthRequired(!!s.auth_required);
-        setGate(s.auth_required && !s.authenticated ? "login" : "app");
+        setMultiuser(!!s.multiuser);
+        const needLogin = s.auth_required && !s.authenticated;
+        if (!needLogin) await refreshMe();
+        else meStore.set(null);
+        if (current !== generation) return;
+        setGate(needLogin ? "login" : "app");
       } catch (e) {
         if (current === generation) setGate("app");
       }
     }
-    setOnUnauthorized(() => { generation++; setGate("login"); });
+    setOnUnauthorized(() => { generation++; meStore.set(null); setGate("login"); });
+    // 403 password_change_required (senha provisória): relê o /auth/me -> o shell mostra a troca.
+    const onPw = () => { refreshMe(); };
+    addEventListener("netops:password-change", onPw);
     setOnAuthChange(check);
     check();
-    return () => { generation++; clearTimeout(retry); setOnAuthChange(null); setOnUnauthorized(null); };
+    return () => { generation++; clearTimeout(retry); setOnAuthChange(null); setOnUnauthorized(null); removeEventListener("netops:password-change", onPw); };
   }, []);
 
   if (migration) return html`<div class="boot"><section role=${migration.phase === "failed" ? "alert" : "status"} aria-live="polite">
@@ -199,7 +246,8 @@ function Root() {
     <button onClick=${() => location.reload()}>Verificar novamente</button>
   </section></div>`;
   if (gate === "loading") return html`<div class="boot">Carregando NetOps Console…</div>`;
-  if (gate === "login") return html`<${LoginScreen} onAuthed=${() => { setAuthRequired(true); setGate("app"); }} />`;
+  if (gate === "login") return html`<${LoginScreen} multiuser=${multiuser}
+    onAuthed=${async () => { setAuthRequired(true); await refreshMe(); setMultiuser(true); setGate("app"); }} />`;
   return html`<${App} onLogout=${() => setGate("login")} showLogout=${authRequired} />`;
 }
 

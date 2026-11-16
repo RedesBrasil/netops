@@ -81,7 +81,7 @@ export function HostsPage() {
 
   return html`<div>
     <div class="page-title"><h1>Hosts</h1><span class="spacer"></span>
-      <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Novo host</button></div>
+      <button class="primary needs-hosts-edit" onClick=${() => setEditing({ __new: true })}>+ Novo host</button></div>
     <${FilterBar} q=${q} onChange=${setParams} placeholder="Buscar por ID, nome ou IP" count=${hosts.length} total=${allHosts.length}
       selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: opts((h) => h.effective.vendor) },
                  { key: "role", label: "Role", value: role, options: opts((h) => h.effective.role) },
@@ -92,10 +92,10 @@ export function HostsPage() {
     <${DataTable} tableId="hosts" urlSort columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
       onRowClick=${(r) => setEditing(r)}
       actions=${(r) => { const te = accessEntries(r);
-        return html`<button class="sm" disabled=${!te.length}
+        return html`<button class="sm needs-host-terminal" disabled=${!te.length}
             title=${te.length ? "Acessar (" + te.map((e) => (e.kind === "web" ? "WEB " : "") + e.method.toUpperCase() + ":" + e.port).join(", ") + ")" : "Host sem SSH/Telnet/HTTP(S) cadastrado"}
             onClick=${() => te.length === 1 ? openEntry(r.id, te[0]) : openAccess(r.id)}>⌨ Acessar</button>
-          <button class="sm danger" onClick=${() => setConfirm(r.id)}>Excluir</button>`; }}
+          <button class="sm danger needs-hosts-edit" onClick=${() => setConfirm(r.id)}>Excluir</button>`; }}
       empty="Nenhum host. Clique em + Novo host." />
 
     ${accessHost && html`<${AccessChooser} host=${accessHost} entries=${accessEntries(accessHost)} onClose=${() => openAccess("")} />`}
@@ -342,7 +342,7 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
     <${Field} label="Notas"><textarea value=${form.notes} onInput=${(e) => set("notes", e.target.value)}></textarea><//>
     <div class="modal-actions">
       <button onClick=${onClose}>Cancelar</button>
-      <button class="primary" disabled=${saving} onClick=${save}>${saving ? "Salvando…" : isNew ? "Criar" : "Salvar"}</button>
+      <button class="primary needs-hosts-edit" disabled=${saving} onClick=${save}>${saving ? "Salvando…" : isNew ? "Criar" : "Salvar"}</button>
     </div>
     ${conflict && html`<${ConflictDialog} onReload=${onSaved} onClose=${() => setConflict(false)} />`}
   <//>`;
@@ -373,13 +373,13 @@ export function GroupsPage() {
   ];
   return html`<div>
     <div class="page-title"><h1>Grupos</h1><span class="spacer"></span>
-      <button class="primary" onClick=${() => setEditing({ __new: true })}>+ Novo grupo</button></div>
+      <button class="primary needs-hosts-edit" onClick=${() => setEditing({ __new: true })}>+ Novo grupo</button></div>
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar grupo" count=${groups.length} total=${allGroups.length}
       selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: optsOf("vendor") }, { key: "role", label: "Role", value: role, options: optsOf("role") }]} />
     ${seg && seg !== "new" && !editing && html`<div class="card">Grupo '${seg}' não encontrado. <a href="#groups">Voltar aos grupos</a></div>`}
     <${DataTable} tableId="groups" urlSort columns=${cols} rows=${groups.map((g) => ({ ...g, _key: g.name }))}
       onRowClick=${(r) => setEditing(r)}
-      actions=${(r) => html`<button class="sm danger" onClick=${() => setConfirm(r)}>Excluir</button>`}
+      actions=${(r) => html`<button class="sm danger needs-hosts-edit" onClick=${() => setConfirm(r)}>Excluir</button>`}
       empty="Nenhum grupo." />
     ${editing && html`<${GroupForm} key=${editing.name || "new"} group=${editing} rev=${rev}
         onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
@@ -438,7 +438,7 @@ function GroupForm({ group, rev, onClose, onSaved }) {
     <${Field} label="Credencial"><${RefSelect} value=${form.credential} options=${creds} onChange=${(v) => set("credential", v)} /><//>
     <div class="modal-actions">
       <button onClick=${onClose}>Cancelar</button>
-      <button class="primary" onClick=${save}>${isNew ? "Criar" : "Salvar"}</button>
+      <button class="primary needs-hosts-edit" onClick=${save}>${isNew ? "Criar" : "Salvar"}</button>
     </div>
   <//>`;
 }
