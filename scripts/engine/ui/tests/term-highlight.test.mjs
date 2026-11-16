@@ -28,9 +28,9 @@ test("não mexe em texto que já vem colorido nem em tela cheia", () => {
 
 test("IP partido entre dois pacotes e escape partido", () => {
   const h = createHighlighter();
-  let out = h.feed("inet 10.8.2");
+  let out = h.feed("inet 10.0.0");
   assert.equal(out, "inet ");
-  out += h.feed("00.11 netmask\n");
+  out += h.feed(".11 netmask\n");
   assert.ok(out.includes(`${E}[95m10.0.0.11${E}[39m`));
   const h2 = createHighlighter();
   let o2 = h2.feed(`a${E}[3`); o2 += h2.feed(`2mverde${E}[0m 1.1.1.1\n`);

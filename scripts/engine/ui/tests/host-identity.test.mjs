@@ -20,7 +20,7 @@ test('wire roundtrip preserves integer references, positions and mixed visual la
   assert.deepEqual(view.maps[0].positions[42], { x: 12, y: 34, z_index: 3 });
   assert.equal(view.maps[0].visual_links[0].source, 'host:42');
   const { host_ids, ...wireMap } = map;
-  assert.deepEqual(mapToWire(view.maps[0]), wireMap);
+  assert.deepEqual(mapToWire(view.maps[0]), { ...wireMap, excluded: [] });
   assert.deepEqual(snapshot, { hosts: [{ id: 42, hostname: 'Roteador' }], maps: [map] });
 });
 
