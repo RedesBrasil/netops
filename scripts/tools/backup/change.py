@@ -9,6 +9,8 @@ Usa o mesmo armazenamento da aba Backups: backups/by-id/<id>/. Só roda se o hos
   change.py check --host-id N   # exit 3 se há backup pendente (usado pelo hook guard-netops.sh)
  Segredos no backup ficam em
 texto puro (como o próprio export do equipamento); a credencial de acesso nunca é lida aqui.
+Conexão: por padrão reusa a sessão persistente do host (session.py; abre uma se não houver, 1 login por host);
+se falhar, cai no login avulso. NETOPS_BACKUP_NO_SESSION=1 força o login avulso.
 Retenção: project-config.yaml -> backups.keep_versions (padrão 10 arquivos por host).
 """
 import argparse, difflib, json, os, sys, time
@@ -61,6 +63,33 @@ def host_info(hid: int):
     return h
 
 
+def _run_via_session(hid: int, method: str, cmd: str, timeout: int = 120) -> str:
+    """Roda `cmd` na sessão persistente do host (reusa a viva ou abre uma: 1 login por host).
+    Levanta RuntimeError se não der — o chamador cai no login avulso."""
+    import importlib.util  # noqa: PLC0415
+    spec = importlib.util.spec_from_file_location("netops_session", ROOT / "scripts/tools/access/session.py")
+    sess = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sess)
+    sid, msg = sess.acquire_session(hid, method, False)
+    if not sid:
+        raise RuntimeError(msg)
+    res = sess._request(sid, {"op": "exec", "command": cmd, "timeout": timeout,
+                              "expect": None, "timing": False}, timeout=timeout + sess.CLIENT_SLACK)
+    if res.get("status") != "ok":
+        raise RuntimeError(f"sessão devolveu status={res.get('status')}")
+    return res.get("output", "")
+
+
+def _run(hid: int, method: str, cmd: str) -> str:
+    """Padrão: sessão persistente já aberta. Falhou → login avulso (comportamento antigo)."""
+    if os.environ.get("NETOPS_BACKUP_NO_SESSION") != "1":
+        try:
+            return _run_via_session(hid, method, cmd)
+        except BaseException as exc:  # noqa: BLE001 — inclui SystemExit (cofre trancado etc.)
+            print(f"AVISO: sessão persistente indisponível ({exc}); usando login avulso.", file=sys.stderr)
+    return run_commands(hid, [cmd], force_method=method, read_timeout=120)[cmd]
+
+
 def collect(hid: int, h: dict) -> str:
     col = collector(h.get("vendor") or "")
     if not col:
@@ -69,9 +98,9 @@ def collect(hid: int, h: dict) -> str:
     method = (h.get("access") or {}).get("method", "ssh")
     if method not in ("ssh", "telnet"):
         raise SystemExit(f"acesso {method} não coleta config — cadastre SSH")
-    out = run_commands(hid, [cmd], force_method=method, read_timeout=120)[cmd]
+    out = _run(hid, method, cmd)
     if cmd.startswith("/export show-sensitive") and ("expected end of command" in out or "syntax error" in out):
-        out = run_commands(hid, ["/export"], force_method=method, read_timeout=120)["/export"]
+        out = _run(hid, method, "/export")
     text = clean(out)
     if len(text.strip()) < 50:
         raise SystemExit("backup vazio/curto demais — abortando por segurança")
