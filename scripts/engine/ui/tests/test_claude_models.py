@@ -38,8 +38,8 @@ def isolated_models(env, monkeypatch):
     return clock
 
 
-def _cache_on_disk(at, models, source=SOURCE):
-    data = {"at": at, "models": models}
+def _cache_on_disk(at, models, source=SOURCE, fp=None):
+    data = {"at": at, "models": models, "fp": claude_models._fingerprint() if fp is None else fp}
     if source is not None:
         data["source"] = source
     path = claude_models._CACHE_FILE
@@ -200,3 +200,19 @@ def test_successful_catalog_is_refreshed_after_week(isolated_models, monkeypatch
 ])
 def test_default_model_prefers_latest_sonnet_numerically(ids, expected):
     assert claude_models.default_model([{"id": mid, "name": mid} for mid in ids]) == expected
+
+
+def test_cache_is_discarded_when_provider_config_changes(isolated_models, monkeypatch):
+    """Trocar de provedor/proxy invalida o cache de 7 dias (ids antigos seriam rejeitados)."""
+    _cache_on_disk(isolated_models[0], [{"id": "claude-opus-5[1m]", "name": "Antigo"}], fp="outro-provedor")
+    monkeypatch.setattr(claude_models, "_fetch", lambda: CATALOG)
+    assert claude_models.list_models() == CATALOG
+
+def test_model_picker_from_settings_is_merged(env, monkeypatch):
+    """Gateway de terceiros: o modelPicker dos settings entra no catálogo (o handshake não o traz)."""
+    (env / ".claude").mkdir()
+    (env / ".claude" / "settings.json").write_text(json.dumps({"modelPicker": {
+        "replaceBuiltInOptions": True,
+        "options": [{"model": "gpt-6-luna[1m]", "label": "GPT 6 Luna"}]}}), encoding="utf-8")
+    picker = claude_models._picker()
+    assert picker[0]["id"] == "gpt-6-luna[1m]" and picker[0]["_replace"] is True

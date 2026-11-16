@@ -15,6 +15,10 @@
   - **Recuperação:** `scripts/engine/users/cli.py` (inclui `reset-admin`).
   - **Migração automática:** sem usuários, a tela pede o e-mail do administrador e a senha-mestra, e o 1º login cria o `admin` com esse e-mail. Quem estava logado continua logado.
 
+### Correções
+
+- **Aba Claude Code com proxy/gateway de terceiros.** O banner de login deixa de dar falso "deslogado" quando o agente autentica por `ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_BASE_URL` no bloco `env` dos settings (o `claude auth status` não lê esse bloco; agora ele é repassado). O catálogo de modelos passa a incluir o `modelPicker` dos settings, e o cache de 7 dias é descartado quando o provedor ou os modelos mudam. Sem proxy (direto na Anthropic) nada muda: sem `env` nem `modelPicker` o comportamento é o anterior.
+
 ## [2.4.0] - 2026-11-16
 
 ### Novidades
