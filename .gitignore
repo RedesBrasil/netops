@@ -123,3 +123,10 @@ id_ed25519*
 
 # Cópias de segurança avulsas (*.bak.<data>) nunca sobem
 *.bak.*
+
+# Monitor do atendimento (credenciais de teste + Telegram)
+network/atendimento-monitor.yaml
+network/telegram.yaml
+runs/atendimento-monitor/
+network/atendimento-coleta.yaml
+network/task-keys/

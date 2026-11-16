@@ -34,8 +34,15 @@ No `hybrid`, saída vazia do script (ou última linha `{"wakeAgent": false}`) **
 - **Notificação** (`notify`): `auto` (padrão: falha sempre; agente avisa salvo `[SILENT]`; script só em
   falha), `always`, `failure`, `never`. Não lidas aparecem como contador vermelho no menu e na aba
   **Execuções**.
-- **Cofre:** tarefas que acessam equipamentos precisam do cofre destrancado (mesmo cache de sessão do
-  console, `/run/user/<uid>/netops`); trancado → a execução falha com o erro do script.
+- **Acesso a equipamentos:** tarefa agendada usa **chave SSH dedicada**, não o cofre (que só fica destrancado com humano
+  digitando a senha). Uma vez, com o cofre aberto: `python3 scripts/tools/access/task_key.py provision --task <id> --hosts 16,35 --mode ro`.
+  Depois a tarefa/agente acessam com `python3 scripts/tools/access/task_exec.py --task <id> --host-id N --command "..."`.
+  - Chave em `network/task-keys/<id>/` (git-ignorada, 0600). `ro` = o equipamento só aceita comandos de leitura
+    (`/usr/local/sbin/netops-ro-shell`: lista de permissão, sem redirecionamento, sem arquivos sensíveis; tudo no syslog).
+    `rw` só se a tarefa precisar escrever. Fingerprint do equipamento fixada no provisionamento.
+  - **Ciclo de vida:** a chave morre com a tarefa — `delete_task` (CLI/console) apaga a pasta e o tick do despachante
+    varre pastas sem tarefa (cobre apagar no YAML). A remoção da linha no equipamento fica na fila
+    `network/task-keys/_revoke.yaml` e roda com `task_key.py revoke-pending` (cofre aberto). `task_key.py list|test|delete`.
 
 ## Instalação nova / atualização
 

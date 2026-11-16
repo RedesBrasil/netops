@@ -2,6 +2,16 @@
 
 ## [Não lançado]
 
+## [2.4.0] - 2026-11-16
+
+### Novidades
+
+- **Tarefa agendada com acesso a equipamento por chave dedicada.** `task_key.py provision/revoke-pending` cria um par ed25519 por tarefa (git-ignorado) e autoriza só nos hosts escolhidos, com backup pré/pós. O modo `ro` (padrão) restringe o equipamento a comandos de leitura pela guarda `netops-ro-shell` (`ro_shell.py`, lista de permissão). A tarefa e o agente acessam com `task_exec.py`, mesmo com o cofre trancado. A chave morre com a tarefa.
+- **Monitor de lentidão do atendimento** (`scripts/tools/diagnostics/atendimento/`): medição periódica, aviso no Telegram e agente investigador. Os arquivos de configuração e credenciais ficam git-ignorados.
+- **Aba Claude Code:** comandos de barra na conexão, prompts sintéticos (`/compact`) legíveis no histórico e melhorias de menções.
+- **Backup de mudança:** `change.py` reusa a sessão persistente do host, com fallback para login avulso.
+- Diff de backups com A e B lado a lado; checkboxes de permissões de rede alinhados no modal Padrões.
+
 ### Novidades
 
 - **Console como PWA (instalável).** `manifest.webmanifest`, ícones (192/512, maskable, iOS), `sw.js` e `offline.html` em `scripts/engine/ui/static/`; a cor da barra acompanha o tema. O service worker só intercepta navegação (página "sem conexão" quando o servidor cai) e nunca toca em `/api`, WebSockets nem guarda o front em cache. Instalar exige HTTPS (ou localhost). Teste: `tests/test_pwa.py`.

@@ -95,8 +95,17 @@ export function expandMentions(text, catalog) {
   return `${text}\n\n${MENTION_NOTE}\n${lines.join("\n")}`;
 }
 
-// Para exibir a bolha do usuário sem o bloco técnico (ao vivo e no histórico relido).
+// Citações numeradas (**[n]** + "> trecho"): instrução ao agente para responder item a item citando "[n]",
+// o que permite à tela transformar esses "[n]" em links de volta à citação.
+export const QUOTE_NOTE = "[NetOps — citações]";
+export function addQuoteNote(text) {
+  if (!/^\*\*\[\d+\]\*\*$/m.test(text) || String(text).includes(QUOTE_NOTE)) return text;
+  return `${text}\n\n${QUOTE_NOTE}\nO usuário citou trechos de respostas suas, numerados **[n]**. Responda a cada um separadamente e, ao tratar de cada citação, escreva o número exatamente no formato [n] (ex.: [1], [2]) no início do trecho da resposta.`;
+}
+
+// Para exibir a bolha do usuário sem os blocos técnicos (ao vivo e no histórico relido).
 export function stripMentionNote(text) {
-  const i = String(text).indexOf("\n\n" + MENTION_NOTE + "\n");
-  return i < 0 ? text : text.slice(0, i);
+  const t = String(text);
+  const cuts = [MENTION_NOTE, QUOTE_NOTE].map((n) => t.indexOf("\n\n" + n + "\n")).filter((i) => i >= 0);
+  return cuts.length ? t.slice(0, Math.min(...cuts)) : text;
 }

@@ -95,8 +95,10 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 - **Git — SEMPRE na `main` (INEGOCIÁVEL):** nunca crie branch. Commit e push direto na `main` (`git pull --ff-only`
   antes). Vale para qualquer IA/IDE e sobrepõe a instrução padrão do agente de "criar branch antes de commitar".
 - **Padronize:** todo arquivo novo segue o `_TEMPLATE` da sua pasta. Ver `PADRAO.md`.
-- **Acesso a equipamento = SEMPRE `scripts/tools/access/session.py` (INEGOCIÁVEL):** é o único script de
-  CLI (SSH/Telnet); `ssh.py`/`telnet.py` foram removidos e `ssh`/`sshpass`/`telnet` do sistema são proibidos.
+- **Acesso a equipamento por CLI (INEGOCIÁVEL):** só dois scripts — `scripts/tools/access/session.py` (pedido do
+  usuário no chat/console; usa o cofre; SSH/Telnet) e `scripts/tools/access/task_exec.py` (tarefa agendada; chave
+  dedicada, ver "Tarefa agendada que acessa equipamento"). `ssh.py`/`telnet.py` foram removidos e
+  `ssh`/`sshpass`/`telnet` do sistema são proibidos.
   "Acesse/verifique/rode X no host N" → vá direto, sem preparar ambiente (já está pronto: `python3` ou `python`,
   o script entra sozinho no `.venv`; não ative venv nem instale nada). Ache o ID em `network/hosts.yaml` e rode:
   - **PADRÃO = sessão persistente por host:** `python3 scripts/tools/access/session.py exec --host-id <ID> --command "<c1>" [--command "<c2>"]`.
@@ -145,6 +147,17 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   sistema e aparece no menu **Tarefas agendadas** para editar. Escolha o tipo: `script` (determinística),
   `agent` (agente de IA) ou `hybrid` (script coleta + agente analisa). **Nunca** `crontab -e`, arquivo em
   `/etc/cron.d` à mão nem a ferramenta `CronCreate` (morre com a sessão). Responda com `id`, tipo e próximos horários.
+- **Tarefa agendada que acessa equipamento = chave dedicada, nunca o cofre (INEGOCIÁVEL):** o cofre só fica
+  destrancado enquanto um humano digita a senha, então tarefa agendada não depende dele. Para cada tarefa que precise
+  entrar em equipamento: `python3 scripts/tools/access/task_key.py provision --task <id-da-tarefa> --hosts <IDs> --mode ro`
+  (cria o par ed25519 em `network/task-keys/<id>/`, git-ignorado, e autoriza só nos hosts listados, com backup pré/pós).
+  **Mínimo de poder:** `ro` (padrão) = o equipamento só executa comandos de leitura (guarda `netops-ro-shell` com lista de
+  permissão); `rw` só se a tarefa realmente precisar escrever, e nesse caso diga ao usuário. A tarefa e o agente dela
+  acessam com `python3 scripts/tools/access/task_exec.py --task <id> --host-id N --command "..."` (funciona com o cofre
+  trancado). A chave morre com a tarefa: apagar a tarefa (CLI, console ou YAML na mão) apaga a pasta da chave, e a linha no
+  authorized_keys dos equipamentos sai com `task_key.py revoke-pending` (fila em `network/task-keys/_revoke.yaml`; rode
+  quando o cofre estiver aberto). Comando negado pelo equipamento: não contorne, proponha-o como ação recomendada.
+  Ver `scripts/engine/scheduler/SKILL.md`.
 - **Console web — subir E reiniciar = um script só, `scripts/engine/ui/start.sh` (INEGOCIÁVEL):** rode **SEMPRE** ele —
   **nunca** `python3 scripts/engine/ui/server.py` direto, nem `kill` + `start.sh` à mão, nem `systemd-run` improvisado.
   - Console **parado** → o script **sobe**. Console **já rodando** → o script **reinicia**, preservando host/porta/terminal/claude.

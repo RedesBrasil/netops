@@ -138,7 +138,20 @@ def tick(root=None) -> list[str]:
             st["last_tick"] = time.time()
         for tid in due:
             _spawn(tid, "schedule", root)
+        _sweep_task_keys(cfg, root)
         return due
+
+
+def _sweep_task_keys(cfg: dict, root=None) -> None:
+    """Pasta de chave sem tarefa (tarefa apagada editando o YAML na mão) é removida."""
+    ids = {t.get("id") for t in cfg.get("tasks", [])}
+    if not ids:
+        return
+    try:
+        from lib import taskkeys
+        taskkeys.sweep(store.data_root(root), ids)
+    except Exception:
+        pass
 
 
 def run_now(task_id: str, root=None) -> str:

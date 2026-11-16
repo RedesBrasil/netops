@@ -36,7 +36,7 @@ toast.info = (m) => toast("info", m);
 export function ToastHost() {
   const list = useStore(toastStore);
   return html`<div class="toast-host">
-    ${list.map((t) => html`<div key=${t.id} class="toast ${t.kind}">${t.message}</div>`)}
+    ${list.map((t) => html`<div key=${t.id} class="toast ${t.kind}"><span>${t.message}</span><button class="toast-x" title="Fechar" aria-label="Fechar" onClick=${() => toastStore.set((l) => l.filter((x) => x.id !== t.id))}>✕</button></div>`)}
   </div>`;
 }
 

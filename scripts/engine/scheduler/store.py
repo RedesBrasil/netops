@@ -403,8 +403,18 @@ def delete_task(task_id: str, rev: str | None = None, root=None) -> dict:
     with edit_state(root) as st:
         st["tasks"].pop(task_id, None)
         st["unread"] = [u for u in st["unread"] if not u.startswith(task_id + "/")]
+    _drop_task_keys(task_id, root)
     install_cron(root)
     return {"rev": new_rev}
+
+
+def _drop_task_keys(task_id: str, root=None) -> None:
+    """A chave SSH dedicada da tarefa morre com ela (lib/taskkeys.py); a revogação nos equipamentos fica na fila."""
+    try:
+        from lib import taskkeys
+        taskkeys.delete(data_root(root), task_id)
+    except Exception:
+        pass
 
 
 def set_timezone(name: str, rev: str | None = None, root=None) -> dict:

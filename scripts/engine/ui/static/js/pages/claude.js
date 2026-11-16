@@ -12,7 +12,7 @@ import { useContext } from "preact/hooks";
 import { MarkdownView, VaultBanner, Modal, Field, UnlockModal } from "../components.js";
 import { autoOpenFromText } from "../term-link.js";
 import { authToken } from "../api.js";
-import { buildCatalog, findMentionToken, searchMentions, applyMention, expandMentions, stripMentionNote } from "../mentions.js";
+import { buildCatalog, findMentionToken, searchMentions, applyMention, expandMentions, addQuoteNote, stripMentionNote } from "../mentions.js";
 import { classifyClaudeError, claudeErrorDetail } from "../claude-errors.js";
 import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
   rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, claudePrefsOpen, setClaudePrefsHash, claudeSessionsOpen, setClaudeSessionsHash, stripClaudeModal, copyClaudeSessionLink } from "../claude-sessions.js";
@@ -632,7 +632,7 @@ function useClaudeSession() {
   function submit() {
     const typed = input.trim();
     if (!typed && !attachments.length) return;
-    const text = [...attachments.map((a) => "@" + a.path), expandMentions(typed, mentionCatalog)].filter(Boolean).join(" ");
+    const text = [...attachments.map((a) => "@" + a.path), addQuoteNote(expandMentions(typed, mentionCatalog))].filter(Boolean).join(" ");
     // /login, /logout, /auth são resolvidos AQUI (o SDK não os conhece) e funcionam mesmo
     // com a sessão caída — que é exatamente quando você precisa deles.
     if (LOCAL_SLASH_RE.test(text)) { setInput(""); setShowAuth(true); return; }
@@ -751,7 +751,7 @@ function useClaudeSession() {
     const a = autoSendRef.current;
     if (!a || status !== "pronto" || sessionIdRef.current !== a.sid) return;
     autoSendRef.current = null;
-    dispatch(expandMentions(a.text, mentionCatalog), false);
+    dispatch(addQuoteNote(expandMentions(a.text, mentionCatalog)), false);
   }, [status, sessionId]);
 
   // Pós-login: o subprocesso `claude` vivo ainda carrega a credencial velha, então é preciso
@@ -856,6 +856,50 @@ function useClaudeSession() {
 
 // --------------------------------------------------------------------- visões
 // Transcrição rolável (compartilhada). Cada instância faz seu próprio auto-scroll ao fim.
+// Botão "Responder" sobre o trecho selecionado numa resposta do Claude: acrescenta a citação (> …)
+// ao campo de mensagem SEM enviar. Dá para citar vários trechos em sequência e enviar tudo junto.
+function ReplyQuote({ boxRef }) {
+  const { setInput } = useClaude();
+  const [pos, setPos] = useState(null);   // {x, y, text}
+  useEffect(() => {
+    const check = () => {
+      const sel = window.getSelection && window.getSelection();
+      const box = boxRef.current;
+      if (!sel || sel.isCollapsed || !box || sel.rangeCount === 0) { setPos(null); return; }
+      const r = sel.getRangeAt(0);
+      const anc = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
+      const msg = anc && anc.closest && anc.closest(".cc-msg.assistant");
+      if (!msg || !box.contains(msg)) { setPos(null); return; }
+      const text = sel.toString().trim();
+      if (!text) { setPos(null); return; }
+      const rect = r.getBoundingClientRect();
+      setPos({ x: Math.min(Math.max(rect.left + rect.width / 2, 50), window.innerWidth - 50), y: Math.max(rect.top - 8, 44), text });
+    };
+    let t = null;
+    const later = () => { clearTimeout(t); t = setTimeout(check, 60); };
+    document.addEventListener("selectionchange", later);
+    return () => { document.removeEventListener("selectionchange", later); clearTimeout(t); };
+  }, []);
+  if (!pos) return null;
+  const add = () => {
+    const quote = pos.text.split("\n").map((l) => (l.trim() ? "> " + l.trim() : ">")).join("\n");
+    setInput((cur) => {
+      const nums = [...(cur || "").matchAll(/^\*\*\[(\d+)\]\*\*/gm)].map((m) => +m[1]);
+      const n = (nums.length ? Math.max(...nums) : 0) + 1;      // próxima numeração, a partir do que já está no campo
+      return (cur && cur.trim() ? cur.replace(/\s+$/, "") + "\n\n" : "") + `**[${n}]**\n` + quote + "\n\n";
+    });
+    const sel = window.getSelection(); if (sel) sel.removeAllRanges();
+    setPos(null);
+    setTimeout(() => {
+      const ta = document.querySelector(".cc-composer textarea");
+      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); ta.scrollTop = ta.scrollHeight; }
+    }, 30);
+  };
+  return html`<button class="cc-reply-quote" style=${`left:${pos.x}px;top:${pos.y}px`}
+    onMouseDown=${(e) => e.preventDefault()} onTouchStart=${(e) => e.stopPropagation()}
+    onClick=${add} title="Citar este trecho no campo de mensagem (sem enviar)">↩ Responder</button>`;
+}
+
 function Transcript() {
   const { items, status, answerPermission, auth, setShowAuth, forkFrom, editFrom, sessionId } = useClaude();
   const scrollRef = useRef(null);
@@ -877,6 +921,7 @@ function Transcript() {
     ${items.map((it, i) => html`<${Item} key=${i} it=${it} onPermission=${answerPermission}
       onFork=${sessionId && !it.queued ? () => forkFrom(i) : null}
       onEdit=${sessionId && !it.queued && status === "pronto" ? (t) => editFrom(i, t) : null} />`)}
+    <${ReplyQuote} boxRef=${scrollRef} />
   </div>`;
 }
 
@@ -913,6 +958,24 @@ function AttachThumb({ path }) {
     </div>`}`;
   return html`<span class="cc-file-chip" title=${path}>${isImg ? "🖼" : "📎"} ${name}</span>`;
 }
+// Copia o texto (Markdown) completo da resposta. HTTP puro não tem navigator.clipboard: usa textarea + execCommand.
+async function copyReply(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+    else {
+      const t = document.createElement("textarea");
+      t.value = text; t.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+      document.body.appendChild(t); t.select();
+      const ok = document.execCommand("copy"); t.remove();
+      if (!ok) throw new Error("copy");
+    }
+    toast.ok("Resposta copiada");
+  } catch (e) { toast.err("Não foi possível copiar a resposta."); }
+}
+function CopyReply({ text }) {
+  if (!text || !String(text).trim()) return null;
+  return html`<button class="cc-copy-reply" title="Copiar resposta" aria-label="Copiar resposta" onClick=${(e) => { e.stopPropagation(); copyReply(String(text)); }}>📋 Copiar</button>`;
+}
 // Data/hora discreta no canto da bolha (hoje: só hora; outro dia: dd/mm hh:mm).
 function MsgTime({ ts }) {
   if (!ts) return null;
@@ -922,6 +985,128 @@ function MsgTime({ ts }) {
   const same = d.toDateString() === new Date().toDateString();
   const label = same ? hm : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hm}`;
   return html`<time class="cc-time" title=${d.toLocaleString("pt-BR")}>${label}</time>`;
+}
+// Mensagem do usuário com citações numeradas (**[n]** + linhas "> …"): cada citação vira um bloco
+// clicável que rola até a resposta do Claude de onde o trecho saiu e a destaca.
+const QUOTE_RE = /^\*\*\[(\d+)\]\*\*\n((?:>.*(?:\n|$))+)/gm;
+const squash = (t) => (t || "").replace(/\s+/g, "");
+// Localiza no DOM o trecho citado (ignora diferenças de espaço/quebra) e devolve um Range.
+function findQuoteRange(root, quote) {
+  const want = squash(quote);
+  if (!want) return null;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = []; let flat = "";
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    const t = n.nodeValue;
+    for (let i = 0; i < t.length; i++) if (!/\s/.test(t[i])) { nodes.push([n, i]); flat += t[i]; }
+  }
+  const at = flat.indexOf(want);
+  if (at < 0) return null;
+  const a = nodes[at], b = nodes[at + want.length - 1];
+  const r = document.createRange();
+  r.setStart(a[0], a[1]); r.setEnd(b[0], b[1] + 1);
+  return r;
+}
+let hlTimer = null;
+function clearQuoteHighlight() {
+  clearTimeout(hlTimer);
+  if (window.CSS && CSS.highlights) CSS.highlights.delete("cc-quote-hl");
+  document.querySelectorAll(".cc-msg.cc-flash").forEach((e) => e.classList.remove("cc-flash"));
+}
+function showQuoteHighlight(range) {
+  clearQuoteHighlight();
+  if (window.CSS && CSS.highlights && window.Highlight) CSS.highlights.set("cc-quote-hl", new Highlight(range));
+  else { const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range); }   // sem a API: usa a seleção
+  const off = () => { clearQuoteHighlight(); document.removeEventListener("mousedown", off, true); };
+  setTimeout(() => document.addEventListener("mousedown", off, true), 400);
+  hlTimer = setTimeout(() => { clearQuoteHighlight(); document.removeEventListener("mousedown", off, true); }, 12000);
+}
+function flashEl(el) {
+  el.classList.remove("cc-flash"); void el.offsetWidth; el.classList.add("cc-flash");
+  setTimeout(() => el.classList.remove("cc-flash"), 2200);
+}
+function jumpToQuote(el, quote) {
+  const root = el.closest(".cc-transcript");
+  if (!root) return;
+  const want = squash(quote);
+  const all = [...root.querySelectorAll(".cc-msg.assistant")].filter((m) => squash(m.textContent).includes(want));
+  if (!all.length) { toast("warn", "Não achei o trecho citado nesta conversa"); return; }
+  const me = el.closest(".cc-msg");
+  const before = all.filter((m) => me && (m.compareDocumentPosition(me) & Node.DOCUMENT_POSITION_FOLLOWING));
+  const target = (before.length ? before : all).slice(-1)[0];
+  const range = findQuoteRange(target, quote);
+  if (range) {
+    const host = range.startContainer.parentElement || target;
+    host.scrollIntoView({ behavior: "smooth", block: "center" });
+    showQuoteHighlight(range);
+  } else {
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    flashEl(target);
+  }
+}
+// Resposta do Claude: "[n]" que se refere a uma citação numerada da mensagem anterior vira link
+// que volta para aquela citação (e a destaca).
+function AssistantMsg({ text, ts, role = "claude" }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const msg = ref.current;
+    if (!msg) return;
+    let prev = msg.previousElementSibling;
+    while (prev && !prev.classList.contains("user")) prev = prev.previousElementSibling;
+    const nums = prev ? new Set([...prev.querySelectorAll(".cc-quote b")].map((b) => b.textContent.trim())) : new Set();
+    if (!nums.size) return;
+    const w = document.createTreeWalker(msg.querySelector(".md") || msg, NodeFilter.SHOW_TEXT);
+    const todo = [];
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      if (n.parentElement.closest("pre,code,a,.cc-qref")) continue;
+      if (/\[(\d{1,3})\]/.test(n.nodeValue)) todo.push(n);
+    }
+    for (const n of todo) {
+      const frag = document.createDocumentFragment();
+      let last = 0; const v = n.nodeValue; let changed = false;
+      for (const m of v.matchAll(/\[(\d{1,3})\]/g)) {
+        if (!nums.has(m[1])) continue;
+        frag.append(v.slice(last, m.index));
+        const a = document.createElement("a");
+        a.className = "cc-qref"; a.dataset.n = m[1]; a.textContent = m[0]; a.title = "Ver de onde veio (sua citação " + m[1] + ")";
+        frag.append(a); last = m.index + m[0].length; changed = true;
+      }
+      if (!changed) continue;
+      frag.append(v.slice(last));
+      n.replaceWith(frag);
+    }
+  }, [text]);
+  const onClick = (e) => {
+    const a = e.target.closest && e.target.closest(".cc-qref");
+    if (!a) return;
+    e.preventDefault();
+    let prev = ref.current.previousElementSibling;
+    while (prev && !prev.classList.contains("user")) prev = prev.previousElementSibling;
+    const q = prev && [...prev.querySelectorAll(".cc-quote")].find((x) => x.querySelector("b").textContent.trim() === a.dataset.n);
+    if (!q) return;
+    q.scrollIntoView({ behavior: "smooth", block: "center" });
+    const span = q.querySelector("span");
+    if (span) { const r = document.createRange(); r.selectNodeContents(span); showQuoteHighlight(r); }
+    else clearQuoteHighlight();
+    flashEl(q);
+  };
+  return html`<div class="cc-msg assistant" ref=${ref} onClick=${onClick}><div class="cc-role">${role}</div><div class="cc-bubble"><${MarkdownView} text=${text} /><${CopyReply} text=${text} /></div><${MsgTime} ts=${ts} /></div>`;
+}
+function QuotedText({ text }) {
+  const parts = []; let last = 0, m;
+  QUOTE_RE.lastIndex = 0;
+  while ((m = QUOTE_RE.exec(text))) {
+    if (m.index > last) parts.push({ t: text.slice(last, m.index) });
+    const q = m[2].split("\n").filter((l) => l.startsWith(">")).map((l) => l.replace(/^>\s?/, "")).join("\n").trim();
+    parts.push({ n: m[1], q });
+    last = m.index + m[0].length;
+  }
+  if (!parts.length) return text;
+  if (last < text.length) parts.push({ t: text.slice(last) });
+  return parts.map((p) => p.q === undefined ? p.t.replace(/^\n+/, "") : html`<div class="cc-quote" role="button" tabindex="0"
+    title="Ir para a resposta citada"
+    onClick=${(e) => jumpToQuote(e.currentTarget, p.q)}
+    onKeyDown=${(e) => { if (e.key === "Enter") jumpToQuote(e.currentTarget, p.q); }}><b>${p.n}</b><span>${p.q}</span></div>`);
 }
 function UserMsg({ text: fullText, tag, ts, onFork, onEdit }) {
   const text = stripMentionNote(fullText);   // bloco de IDs das menções "#" só vai ao agente
@@ -956,7 +1141,7 @@ function UserMsg({ text: fullText, tag, ts, onFork, onEdit }) {
             <button class="sm primary" onClick=${save} disabled=${busy || !draft.trim()}>${busy ? "Salvando…" : "Salvar e reenviar"}</button>
           </div>
         </div>`
-      : (rest || !refs.length) && html`<div class="cc-usertext">${refs.length ? rest : text}</div>`}
+      : (rest || !refs.length) && html`<div class="cc-usertext"><${QuotedText} text=${refs.length ? rest : text} /></div>`}
     <div class="cc-user-foot">
       ${onEdit && !editing && html`<button class="cc-fork" title="Editar: apaga este prompt e tudo depois dele nesta conversa e gera uma nova resposta com o texto editado"
         onClick=${startEdit}>✎ Editar</button>`}
@@ -1844,12 +2029,12 @@ function Item({ it, onPermission, onFork, onEdit }) {
     return html`<${UserMsg} text=${it.text} tag=${it.interjected ? "durante a execução" : it.queued ? "da fila" : ""} ts=${it.ts} onFork=${onFork} onEdit=${onEdit} />`;
 
   if (it.type === "assistant")
-    return html`<div class="cc-msg assistant"><div class="cc-role">claude</div><${MarkdownView} text=${it.text} /><${MsgTime} ts=${it.ts} /></div>`;
+    return html`<${AssistantMsg} text=${it.text} ts=${it.ts} />`;
 
   if (it.type === "note")
     return it.title
       ? html`<details class="cc-thinking"><summary>${it.title}</summary><${MarkdownView} text=${it.text} /></details>`
-      : html`<div class="cc-msg assistant"><div class="cc-role">sistema</div><${MarkdownView} text=${it.text} /><${MsgTime} ts=${it.ts} /></div>`;
+      : html`<div class="cc-msg assistant"><div class="cc-role">sistema</div><div class="cc-bubble"><${MarkdownView} text=${it.text} /><${CopyReply} text=${it.text} /></div><${MsgTime} ts=${it.ts} /></div>`;
 
   if (it.type === "thinking")
     return html`<details class="cc-thinking"><summary>pensando…</summary><pre>${it.text}</pre></details>`;
