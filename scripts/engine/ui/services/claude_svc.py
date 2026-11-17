@@ -464,6 +464,7 @@ class ClaudeWebSession:
         self._ask_tool_ids: set[str] = set()            # tool_use_ids de AskUserQuestion (suprimir card)
         self._vault_waiting = 0                          # comandos aguardando o cofre ser destrancado
         self._stderr_tail: deque[str] = deque(maxlen=60)  # últimas linhas de stderr do agente (diagnóstico)
+        self._interj: list[dict] = []    # "enviar agora" ainda fora do transcript (CLI só grava ao consumir)
         self._busy = False               # turno em andamento? (controla a carência de teardown)
         self._closing = False            # (legado) o "bye" agora é devolvido por _ws_pump -> serve
         self._closing_done = False       # teardown já executado (idempotência)
@@ -993,6 +994,8 @@ class ClaudeWebSession:
                         await self._send({"type": "queue_dispatched", "id": None, "text": text})
                         await self._query(text)
                     else:
+                        if self._busy:
+                            self._interj.append({"text": text, "ts": int(time.time() * 1000)})
                         await self._query(text)
             elif kind == "queue_remove":
                 if self._pop_queued(raw.get("id")) is not None:
@@ -1230,6 +1233,7 @@ class ClaudeWebSession:
 
         elif isinstance(msg, ResultMessage):
             self._busy = False
+            self._interj = []   # turno acabou: o que foi enviado já está no transcript
             await self._send({
                 "type": "result",
                 "session_id": msg.session_id,
@@ -1531,6 +1535,59 @@ def _tidy_user_text(t: str) -> dict | None:
     return {"type": "skip"}   # caveat/system-reminder: ruído, não mostrar
 
 
+def _transcript_interjections(sid: str) -> list[dict]:
+    """Mensagens enviadas no meio do turno ("Enviar agora"): o CLI as grava como attachment
+    `queued_command` (commandMode=prompt), que get_session_messages ignora. -> [{text, ts}]."""
+    out: list[dict] = []
+    try:
+        base = Path(os.path.expanduser("~")) / ".claude" / "projects"
+        f = next((d / (sid + ".jsonl") for d in base.iterdir()
+                  if d.is_dir() and (d / (sid + ".jsonl")).exists()), None)
+        if f is None:
+            return out
+        with f.open(encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                if '"queued_command"' not in line:
+                    continue
+                try:
+                    o = json.loads(line)
+                    a = o.get("attachment") or {}
+                    if a.get("type") != "queued_command" or a.get("commandMode") != "prompt":
+                        continue
+                    text = a.get("prompt")
+                    if not isinstance(text, str) or not text.strip():
+                        continue
+                    ts = datetime.datetime.fromisoformat(str(o["timestamp"]).replace("Z", "+00:00"))
+                    out.append({"text": text.strip(), "ts": int(ts.timestamp() * 1000)})
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return out
+
+
+def _merge_interjections(items: list[dict], inter: list[dict]) -> list[dict]:
+    """Insere as mensagens "enviar agora" na ordem cronológica (itens sem ts herdam o anterior)."""
+    if not inter:
+        return items
+    # já presente como prompt normal (mesmo texto e ts próximo)? não duplica
+    res: list[dict] = []
+    pending = sorted(inter, key=lambda x: x["ts"])
+    last_ts = 0
+    for it in items:
+        t = it.get("ts")
+        cur = t if isinstance(t, int) else last_ts
+        while pending and pending[0]["ts"] <= cur and it.get("type") in ("user", "assistant") and isinstance(t, int):
+            p = pending.pop(0)
+            res.append({"type": "user", "text": p["text"], "ts": p["ts"], "interjected": True})
+        res.append(it)
+        if isinstance(t, int):
+            last_ts = t
+    for p in pending:
+        res.append({"type": "user", "text": p["text"], "ts": p["ts"], "interjected": True})
+    return res
+
+
 def session_items(sid: str) -> list[dict]:
     """Traduz o histórico de uma sessão para os mesmos itens da transcrição da UI."""
     if not _SDK_OK:
@@ -1599,7 +1656,19 @@ def session_items(sid: str) -> list[dict]:
                     it["result"] = _stringify(b.get("content"))
                     it["isError"] = bool(b.get("is_error"))
                     it["tstatus"] = "error" if b.get("is_error") else "done"
-    return items
+    inter = _transcript_interjections(sid)
+    live = _LIVE.get(sid)
+    if live is not None and getattr(live, "_interj", None):
+        # Já gravada no transcript? Casa texto + horário (±15 s), 1 p/ 1: o mesmo texto pode se repetir.
+        used: set[int] = set()
+        for x in live._interj:
+            hit = next((k for k, i in enumerate(inter) if k not in used and i["text"] == x["text"].strip()
+                        and abs(i["ts"] - x["ts"]) < 15000), None)
+            if hit is None:
+                inter.append({"text": x["text"].strip(), "ts": x["ts"]})
+            else:
+                used.add(hit)
+    return _merge_interjections(items, inter)
 
 
 def delete_project_session(sid: str) -> None:

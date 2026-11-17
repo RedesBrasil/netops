@@ -928,8 +928,8 @@ function Transcript() {
     ${groupTools(items).map((g) => g.tools
       ? html`<${ToolGroup} key=${"g" + g.start} tools=${g.tools} />`
       : html`<${Item} key=${g.i} it=${g.it} onPermission=${answerPermission}
-      onFork=${sessionId && !g.it.queued ? () => forkFrom(g.i) : null}
-      onEdit=${sessionId && !g.it.queued && status === "pronto" ? (t) => editFrom(g.i, t) : null} />`)}
+      onFork=${sessionId ? () => forkFrom(g.i) : null}
+      onEdit=${sessionId && status === "pronto" ? (t) => editFrom(g.i, t) : null} />`)}
     <${ReplyQuote} boxRef=${scrollRef} />
   </div>`;
 }
