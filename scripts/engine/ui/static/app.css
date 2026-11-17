@@ -223,6 +223,12 @@ pre.raw { font-family: var(--mono); font-size: 13px; background: var(--surface-2
 .cc-tool-n, .cc-tool-caret { color: var(--muted); font-size: 11px; }
 .cc-tool-desc { color: var(--muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .cc-tool-body { padding-bottom: 6px; }
+.cc-toolgroup { display: flex; flex-direction: column; gap: 6px; }
+.cc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cc-chip { border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: inherit; font: inherit; font-size: 12px; font-weight: 600; padding: 2px 8px; cursor: pointer; }
+.cc-chip.running { border-color: var(--accent); }
+.cc-chip.error { border-color: var(--danger); }
+.cc-chip.open { background: color-mix(in srgb, var(--accent) 18%, var(--surface-2)); }
 .cc-pre { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; background: var(--bg); border-radius: 6px; padding: 8px; max-height: 360px; overflow: auto; }
 .cc-pre.err { color: var(--danger); }
 .cc-expand { font-size: 12px; margin-top: 4px; padding: 2px 8px; background: transparent; border: 1px solid var(--border); color: var(--accent); border-radius: 6px; }
@@ -266,7 +272,10 @@ pre.raw { font-family: var(--mono); font-size: 13px; background: var(--surface-2
 .cc-sess-meta { margin-top: 2px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cc-result { font-size: 12px; color: var(--muted); text-align: center; }
 .cc-result.err { color: var(--danger); }
-.cc-error { color: var(--danger); font-size: 13px; background: var(--surface); border: 1px solid var(--danger); border-radius: 8px; padding: 8px 12px; }
+.cc-error { display: block; align-self: center; box-sizing: border-box; width: fit-content; min-width: 260px; max-width: min(560px, 80%); margin: 16px auto; text-align: center; color: #fff; font-size: 16px; font-weight: 700; line-height: 1.4; background: #c62828; border: 1px solid #8e0000; border-radius: 10px; padding: 18px 28px; box-shadow: 0 2px 8px rgba(198,40,40,.35); overflow-wrap: anywhere; }
+.cc-error-raw { margin-top: 8px; font-size: 12px; font-weight: 400; color: #ffd7d7; text-align: left; }
+.cc-error-raw summary { cursor: pointer; text-align: center; }
+.cc-error-raw pre { white-space: pre-wrap; margin: 6px 0 0; color: #fff; }
 .cc-slash-menu { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0; }
 .cc-slash { font-family: var(--mono); font-size: 12px; }
 /* Menu de menções "#" (hosts e grupos): lista vertical logo acima da caixa */

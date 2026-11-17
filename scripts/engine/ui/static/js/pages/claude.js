@@ -13,7 +13,7 @@ import { MarkdownView, VaultBanner, Modal, Field, UnlockModal } from "../compone
 import { autoOpenFromText } from "../term-link.js";
 import { authToken } from "../api.js";
 import { buildCatalog, findMentionToken, searchMentions, applyMention, expandMentions, addQuoteNote, stripMentionNote } from "../mentions.js";
-import { classifyClaudeError, claudeErrorDetail } from "../claude-errors.js";
+import { classifyClaudeError, claudeErrorDetail, friendlyClaudeError } from "../claude-errors.js";
 import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
   rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, claudePrefsOpen, setClaudePrefsHash, claudeSessionsOpen, setClaudeSessionsHash, stripClaudeModal, copyClaudeSessionLink } from "../claude-sessions.js";
 
@@ -173,6 +173,7 @@ function useClaudeSession() {
     return () => removeEventListener("hashchange", on);
   }, []);
   const modelRef = useRef("");          // modelo vigente (vai no ?model=; vazio => default do servidor)
+  const interruptedRef = useRef(false); // usuário clicou em Interromper neste turno (erro vira "cancelada")
   const noReconnectRef = useRef(false); // erro terminal (rate limit/modelo): NÃO reconectar em loop
   const failCountRef = useRef(0);       // quedas seguidas sem conectar (circuit breaker anti-tempestade)
   const resumeIdRef = useRef("");       // alvo de retomada explicita (Sessoes / Nova sessao)
@@ -296,6 +297,7 @@ function useClaudeSession() {
   }, []);
 
   const send = useCallback((obj) => {
+    if (obj && obj.type === "interrupt") interruptedRef.current = true;
     const ws = wsRef.current;
     if (ws && ws.readyState === 1) { ws.send(JSON.stringify(obj)); return true; }
     return false;
@@ -360,7 +362,8 @@ function useClaudeSession() {
   }, []);
 
   function handleAgentError(ev) {
-    const detail = claudeErrorDetail(ev);
+    const raw = claudeErrorDetail(ev);
+    const detail = friendlyClaudeError(ev, { interrupted: interruptedRef.current });
     const kind = classifyClaudeError(ev);
     setShowModelPick(kind === "model");
     setShowRateLimit(kind === "rate_limit");
@@ -368,7 +371,7 @@ function useClaudeSession() {
     setItems((prev) => {
       const next = closeOpen(prev);
       if (next[next.length - 1]?.type !== "error" || next[next.length - 1].detail !== detail)
-        next.push({ type: "error", detail });
+        next.push({ type: "error", detail, raw: raw !== detail ? raw : "" });
       return next;
     });
     if (kind === "rate_limit" || kind === "model") {
@@ -571,6 +574,7 @@ function useClaudeSession() {
           }
           case "result":
             setWorking(false);
+            const wasInterrupted = interruptedRef.current;
             if (ev.usage) {
               const sid = ev.session_id || sessionIdRef.current;
               const u = { ...ev.usage, _at: Date.now(), _sid: sid };
@@ -579,9 +583,10 @@ function useClaudeSession() {
             }
             if (ev.session_id) identifySession(ev.session_id);
             if (ev.is_error && (ev.result || ev.errors?.length || ev.api_error_status)) handleAgentError(ev);
+            interruptedRef.current = false;
             setItems((prev) => {
               const next = closeOpen(prev);
-              next.push({ type: "result", cost: ev.cost_usd, usage: ev.usage, isError: ev.is_error });
+              next.push({ type: "result", cost: ev.cost_usd, usage: ev.usage, isError: ev.is_error, cancelled: ev.is_error && wasInterrupted });
               return next;
             });
             break;
@@ -920,9 +925,11 @@ function Transcript() {
     ${status === "desabilitado" && html`<div class="card cc-off">
       Página Claude Code desabilitada no servidor. Suba com <code>--enable-claude</code> (e sem <code>--read-only</code>).
     </div>`}
-    ${items.map((it, i) => html`<${Item} key=${i} it=${it} onPermission=${answerPermission}
-      onFork=${sessionId && !it.queued ? () => forkFrom(i) : null}
-      onEdit=${sessionId && !it.queued && status === "pronto" ? (t) => editFrom(i, t) : null} />`)}
+    ${groupTools(items).map((g) => g.tools
+      ? html`<${ToolGroup} key=${"g" + g.start} tools=${g.tools} />`
+      : html`<${Item} key=${g.i} it=${g.it} onPermission=${answerPermission}
+      onFork=${sessionId && !g.it.queued ? () => forkFrom(g.i) : null}
+      onEdit=${sessionId && !g.it.queued && status === "pronto" ? (t) => editFrom(g.i, t) : null} />`)}
     <${ReplyQuote} boxRef=${scrollRef} />
   </div>`;
 }
@@ -2077,11 +2084,13 @@ function Item({ it, onPermission, onFork, onEdit }) {
 
   if (it.type === "result")
     return html`<div class="cc-result ${it.isError ? "err" : ""}">
-      ${it.isError ? "turno terminou com erro" : "turno concluído"}${typeof it.cost === "number" ? ` · ~$${it.cost.toFixed(4)}` : ""}
+      ${it.cancelled ? "resposta cancelada pelo usuário" : it.isError ? "turno terminou com erro" : "turno concluído"}${typeof it.cost === "number" ? ` · ~$${it.cost.toFixed(4)}` : ""}
     </div>`;
 
   if (it.type === "error")
-    return html`<div class="cc-error">erro: ${it.detail}</div>`;
+    return html`<div class="cc-error">${it.detail}
+      ${it.raw && html`<details class="cc-error-raw"><summary>detalhes técnicos</summary><pre>${it.raw}</pre></details>`}
+    </div>`;
 
   return null;
 }
@@ -2239,10 +2248,38 @@ function primaryString(input) {
   return null;
 }
 
+// Agrupa chamadas de ferramenta consecutivas (ignorando "pensando…") numa só linha de chips.
+function groupTools(items) {
+  const out = [];
+  items.forEach((it, i) => {
+    if (it.type === "tool") {
+      const last = out[out.length - 1];
+      if (last && last.tools) last.tools.push(it);
+      else out.push({ tools: [it], start: i });
+    } else out.push({ it, i });
+  });
+  return out;
+}
+
+// Chips lado a lado (só o nome); clicar abre o card completo da ferramenta abaixo da linha.
+function ToolGroup({ tools }) {
+  const [open, setOpen] = useState({});
+  const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+  const icon = (st) => ({ running: "⏳", done: "✓", error: "✗" }[st] || "•");
+  return html`<div class="cc-toolgroup">
+    <div class="cc-chips">
+      ${tools.map((t, k) => html`<button type="button" key=${k} title=${primaryString(t.input) || ""}
+          class="cc-chip ${t.tstatus} ${open[k] ? "open" : ""}" aria-expanded=${!!open[k]}
+          onClick=${() => toggle(k)}>${icon(t.tstatus)} ${t.name}</button>`)}
+    </div>
+    ${tools.map((t, k) => open[k] && html`<${ToolCard} key=${"d" + k} it=${t} initialOpen=${true} />`)}
+  </div>`;
+}
+
 // Card de ferramenta compacto: recolhido = 1 linha (ícone + nome + resumo truncado); clicar no
 // cabeçalho expande entrada/saída completas. Cada card expande de forma independente.
-function ToolCard({ it }) {
-  const [open, setOpen] = useState(false);
+function ToolCard({ it, initialOpen = false }) {
+  const [open, setOpen] = useState(initialOpen);
   const icon = { running: "⏳", done: "✓", error: "✗" }[it.tstatus] || "•";
   const prim = primaryString(it.input);
   const hasBigExtra = ["content", "new_string", "old_string"].some(

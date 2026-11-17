@@ -30,3 +30,12 @@ test("detalhe preserva resultado/erros sem repetir mensagens iguais", () => {
   assert.equal(claudeErrorDetail({ errors: ["Erro A", "Erro B"] }), "Erro A\nErro B");
   assert.equal(claudeErrorDetail({ api_error_status: 429 }), "API Error: HTTP 429");
 });
+
+const { friendlyClaudeError } = await import("data:text/javascript;base64," + Buffer.from(source).toString("base64"));
+test("mensagens amigáveis em português", () => {
+  assert.match(friendlyClaudeError({ detail: "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use" }), /Erro de rede/);
+  assert.match(friendlyClaudeError({ detail: "x" }, { interrupted: true }), /cancelada pelo usuário/);
+  assert.match(friendlyClaudeError({ api_error_status: 429 }), /Limite de uso/);
+  assert.match(friendlyClaudeError({ api_error_status: 529 }), /sobrecarregado/);
+  assert.match(friendlyClaudeError({ error_code: "authentication_failed" }), /autenticação/);
+});

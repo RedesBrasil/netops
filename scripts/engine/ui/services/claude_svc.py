@@ -1512,6 +1512,8 @@ _COMPACT_SUMMARY_RE = re.compile(r"^\s*This session is being continued from a pr
 
 def _tidy_user_text(t: str) -> dict | None:
     """Prompt sintético do CLI (/compact, caveat, resumo) → item amigável; None = prompt humano normal."""
+    if t.startswith("[Request interrupted by user"):   # o CLI grava isso como "prompt" ao interromper
+        return {"type": "error", "detail": "Resposta cancelada pelo usuário."}
     if _COMPACT_SUMMARY_RE.match(t):
         return {"type": "note", "title": "📋 Resumo da conversa anterior (compactada)", "text": t}
     if not _SYNTHETIC_RE.match(t) and "<local-command-" not in t:
