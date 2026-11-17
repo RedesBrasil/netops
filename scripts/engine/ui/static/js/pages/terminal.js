@@ -5,6 +5,7 @@ import { VaultBanner } from "../components.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { authToken } from "../api.js";
+import { registerTermLinks } from "../term-links.js";
 
 const THEME = {
   background: "#11161c", foreground: "#e6ebf1", cursor: "#4aa3e0",
@@ -23,6 +24,7 @@ export function TerminalPage() {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    registerTermLinks(term); // URLs e ip:porta clicáveis (abre em aba nova)
     term.open(hostRef.current);
     try { fit.fit(); } catch (e) {}
 

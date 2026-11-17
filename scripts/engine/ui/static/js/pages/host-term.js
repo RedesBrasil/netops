@@ -11,6 +11,7 @@ import { useRoute } from "../route.js";
 import { openTermHref } from "../term-link.js";
 import { FileBrowser, ToolIcon } from "../file-browser.js";
 import { createHighlighter } from "../term-highlight.js";
+import { registerTermLinks } from "../term-links.js";
 
 const TERM_METHODS = ["ssh", "telnet"];
 const DEFAULT_PORT = { ssh: 22, telnet: 23 };
@@ -172,6 +173,7 @@ export function HostTermPage() {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    registerTermLinks(term); // URLs e ip:porta clicáveis (abre em aba nova)
     term.open(hostRef.current);
     try { fit.fit(); } catch (e) {}
 

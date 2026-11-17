@@ -972,9 +972,24 @@ async function copyReply(text) {
     toast.ok("Resposta copiada");
   } catch (e) { toast.err("Não foi possível copiar a resposta."); }
 }
-function CopyReply({ text }) {
-  if (!text || !String(text).trim()) return null;
-  return html`<button class="cc-copy-reply" title="Copiar resposta" aria-label="Copiar resposta" onClick=${(e) => { e.stopPropagation(); copyReply(String(text)); }}>📋 Copiar</button>`;
+// Botão direito na resposta (sem texto selecionado) abre um menu com "Copiar resposta".
+// Com texto selecionado, deixa o menu nativo do navegador (copiar seleção).
+function replyContextMenu(e, text) {
+  if (!text || !String(text).trim()) return;
+  if (String(window.getSelection && window.getSelection()).length) return;
+  e.preventDefault();
+  document.querySelectorAll(".cc-reply-menu").forEach((n) => n.remove());
+  const m = document.createElement("div");
+  m.className = "fm-menu cc-reply-menu";
+  m.style.left = Math.min(e.clientX, innerWidth - 190) + "px";
+  m.style.top = Math.min(e.clientY, innerHeight - 60) + "px";
+  const b = document.createElement("button");
+  b.textContent = "📋 Copiar resposta";
+  b.onclick = () => { m.remove(); copyReply(String(text)); };
+  m.appendChild(b);
+  document.body.appendChild(m);
+  const close = (ev) => { if (ev && ev.type === "keydown" && ev.key !== "Escape") return; m.remove(); ["mousedown", "scroll", "keydown", "blur"].forEach((t) => removeEventListener(t, close, true)); };
+  setTimeout(() => ["mousedown", "scroll", "keydown", "blur"].forEach((t) => addEventListener(t, close, true)), 0);
 }
 // Data/hora discreta no canto da bolha (hoje: só hora; outro dia: dd/mm hh:mm).
 function MsgTime({ ts }) {
@@ -1090,7 +1105,7 @@ function AssistantMsg({ text, ts, role = "claude" }) {
     else clearQuoteHighlight();
     flashEl(q);
   };
-  return html`<div class="cc-msg assistant" ref=${ref} onClick=${onClick}><div class="cc-role">${role}</div><div class="cc-bubble"><${MarkdownView} text=${text} /><${CopyReply} text=${text} /></div><${MsgTime} ts=${ts} /></div>`;
+  return html`<div class="cc-msg assistant" ref=${ref} onClick=${onClick} onContextMenu=${(e) => replyContextMenu(e, text)}><div class="cc-role">${role}</div><${MarkdownView} text=${text} /><${MsgTime} ts=${ts} /></div>`;
 }
 function QuotedText({ text }) {
   const parts = []; let last = 0, m;
@@ -2034,7 +2049,7 @@ function Item({ it, onPermission, onFork, onEdit }) {
   if (it.type === "note")
     return it.title
       ? html`<details class="cc-thinking"><summary>${it.title}</summary><${MarkdownView} text=${it.text} /></details>`
-      : html`<div class="cc-msg assistant"><div class="cc-role">sistema</div><div class="cc-bubble"><${MarkdownView} text=${it.text} /><${CopyReply} text=${it.text} /></div><${MsgTime} ts=${it.ts} /></div>`;
+      : html`<div class="cc-msg assistant" onContextMenu=${(e) => replyContextMenu(e, it.text)}><div class="cc-role">sistema</div><${MarkdownView} text=${it.text} /><${MsgTime} ts=${it.ts} /></div>`;
 
   if (it.type === "thinking")
     return html`<details class="cc-thinking"><summary>pensando…</summary><pre>${it.text}</pre></details>`;

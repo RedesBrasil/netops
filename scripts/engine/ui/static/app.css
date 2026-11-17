@@ -674,10 +674,6 @@ th.sortable:hover { color: var(--text); }
 
 /* Data/hora discreta nas mensagens da aba Claude */
 .cc-time { font-size: 10px; color: var(--muted); opacity: .65; font-variant-numeric: tabular-nums; }
-.cc-bubble { position: relative; }
-.cc-msg.assistant .cc-bubble .md { padding-bottom: 34px; }
-.cc-copy-reply { position: absolute; right: 8px; bottom: 6px; display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: none; border-radius: 8px; background: var(--accent); color: #fff; font-size: 12px; cursor: pointer; opacity: .9; }
-.cc-copy-reply:hover { opacity: 1; filter: brightness(1.12); }
 .cc-msg.user .cc-time { align-self: flex-end; }
 .cc-msg.assistant .cc-time { align-self: flex-start; }
 
