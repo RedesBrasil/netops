@@ -38,7 +38,7 @@ NETOPS_UI_CLAUDE=0       scripts/engine/ui/start.sh # sobe SEM a página Claude 
 scripts/engine/ui/start.sh --read-only --no-vault-unlock   # flags extras viram passthrough
 ```
 
-O script imprime a URL (`http://<ip>:<porta>/`). O acesso é protegido pelo **login por usuário e senha**
+O script imprime a URL (`http://<ip>:<porta>/`). O acesso é protegido pelo **login por e-mail e senha**
 (multiusuário com grupos de acesso; sem usuários cadastrados, a senha-mestra do cofre; ver "Segurança"
 e `scripts/engine/users/SKILL.md`); não há token de transporte na URL.
 
@@ -98,7 +98,7 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   Host/Origin, pois o gate é a sessão (token em header/query, nunca cookie). Sem login o console está aberto e Host/Origin
   seguem estritos (loopback, IP de bind ou `NETOPS_UI_ALLOWED_HOSTS=dom.com,.outro.com,*`). O uvicorn confia em
   `X-Forwarded-*` (`NETOPS_UI_FORWARDED_ALLOW_IPS`, default `*`). O proxy precisa repassar WebSocket (`Upgrade`/`Connection`).
-- **Multiusuário (usuário + senha, grupos de acesso) — ver `scripts/engine/users/SKILL.md`.**
+- **Multiusuário (e-mail + senha, grupos de acesso) — ver `scripts/engine/users/SKILL.md`.**
   - **Banco:** usuários, grupos, sessões e auditoria ficam no SQLite `runs/netops.db` (`lib/accessdb.py`).
   - **Permissão por rota:** fica em `services/authz.py`, com default-deny. O teste reprova rota nova sem regra.
     - Rota nova: inclua a regra em `authz.RULES`.

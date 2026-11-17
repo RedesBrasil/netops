@@ -3,9 +3,10 @@
 
 Modos:
 - **Sem usuários cadastrados** (instalação antiga): login com a senha-mestra do cofre, como sempre.
-  O 1º login bem-sucedido cria o usuário `admin` (grupo admin) com essa senha e um keyslot do cofre —
+  O 1º login bem-sucedido cria o usuário `admin` (grupo admin, com o e-mail informado na tela) com essa
+  senha e um keyslot do cofre —
   a partir daí o console é multiusuário.
-- **Com usuários**: `{username, password}`. Se o usuário tem keyslot, o login também destranca o
+- **Com usuários**: `{email, password}` (o login é o E-MAIL; `username`=ID interno ainda aceito). Se o usuário tem keyslot, o login também destranca o
   cofre (a chave do cofre fica embrulhada pela senha dele). Sem keyslot, ele é criado sozinho
   quando o usuário entra com o cofre já destrancado (usuário novo, troca de senha-mestra).
 
@@ -30,7 +31,8 @@ SESSION_HEADER = "x-netops-session"
 
 class LoginBody(BaseModel):
     model_config = {"extra": "forbid"}
-    username: Optional[str] = Field(default=None, max_length=64)
+    email: Optional[str] = Field(default=None, max_length=120)          # login padrão
+    username: Optional[str] = Field(default=None, max_length=120)       # ID interno (ou e-mail) — compat
     password: Optional[str] = Field(default=None, max_length=1024)
     master_password: Optional[str] = Field(default=None, max_length=1024)   # modo legado
     ttl: Optional[int] = Field(default=None, ge=30, le=86400)              # TTL do cofre destrancado
@@ -117,25 +119,27 @@ def auth_login(body: LoginBody, request: Request):
                              "não há login a fazer."}, status_code=400)
 
     if deps.has_users():
-        username = (body.username or "").strip().lower()
+        login = (body.email or body.username or "").strip().lower()
         password = body.password or ""
-        if not username and body.master_password:
+        if not login and body.master_password:
             # Compat: clientes antigos (scripts/testes) mandam só {master_password} = senha do admin migrado.
-            username, password = deps.LEGACY_ADMIN, body.master_password
-        if not username or not password:
-            return JSONResponse({"error": "bad_credentials", "detail": "Informe usuário e senha."}, status_code=401)
-        wait = accessdb.login_wait(db, username, ip)
+            login, password = deps.LEGACY_ADMIN, body.master_password
+        if not login or not password:
+            return JSONResponse({"error": "bad_credentials", "detail": "Informe e-mail e senha."}, status_code=401)
+        wait = accessdb.login_wait(db, login, ip)
         if wait:
             return JSONResponse({"error": "throttled", "retry_after": wait,
                                  "detail": f"Muitas tentativas. Tente de novo em {wait} s."},
                                 status_code=429, headers={"Retry-After": str(wait)})
         try:
-            user, kek = accessdb.verify_password(db, username, password)
+            user, kek = accessdb.verify_password(db, login, password)
         except accessdb.WrongPassword:
-            accessdb.login_failed(db, username, ip)
-            accessdb.audit(db, "login_failed", username=username, ip=ip, detail=ua[:120])
-            return JSONResponse({"error": "bad_credentials", "detail": "Usuário ou senha incorretos."}, status_code=401)
-        accessdb.login_ok(db, username, ip)
+            accessdb.login_failed(db, login, ip)
+            accessdb.audit(db, "login_failed", username=accessdb.login_username(db, login) or "", ip=ip,
+                           target=login, detail=ua[:120])
+            return JSONResponse({"error": "bad_credentials", "detail": "E-mail ou senha incorretos."}, status_code=401)
+        accessdb.login_ok(db, login, ip)
+        username = user["username"]
         vault_state = _unlock_with_slot(username, kek, body.ttl)
         sid = deps.create_auth_session(user=username, ip=ip, user_agent=ua)
         accessdb.record_login(db, username, ip)
@@ -167,11 +171,13 @@ def auth_login(body: LoginBody, request: Request):
     created = False
     try:
         accessdb.create_user(db, deps.LEGACY_ADMIN, secret, display_name="Administrador",
-                             groups=[accessdb.ADMIN_GROUP], created_by="migração (senha-mestra)",
-                             vault_key=key)
+                             email=body.email or "", groups=[accessdb.ADMIN_GROUP],
+                             created_by="migração (senha-mestra)", vault_key=key)
         created = True
     except accessdb.AccessError as exc:
         # Senha-mestra curta demais p/ a política: segue no modo legado (o admin cria o usuário na tela).
+        if exc.code == "invalid_email":
+            return JSONResponse({"error": exc.code, "detail": exc.detail}, status_code=422)
         if exc.code not in ("weak_password", "exists"):
             raise
     if deps.STATE.allow_vault_unlock:

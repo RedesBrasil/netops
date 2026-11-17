@@ -2,7 +2,7 @@
 
 ## O que é
 
-O console NetOps é **multiusuário**: cada pessoa entra com **usuário + senha**. Cada usuário
+O console NetOps é **multiusuário**: cada pessoa entra com **e-mail + senha**. Cada usuário
 pertence a um ou mais **grupos de acesso**, que definem o que ele vê e faz no console.
 - Uso normal: menu **Sistema → Usuários / Grupos de acesso / Auditoria** (`#users`, `#access-groups`, `#audit`).
 - Cada um troca a própria senha em **Minha conta** (`#account`, botão com o nome no topo).
@@ -19,6 +19,16 @@ request por vários processos. Precisa de transação ("não apague o último ad
 
 **Nunca copie o `.db` com o console no ar.** Use `cli.py snapshot <destino>` (API de backup do SQLite).
 O backup completo (`scripts/tools/backup/full_mirror.sh`) já espelha `runs/netops.db.snapshot`.
+
+## Login = e-mail
+
+- O e-mail é obrigatório e único, sem diferenciar maiúsculas (é gravado em minúsculo).
+- Cada usuário também tem um **ID interno** (`username`), derivado do e-mail (`joao.silva@x.com` → `joao.silva`; repetido → `joao.silva-2`).
+  - Ele aparece na auditoria, no dono das conversas Claude e no CLI.
+  - **Trocar o e-mail não muda o ID** e não quebra o histórico.
+- O login também aceita o ID interno. É o caso do `admin` migrado sem e-mail, de scripts e do CLI.
+- A API recebe `POST /api/auth/login {email, password}`. `username` continua aceito.
+- **Recuperar senha por e-mail ainda NÃO existe:** precisaria de SMTP configurado. Quem redefine é o admin (tela ou `cli.py passwd`).
 
 ## Modelo de permissões
 
@@ -49,7 +59,7 @@ O backup completo (`scripts/tools/backup/full_mirror.sh`) já espelha `runs/neto
 ## Migração (instalação que já existia)
 
 - **Sem usuários:** o login continua com a senha-mestra, como antes.
-  - O 1º login cria o usuário `admin` (grupo admin) com essa senha e o keyslot.
+  - A tela pede o **e-mail do administrador** + senha-mestra. O 1º login cria o usuário `admin` (grupo admin) com esse e-mail, essa senha e o keyslot.
   - Senha-mestra com menos de 8 caracteres continua no modo legado: crie o admin pela tela ou pelo CLI.
 - **Sessões antigas:** quem estava logado (arquivo `runs/.ui-auth-sessions.json`) continua logado, como `admin`. A importação acontece uma vez.
 - **Compatibilidade:** `POST /api/auth/login {master_password}` sem `username` = senha do `admin`.
@@ -59,9 +69,9 @@ O backup completo (`scripts/tools/backup/full_mirror.sh`) já espelha `runs/neto
 ```bash
 python3 scripts/engine/users/cli.py list                       # usuários, grupos, último login, sessões
 python3 scripts/engine/users/cli.py groups
-python3 scripts/engine/users/cli.py reset-admin                # RECUPERAÇÃO: cria/reativa admin + senha nova
-python3 scripts/engine/users/cli.py add joao --groups operador --name "João" --temp
-python3 scripts/engine/users/cli.py passwd joao --temp         # senha provisória, derruba as sessões
+python3 scripts/engine/users/cli.py reset-admin [--email a@b.com]   # RECUPERAÇÃO: cria/reativa admin + senha nova
+python3 scripts/engine/users/cli.py add joao@empresa.com --groups operador --name "João" --temp
+python3 scripts/engine/users/cli.py passwd joao@empresa.com --temp         # senha provisória, derruba as sessões
 python3 scripts/engine/users/cli.py disable joao | enable joao | delete joao
 python3 scripts/engine/users/cli.py sessions [--user joao] ; logout joao | logout --all
 python3 scripts/engine/users/cli.py audit --user joao --limit 100

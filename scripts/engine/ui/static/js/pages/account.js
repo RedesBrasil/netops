@@ -32,7 +32,7 @@ export function AccountPage({ forced = false }) {
     ${forced && html`<div class="card"><b>Senha provisória.</b> Defina sua senha para continuar usando o console.</div>`}
     <div class="card">
       <dl class="account-grid">
-        <dt>Usuário</dt><dd><b>${me.username}</b>${me.display_name && me.display_name !== me.username ? ` — ${me.display_name}` : ""}</dd>
+        <dt>E-mail (login)</dt><dd><b>${me.email || me.username}</b>${me.display_name && me.display_name !== me.username ? ` — ${me.display_name}` : ""}</dd>
         <dt>Grupos</dt><dd>${(me.groups || []).map((g) => html`<${Badge} kind=${g === "admin" ? "warn" : ""}>${g}<//> `)}</dd>
         <dt>Equipamentos (aba Claude)</dt><dd>${(me.net_perms || []).map((p) => NET[p] || p).join(", ") || "nada"}</dd>
         ${me.multiuser && !me.legacy && html`<dt>Último login</dt><dd>${fmtTs(me.last_login)}</dd>

@@ -8,11 +8,11 @@ shell aqui já é dono de tudo. Senha nunca por argumento: getpass (entrada ocul
 Subcomandos:
     list                         usuários, grupos, último login, sessões abertas
     groups                       grupos de acesso e permissões
-    add <user> [--groups g1,g2] [--admin] [--name "Nome"] [--temp]
-    passwd <user> [--temp]       define senha nova (derruba as sessões; --temp = troca obrigatória)
-    reset-admin [--user admin]   cria/reativa o usuário no grupo admin e define senha nova
-    disable <user> | enable <user> | delete <user>
-    sessions [--user u] | logout <user>|--all
+    add <e-mail> [--groups g1,g2] [--admin] [--name "Nome"] [--temp] [--id joao]   (login = e-mail)
+    passwd <id|e-mail> [--temp]       define senha nova (derruba as sessões; --temp = troca obrigatória)
+    reset-admin [--user admin] [--email a@b.com]   cria/reativa o admin e define senha nova
+    disable <id|e-mail> | enable <id|e-mail> | delete <id|e-mail>
+    sessions [--user u] | logout <id|e-mail>|--all
     audit [--user u] [--action a] [--limit 50]
     snapshot <destino.db>        cópia consistente do banco (segura com o console no ar)
 
@@ -77,9 +77,9 @@ def cmd_list(args):
     if not users:
         print("Nenhum usuário — console no modo senha-mestra (o 1º login cria o admin).")
         return
-    print(f"{'USUÁRIO':<20} {'GRUPOS':<28} {'ATIVO':<6} {'ÚLTIMO LOGIN':<17} {'SESSÕES':<7} COFRE")
+    print(f"{'E-MAIL (LOGIN)':<34} {'ID':<16} {'GRUPOS':<22} {'ATIVO':<6} {'ÚLTIMO LOGIN':<17} {'SESSÕES':<7} COFRE")
     for u in users:
-        print(f"{u['username']:<20} {','.join(u['groups']):<28} {'não' if u['disabled'] else 'sim':<6} "
+        print(f"{u['email'] or '(sem e-mail)':<34} {u['username']:<16} {','.join(u['groups']):<22} {'não' if u['disabled'] else 'sim':<6} "
               f"{_ts(u['last_login']):<17} {u['sessions']:<7} {'slot' if u['vault_slot'] else '—'}")
 
 
@@ -96,13 +96,22 @@ def cmd_add(args):
     if args.admin:
         groups.append(accessdb.ADMIN_GROUP)
     pw = _password(args)
-    u = accessdb.create_user(_db(args), args.user, pw, display_name=args.name or "", groups=groups,
-                             must_change=args.temp, created_by="cli", vault_key=_vault_key(args))
-    accessdb.audit(_db(args), "user_created", username="cli", target=u["username"], detail="via CLI")
-    print(f"Usuário {u['username']} criado (grupos: {', '.join(u['groups']) or '—'}).")
+    u = accessdb.create_user(_db(args), args.id, pw, email=args.email, display_name=args.name or "", groups=groups,
+                             must_change=args.temp, created_by="cli", vault_key=_vault_key(args), require_email=True)
+    accessdb.audit(_db(args), "user_created", username="cli", target=u["username"], detail=f"{u['email']} via CLI")
+    print(f"Usuário {u['email']} (id {u['username']}) criado (grupos: {', '.join(u['groups']) or '—'}).")
+
+
+def _uid(args) -> str:
+    """Aceita o ID interno ou o e-mail (login)."""
+    u = accessdb.login_username(_db(args), args.user)
+    if not u:
+        sys.exit(f"erro: usuário '{args.user}' não encontrado.")
+    return u
 
 
 def cmd_passwd(args):
+    args.user = _uid(args)
     pw = _password(args)
     accessdb.set_password(_db(args), args.user, pw, must_change=args.temp, vault_key=_vault_key(args))
     accessdb.audit(_db(args), "password_reset", username="cli", target=args.user, detail="via CLI")
@@ -114,8 +123,8 @@ def cmd_reset_admin(args):
     user = args.user
     pw = _password(args, f"Senha nova para {user}: ")
     if accessdb.get_user(db, user) is None:
-        accessdb.create_user(db, user, pw, display_name="Administrador", groups=[accessdb.ADMIN_GROUP],
-                             created_by="cli reset-admin", vault_key=_vault_key(args))
+        accessdb.create_user(db, user, pw, display_name="Administrador", email=args.email or "",
+                             groups=[accessdb.ADMIN_GROUP], created_by="cli reset-admin", vault_key=_vault_key(args))
     else:
         cur = accessdb.get_user(db, user)
         groups = sorted(set(cur["groups"]) | {accessdb.ADMIN_GROUP})
@@ -124,11 +133,14 @@ def cmd_reset_admin(args):
             c.execute("DELETE FROM user_groups WHERE username=?", (user,))
             c.executemany("INSERT INTO user_groups(username, group_name) VALUES(?,?)", [(user, g) for g in groups])
         accessdb.set_password(db, user, pw, must_change=False, vault_key=_vault_key(args))
+        if args.email:
+            accessdb.update_user(db, user, email=args.email)
     accessdb.audit(db, "reset_admin", username="cli", target=user, detail="via CLI")
     print(f"{user} ativo, no grupo admin, senha nova definida.")
 
 
 def cmd_disable(args, flag=True):
+    args.user = _uid(args)
     accessdb.update_user(_db(args), args.user, disabled=flag)
     accessdb.audit(_db(args), "user_updated", username="cli", target=args.user,
                    detail="desativado" if flag else "reativado")
@@ -136,6 +148,7 @@ def cmd_disable(args, flag=True):
 
 
 def cmd_delete(args):
+    args.user = _uid(args)
     accessdb.delete_user(_db(args), args.user)
     accessdb.audit(_db(args), "user_deleted", username="cli", target=args.user, detail="via CLI")
     print(f"{args.user} apagado.")
@@ -172,7 +185,8 @@ def main(argv=None):
     sub.add_parser("list").set_defaults(fn=cmd_list)
     sub.add_parser("groups").set_defaults(fn=cmd_groups)
     p = sub.add_parser("add")
-    p.add_argument("user")
+    p.add_argument("email", help="e-mail = login")
+    p.add_argument("--id", help="ID interno (padrão: derivado do e-mail)")
     p.add_argument("--groups", default="")
     p.add_argument("--admin", action="store_true")
     p.add_argument("--name")
@@ -186,6 +200,7 @@ def main(argv=None):
     p.set_defaults(fn=cmd_passwd)
     p = sub.add_parser("reset-admin")
     p.add_argument("--user", default="admin")
+    p.add_argument("--email", help="define/troca o e-mail (login) do admin")
     p.add_argument("--password-stdin", action="store_true")
     p.set_defaults(fn=cmd_reset_admin)
     for name, flag in (("disable", True), ("enable", False)):
@@ -212,7 +227,9 @@ def main(argv=None):
     p.set_defaults(fn=cmd_snapshot)
     args = ap.parse_args(argv)
     if args.cmd == "logout" and not args.all and not args.user:
-        ap.error("logout <usuário> ou --all")
+        ap.error("logout <id|e-mail> ou --all")
+    if args.cmd in ("logout", "sessions") and getattr(args, "user", None):
+        args.user = _uid(args)
     try:
         args.fn(args)
     except accessdb.AccessError as exc:

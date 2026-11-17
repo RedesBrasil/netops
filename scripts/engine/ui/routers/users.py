@@ -21,10 +21,10 @@ router = APIRouter(tags=["users"])
 
 class UserCreate(BaseModel):
     model_config = {"extra": "forbid"}
-    username: str = Field(min_length=2, max_length=32)
+    email: str = Field(min_length=3, max_length=120)                    # login
     password: str = Field(min_length=1, max_length=1024)
+    username: Optional[str] = Field(default=None, max_length=32)        # ID interno (padrão: derivado do e-mail)
     display_name: str = Field(default="", max_length=80)
-    email: str = Field(default="", max_length=120)
     groups: list[str] = Field(default_factory=list)
     must_change_password: bool = True
 
@@ -100,10 +100,10 @@ def users_list() -> dict:
 def users_create(body: UserCreate, request: Request):
     actor = _actor(request)
     user = accessdb.create_user(
-        _db(), body.username, body.password, display_name=body.display_name, email=body.email,
+        _db(), body.username or None, body.password, display_name=body.display_name, email=body.email,
         groups=body.groups, must_change=body.must_change_password, created_by=actor.username,
-        vault_key=_vault_key_if_open())
-    _audit(request, "user_created", user["username"], "grupos: " + ", ".join(user["groups"]))
+        vault_key=_vault_key_if_open(), require_email=True)
+    _audit(request, "user_created", user["username"], f"{user['email']} · grupos: " + ", ".join(user["groups"]))
     return user
 
 

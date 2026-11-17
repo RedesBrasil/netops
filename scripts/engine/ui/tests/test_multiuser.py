@@ -42,8 +42,14 @@ def _init_vault(env, master=MASTER):
     deps._vault_init_cache.clear()
 
 
+def _mail(username):
+    return username if "@" in username else f"{username}@teste.com.br"
+
+
 def _login(c, username, password):
-    r = c.post("/api/auth/login", json={"username": username, "password": password})
+    """Login pelo E-MAIL (padrão). 'admin' migrado (sem e-mail) entra pelo ID."""
+    body = {"username": username} if username == "admin" else {"email": _mail(username)}
+    r = c.post("/api/auth/login", json={**body, "password": password})
     assert r.status_code == 200, r.text
     c.headers["X-Netops-Session"] = r.json()["auth_token"]
     return r.json()
@@ -61,8 +67,8 @@ def _bootstrap(env):
 
 
 def _mk_user(admin, username, groups, password="senha-forte-1", must_change=False):
-    r = admin.post("/api/users", json={"username": username, "password": password, "groups": groups,
-                                       "must_change_password": must_change})
+    r = admin.post("/api/users", json={"email": _mail(username), "username": username, "password": password,
+                                       "groups": groups, "must_change_password": must_change})
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -157,7 +163,7 @@ def test_disabled_user_and_session_revocation(env):
     r = admin.patch("/api/users/joao", json={"disabled": True}, headers={"If-Match": u["rev"]})
     assert r.status_code == 200
     assert c.get("/api/hosts").status_code == 401        # sessão derrubada
-    assert _bare().post("/api/auth/login", json={"username": "joao", "password": "senha-forte-1"}).status_code == 401
+    assert _bare().post("/api/auth/login", json={"email": "joao@teste.com.br", "password": "senha-forte-1"}).status_code == 401
 
 
 def test_rev_conflict_on_user_update(env):
@@ -202,9 +208,9 @@ def test_login_throttle(env):
     admin = _bootstrap(env)
     _mk_user(admin, "alvo", ["leitura"])
     c = _bare()
-    codes = [c.post("/api/auth/login", json={"username": "alvo", "password": "x" * 9}).status_code for _ in range(7)]
+    codes = [c.post("/api/auth/login", json={"email": "alvo@teste.com.br", "password": "x" * 9}).status_code for _ in range(7)]
     assert codes[:5] == [401] * 5 and 429 in codes[5:]
-    r = c.post("/api/auth/login", json={"username": "alvo", "password": "senha-forte-1"})
+    r = c.post("/api/auth/login", json={"email": "alvo@teste.com.br", "password": "senha-forte-1"})
     assert r.status_code == 429                                                   # até a senha certa espera
 
 
@@ -215,22 +221,22 @@ def test_keyslot_unlocks_vault_for_user_and_survives_master_rotation(env):
     assert admin.get("/api/users/op").json()["vault_slot"] is True
     vault_session.clear_session()
     assert vault_session.session_status()["state"] == "locked"
-    r = _bare().post("/api/auth/login", json={"username": "op", "password": "senha-forte-1"})
+    r = _bare().post("/api/auth/login", json={"email": "op@teste.com.br", "password": "senha-forte-1"})
     assert r.json()["vault"] == "unlocked"
     assert vault_session.session_status()["state"] == "cache"
     # Senha-mestra trocada: slot velho não abre; com o cofre aberto, o login refaz o slot.
     vault_session.clear_session()
     _init_vault(env, master="outra-mestra-456")
-    r = _bare().post("/api/auth/login", json={"username": "op", "password": "senha-forte-1"})
+    r = _bare().post("/api/auth/login", json={"email": "op@teste.com.br", "password": "senha-forte-1"})
     assert r.json()["vault"] == "no_slot"
     import yaml
     import deps
     meta = vault.load_meta(yaml.safe_load(deps.CREDS_FILE.read_text()))
     vault_session.set_session_key(vault.derive_key("outra-mestra-456", meta))
-    r = _bare().post("/api/auth/login", json={"username": "op", "password": "senha-forte-1"})
+    r = _bare().post("/api/auth/login", json={"email": "op@teste.com.br", "password": "senha-forte-1"})
     assert r.json()["vault"] == "slot_created"
     vault_session.clear_session()
-    r = _bare().post("/api/auth/login", json={"username": "op", "password": "senha-forte-1"})
+    r = _bare().post("/api/auth/login", json={"email": "op@teste.com.br", "password": "senha-forte-1"})
     assert r.json()["vault"] == "unlocked"
 
 
@@ -238,7 +244,7 @@ def test_audit_records_logins_and_writes(env):
     admin = _bootstrap(env)
     _mk_user(admin, "leitor", ["leitura"])
     c = _bare()
-    c.post("/api/auth/login", json={"username": "leitor", "password": "errada-123"})
+    c.post("/api/auth/login", json={"email": "leitor@teste.com.br", "password": "errada-123"})
     _login(c, "leitor", "senha-forte-1")
     c.post("/api/hosts", json={"hostname": "X"})          # 403, mas auditado
     a = admin.get("/api/audit").json()
@@ -333,4 +339,76 @@ def test_snapshot_is_consistent_copy(env, tmp_path):
     out = accessdb.snapshot(deps.db_file(), tmp_path / "snap" / "netops.db")
     conn = sqlite3.connect(out)
     assert conn.execute("SELECT username FROM users").fetchall() == [("admin",)]
+    conn.close()
+
+
+
+# --------------------------------------------------------------------------- #
+# Login por E-MAIL
+# --------------------------------------------------------------------------- #
+def test_login_by_email_case_insensitive_and_by_internal_id(env):
+    admin = _bootstrap(env)
+    r = admin.post("/api/users", json={"email": "Joao.Silva@Empresa.com.br", "password": "senha-forte-1",
+                                       "groups": ["leitura"], "must_change_password": False})
+    assert r.status_code == 201
+    u = r.json()
+    assert u["email"] == "joao.silva@empresa.com.br" and u["username"] == "joao.silva"   # ID derivado
+    for login in ("joao.silva@empresa.com.br", "JOAO.SILVA@EMPRESA.COM.BR", "joao.silva"):
+        body = {"email": login} if "@" in login else {"username": login}
+        assert _bare().post("/api/auth/login", json={**body, "password": "senha-forte-1"}).status_code == 200, login
+    assert _bare().post("/api/auth/login", json={"email": "outro@empresa.com.br", "password": "senha-forte-1"}).status_code == 401
+    me = _login(_bare(), "joao.silva@empresa.com.br", "senha-forte-1")["user"]
+    assert me["username"] == "joao.silva"
+
+
+def test_email_required_unique_and_valid(env):
+    admin = _bootstrap(env)
+    ok = {"password": "senha-forte-1", "groups": ["leitura"]}
+    assert admin.post("/api/users", json={**ok}).status_code == 422                       # sem e-mail
+    r = admin.post("/api/users", json={**ok, "email": "nao-e-email"})
+    assert r.status_code == 422 and r.json()["error"] == "invalid_email"
+    assert admin.post("/api/users", json={**ok, "email": "ana@x.com"}).status_code == 201
+    r = admin.post("/api/users", json={**ok, "email": "ANA@x.com"})
+    assert r.status_code == 409                                                           # duplicado (maiúsc.)
+    r = admin.post("/api/users", json={**ok, "email": "ana@outro.com"})
+    assert r.status_code == 201 and r.json()["username"] == "ana-2"                        # ID sem colisão
+
+
+def test_change_email_keeps_id_and_history(env):
+    admin = _bootstrap(env)
+    u = _mk_user(admin, "maria", ["leitura"])
+    r = admin.patch("/api/users/maria", json={"email": "maria.nova@x.com"}, headers={"If-Match": u["rev"]})
+    assert r.status_code == 200 and r.json()["username"] == "maria"
+    assert _bare().post("/api/auth/login", json={"email": "maria.nova@x.com", "password": "senha-forte-1"}).status_code == 200
+    assert _bare().post("/api/auth/login", json={"email": "maria@teste.com.br", "password": "senha-forte-1"}).status_code == 401
+    _mk_user(admin, "pedro", ["leitura"])
+    r = admin.patch("/api/users/pedro", json={"email": "maria.nova@x.com"})
+    assert r.status_code == 409
+
+
+def test_bootstrap_with_email_sets_admin_login(env):
+    _init_vault(env)
+    r = _bare().post("/api/auth/login", json={"email": "Chefe@Empresa.com", "master_password": MASTER})
+    assert r.status_code == 200 and r.json()["bootstrap"] is True
+    r = _bare().post("/api/auth/login", json={"email": "chefe@empresa.com", "password": MASTER})
+    assert r.status_code == 200 and r.json()["user"]["username"] == "admin" and r.json()["user"]["is_admin"]
+
+
+def test_schema_v1_db_migrates_emails_to_lowercase_unique(env):
+    import sqlite3
+    import deps
+    from lib import accessdb
+    _bootstrap(env)
+    db = deps.db_file()
+    conn = sqlite3.connect(db)
+    conn.execute("DROP INDEX IF EXISTS users_email")
+    conn.execute("UPDATE users SET email=' Admin@X.COM ' WHERE username='admin'")
+    conn.execute("PRAGMA user_version=1")
+    conn.commit()
+    conn.close()
+    accessdb._initialized.clear()
+    assert accessdb.login_username(db, "admin@x.com") == "admin"
+    conn = sqlite3.connect(db)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == accessdb.SCHEMA_VERSION
+    assert conn.execute("SELECT name FROM sqlite_master WHERE name='users_email'").fetchone()
     conn.close()

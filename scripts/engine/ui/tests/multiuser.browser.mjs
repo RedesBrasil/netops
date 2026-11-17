@@ -27,10 +27,10 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: `$
 // Campo pelo rótulo EXATO (".field:has-text('Login')" também casaria "…próximo login").
 const field = (scope, label) => scope.locator(".field", { has: scope.page().locator(`label:text-is("${label}")`) }).locator("input").first();
 const menu = (page) => page.locator(".sidebar a").evaluateAll((a) => a.map((x) => x.getAttribute("href")));
-async function login(page, user, pw) {
+async function login(page, email, pw) {
   await page.goto(BASE + "/");
   await page.locator(".login-screen").waitFor();
-  if (user) await page.locator(".login-card input[autocomplete=username]").fill(user);
+  await page.locator(".login-card input[type=email]").fill(email);
   await page.locator(".login-card input[type=password]").fill(pw);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.locator(".shell").waitFor();
@@ -46,9 +46,9 @@ try {
   let { ctx, page } = await fresh();
   await page.goto(BASE + "/");
   await page.locator(".login-screen").waitFor();
-  assert.equal(await page.locator(".login-card input[autocomplete=username]").count(), 0, "modo legado: sem campo usuário");
+  assert.ok((await page.locator(".login-card").innerText()).includes("E-mail do administrador"), "modo legado pede o e-mail do admin");
   await shot(page, "01-login-legado");
-  await login(page, null, MASTER);
+  await login(page, "chefe@empresa.com.br", MASTER);
   assert.ok((await page.locator(".user-chip").innerText()).includes("Administrador"), "chip do usuário no topo");
   const adminMenu = await menu(page);
   for (const h of ["#users", "#access-groups", "#audit", "#credentials", "#settings"]) assert.ok(adminMenu.includes(h), `admin vê ${h}`);
@@ -56,7 +56,7 @@ try {
   // 2) Admin cria um grupo e usuários.
   await page.goto(BASE + "/#users/new"); await page.locator(".modal").waitFor();
   const modal = page.locator(".modal");
-  await field(modal, "Login").fill("leitor");
+  await field(modal, "E-mail").fill("leitor@empresa.com.br");
   await field(modal, "Nome").fill("Leitor de Teste");
   await modal.locator("label.perm-check:has-text('leitura') input").check();
   await modal.locator(".field:has-text('Senha provisória') input[type=checkbox]").uncheck();
@@ -64,11 +64,11 @@ try {
   await field(modal, "Confirme a senha").fill("leitor-senha-1");
   await shot(page, "02-novo-usuario");
   await modal.getByRole("button", { name: "Criar" }).click(); await settle(page);
-  assert.match(new URL(page.url()).hash, /^#users\/leitor/, "criar abre o usuário pela URL");
+  assert.match(new URL(page.url()).hash, /^#users\/leitor/, "criar abre o usuário pela URL (ID derivado do e-mail)");
   await page.goto(BASE + "/#users"); await page.locator("table a[href='#users/leitor']").waitFor();
 
   await page.goto(BASE + "/#users/new"); await page.locator(".modal").waitFor();
-  await field(modal, "Login").fill("op1");
+  await field(modal, "E-mail").fill("op1@empresa.com.br");
   await modal.locator("label.perm-check:has-text('operador') input").check();
   await field(modal, "Senha").fill("provisoria-1");
   await field(modal, "Confirme a senha").fill("provisoria-1");
@@ -84,9 +84,9 @@ try {
   await logout(page);
 
   // 3) Agora o login pede usuário.
-  await page.locator(".login-card input[autocomplete=username]").waitFor();
+  await page.locator(".login-card label:text-is('E-mail')").waitFor();
   await shot(page, "05-login-usuario");
-  await page.locator(".login-card input[autocomplete=username]").fill("leitor");
+  await page.locator(".login-card input[type=email]").fill("leitor@empresa.com.br");
   await page.locator(".login-card input[type=password]").fill("errada-123");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.locator(".login-card .err:has-text('incorretos')").waitFor();
@@ -94,7 +94,7 @@ try {
 
   // 4) Leitor: menu reduzido; deep link proibido mostra "Sem permissão".
   ({ ctx, page } = await fresh());
-  await login(page, "leitor", "leitor-senha-1");
+  await login(page, "leitor@empresa.com.br", "leitor-senha-1");
   const m = await menu(page);
   assert.ok(m.includes("#hosts") && m.includes("#backups"), "leitor vê hosts/backups");
   for (const h of ["#credentials", "#settings", "#users", "#audit", "#terminal", "#files", "#claude"]) assert.ok(!m.includes(h), `leitor NÃO vê ${h}`);
@@ -109,7 +109,7 @@ try {
 
   // 5) Senha provisória: só a troca de senha até resolver.
   ({ ctx, page } = await fresh());
-  await login(page, "op1", "provisoria-1");
+  await login(page, "op1@empresa.com.br", "provisoria-1");
   await page.locator(".card:has-text('Senha provisória')").waitFor();
   await shot(page, "08-senha-provisoria");
   await page.goto(BASE + "/#hosts"); await settle(page);
@@ -125,7 +125,7 @@ try {
 
   // 6) Auditoria (admin) com filtro na URL.
   ({ ctx, page } = await fresh());
-  await login(page, "admin", MASTER);
+  await login(page, "chefe@empresa.com.br", MASTER);
   await page.goto(BASE + "/#audit?user=leitor"); await page.locator("table tbody tr").first().waitFor();
   const txt = await page.locator("table").innerText();
   assert.ok(/falha de login/.test(txt) && /login/.test(txt), "auditoria mostra falha e login do leitor");

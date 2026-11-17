@@ -312,8 +312,8 @@ export function CodeTextEditor({ value, onChange, name = "" }) {
 }
 
 /* ---------------------------- LoginScreen ------------------------------- */
-// Gate de acesso ao console: usuário + senha (banco de acesso). Sem usuários cadastrados, a
-// senha-mestra do cofre (o 1º login cria o admin). O keyslot do usuário destranca o cofre.
+// Gate de acesso ao console: E-MAIL + senha (banco de acesso). Sem usuários cadastrados, e-mail do
+// admin + senha-mestra do cofre (o 1º login cria o admin). O keyslot do usuário destranca o cofre.
 /* --------------------------- PasswordInput ------------------------------ */
 // Campo de senha com "olhinho" para mostrar/ocultar o que está sendo digitado.
 export function PasswordInput({ value, onInput, ...rest }) {
@@ -327,26 +327,29 @@ export function PasswordInput({ value, onInput, ...rest }) {
 }
 
 export function LoginScreen({ onAuthed, multiuser = false }) {
-  const [user, setUser] = useState("");
+  const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
 
   async function submit(e) {
     if (e && e.preventDefault) e.preventDefault();
-    if (!pw || busy || (multiuser && !user)) return;
+    if (!pw || busy || !emailOk) return;
     setBusy(true); setErr("");
     try {
-      const body = multiuser ? { username: user.trim().toLowerCase(), password: pw } : { master_password: pw };
+      const login = email.trim().toLowerCase();
+      // Sem usuários (modo senha-mestra): o e-mail informado vira o login do admin criado agora.
+      const body = multiuser ? { email: login, password: pw } : { email: login, master_password: pw };
       const r = await api.post("/auth/login", body);
       setPw("");
       setAuthToken(r.auth_token);
       await refreshVault();
       if (authToken() !== r.auth_token) return;
-      if (r.bootstrap) toast.ok("Usuário admin criado com a senha-mestra. Agora o console é multiusuário.");
+      if (r.bootstrap) toast.ok(`Administrador criado: entre com ${login} e a senha-mestra. O console agora é multiusuário.`);
       onAuthed && onAuthed();
     } catch (e2) {
-      if (e2.status === 401) setErr(multiuser ? "Usuário ou senha incorretos." : "Senha mestra incorreta.");
+      if (e2.status === 401) setErr(multiuser ? "E-mail ou senha incorretos." : "Senha mestra incorreta.");
       else setErr(e2.payload?.detail || e2.message || "Falha ao entrar.");
     } finally { setBusy(false); }
   }
@@ -354,20 +357,20 @@ export function LoginScreen({ onAuthed, multiuser = false }) {
   return html`<div class="login-screen">
     <form class="login-card" onSubmit=${submit}>
       <div class="login-brand">🔒 NetOps Console</div>
-      <p class="help">${multiuser ? "Acesso protegido. Entre com seu usuário e senha."
-        : "Acesso protegido. Entre com a senha-mestra do cofre (o 1º acesso cria o usuário admin)."}</p>
-      ${multiuser && html`<div class="field">
-        <label>Usuário</label>
-        <input autocomplete="username" autocapitalize="none" spellcheck="false" autofocus value=${user}
-          onInput=${(e) => setUser(e.target.value)} disabled=${busy} />
-      </div>`}
+      <p class="help">${multiuser ? "Acesso protegido. Entre com seu e-mail e senha."
+        : "Primeiro acesso: informe o e-mail do administrador e a senha-mestra do cofre. Esse e-mail vira o seu login."}</p>
+      <div class="field">
+        <label>${multiuser ? "E-mail" : "E-mail do administrador"}</label>
+        <input type="email" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus value=${email}
+          onInput=${(e) => setEmail(e.target.value)} disabled=${busy} />
+      </div>
       <div class="field">
         <label>${multiuser ? "Senha" : "Senha mestra"}</label>
-        <${PasswordInput} autocomplete="current-password" autofocus=${!multiuser} value=${pw}
+        <${PasswordInput} autocomplete="current-password" value=${pw}
           onInput=${(e) => setPw(e.target.value)} disabled=${busy} />
         ${err && html`<div class="err">${err}</div>`}
       </div>
-      <button type="submit" class="primary" disabled=${busy || !pw || (multiuser && !user)}>${busy ? "Entrando…" : "Entrar"}</button>
+      <button type="submit" class="primary" disabled=${busy || !pw || !emailOk}>${busy ? "Entrando…" : "Entrar"}</button>
     </form>
   </div>`;
 }

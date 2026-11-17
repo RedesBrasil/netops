@@ -174,7 +174,7 @@ function Shell({ onLogout, showLogout }) {
         <div class="keep-open"><${UpdatesControl} part="version" /></div>
         <button class="sm" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}>
           ${theme === "light" ? "🌙 escuro" : "☀ claro"}</button>
-        ${me && showLogout && html`<a class="user-chip" href="#account" title=${"Minha conta — grupos: " + (me.groups || []).join(", ")}>👤 ${me.display_name || me.username}</a>`}
+        ${me && showLogout && html`<a class="user-chip" href="#account" title=${"Minha conta — " + (me.email || me.username) + " — grupos: " + (me.groups || []).join(", ")}>👤 ${me.display_name || me.username}</a>`}
         ${showLogout && html`<button class="sm" onClick=${doLogout}>Sair</button>`}
       </div>
     </div>

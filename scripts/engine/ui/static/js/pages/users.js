@@ -37,10 +37,11 @@ export function UsersPage() {
     && (!status || (status === "ativo" ? !u.disabled : u.disabled)));
 
   const cols = [
-    { key: "username", label: "Usuário", hideable: false, sort: true,
-      render: (u) => html`<a href=${"#users/" + encodeURIComponent(u.username)} onClick=${(e) => e.stopPropagation()}><b>${u.username}</b></a>
-        ${me && me.username === u.username ? html` <${Badge}>você<//>` : ""}` },
+    { key: "email", label: "E-mail (login)", hideable: false, sort: (u) => u.email || u.username,
+      render: (u) => html`<a href=${"#users/" + encodeURIComponent(u.username)} onClick=${(e) => e.stopPropagation()}><b>${u.email || u.username}</b></a>
+        ${me && me.username === u.username ? html` <${Badge}>você<//>` : ""}${!u.email ? html` <${Badge} kind="warn">sem e-mail<//>` : ""}` },
     { key: "display_name", label: "Nome", sort: true, render: (u) => u.display_name || "—" },
+    { key: "username", label: "ID", sort: true, hidden: true, render: (u) => html`<code>${u.username}</code>` },
     { key: "groups", label: "Grupos", sort: (u) => u.groups.join(","), render: (u) => u.groups.length
         ? u.groups.map((g) => html`<${Badge} kind=${g === "admin" ? "warn" : ""}>${g}<//> `) : html`<span class="help">sem grupo</span>` },
     { key: "status", label: "Situação", sort: (u) => (u.disabled ? 2 : u.must_change_password ? 1 : 0),
@@ -50,7 +51,6 @@ export function UsersPage() {
     { key: "sessions", label: "Sessões", sort: true, render: (u) => String(u.sessions) },
     { key: "vault_slot", label: "Cofre", sort: (u) => (u.vault_slot ? 1 : 0),
       render: (u) => (u.vault_slot ? html`<${Badge} kind="ok">🔑 destranca<//>` : html`<span class="help" title="O login cria a chave quando o cofre estiver destrancado">—</span>`) },
-    { key: "email", label: "E-mail", sort: true, hidden: true, render: (u) => u.email || "—" },
     { key: "last_ip", label: "Último IP", sort: true, hidden: true, render: (u) => u.last_ip || "—" },
     { key: "created_at", label: "Criado em", sort: (u) => u.created_at || 0, hidden: true, render: (u) => `${fmtTs(u.created_at)} (${u.created_by || "—"})` },
   ];
@@ -61,7 +61,7 @@ export function UsersPage() {
       <button class="primary" onClick=${() => r.open("new")}>+ Novo usuário</button></div>
     ${!multiuser && html`<div class="card"><b>Modo senha-mestra.</b> Ainda não há usuários: crie o primeiro
       administrador (grupo <code>admin</code>). Depois disso o login passa a ser por usuário e senha.</div>`}
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar usuário, nome ou e-mail"
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar e-mail ou nome"
       selects=${[{ key: "group", label: "Grupo", value: group, options: groupNames },
                  { key: "status", label: "Situação", value: status, options: ["ativo", "desativado"] }]}
       count=${users.length} total=${all.length} />
@@ -81,8 +81,8 @@ export function UsersPage() {
         onSaved=${() => { r.close(); res.reload(); }} />`}
     ${confirm && html`<${ConfirmDialog} danger=${confirm.kind === "delete"}
         title=${confirm.kind === "delete" ? "Excluir usuário" : "Encerrar sessões"}
-        message=${confirm.kind === "delete" ? `Apagar o usuário '${confirm.u.username}'? As sessões dele caem na hora.`
-          : `Derrubar as ${confirm.u.sessions} sessão(ões) abertas de '${confirm.u.username}'?`}
+        message=${confirm.kind === "delete" ? `Apagar o usuário ${confirm.u.email || confirm.u.username}? As sessões dele caem na hora.`
+          : `Derrubar as ${confirm.u.sessions} sessão(ões) abertas de ${confirm.u.email || confirm.u.username}?`}
         onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
           try {
@@ -102,7 +102,7 @@ function GroupChecks({ value, options, onChange, disabled }) {
 function UserForm({ user, groups, cat, first, self, onClose, onSaved }) {
   const isNew = !!user.__new;
   const [form, setForm] = useState({
-    username: isNew ? "" : user.username, display_name: user.display_name || "", email: user.email || "",
+    display_name: user.display_name || "", email: user.email || "",
     groups: isNew ? (first ? ["admin"] : []) : user.groups, disabled: !!user.disabled,
     must_change_password: isNew ? !first : !!user.must_change_password, password: "", password2: "",
   });
@@ -116,14 +116,14 @@ function UserForm({ user, groups, cat, first, self, onClose, onSaved }) {
         if (form.password.length < cat.password_min) { setErrs({ password: `Mínimo de ${cat.password_min} caracteres` }); return; }
         if (form.password !== form.password2) return;
         const u = await api.post("/users", {
-          username: form.username.trim().toLowerCase(), password: form.password, display_name: form.display_name,
-          email: form.email, groups: form.groups, must_change_password: form.must_change_password });
-        toast.ok(`Usuário ${u.username} criado`);
+          email: form.email.trim().toLowerCase(), password: form.password, display_name: form.display_name,
+          groups: form.groups, must_change_password: form.must_change_password });
+        toast.ok(`Usuário ${u.email} criado`);
         if (first) await refreshMe();
         onSaved(u);
       } else {
         const u = await api.patch(`/users/${encodeURIComponent(user.username)}`, {
-          display_name: form.display_name, email: form.email, groups: form.groups, disabled: form.disabled,
+          display_name: form.display_name, email: form.email.trim().toLowerCase() || undefined, groups: form.groups, disabled: form.disabled,
           must_change_password: form.must_change_password }, user.rev);
         toast.ok("Usuário atualizado");
         if (self) await refreshMe();
@@ -131,11 +131,12 @@ function UserForm({ user, groups, cat, first, self, onClose, onSaved }) {
       }
     } catch (e) { handleError(e); }
   }
-  return html`<${Modal} title=${isNew ? (first ? "Primeiro administrador" : "Novo usuário") : `Usuário ${user.username}`} onClose=${onClose}>
-    ${isNew && html`<${Field} label="Login" hint="2 a 32 caracteres: minúsculas, números, ponto, hífen ou _">
-      <input autocapitalize="none" spellcheck="false" value=${form.username} onInput=${(e) => set("username", e.target.value)} /><//>`}
+  const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim());
+  return html`<${Modal} title=${isNew ? (first ? "Primeiro administrador" : "Novo usuário") : `Usuário ${user.email || user.username}`} onClose=${onClose}>
+    <${Field} label="E-mail" hint=${isNew ? "É o login do usuário." : html`É o login. ID interno: <code>${user.username}</code> (não muda)`}
+        error=${form.email && !emailOk ? "E-mail inválido" : null}>
+      <input type="email" autocapitalize="none" spellcheck="false" value=${form.email} onInput=${(e) => set("email", e.target.value)} /><//>
     <${Field} label="Nome"><input value=${form.display_name} onInput=${(e) => set("display_name", e.target.value)} /><//>
-    <${Field} label="E-mail (opcional)"><input type="email" value=${form.email} onInput=${(e) => set("email", e.target.value)} /><//>
     <${Field} label="Grupos de acesso" hint=${first ? "O primeiro usuário precisa ser admin." : html`Permissões efetivas = soma dos grupos. <a href="#access-groups">Ver grupos</a>`}>
       <${GroupChecks} value=${form.groups} options=${groups} disabled=${first} onChange=${(v) => set("groups", v)} /><//>
     ${isNew && html`
@@ -148,7 +149,7 @@ function UserForm({ user, groups, cat, first, self, onClose, onSaved }) {
       onChange=${(e) => set("disabled", e.target.checked)} /> Desativado (não entra; sessões caem na hora)</label><//>`}
     ${!isNew && html`<div class="help">Criado em ${fmtTs(user.created_at)} por ${user.created_by || "—"} · último login ${fmtTs(user.last_login)}${user.last_ip ? " de " + user.last_ip : ""} · senha trocada em ${fmtTs(user.password_changed_at)}</div>`}
     <div class="modal-actions"><button onClick=${onClose}>Cancelar</button>
-      <button class="primary" disabled=${isNew && (!form.username || !form.password || mismatch)} onClick=${save}>${isNew ? "Criar" : "Salvar"}</button></div>
+      <button class="primary" disabled=${(isNew && (!form.password || mismatch)) || (form.email && !emailOk) || (isNew && !emailOk)} onClick=${save}>${isNew ? "Criar" : "Salvar"}</button></div>
   <//>`;
 }
 
@@ -164,7 +165,7 @@ function ResetPasswordModal({ user, cat, onClose, onSaved }) {
       toast.ok("Senha definida; as sessões do usuário foram encerradas"); onSaved();
     } catch (e) { handleError(e); }
   }
-  return html`<${Modal} title=${`Definir senha — ${user.username}`} onClose=${onClose}>
+  return html`<${Modal} title=${`Definir senha — ${user.email || user.username}`} onClose=${onClose}>
     <${Field} label="Nova senha" error=${short ? `Mínimo de ${cat.password_min} caracteres` : null}>
       <${PasswordInput} autocomplete="new-password" value=${v1} onInput=${(e) => setV1(e.target.value)} /><//>
     <${Field} label="Confirme" error=${mismatch ? "As senhas não conferem" : null}>

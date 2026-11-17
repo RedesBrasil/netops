@@ -89,7 +89,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   URL própria, com deep link e Voltar funcionando. Leia `core/rules/urls-navegacao.md` antes de criar/alterar
   qualquer tela em `scripts/engine/ui/`.
 
-- **Multiusuário do console (regra de desenvolvimento):** login por usuário + senha, permissões por grupo de acesso.
+- **Multiusuário do console (regra de desenvolvimento):** login por **e-mail** + senha, permissões por grupo de acesso.
   - **Rota nova na API:** precisa de regra em `scripts/engine/ui/services/authz.py` (`RULES`). É default-deny, e o teste `test_every_route_is_mapped_to_a_permission` reprova rota sem regra.
   - **Botão de ação na tela:** marque com a classe `needs-<perm>` (ex.: `needs-hosts-edit`).
   - **Exclusivo do admin:** o que roda como root no servidor (terminal/arquivos do servidor, scripts, tarefas agendadas, config, updates).
@@ -180,7 +180,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
     turno; ao ser retomado depois de um restart que você disparou, só confirme o HTTP e conclua — **não reinicie de novo**.
   - Liga o **terminal web** e a **página Claude Code** por padrão (sem o script as abas somem), injeta o `claude` no PATH,
     faz bind no IP da máquina e garante uma instância só. Variáveis: `NETOPS_UI_HOST`, `NETOPS_UI_PORT`, `NETOPS_UI_TERMINAL=0`,
-    `NETOPS_UI_CLAUDE=0`, `NETOPS_UI_CLAUDE_PERSIST=0`. Acesso protegido pelo **login por usuário e senha** (sem usuários: senha-mestra; sem token na URL).
+    `NETOPS_UI_CLAUDE=0`, `NETOPS_UI_CLAUDE_PERSIST=0`. Acesso protegido pelo **login por e-mail e senha** (sem usuários: e-mail do admin + senha-mestra; sem token na URL).
     Aba nova que não aparece após atualizar = cache: **hard refresh** (`Ctrl+Shift+R`). Ver `scripts/engine/ui/SKILL.md`.
 - **Console NUNCA pode ficar parado (INEGOCIÁVEL):** antes de qualquer start/restart ou mudança em `start.sh`/supervisor,
   valide que o console volta (sintaxe, venv, porta) e **nunca** teste contra o ROOT real "em outra porta". Depois,

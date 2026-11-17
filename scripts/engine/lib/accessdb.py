@@ -9,6 +9,9 @@ reports/20261116-plano-multiusuario-grupos-acesso.md.
 Arquivo: <DATA_ROOT>/runs/netops.db (git-ignorado, 0600, modo WAL). Nunca copie o .db com o console
 no ar: use `snapshot()` (API de backup do SQLite) — `scripts/engine/users/cli.py snapshot <destino>`.
 
+Login = E-MAIL (único, minúsculo). `username` é o ID interno estável (derivado do e-mail; usado na
+auditoria, no dono das conversas e no CLI) — trocar o e-mail não quebra o histórico.
+
 Senha de usuário: o MESMO esquema do cofre (lib/vault.build_meta: Argon2id + verifier). A chave
 derivada da senha do usuário também embrulha a chave do cofre ("keyslot"), então o login de cada
 usuário destranca o cofre sem ninguém conhecer a senha-mestra. A senha nunca é gravada.
@@ -37,10 +40,11 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ADMIN_GROUP = "admin"
 NET_PERMS = ("read", "create", "edit", "delete")
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,31}$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 GROUPNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,39}$")
 PASSWORD_MIN = 8
 
@@ -250,7 +254,19 @@ def _ensure(path: Path) -> None:
                             " created_at, updated_at) VALUES(?,?,?,?,?,?,?)",
                             (g["name"], g["description"], int(g["builtin"]), json.dumps(g["permissions"]),
                              json.dumps(g["net_perms"]), now, now))
-                    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                    conn.execute("PRAGMA user_version=1")
+                    conn.execute("COMMIT")
+                except Exception:
+                    conn.execute("ROLLBACK")
+                    raise
+                ver = 1
+            if ver < 2:
+                # v2: login por E-MAIL — e-mail normalizado (minúsculo) e único quando preenchido.
+                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    conn.execute("UPDATE users SET email=lower(trim(email))")
+                    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email<>''")
+                    conn.execute("PRAGMA user_version=2")
                     conn.execute("COMMIT")
                 except Exception:
                     conn.execute("ROLLBACK")
@@ -345,6 +361,51 @@ def norm_username(username: str) -> str:
     return u
 
 
+def norm_email(email: str | None, required: bool = False) -> str:
+    e = (email or "").strip().lower()
+    if not e:
+        if required:
+            raise AccessError("email_required", "Informe o e-mail (é o login do usuário).", 422)
+        return ""
+    if len(e) > 120 or not EMAIL_RE.match(e):
+        raise AccessError("invalid_email", f"E-mail inválido: {email}", 422)
+    return e
+
+
+def _email_taken(conn, email: str, exclude: str | None = None) -> bool:
+    if not email:
+        return False
+    r = conn.execute("SELECT username FROM users WHERE email=?", (email,)).fetchone()
+    return bool(r) and r[0] != exclude
+
+
+def _derive_username(conn, email: str) -> str:
+    """ID interno estável a partir do e-mail (joao.silva@x.com -> joao.silva; repetido -> joao.silva-2)."""
+    base = re.sub(r"[^a-z0-9._-]", "", email.split("@", 1)[0].lower()).strip("._-")[:28] or "usuario"
+    if len(base) < 2 or not base[0].isalnum():
+        base = ("u" + base)[:28]
+    cand, i = base, 2
+    while conn.execute("SELECT 1 FROM users WHERE username=?", (cand,)).fetchone():
+        cand, i = f"{base}-{i}", i + 1
+    return cand
+
+
+def _login_row(conn, identifier: str):
+    """Linha do usuário pelo LOGIN: e-mail (padrão) ou o ID interno (admin migrado, CLI, scripts)."""
+    ident = (identifier or "").strip().lower()
+    if not ident:
+        return None
+    if "@" in ident:
+        return conn.execute("SELECT * FROM users WHERE email=?", (ident,)).fetchone()
+    return _user_row(conn, ident)
+
+
+def login_username(db, identifier: str) -> str | None:
+    with connect(db) as c:
+        row = _login_row(c, identifier)
+        return row["username"] if row else None
+
+
 def _user_row(conn, username: str):
     return conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
 
@@ -408,15 +469,21 @@ def _set_groups(conn, username: str, groups) -> None:
     conn.executemany("INSERT INTO user_groups(username, group_name) VALUES(?,?)", [(username, g) for g in groups])
 
 
-def create_user(db, username: str, password: str, *, display_name: str = "", email: str = "",
+def create_user(db, username: str | None, password: str, *, display_name: str = "", email: str = "",
                 groups=(), must_change: bool = False, created_by: str = "",
-                vault_key: bytes | None = None) -> dict:
-    username = norm_username(username)
+                vault_key: bytes | None = None, require_email: bool = False) -> dict:
+    """Login = e-mail. `username` (ID interno) é opcional: sem ele, deriva do e-mail."""
+    email = norm_email(email, required=require_email or not username)
+    username = norm_username(username) if username else None
     check_password_policy(password)
     pw_json, kek = _hash_password(password)
     slot = wrap_vault_key(kek, vault_key) if vault_key else None
     now = time.time()
     with connect(db, write=True) as c:
+        if _email_taken(c, email):
+            raise AccessError("exists", f"Já existe um usuário com o e-mail {email}.", 409)
+        if username is None:
+            username = _derive_username(c, email)
         if _user_row(c, username):
             raise AccessError("exists", f"O usuário '{username}' já existe.", 409)
         first = c.execute("SELECT 1 FROM users LIMIT 1").fetchone() is None
@@ -425,7 +492,7 @@ def create_user(db, username: str, password: str, *, display_name: str = "", ema
             raise AccessError("first_must_be_admin", "O primeiro usuário precisa estar no grupo admin.", 422)
         c.execute("INSERT INTO users(username, display_name, email, pw, vault_slot, must_change, created_at,"
                   " created_by, updated_at, pw_changed_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                  (username, (display_name or "").strip()[:80], (email or "").strip()[:120], pw_json, slot,
+                  (username, (display_name or "").strip()[:80], email, pw_json, slot,
                    int(bool(must_change)), now, created_by or "", now, now))
         _set_groups(c, username, groups)
         return _public_user(c, _user_row(c, username))
@@ -441,10 +508,15 @@ def update_user(db, username: str, *, rev: str | None = None, actor: str = "", *
         if rev is not None and str(rev) != str(row["rev"]):
             raise Conflict()
         sets, args = [], []
-        for k in ("display_name", "email"):
-            if fields.get(k) is not None:
-                sets.append(f"{k}=?")
-                args.append(str(fields[k]).strip()[:120])
+        if fields.get("display_name") is not None:
+            sets.append("display_name=?")
+            args.append(str(fields["display_name"]).strip()[:80])
+        if fields.get("email") is not None:
+            email = norm_email(fields["email"], required=True)
+            if _email_taken(c, email, exclude=username):
+                raise AccessError("exists", f"Já existe um usuário com o e-mail {email}.", 409)
+            sets.append("email=?")
+            args.append(email)
         if fields.get("disabled") is not None:
             if fields["disabled"] and actor and actor == username:
                 raise AccessError("self_disable", "Você não pode desativar o próprio usuário.", 422)
@@ -503,11 +575,11 @@ def delete_user(db, username: str, *, actor: str = "") -> None:
             raise AccessError("last_admin", "Precisa sobrar pelo menos um administrador ativo.", 422)
 
 
-def verify_password(db, username: str, password: str) -> tuple[dict, bytes]:
-    """(usuário público, KEK) ou WrongPassword. Usuário desativado também é recusado (mesma mensagem)."""
-    username = (username or "").strip().lower()
+def verify_password(db, login: str, password: str) -> tuple[dict, bytes]:
+    """(usuário público, KEK) ou WrongPassword. `login` = e-mail (ou o ID interno). Usuário desativado
+    também é recusado (mesma mensagem: não revela se o login existe)."""
     with connect(db) as c:
-        row = _user_row(c, username)
+        row = _login_row(c, login)
         if not row:
             # Tempo parecido com o caminho real (não revela se o usuário existe).
             _check(json.dumps(_dummy_meta()), password + "x") if password else None
