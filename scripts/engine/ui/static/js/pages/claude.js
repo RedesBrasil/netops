@@ -2248,11 +2248,11 @@ function primaryString(input) {
   return null;
 }
 
-// Agrupa chamadas de ferramenta consecutivas (ignorando "pensando…") numa só linha de chips.
+// Agrupa chamadas de ferramenta e blocos "pensando…" consecutivos numa só linha de chips.
 function groupTools(items) {
   const out = [];
   items.forEach((it, i) => {
-    if (it.type === "tool") {
+    if (it.type === "tool" || it.type === "thinking") {
       const last = out[out.length - 1];
       if (last && last.tools) last.tools.push(it);
       else out.push({ tools: [it], start: i });
@@ -2268,11 +2268,17 @@ function ToolGroup({ tools }) {
   const icon = (st) => ({ running: "⏳", done: "✓", error: "✗" }[st] || "•");
   return html`<div class="cc-toolgroup">
     <div class="cc-chips">
-      ${tools.map((t, k) => html`<button type="button" key=${k} title=${primaryString(t.input) || ""}
-          class="cc-chip ${t.tstatus} ${open[k] ? "open" : ""}" aria-expanded=${!!open[k]}
-          onClick=${() => toggle(k)}>${icon(t.tstatus)} ${t.name}</button>`)}
+      ${tools.map((t, k) => t.type === "thinking"
+        ? html`<button type="button" key=${k} title="pensando…"
+            class="cc-chip think ${open[k] ? "open" : ""}" aria-expanded=${!!open[k]}
+            onClick=${() => toggle(k)}>💭 pensando…</button>`
+        : html`<button type="button" key=${k} title=${primaryString(t.input) || ""}
+            class="cc-chip ${t.tstatus} ${open[k] ? "open" : ""}" aria-expanded=${!!open[k]}
+            onClick=${() => toggle(k)}>${icon(t.tstatus)} ${t.name}</button>`)}
     </div>
-    ${tools.map((t, k) => open[k] && html`<${ToolCard} key=${"d" + k} it=${t} initialOpen=${true} />`)}
+    ${tools.map((t, k) => open[k] && (t.type === "thinking"
+      ? html`<details class="cc-thinking" open key=${"d" + k}><summary>pensando…</summary><pre>${t.text}</pre></details>`
+      : html`<${ToolCard} key=${"d" + k} it=${t} initialOpen=${true} />`))}
   </div>`;
 }
 
