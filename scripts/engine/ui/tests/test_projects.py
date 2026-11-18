@@ -440,3 +440,11 @@ def test_http_browse_informa_se_pode_e_a_config(api, pasta):
     assert d["allowed"] is True and d["config"]["exec"] == [".mcp.json"]
     d = api.get("/api/projects/browse", params={"path": "/etc"}).json()
     assert d["allowed"] is False and d["reason"]
+
+
+def test_pasta_base_padrao_com_barra_no_fim_e_criada(tmp_path_factory, monkeypatch):
+    """Bug 18/11: "/opt/projetos/" (com barra) não criava a base e dava "Essa pasta não existe"."""
+    base = tmp_path_factory.mktemp("b") / "projetos"
+    monkeypatch.setattr(P, "DEFAULT_BASE", str(base))
+    p = P.create("Testes", str(base) + "/", new_folder="testes")
+    assert p["path"] == str((base / "testes").resolve()) and p["trusted"] is True

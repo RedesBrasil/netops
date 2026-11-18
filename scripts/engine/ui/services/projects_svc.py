@@ -204,6 +204,8 @@ def _new_folder(parent, folder) -> str:
     if not _FOLDER_RE.match(name) or name in (".", ".."):
         raise ProjectError("bad_folder", "Nome de pasta inválido: use letras, números, ponto, hífen ou _ (sem / nem espaço).")
     raw_parent = str(parent or "").strip() or DEFAULT_BASE
+    if os.path.isabs(raw_parent):
+        raw_parent = os.path.normpath(raw_parent)   # "/opt/projetos/" == "/opt/projetos"
     if raw_parent == DEFAULT_BASE and not os.path.isdir(DEFAULT_BASE):
         os.makedirs(DEFAULT_BASE, mode=0o755, exist_ok=True)
     base = _resolve_dir(raw_parent)
