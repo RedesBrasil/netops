@@ -471,7 +471,8 @@ th.sortable:hover { color: var(--text); }
 .vault-chip.insecure { background: var(--warn-weak); color: var(--warn); }
 .vault-chip.ok { background: var(--ok-weak); color: var(--ok); }
 .cc-topbar-title-edit { flex: 0 1 260px; min-width: 0; font-size: 13px; padding: 2px 6px; }
-.cc-sess-rename { width: 100%; font-size: 14px; padding: 2px 6px; }
+.cc-topbar-title-edit, .cc-sess-rename { font: inherit; background: var(--surface); color: var(--text); border: 1px solid var(--accent, var(--border)); border-radius: 6px; outline: none; box-sizing: border-box; }
+.cc-sess-rename { width: 100%; font-size: 14px; padding: 3px 8px; }
 .cc-topbar-title { flex: 0 1 auto; min-width: 0; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #667); font-size: 13px; }
 .cc-topbar-chk { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; cursor: pointer; }
 .cc-topbar-chk input { width: 18px; height: 18px; margin: 0; cursor: pointer; accent-color: var(--ok); opacity: .7; }
