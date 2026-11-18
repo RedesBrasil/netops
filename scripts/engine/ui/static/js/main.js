@@ -115,12 +115,13 @@ function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
   });
   const groups = ORDER.filter((g) => g === "Projetos" ? showProjects : Object.values(ROUTES).some((r) => r.group === g && routeVisible(r, meta, me)));
   return html`<nav class=${"sidebar" + (open ? " open" : "")} onClick=${(e) => { if (e.target.closest("a")) onNavigate(); }}>
-    ${groups.map((g) => html`<div key=${g}>
+    ${groups.map((g) => html`<div key=${g} class=${"nav-group" + (openGroups.includes(g) ? " is-open" : "")}>
       <button type="button" class="group-label group-toggle" aria-expanded=${openGroups.includes(g)}
         onClick=${() => toggleGroup(g)}>
         <span class="group-chevron">${openGroups.includes(g) ? "▾" : "▸"}</span>${g}
       </button>
-      ${g === "Projetos" && openGroups.includes(g) && html`
+      ${openGroups.includes(g) && html`<div class="nav-children">
+      ${g === "Projetos" && html`
         ${projects.map((p) => html`<a key=${p.id} href=${"#projects/" + p.id} title=${p.path + " — segure e arraste para reordenar"}
           ...${projDrag.props(p.id)} class=${(projSeg === p.id ? "active" : "") + projDrag.cls(p.id)}>${p.name}</a>`)}
         <a href="#projects/new" class=${"needs-projects-manage" + (projSeg === "new" ? " active" : "")}>＋ Novo projeto</a>
@@ -128,6 +129,7 @@ function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
       ${openGroups.includes(g) && Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
         <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${r.label}${r.badge && badges[r.badge] > 0
           ? html`<span class="nav-badge" title="execuções com resultado não lido">${badges[r.badge]}</span>` : ""}</a>`)}
+      </div>`}
     </div>`)}
   </nav>`;
 }
