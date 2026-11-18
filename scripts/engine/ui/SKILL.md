@@ -82,17 +82,32 @@ e "as sessões do projeto" são as conversas daquela pasta (o Claude Code já se
 `~/.claude/projects/`; o SDK recebe `directory=<pasta>`). Não há tabela sessão→projeto.
 
 - **Registro:** `runs/claude/projects.json` (`services/projects_svc.py`). `id` = slug do nome, imutável ao renomear. Recusa pasta
-  inexistente, pasta duplicada (dois projetos dividiriam as mesmas conversas) e a pasta do NetOps (essa é a aba Claude Code).
-  Remover só apaga o registro; nunca a pasta nem as conversas.
-- **API:** `GET/POST /api/projects`, `PATCH/DELETE /api/projects/<id>`, `GET /api/projects/browse?path=` (só subpastas),
+  inexistente, pasta duplicada (dois projetos dividiriam as mesmas conversas) e pasta proibida (ver Segurança).
+  Remover só apaga o registro; nunca a pasta nem as conversas. **Criar pasta nova** (`new_folder`, padrão dentro de `/opt/projetos`)
+  ou **abrir pasta existente**, como no VS Code.
+- **API:** `GET/POST /api/projects` (`{name, path, trust?, new_folder?}`), `PATCH /api/projects/<id>` (`{name?}` / `{trusted}`),
+  `DELETE /api/projects/<id>`, `GET /api/projects/browse?path=` (só subpastas; devolve `allowed`/`reason`/`config`),
   `GET /api/projects/<id>/sessions[/search?q=]`. As rotas `/api/claude/sessions/<sid>/…` e `/api/claude/upload` aceitam `?project=<id>`;
   o WebSocket `/api/claude` aceita `&project=<id>`. **Projeto informado e inválido = 404/4404**, nunca cai na pasta do NetOps.
-- **Contexto do agente:** projeto fora do NetOps usa só o `AGENTS.md`/skills da própria pasta (o hook de backup de equipamento e as
-  regras do NetOps não carregam). Para mexer em equipamento, use a aba Claude Code. Anexos num projeto voltam com caminho absoluto.
+- **Segurança (modelo do VS Code):**
+  - **Conta do agente = nível do usuário** (`~/.claude/`: OAuth em `.credentials.json` ou bloco `env` em `~/.claude/settings.json`).
+    O CLI a lê de qualquer pasta. O console **não copia** `ANTHROPIC_*`/`CLAUDE_CODE_OAUTH_TOKEN` para o ambiente da sessão de projeto.
+    Conta declarada só nos settings do NetOps → a lista de Projetos avisa para mover o `env` p/ `~/.claude/settings.json`
+    (`claude_models.account_only_in_netops`, só olha nomes de chave).
+  - **Confiança na pasta (Workspace Trust):** `.claude/settings*.json` (hooks, env, statusLine, apiKeyHelper) e `.mcp.json` executam ao abrir.
+    Projeto **não confiável = modo restrito**: `setting_sources=["user"]` (ignora settings, MCP e CLAUDE.md da pasta). Confiável = `user,project,local`.
+    Pasta nova ou sem config executável nasce confiável; com config, só se o admin marcar. Lido a cada início de sessão.
+  - **Pastas proibidas** (`projects_svc.deny_reason`): `/` e diretórios do sistema (`/etc`, `/usr`, `/proc`, `/var/lib`…), as pastas-base
+    (`/opt`, `/srv`, `/home`, `/root`, `/tmp`, `/var`…) em si, o NetOps (pasta, dentro ou acima), o home e as pastas ocultas dele (`~/.claude`, `~/.ssh`).
+    Symlink é resolvido antes; registro editado à mão p/ pasta proibida não é usado (`path_of` → None).
+  - **Permissões:** criar/renomear/remover/confiar e navegar pastas = `projects.manage` (**só admin**); ver projetos e usar as sessões = `claude.use`.
+  - **Regras de rede valem no projeto:** o teto do grupo e o seletor 🔐 Rede (hooks do SDK) continuam; o `guard-netops.sh` (backup antes de
+    alterar equipamento), que fora do NetOps não carregaria, roda como hook programático (`_hook_netops_guard`; guarda ausente = bloqueia).
+  Anexos num projeto voltam com caminho absoluto.
 - **Retomada pós-restart:** a anotação em `resume-on-restart.json` guarda o `cwd` só dos projetos; sem ele a sessão voltaria na pasta errada.
 - **Front:** `pages/projects.js` (lista, novo, página do projeto, seletor de pasta) e `claude-sessions.js` (`#projects/<proj>/<id|new>`).
   O chat é o mesmo `ClaudeProvider`; `?project=` no WebSocket liga o agente à pasta.
-- **Testes:** `tests/test_projects.py` (registro, HTTP, `cwd`, retomada) e `tests/projects-routes.test.mjs` (rotas).
+- **Testes:** `tests/test_projects.py` (registro, HTTP, `cwd`, retomada, pastas proibidas, confiança, guarda, conta) e `tests/projects-routes.test.mjs` (rotas).
 
 ## Setup inicial (uma vez, com internet)
 

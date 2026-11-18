@@ -319,9 +319,18 @@ def test_projects_follow_claude_permission_and_owner_filter(env, monkeypatch, tm
     deps.STATE.enable_claude = True
     admin = _bootstrap(env)
     _mk_user(admin, "op", ["operador"])
-    pasta = tmp_path / "proj"
+    pasta = tmp_path.parent / (tmp_path.name + "-proj")   # fora do NETOPS_ROOT (= tmp_path)
     pasta.mkdir()
     assert admin.post("/api/projects", json={"name": "Site", "path": str(pasta)}).status_code == 200
+    # escolher pasta / criar / confiar / remover = só admin (projects.manage); o operador só usa
+    op0 = _bare()
+    _login(op0, "op", "senha-forte-1")
+    assert op0.get("/api/projects").status_code == 200
+    assert op0.get("/api/projects/site").status_code == 200
+    assert op0.get("/api/projects/browse", params={"path": "/"}).status_code == 403
+    assert op0.post("/api/projects", json={"name": "x", "path": str(pasta)}).status_code == 403
+    assert op0.patch("/api/projects/site", json={"trusted": True}).status_code == 403
+    assert op0.delete("/api/projects/site").status_code == 403
     fake = [{"id": "s-admin"}, {"id": "s-op"}, {"id": "s-velha"}]
     monkeypatch.setattr(claude_svc, "list_project_sessions", lambda *a, **k: list(fake))
     accessdb.set_claude_owner(deps.db_file(), "s-admin", "admin")

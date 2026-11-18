@@ -9,8 +9,9 @@ from services import claude_svc, projects_svc as P
 
 
 @pytest.fixture
-def pasta(tmp_path):
-    d = tmp_path / "meu-site"
+def pasta(tmp_path_factory):
+    # FORA do tmp_path: nos testes HTTP o NETOPS_ROOT é o tmp_path, e pasta dentro do NetOps é proibida.
+    d = tmp_path_factory.mktemp("projetos") / "meu-site"
     d.mkdir()
     return d
 
@@ -63,7 +64,7 @@ def test_recusa_pasta_duplicada_e_a_do_netops(pasta):
     assert e.value.code == "duplicate_path" and e.value.status == 409
     with pytest.raises(P.ProjectError) as e:
         P.create("netops", str(deps.NETOPS_ROOT))
-    assert e.value.code == "is_netops"
+    assert e.value.code == "forbidden_path"
 
 
 def test_renomear_mantem_id_e_remover_nao_apaga_a_pasta(pasta):
@@ -259,25 +260,183 @@ def _settings(tmp_path, monkeypatch, env_local, env_user=None):
     if env_user is not None:
         (home / ".claude" / "settings.json").write_text(json.dumps({"env": env_user}))
     monkeypatch.setenv("HOME", str(home))
+    for k in [k for k in __import__("os").environ if k.startswith("ANTHROPIC_") or k == "CLAUDE_CODE_OAUTH_TOKEN"]:
+        monkeypatch.delenv(k)
     monkeypatch.setattr(deps, "NETOPS_ROOT", root)
     return claude_models
 
 
-def test_provider_env_pega_so_conta_e_modelo_e_local_vence_user(tmp_path, monkeypatch):
-    m = _settings(tmp_path, monkeypatch,
-                  {"ANTHROPIC_AUTH_TOKEN": "tok-local", "ANTHROPIC_BASE_URL": "http://gw", "FOO": "x", "ANTHROPIC_MODEL": ""},
-                  {"ANTHROPIC_AUTH_TOKEN": "tok-user", "CLAUDE_CODE_OAUTH_TOKEN": "oauth", "PATH": "/x"})
-    assert m.provider_env() == {"ANTHROPIC_AUTH_TOKEN": "tok-local", "ANTHROPIC_BASE_URL": "http://gw",
-                                "CLAUDE_CODE_OAUTH_TOKEN": "oauth"}      # sem FOO/PATH, sem valor vazio
-
-
-def test_agente_de_projeto_recebe_a_conta_e_o_do_netops_nao_muda(tmp_path, monkeypatch):
-    _settings(tmp_path, monkeypatch, {"ANTHROPIC_AUTH_TOKEN": "tok", "ANTHROPIC_BASE_URL": "http://gw"})
-    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+def test_token_nunca_e_copiado_para_o_agente_do_projeto(tmp_path, monkeypatch):
+    """Modelo VS Code: a conta vale em qualquer pasta por estar no nível do usuário; o console não
+    injeta ANTHROPIC_*/CLAUDE_CODE_OAUTH_TOKEN dos settings do NetOps no env de um agente com shell."""
+    m = _settings(tmp_path, monkeypatch, {"ANTHROPIC_AUTH_TOKEN": "tok", "CLAUDE_CODE_OAUTH_TOKEN": "o"})
+    assert not hasattr(m, "provider_env")
     pasta = tmp_path / "proj"
     pasta.mkdir()
-    proj = claude_svc.ClaudeWebSession(persist=True, cwd=str(pasta))._options().env
-    assert proj["ANTHROPIC_AUTH_TOKEN"] == "tok" and proj["ANTHROPIC_BASE_URL"] == "http://gw"
-    assert proj["IS_SANDBOX"] == "1"
-    net = claude_svc.ClaudeWebSession(persist=True)._options().env
-    assert "ANTHROPIC_AUTH_TOKEN" not in net      # NetOps: o CLI já lê os settings da própria pasta
+    env = claude_svc.ClaudeWebSession(persist=True, cwd=str(pasta))._options().env
+    assert "ANTHROPIC_AUTH_TOKEN" not in env and "CLAUDE_CODE_OAUTH_TOKEN" not in env
+    assert env["IS_SANDBOX"] == "1"
+
+
+def test_aviso_quando_a_conta_esta_so_nos_settings_do_netops(tmp_path, monkeypatch):
+    m = _settings(tmp_path, monkeypatch, {"ANTHROPIC_AUTH_TOKEN": "tok"})
+    assert m.account_only_in_netops() is True
+    m = _settings(tmp_path / "b", monkeypatch, {"ANTHROPIC_AUTH_TOKEN": "tok"}, {"ANTHROPIC_BASE_URL": "http://gw"})
+    assert m.account_only_in_netops() is False          # conta no nível do usuário: projeto acha
+    m = _settings(tmp_path / "c", monkeypatch, {"FOO": "x"})
+    assert m.account_only_in_netops() is False          # OAuth normal (~/.claude/.credentials.json)
+
+
+def test_http_lista_traz_o_aviso_de_conta(api, monkeypatch):
+    from services import claude_models
+    monkeypatch.setattr(claude_models, "account_only_in_netops", lambda: True)
+    assert api.get("/api/projects").json()["account_warning"] is True
+
+
+# ------------------------------------------------------------------ pastas proibidas
+@pytest.mark.parametrize("caminho", ["/", "/etc", "/etc/ssh", "/usr", "/proc/1", "/root", "/opt", "/var"])
+def test_pasta_do_sistema_nao_vira_projeto(caminho):
+    with pytest.raises(P.ProjectError) as e:
+        P.create("x", caminho)
+    assert e.value.code == "forbidden_path"
+
+
+def test_netops_dentro_ou_acima_nao_vira_projeto(tmp_path, monkeypatch):
+    root = tmp_path / "base" / "netops"
+    (root / "scripts").mkdir(parents=True)
+    monkeypatch.setattr(deps, "NETOPS_ROOT", root)
+    for d in (root, root / "scripts", tmp_path / "base"):
+        with pytest.raises(P.ProjectError) as e:
+            P.create("x", str(d))
+        assert e.value.code == "forbidden_path"
+
+
+def test_pasta_oculta_do_home_nao_vira_projeto(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (home / "proj").mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    with pytest.raises(P.ProjectError) as e:
+        P.create("x", str(home / ".claude"))
+    assert e.value.code == "forbidden_path"
+    with pytest.raises(P.ProjectError):
+        P.create("x", str(home))
+    assert P.create("ok", str(home / "proj"))["id"] == "ok"
+
+
+def test_symlink_para_pasta_proibida_e_recusado(pasta):
+    link = pasta.parent / "atalho"
+    link.symlink_to("/etc")
+    with pytest.raises(P.ProjectError) as e:
+        P.create("x", str(link))
+    assert e.value.code == "forbidden_path"
+
+
+def test_registro_editado_a_mao_para_pasta_proibida_nao_e_usado(pasta, monkeypatch):
+    P.create("Site", str(pasta))
+    items = P._load()
+    items[0]["path"] = "/etc"
+    P._save(items)
+    assert P.path_of("site") is None                # o agente nunca roda lá
+
+
+# ------------------------------------------------------------------ pasta nova + confiança
+def test_pasta_nova_e_criada_vazia_e_confiavel(pasta):
+    base = pasta.parent
+    p = P.create("App", str(base), new_folder="app-novo")
+    assert p["path"] == str((base / "app-novo").resolve()) and (base / "app-novo").is_dir()
+    assert p["trusted"] is True
+    with pytest.raises(P.ProjectError) as e:
+        P.create("App2", str(base), new_folder="app-novo")
+    assert e.value.code == "exists"
+    for ruim in ("../fora", "a/b", ".oculta", "com espaço", ""):
+        with pytest.raises(P.ProjectError):
+            P.create("x", str(base), new_folder=ruim or "/")
+
+
+def test_pasta_nova_em_lugar_proibido_nao_cria_nada():
+    with pytest.raises(P.ProjectError) as e:
+        P.create("x", "/etc", new_folder="netops-teste-nao-deve-existir")
+    assert e.value.code == "forbidden_path"
+    import os
+    assert not os.path.exists("/etc/netops-teste-nao-deve-existir")
+
+
+def test_pasta_existente_com_config_executavel_nasce_restrita(pasta):
+    (pasta / ".claude").mkdir()
+    (pasta / ".claude" / "settings.json").write_text('{"hooks": {}}')
+    (pasta / "CLAUDE.md").write_text("x")
+    p = P.create("Site", str(pasta))
+    assert p["trusted"] is False
+    assert p["config"] == {"exec": [".claude/settings.json"], "info": ["CLAUDE.md"]}
+    assert P.is_trusted(p["path"]) is False
+    assert P.set_trusted("site", True)["trusted"] is True and P.is_trusted(p["path"]) is True
+
+
+def test_confiar_na_criacao_e_pasta_sem_config(pasta, tmp_path_factory):
+    (pasta / ".mcp.json").write_text("{}")
+    assert P.create("Site", str(pasta), trust=True)["trusted"] is True
+    limpa = tmp_path_factory.mktemp("limpa")
+    assert P.create("Limpa", str(limpa))["trusted"] is True   # nada que execute: não precisa perguntar
+
+
+def test_modo_restrito_so_carrega_os_settings_do_usuario(pasta):
+    (pasta / ".mcp.json").write_text("{}")
+    p = P.create("Site", str(pasta))
+    s = claude_svc.ClaudeWebSession(persist=True, cwd=p["path"])
+    assert s._options().setting_sources == ["user"]
+    P.set_trusted("site", True)
+    assert s._options().setting_sources == ["user", "project", "local"]
+    # pasta fora do registro (projeto removido) = restrito; NetOps continua com tudo
+    assert claude_svc.ClaudeWebSession(persist=True, cwd=str(pasta.parent))._options().setting_sources == ["user"]
+    assert claude_svc.ClaudeWebSession(persist=True)._options().setting_sources == ["user", "project", "local"]
+
+
+def _matchers(opts):
+    return [h for m in opts.hooks["PreToolUse"] for h in m.hooks]
+
+
+def test_guarda_do_netops_vale_so_em_projeto(pasta):
+    proj = claude_svc.ClaudeWebSession(persist=True, cwd=str(pasta))
+    net = claude_svc.ClaudeWebSession(persist=True)
+    assert proj._hook_netops_guard in _matchers(proj._options())
+    assert net._hook_netops_guard not in _matchers(net._options())   # no NetOps o hook vem do settings.json
+
+
+def test_guarda_bloqueia_alteracao_sem_backup(pasta, monkeypatch, tmp_path):
+    import asyncio
+    root = tmp_path / "nt"
+    (root / "scripts" / "engine" / "hooks").mkdir(parents=True)
+    (root / "scripts" / "engine" / "hooks" / "guard-netops.sh").write_text(
+        'cat >/dev/null; echo "BLOQUEADO: falta change.py begin" >&2; exit 2\n')
+    monkeypatch.setattr(deps, "NETOPS_ROOT", root)
+    s = claude_svc.ClaudeWebSession(persist=True, cwd=str(pasta))
+    cmd = {"tool_input": {"command": "python3 /opt/netops/scripts/tools/access/session.py run --host-id 2 --command '/ip address add'"}}
+    out = asyncio.run(s._hook_netops_guard(cmd, None, None))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "change.py begin" in out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert asyncio.run(s._hook_netops_guard({"tool_input": {"command": "ls"}}, None, None)) == {}
+
+
+def test_guarda_que_nao_roda_bloqueia(pasta, monkeypatch, tmp_path):
+    import asyncio
+    monkeypatch.setattr(deps, "NETOPS_ROOT", tmp_path / "sem-guard")
+    s = claude_svc.ClaudeWebSession(persist=True, cwd=str(pasta))
+    out = asyncio.run(s._hook_netops_guard({"tool_input": {"command": "x session.py run --host-id 1"}}, None, None))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"     # sem guarda = não mexe em equipamento
+
+
+def test_http_criar_com_pasta_nova_e_confiar(api, pasta):
+    r = api.post("/api/projects", json={"name": "Novo", "path": str(pasta.parent), "new_folder": "novo-app"})
+    assert r.status_code == 200 and r.json()["trusted"] is True
+    assert api.patch("/api/projects/novo", json={"trusted": False}).json()["trusted"] is False
+    assert api.patch("/api/projects/novo", json={}).status_code == 400
+    assert api.post("/api/projects", json={"name": "x", "path": "/etc"}).json()["error"] == "forbidden_path"
+
+
+def test_http_browse_informa_se_pode_e_a_config(api, pasta):
+    (pasta / ".mcp.json").write_text("{}")
+    d = api.get("/api/projects/browse", params={"path": str(pasta)}).json()
+    assert d["allowed"] is True and d["config"]["exec"] == [".mcp.json"]
+    d = api.get("/api/projects/browse", params={"path": "/etc"}).json()
+    assert d["allowed"] is False and d["reason"]

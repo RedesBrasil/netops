@@ -120,7 +120,7 @@ function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
       ${g === "Projetos" && openGroups.includes(g) && html`
         ${projects.map((p) => html`<a key=${p.id} href=${"#projects/" + p.id} title=${p.path}
           class=${projSeg === p.id ? "active" : ""}>${p.name}</a>`)}
-        <a href="#projects/new" class=${projSeg === "new" ? "active" : ""}>＋ Novo projeto</a>`}
+        <a href="#projects/new" class=${"needs-projects-manage" + (projSeg === "new" ? " active" : "")}>＋ Novo projeto</a>`}
       ${openGroups.includes(g) && Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
         <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${r.label}${r.badge && badges[r.badge] > 0
           ? html`<span class="nav-badge" title="execuções com resultado não lido">${badges[r.badge]}</span>` : ""}</a>`)}

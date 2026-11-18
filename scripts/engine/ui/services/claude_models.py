@@ -51,23 +51,32 @@ def _read_settings() -> list[dict]:
     return out
 
 
-def provider_env() -> dict:
-    """Conta/provedor do agente (`ANTHROPIC_*`, token OAuth) declarados no bloco `env` dos settings
-    do user e do NetOps, na mesma precedência do CLI (local vence project vence user).
+def _account_keys(env) -> set:
+    return {str(k) for k, v in (env or {}).items() if v not in (None, "")
+            and (str(k).startswith("ANTHROPIC_") or k == "CLAUDE_CODE_OAUTH_TOKEN")} if isinstance(env, dict) else set()
 
-    O Claude Code só lê os settings da pasta onde RODA. A conta do agente mora nos do NetOps
-    (`.claude/settings.local.json`), então uma sessão de Projeto, em outra pasta, não a enxergaria e
-    cairia no login OAuth antigo ("OAuth session expired"). Quem lança o agente de um Projeto repassa
-    isto no ambiente; os settings da própria pasta do projeto, lidos pelo CLI depois, ainda podem
-    sobrepor. Só conta/modelo: nenhuma regra, hook ou permissão do NetOps vai junto.
+
+def account_only_in_netops() -> bool:
+    """True quando a conta/proxy do agente (`ANTHROPIC_*`, `CLAUDE_CODE_OAUTH_TOKEN`) está declarada SÓ nos
+    settings do NetOps (`.claude/settings*.json`), e não no nível do usuário (`~/.claude/settings.json`)
+    nem no ambiente do servidor.
+
+    Projetos rodam em outra pasta e o CLI só lê os settings do usuário + os da pasta: nesse caso a sessão do
+    projeto não acharia a conta. O console NÃO copia o token para o projeto (ele ficaria no `env` de um
+    agente com shell numa pasta qualquer); avisa para mover o bloco `env` p/ o nível do usuário, como no
+    VS Code. Só olha NOMES de chave, nunca valores.
     """
-    out: dict = {}
-    for data in _read_settings():
-        env = data.get("env")
-        if isinstance(env, dict):
-            out.update({str(k): str(v) for k, v in env.items()
-                        if v not in (None, "") and (str(k).startswith("ANTHROPIC_") or k == "CLAUDE_CODE_OAUTH_TOKEN")})
-    return out
+    files = _settings_files()
+    def keys(path):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return set()
+        return _account_keys(data.get("env")) if isinstance(data, dict) else set()
+    user = keys(files[0]) | _account_keys(dict(os.environ))
+    netops = keys(files[1]) | keys(files[2])
+    return bool(netops) and not user
+
 
 def _picker() -> list[dict]:
     """`modelPicker` dos settings (gateway/proxy de terceiros): é o que o `/model` do CLI mostra.

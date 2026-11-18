@@ -5,8 +5,10 @@ Só HTTP e gate; a lógica vive em services/projects_svc.py (registro) e claude_
 sempre com `cwd` = pasta do projeto). Mesmo gate do router claude: `--enable-claude`, e o
 middleware de app.py já barra escritas em `--read-only`.
 
-Navegar pastas do servidor expõe nomes de diretórios; fica atrás do login (como o menu Arquivos)
-e só lista pastas, nunca arquivos.
+Permissões (services/authz.RULES): ver projetos e usar as sessões = `claude.use`; criar, renomear,
+remover, marcar como confiável e navegar nas pastas do servidor = `projects.manage` (só admin: escolher a
+pasta onde um agente com shell roda como o usuário do servidor é decisão de administrador).
+O seletor só lista pastas, nunca arquivos.
 """
 from __future__ import annotations
 
@@ -15,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 import deps
 from routers.claude import _visible   # mesma regra de dono da aba Claude Code: não-admin só vê as suas conversas
-from services import claude_svc, projects_svc
+from services import claude_models, claude_svc, projects_svc
 
 router = APIRouter(tags=["projects"])
 
@@ -36,7 +38,9 @@ def _not_found() -> JSONResponse:
 def projects_list():
     if not deps.STATE.enable_claude:
         return _off()
-    return {"projects": projects_svc.list_projects()}
+    return {"projects": projects_svc.list_projects(),
+            # conta do agente só nos settings do NetOps = sessões de projeto não a acham (ver claude_models)
+            "account_warning": claude_models.account_only_in_netops()}
 
 
 @router.post("/projects")
@@ -44,7 +48,8 @@ def projects_create(body: dict):
     if not deps.STATE.enable_claude:
         return _off()
     try:
-        return projects_svc.create(body.get("name"), body.get("path"))
+        return projects_svc.create(body.get("name"), body.get("path"), trust=bool(body.get("trust")),
+                                   new_folder=(body.get("new_folder") or None))
     except projects_svc.ProjectError as e:
         return _err(e)
 
@@ -69,11 +74,19 @@ def projects_get(pid: str):
 
 
 @router.patch("/projects/{pid}")
-def projects_rename(pid: str, body: dict):
+def projects_update(pid: str, body: dict):
+    """body: {name?} renomeia; {trusted: bool} marca/desmarca a pasta como confiável."""
     if not deps.STATE.enable_claude:
         return _off()
     try:
-        return projects_svc.rename(pid, body.get("name"))
+        out = None
+        if "name" in body:
+            out = projects_svc.rename(pid, body.get("name"))
+        if "trusted" in body:
+            out = projects_svc.set_trusted(pid, bool(body.get("trusted")))
+        if out is None:
+            return JSONResponse({"error": "nothing_to_update", "detail": "Nada para alterar."}, status_code=400)
+        return out
     except projects_svc.ProjectError as e:
         return _err(e)
 

@@ -1070,4 +1070,11 @@ fieldset.perm-area .perm-check { justify-content: flex-start; color: var(--text)
 .pj-folder { text-align: left; background: transparent; border-color: transparent; padding: 6px 8px; word-break: break-all; }
 .pj-folder:hover { background: var(--surface-2); }
 .cc-sess-wrap .cc-sess-list { max-height: none; }
+.pj-mode { display: flex; gap: 16px; margin: 4px 0 10px; }
+.pj-mode label { display: flex; gap: 6px; align-items: center; }
+.pj-trust { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; padding: 8px; border: 1px solid var(--warn); border-radius: 6px; }
+.pj-config { margin: 4px 0 10px; }
+.pj-config code { font-size: 12px; }
+.pj-deny { color: var(--danger); margin: 6px 0; }
+.pj-warn { border-color: var(--warn); }
 .pj-sess .cc-sess-search { background: var(--surface); }

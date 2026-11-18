@@ -79,7 +79,10 @@ RULES: list[tuple[frozenset, re.Pattern, str | None]] = [
     (ALL, _R(r"^/claude(/|$)"), "claude.use"),                # dono da conversa confere no router
     # Projetos (nome + pasta do servidor): cada projeto abre sessões do agente, que tem shell no servidor
     # na pasta escolhida — mesma confiança da aba Claude Code. O seletor de pasta só lista diretórios.
-    (ALL, _R(r"^/projects(/|$)"), "claude.use"),
+    # Escolher a pasta (navegar, criar, confiar, renomear, remover) = só admin; ver/usar = claude.use.
+    (GET, _R(r"^/projects/browse$"), "projects.manage"),
+    (WRITE, _R(r"^/projects(/|$)"), "projects.manage"),
+    (GET, _R(r"^/projects(/|$)"), "claude.use"),
     # administração de acesso
     (ALL, _R(r"^/(users|access-groups|access-catalog)(/|$)"), "users.manage"),
     (GET, _R(r"^/audit(/|$)"), "audit.view"),

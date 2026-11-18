@@ -70,6 +70,7 @@ PERMISSIONS: list[dict] = [
     {"key": "host.files", "label": "Arquivos (SFTP) dos hosts", "area": "Acesso a equipamento"},
     {"key": "host.web", "label": "Abrir a web do host com login automático", "area": "Acesso a equipamento"},
     {"key": "claude.use", "label": "Usar a aba Claude Code (limitada pelas permissões de rede do grupo)", "area": "IA"},
+    {"key": "projects.manage", "label": "Criar/remover Projetos e escolher a pasta do servidor onde o agente roda", "area": "Administração", "admin_only": True},
     {"key": "server.terminal", "label": "Terminal do servidor NetOps", "area": "Administração", "admin_only": True},
     {"key": "server.files", "label": "Arquivos do servidor NetOps", "area": "Administração", "admin_only": True},
     {"key": "config", "label": "Configuração do console, acesso web, conta Claude e ditado", "area": "Administração", "admin_only": True},

@@ -77,7 +77,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 import deps
 from lib import net_perms, shell_cmds
-from services import claude_models, claude_prefs
+from services import claude_models, claude_prefs, projects_svc
 
 # Importado de forma preguiçosa para não quebrar a UI quando o SDK não está instalado
 # (instalação headless sem `pip install claude-agent-sdk`). O router checa is_available().
@@ -415,6 +415,7 @@ MAX_QUEUE = 20   # teto de mensagens na fila por sessão (estático)
 # aquele comando. Sem resposta com a aba fechada = timeout de pergunta = negado. O timeout do hook
 # precisa ser GRANDE: hook que estoura deixa a ferramenta seguir (seria liberar sem aprovação).
 NETPERMS_HOOK_TIMEOUT = 7 * 24 * 3600
+GUARD_HOOK_TIMEOUT = 40   # guard-netops.sh (change.py check) em sessões de Projeto
 SDK_MAX_BUFFER = 64 * 1024 * 1024   # bytes: maior linha JSON aceita do CLI (padrão do SDK = 1 MiB)
 
 
@@ -556,7 +557,11 @@ class ClaudeWebSession:
             resume=resume,
             model=model,
             **({"effort": self._effort} if self._effort else {}),
-            setting_sources=["user", "project", "local"],  # herda AGENTS.md/skills/agentes
+            # NetOps: herda AGENTS.md/skills/agentes/hooks da pasta. Projeto: a config da pasta (hooks, env,
+            # MCP, CLAUDE.md) só entra se o admin marcou o projeto como CONFIÁVEL; senão, modo restrito
+            # (só os settings do usuário — onde mora a conta do agente, como no VS Code).
+            setting_sources=(["user", "project", "local"]
+                             if not self._is_project or projects_svc.is_trusted(self._cwd) else ["user"]),
             # O modo bypassPermissions (exposto na UI) exige DUAS condições no lançamento:
             #  1) a sessão precisa nascer com --dangerously-skip-permissions, senão o SDK recusa a
             #     troca em runtime ("session was not launched with --dangerously-skip-permissions").
@@ -565,10 +570,9 @@ class ClaudeWebSession:
             #  2) o `claude` recusa esse flag sob root/sudo (o console sobe por sudo em container).
             #     IS_SANDBOX=1 declara o ambiente isolado (LXC) e libera. Escopo mínimo: só o
             #     subprocesso `claude`. Merge com os.environ p/ preservar PATH/HOME/credenciais.
-            # Projeto (outra pasta): a conta/proxy do agente mora nos settings do NetOps, que o CLI não lê
-            # fora dele. Sem isto: "OAuth session expired". Ver claude_models.provider_env.
-            env={**os.environ, "IS_SANDBOX": "1", "NETOPS_USER": self.user or "",
-                 **(claude_models.provider_env() if self._is_project else {})},
+            # Projeto: NENHUM token é copiado p/ o ambiente. A conta do agente vale em qualquer pasta porque
+            # mora no nível do usuário (~/.claude/), como no VS Code; ver projects_svc e SKILL.md.
+            env={**os.environ, "IS_SANDBOX": "1", "NETOPS_USER": self.user or ""},
             extra_args={"dangerously-skip-permissions": None},
             permission_mode="default",                       # seguro-mas-usável; UI troca p/ qualquer um
             include_partial_messages=True,                   # streaming de texto/pensamento
@@ -581,6 +585,10 @@ class ClaudeWebSession:
                 # timeout > VAULT_WAIT_MAX: o hook espera o humano digitar a senha-mestra.
                 HookMatcher(matcher="Bash", hooks=[self._hook_vault_gate], timeout=VAULT_WAIT_MAX + 60),
                 HookMatcher(matcher="Bash", hooks=[self._hook_netperms], timeout=NETPERMS_HOOK_TIMEOUT),
+                # Projeto: o hook de backup do NetOps (.claude/settings.json do NetOps) não carrega fora dele;
+                # roda aqui, programático, p/ que "backup antes de alterar equipamento" valha em qualquer pasta.
+                *([HookMatcher(matcher="Bash", hooks=[self._hook_netops_guard], timeout=GUARD_HOOK_TIMEOUT)]
+                  if self._is_project else []),
             ],
                 # Avisa o agente das permissões de rede vigentes (só quando restritas ou quando mudaram).
                 "UserPromptSubmit": [HookMatcher(hooks=[self._hook_prompt_netperms])],
@@ -750,6 +758,32 @@ class ClaudeWebSession:
                 "Não tente contornar. Entregue o plano e os comandos prontos ao usuário e peça que habilite "
                 "a categoria no seletor 🔐 Rede (ou aprove quando o pedido aparecer)."),
         }}
+
+    # ------------------------------------------------- guarda do NetOps em projeto
+    async def _hook_netops_guard(self, input_data: dict, tool_use_id, context):
+        """PreToolUse(Bash) só em Projeto: roda o guard-netops.sh do NetOps (backup antes de alterar
+        equipamento) com CLAUDE_PROJECT_DIR = NetOps. Exit 2 = bloqueia com a mensagem dele.
+        Falha ao rodar o guard + comando que toca equipamento = bloqueia (na dúvida, não altera)."""
+        cmd = (input_data.get("tool_input") or {}).get("command") or ""
+        if "session.py" not in cmd:
+            return {}
+        guard = Path(deps.NETOPS_ROOT) / "scripts" / "engine" / "hooks" / "guard-netops.sh"
+        try:
+            if not guard.is_file():
+                raise FileNotFoundError(str(guard))
+            proc = await asyncio.create_subprocess_exec(
+                "bash", str(guard), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE, cwd=str(deps.NETOPS_ROOT),
+                env={**os.environ, "CLAUDE_PROJECT_DIR": str(deps.NETOPS_ROOT)})
+            _, err = await asyncio.wait_for(proc.communicate(json.dumps(input_data).encode()),
+                                            timeout=GUARD_HOOK_TIMEOUT - 5)
+            code, msg = proc.returncode, (err or b"").decode("utf-8", "replace").strip()
+        except Exception as e:   # noqa: BLE001
+            code, msg = 2, f"guarda do NetOps não rodou ({type(e).__name__}); alteração em equipamento bloqueada."
+        if code != 2:
+            return {}
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                       "permissionDecisionReason": msg or "BLOQUEADO pela guarda do NetOps."}}
 
     # ------------------------------------------------------------ cofre trancado
     @staticmethod
