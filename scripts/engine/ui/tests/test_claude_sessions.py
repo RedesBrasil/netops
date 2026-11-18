@@ -16,7 +16,7 @@ A = "11111111-1111-4111-8111-111111111111"
 def test_lookup_requires_feature_and_returns_404_for_missing(client, monkeypatch):
     assert client.get(f"/api/claude/sessions/{A}").status_code == 403
     monkeypatch.setattr(deps.STATE, "enable_claude", True)
-    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid: sid == A)
+    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid, cwd=None: sid == A)
     assert client.get(f"/api/claude/sessions/{A}").json() == {"id": A}
     assert client.get("/api/claude/sessions/invalid").status_code == 404
 
@@ -36,7 +36,7 @@ def test_project_lookup_uses_current_project_without_recent_list(env, monkeypatc
 
 
 def test_live_session_can_be_found_before_transcript_exists(env, monkeypatch):
-    monkeypatch.setattr(claude_svc, "_LIVE", {A: SimpleNamespace(_closing_done=False)})
+    monkeypatch.setattr(claude_svc, "_LIVE", {A: SimpleNamespace(_closing_done=False, _cwd=str(deps.NETOPS_ROOT))})
     monkeypatch.setattr(claude_svc, "_SDK_OK", False)
     assert claude_svc.project_session_exists(A)
     claude_svc._LIVE[A]._closing_done = True
@@ -47,7 +47,7 @@ def test_lookup_older_sdk_fallback_has_no_recent_limit(env, monkeypatch):
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", SimpleNamespace())
     monkeypatch.setattr(claude_svc, "_SDK_OK", True)
     calls = []
-    def listing(limit):
+    def listing(limit, cwd=None):
         calls.append(limit)
         return [{"id": A}]
     monkeypatch.setattr(claude_svc, "list_project_sessions", listing)
@@ -62,7 +62,7 @@ def test_missing_resume_never_launches_agent(client, monkeypatch, persist):
     monkeypatch.setattr(deps.STATE, "claude_persist", persist)
     monkeypatch.setattr(deps.STATE, "allowed_hosts", ("127.0.0.1", "testserver"))
     monkeypatch.setattr(claude_svc, "is_available", lambda: True)
-    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid: False)
+    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid, cwd=None: False)
     monkeypatch.setattr(claude_svc, "ClaudeWebSession", lambda *a, **kw: pytest.fail("Agente não deve iniciar"))
     with client.websocket_connect(f"/api/claude?resume={A}") as ws:
         with pytest.raises(WebSocketDisconnect) as error:
@@ -271,7 +271,7 @@ def test_fork_endpoint_calls_sdk_and_copies_prefs(client, env, monkeypatch):
     assert client.post(f"/api/claude/sessions/{A}/fork", json={"uuid": "u2"}).status_code == 403
     monkeypatch.setattr(deps.STATE, "enable_claude", True)
     monkeypatch.setattr(claude_svc, "_SDK_OK", True)
-    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid: sid == A)
+    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid, cwd=None: sid == A)
     B = "22222222-2222-4222-8222-222222222222"
     calls = []
     def fork(sid, *, directory, up_to_message_id, title):
@@ -359,7 +359,7 @@ def test_rewind_cuts_transcript_in_place_with_backup(client, env, monkeypatch, t
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(deps.STATE, "enable_claude", True)
     monkeypatch.setattr(claude_svc, "_SDK_OK", True)
-    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid: sid == A)
+    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid, cwd=None: sid == A)
     msgs = [_m("user", "u1", "primeiro"), _m("assistant", "a1", [{"type": "text", "text": "r1"}]),
             _m("user", "u2", "segundo"), _m("assistant", "a2", [{"type": "text", "text": "r2"}])]
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", SimpleNamespace(
@@ -395,6 +395,6 @@ def test_rewind_first_prompt_deletes_session(env, monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(claude_svc, "_SDK_OK", True)
     deleted = []
-    monkeypatch.setattr(claude_svc, "delete_project_session", lambda sid: deleted.append(sid))
+    monkeypatch.setattr(claude_svc, "delete_project_session", lambda sid, cwd=None: deleted.append(sid))
     res = claude_svc.rewind_apply(A, "u1", first=True)
     assert deleted == [A] and Path(res["backup"]).is_file()

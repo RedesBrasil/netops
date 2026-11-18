@@ -4,15 +4,32 @@ const SESSION_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12
 
 export function validSessionId(id) { return typeof id === "string" && SESSION_ID.test(id); }
 
-export function claudeSessionHash(id) {
+// Projeto = pasta do servidor com nome. O id é um slug gerado pelo servidor; "new" é o formulário de criação.
+const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+export function validProjectId(id) { return typeof id === "string" && PROJECT_ID.test(id) && id !== "new"; }
+
+// Sem projeto: #claude/<id> (aba Claude Code, pasta do NetOps). Com projeto: #projects/<proj>/<id|new>.
+export function claudeSessionHash(id, project = "") {
+  if (validProjectId(project)) return "#projects/" + project + "/" + (validSessionId(id) ? id : "new");
   return validSessionId(id) ? "#claude/" + id : "#claude";
+}
+
+export function claudeNewHash(project = "") {
+  return validProjectId(project) ? "#projects/" + project + "/new" : "#claude/new";
 }
 
 // Sufixos que abrem popups como URL própria (ex.: #claude/<id>/padroes, #claude/<id>/sessoes).
 const PREFS_SUFFIX = "/padroes";
 const SESSIONS_SUFFIX = "/sessoes";
 const SUFFIXES = [PREFS_SUFFIX, SESSIONS_SUFFIX];
-function modalSuffix(hash) { return hash.startsWith("#claude") ? SUFFIXES.find((x) => hash.endsWith(x)) || "" : ""; }
+function modalSuffix(hash) {
+  const hit = SUFFIXES.find((x) => hash.endsWith(x));
+  if (!hit) return "";
+  if (hash.startsWith("#claude")) return hit;
+  // #projects/<proj>/<id|new>/padroes — só com 4 segmentos, para um projeto chamado "padroes" não virar popup.
+  if (hash.startsWith("#projects/") && hash.split("/").length === 4) return hit;
+  return "";
+}
 export function stripClaudeModal(hash) { const x = modalSuffix(hash); return x ? hash.slice(0, -x.length) : hash; }
 export function claudePrefsOpen(hash = location.hash) { return modalSuffix(hash) === PREFS_SUFFIX; }
 export function claudeSessionsOpen(hash = location.hash) { return modalSuffix(hash) === SESSIONS_SUFFIX; }
@@ -27,11 +44,26 @@ export function setClaudeSessionsHash(open) { setModalHash(SESSIONS_SUFFIX, open
 
 export function readClaudeRoute(hash) {
   hash = stripClaudeModal(hash);
+  if (hash.startsWith("#projects/")) {
+    // Só #projects/<proj>/<id|new> é conversa; #projects, #projects/new e #projects/<proj> são páginas
+    // (a conversa viva segue no dock). Rota de projeto devolve também `project`.
+    const parts = hash.slice(1).split("/");
+    if (parts.length < 3 || parts[1] === "new" || (parts.length === 3 && parts[2] === "")) return null;
+    const project = parts[1];
+    if (!validProjectId(project) || parts.length > 3) return { kind: "invalid" };
+    if (parts[2] === "new") return { kind: "new", project };
+    return validSessionId(parts[2]) ? { kind: "session", id: parts[2], project } : { kind: "invalid" };
+  }
   if (hash === "#claude" || hash === "#claude/") return { kind: "last" };
   if (!hash.startsWith("#claude/")) return null;
   if (hash === "#claude/new") return { kind: "new" };
   const id = hash.slice("#claude/".length);
   return validSessionId(id) ? { kind: "session", id } : { kind: "invalid" };
+}
+
+// A tela cheia do chat: #claude[/...] ou #projects/<proj>/<id|new>. Outras rotas (inclusive a página do projeto) não são o chat.
+export function isClaudeChatHash(hash) {
+  return readClaudeRoute(hash || "") !== null;
 }
 
 export function lastClaudeSession() {
@@ -59,11 +91,11 @@ export function replaceClaudeHash(hash) {
   dispatchEvent(new Event("hashchange"));
 }
 
-export async function copyClaudeSessionLink(id) {
+export async function copyClaudeSessionLink(id, project = "") {
   if (!validSessionId(id)) throw new Error("A sessão ainda não tem um link.");
   const url = new URL(location.href);
   url.search = ""; // Nunca copiar parâmetros de autenticação de um link legado.
-  url.hash = claudeSessionHash(id);
+  url.hash = claudeSessionHash(id, project);
   if (navigator.clipboard && window.isSecureContext) {
     await navigator.clipboard.writeText(url.href);
     return;

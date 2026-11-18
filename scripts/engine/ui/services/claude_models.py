@@ -51,6 +51,24 @@ def _read_settings() -> list[dict]:
     return out
 
 
+def provider_env() -> dict:
+    """Conta/provedor do agente (`ANTHROPIC_*`, token OAuth) declarados no bloco `env` dos settings
+    do user e do NetOps, na mesma precedência do CLI (local vence project vence user).
+
+    O Claude Code só lê os settings da pasta onde RODA. A conta do agente mora nos do NetOps
+    (`.claude/settings.local.json`), então uma sessão de Projeto, em outra pasta, não a enxergaria e
+    cairia no login OAuth antigo ("OAuth session expired"). Quem lança o agente de um Projeto repassa
+    isto no ambiente; os settings da própria pasta do projeto, lidos pelo CLI depois, ainda podem
+    sobrepor. Só conta/modelo: nenhuma regra, hook ou permissão do NetOps vai junto.
+    """
+    out: dict = {}
+    for data in _read_settings():
+        env = data.get("env")
+        if isinstance(env, dict):
+            out.update({str(k): str(v) for k, v in env.items()
+                        if v not in (None, "") and (str(k).startswith("ANTHROPIC_") or k == "CLAUDE_CODE_OAUTH_TOKEN")})
+    return out
+
 def _picker() -> list[dict]:
     """`modelPicker` dos settings (gateway/proxy de terceiros): é o que o `/model` do CLI mostra.
 

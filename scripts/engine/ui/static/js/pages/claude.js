@@ -14,8 +14,11 @@ import { autoOpenFromText } from "../term-link.js";
 import { authToken } from "../api.js";
 import { buildCatalog, findMentionToken, searchMentions, applyMention, expandMentions, addQuoteNote, stripMentionNote } from "../mentions.js";
 import { classifyClaudeError, claudeErrorDetail, friendlyClaudeError } from "../claude-errors.js";
-import { validSessionId, claudeSessionHash, readClaudeRoute, lastClaudeSession,
+import { validSessionId, validProjectId, claudeSessionHash, claudeNewHash, readClaudeRoute, lastClaudeSession,
   rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, claudePrefsOpen, setClaudePrefsHash, claudeSessionsOpen, setClaudeSessionsHash, stripClaudeModal, copyClaudeSessionLink } from "../claude-sessions.js";
+
+// `?project=<id>` (ou `&project=`) quando a conversa é de um Projeto; vazio = aba Claude Code (pasta do NetOps).
+const projQ = (project, first = "?") => (project ? `${first}project=${encodeURIComponent(project)}` : "");
 
 // Ctrl/Cmd+clique ou clique do meio (roda do mouse): abre o destino (#hash) em nova aba e NÃO altera a sessão atual.
 // O clique do meio dispara `auxclick` (não `click`): ligue também onAuxClick e onMouseDown=${noAutoscroll}.
@@ -29,8 +32,8 @@ function openInNewWindow(e, hash) {
 // Clique do meio no Windows/Linux liga o "autoscroll"; cancela p/ ele virar só um clique.
 function noAutoscroll(e) { if (e.button === 1) e.preventDefault(); }
 
-async function copySessionLink(id) {
-  try { await copyClaudeSessionLink(id); toast.ok("Link da sessão copiado"); }
+async function copySessionLink(id, project = "") {
+  try { await copyClaudeSessionLink(id, project); toast.ok("Link da sessão copiado"); }
   catch (e) { toast.err(e.message || "Não foi possível copiar o link."); }
 }
 
@@ -111,8 +114,15 @@ function closeOpen(arr) {
 const ClaudeCtx = createContext(null);
 // Dock aberto sobrevive ao F5/Ctrl+Shift+R: guarda (por aba) o id da conversa encaixada.
 const DOCK_KEY = "netops_dock_session";
-function setDockSession(id) { try { id ? sessionStorage.setItem(DOCK_KEY, id) : sessionStorage.removeItem(DOCK_KEY); } catch (_) {} }
-function getDockSession() { try { const id = sessionStorage.getItem(DOCK_KEY); return validSessionId(id) ? id : ""; } catch (_) { return ""; } }
+// Guarda também o Projeto (pasta) da conversa: sem ele, o F5 tentaria reabri-la na pasta do NetOps.
+function setDockSession(id, project = "") { try { id ? sessionStorage.setItem(DOCK_KEY, JSON.stringify({ id, project: project || "" })) : sessionStorage.removeItem(DOCK_KEY); } catch (_) {} }
+function getDockSession() {
+  try {
+    const raw = sessionStorage.getItem(DOCK_KEY) || "";
+    const d = raw.startsWith("{") ? JSON.parse(raw) : { id: raw, project: "" };   // formato antigo: só o id
+    return validSessionId(d.id) ? { id: d.id, project: validProjectId(d.project) ? d.project : "" } : null;
+  } catch (_) { return null; }
+}
 export function useClaude() { return useContext(ClaudeCtx); }
 
 export function ClaudeProvider({ children }) {
@@ -148,6 +158,8 @@ function useClaudeSession() {
   const [modelSel, setModelSel] = useState("");         // modelo escolhido (vazio até carregar do servidor)
   const [models, setModels] = useState(MODELS_FALLBACK); // modelos disponíveis (lidos de /claude/models)
   const [sessionId, setSessionId] = useState("");
+  const [project, setProject] = useState("");            // Projeto da conversa ("" = aba Claude Code)
+  const projectRef = useRef("");
   const [slash, setSlash] = useState([]);             // nomes de slash commands (do init)
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState([]);   // [{path,name}] já enviados, ainda não mandados ao agente
@@ -190,10 +202,13 @@ function useClaudeSession() {
   const routeRequestRef = useRef(0);    // invalida resoluções de rota atrasadas
   const connectionRef = useRef(0);      // invalida callbacks do socket anterior imediatamente
 
-  function activateSession(id, force = false) {
-    const target = id || "new";
+  function activateSession(id, force = false, proj = projectRef.current) {
+    proj = proj || "";
+    // A seleção inclui o projeto: o mesmo "new" (ou uuid) em outro projeto é OUTRA conversa.
+    const target = proj + "|" + (id || "new");
     if (!force && activeRef.current && selectionRef.current === target) return;
     connectionRef.current++;
+    projectRef.current = proj; setProject(proj);
     if (!id || id !== sessionIdRef.current) setLastUsage(null);   // cache é por conversa: nova/outra sessão começa sem relógio
     selectionRef.current = target;
     resumeIdRef.current = id || "";
@@ -230,39 +245,42 @@ function useClaudeSession() {
     if (!validSessionId(id)) return;
     const changed = sessionIdRef.current !== id;
     setSessionId(id); sessionIdRef.current = id;
-    selectionRef.current = id; resumeIdRef.current = id;
+    selectionRef.current = projectRef.current + "|" + id; resumeIdRef.current = id;
     const route = readClaudeRoute(location.hash);
-    // Um init antigo não pode trocar um link explícito recém-aberto.
+    // Um init antigo não pode trocar um link explícito recém-aberto (nem de outro projeto).
     if (route && route.kind === "session" && route.id !== id) return;
-    if (changed) rememberClaudeSession(id);
-    setDockSession(id);
-    if (route && route.kind !== "invalid") replaceClaudeHash(claudeSessionHash(id));
+    if (route && (route.project || "") !== projectRef.current) return;
+    if (changed && !projectRef.current) rememberClaudeSession(id);   // "última conversa" é só da aba Claude Code
+    setDockSession(id, projectRef.current);
+    if (route && route.kind !== "invalid") replaceClaudeHash(claudeSessionHash(id, projectRef.current));
   }
 
   async function openRoute() {
     const request = ++routeRequestRef.current;
     const route = readClaudeRoute(location.hash);
     if (!route) {   // navegar para Hosts mantém a sessão viva no dock
-      const dockId = getDockSession();   // recarga da página: reabre o dock da conversa que estava aberta
-      if (dockId && !activeRef.current) {
-        try { await api.get(`/claude/sessions/${encodeURIComponent(dockId)}`); } catch (_) { setDockSession(""); return; }
-        if (request === routeRequestRef.current && !activeRef.current) activateSession(dockId);
+      const dock = getDockSession();   // recarga da página: reabre o dock da conversa que estava aberta
+      if (dock && !activeRef.current) {
+        try { await api.get(`/claude/sessions/${encodeURIComponent(dock.id)}${projQ(dock.project)}`); } catch (_) { setDockSession(""); return; }
+        if (request === routeRequestRef.current && !activeRef.current) activateSession(dock.id, false, dock.project);
       }
       return;
     }
     const current = () => request === routeRequestRef.current;
     try {
       if (route.kind === "invalid") throw new Error("Link de sessão inválido. Escolha uma conversa em Sessões ou abra Nova sessão.");
-      if (route.kind === "new") { activateSession(""); return; }
+      if (route.kind === "new") { activateSession("", false, route.project || ""); return; }
       if (route.kind === "session") {
-        if (activeRef.current && sessionIdRef.current === route.id) return;
-        await api.get(`/claude/sessions/${encodeURIComponent(route.id)}`);
+        const rp = route.project || "";
+        if (activeRef.current && sessionIdRef.current === route.id && projectRef.current === rp) return;
+        await api.get(`/claude/sessions/${encodeURIComponent(route.id)}${projQ(rp)}`);
         if (!current()) return;
-        rememberClaudeSession(route.id);
-        activateSession(route.id);
+        if (!rp) rememberClaudeSession(route.id);
+        activateSession(route.id, false, rp);
         return;
       }
-      if (activeRef.current) {
+      // #claude puro: uma conversa de Projeto ativa NÃO vale aqui (sessão de outra pasta) — cai na última do NetOps.
+      if (activeRef.current && !projectRef.current) {
         if (sessionIdRef.current) replaceClaudeHash(claudeSessionHash(sessionIdRef.current));
         else replaceClaudeHash("#claude/new");
         return;
@@ -282,14 +300,14 @@ function useClaudeSession() {
         id = (data.sessions || []).find((s) => validSessionId(s.id))?.id || "";
       }
       if (id) rememberClaudeSession(id);
-      activateSession(id);
+      activateSession(id, false, "");
       replaceClaudeHash(id ? claudeSessionHash(id) : "#claude/new");
     } catch (e) {
       if (!current()) return;
       endSession();
       setStatus("erro");
       setItems([{ type: "error", detail: e.status === 404
-        ? "Sessão não encontrada neste projeto. Escolha outra em Sessões ou abra Nova sessão."
+        ? "Sessão ou projeto não encontrado. Escolha outra em Sessões ou abra Nova sessão."
         : e.message || "Não foi possível abrir a sessão. Tente novamente." }]);
     }
   }
@@ -431,7 +449,7 @@ function useClaudeSession() {
       }
       if (resume) {
         try {
-          const h = await api.get(`/claude/sessions/${encodeURIComponent(resume)}/messages`);
+          const h = await api.get(`/claude/sessions/${encodeURIComponent(resume)}/messages${projQ(projectRef.current)}`);
           if (!current()) return;
           setItems(h.items || []);
         } catch (_) {}
@@ -442,6 +460,7 @@ function useClaudeSession() {
         + `?auth=${encodeURIComponent(authToken())}`
         + (effortRef.current ? `&effort=${encodeURIComponent(effortRef.current)}` : "")
         + (modelRef.current ? `&model=${encodeURIComponent(modelRef.current)}` : "")
+        + projQ(projectRef.current, "&")
         + (resume ? `&resume=${encodeURIComponent(resume)}` : `&netperms=${encodeURIComponent(netpermsRef.current.join(","))}`));
       wsRef.current = ws;
       const currentSocket = () => current() && wsRef.current === ws;
@@ -692,16 +711,20 @@ function useClaudeSession() {
     if (send({ type: "interrupt" })) toast.info("Interrompendo…");
   }
 
-  function newSession() {
+  // `proj` indefinido = continua no projeto atual; "" = aba Claude Code; "<id>" = esse projeto.
+  function newSession(proj) {
+    const pr = proj === undefined ? projectRef.current : (proj || "");
     routeRequestRef.current++;
-    activateSession("", true);
-    if (location.hash !== "#claude/new") location.hash = "#claude/new";
+    activateSession("", true, pr);
+    const h = claudeNewHash(pr);
+    if (location.hash !== h) location.hash = h;
   }
-  function resumeSession(id) {
+  function resumeSession(id, proj) {
     if (!validSessionId(id)) return;
+    const pr = proj === undefined ? projectRef.current : (proj || "");
     setShowSessions(false);
-    if (location.hash === claudeSessionHash(id)) openRoute();
-    else location.hash = claudeSessionHash(id);
+    if (location.hash === claudeSessionHash(id, pr)) openRoute();
+    else location.hash = claudeSessionHash(id, pr);
   }
 
   // Ramificar (fork): nova conversa com o histórico até o fim do turno deste prompt; a de
@@ -720,15 +743,15 @@ function useClaudeSession() {
     let win = null;
     try { win = window.open("about:blank", "_blank"); } catch (_) { win = null; }
     try {
-      const r = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/fork`,
+      const r = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/fork${projQ(projectRef.current)}`,
         it.uuid ? { uuid: it.uuid } : { text: it.text, occurrence });
       const setPre = (id) => { try { localStorage.setItem("cc-fork-prefill", JSON.stringify({ id, text: it.text, t: Date.now() })); } catch (_) {} };
       const go = (hash, fallback) => {
         if (win && !win.closed) { win.location.href = location.origin + location.pathname + hash; win.focus && win.focus(); }
         else fallback();
       };
-      if (r && validSessionId(r.id)) { setPre(r.id); toast.ok("Fork aberto em nova aba — prompt no campo"); go(claudeSessionHash(r.id), () => resumeSession(r.id)); }
-      else if (r && r.first) { setPre("new"); toast.ok("1º prompt — nova conversa em nova aba"); go("#claude/new", newSession); }
+      if (r && validSessionId(r.id)) { setPre(r.id); toast.ok("Fork aberto em nova aba — prompt no campo"); go(claudeSessionHash(r.id, projectRef.current), () => resumeSession(r.id)); }
+      else if (r && r.first) { setPre("new"); toast.ok("1º prompt — nova conversa em nova aba"); go(claudeNewHash(projectRef.current), () => newSession()); }
       else { if (win) win.close(); toast.err("Fork falhou"); }
     } catch (e) {
       if (win && !win.closed) win.close();
@@ -750,13 +773,13 @@ function useClaudeSession() {
     const ident = it.uuid ? { uuid: it.uuid } : { text: it.text, occurrence };
     editingRef.current = true;
     try {
-      const plan = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/rewind`, { ...ident, dry: true });
+      const plan = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/rewind${projQ(projectRef.current)}`, { ...ident, dry: true });
       const n = Math.max(0, (plan.removed_prompts || 1) - 1);
       const msg = "Salvar e reenviar APAGA este prompt e tudo que veio depois"
         + (n ? ` (mais ${n} prompt${n > 1 ? "s" : ""} seguinte${n > 1 ? "s" : ""} e as respostas)` : " (a resposta dele)")
         + ".\nUma cópia de segurança fica no servidor. Continuar?";
       if (!window.confirm(msg)) return false;
-      const r = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/rewind`, ident);
+      const r = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/rewind${projQ(projectRef.current)}`, ident);
       if (r && r.first) { autoSendRef.current = { sid: "", text }; newSession(); }
       else { autoSendRef.current = { sid, text }; activateSession(sid, true); }
       toast.ok("Conversa cortada neste ponto — gerando nova resposta");
@@ -791,7 +814,7 @@ function useClaudeSession() {
     try { const w = wsRef.current; if (w && w.readyState === 1) w.send(JSON.stringify({ type: "bye" })); } catch (_) {}  // encerrar: mata a sessão viva
     try { wsRef.current && wsRef.current.close(); } catch (_) {}
     wsRef.current = null;
-    resumeIdRef.current = ""; sessionIdRef.current = ""; setDockSession("");
+    resumeIdRef.current = ""; sessionIdRef.current = ""; projectRef.current = ""; setProject(""); setDockSession("");
     setActive(false); setWorking(false); setItems([]); setSessionId(""); setStatus("conectando");
   }, []);
 
@@ -845,7 +868,7 @@ function useClaudeSession() {
     const headers = {};
     const a = authToken(); if (a) headers["X-Netops-Session"] = a;
     try {
-      const res = await fetch("/api/claude/upload", { method: "POST", headers, body: fd });
+      const res = await fetch("/api/claude/upload" + projQ(projectRef.current), { method: "POST", headers, body: fd });
       if (!res.ok) { toast.err("Upload falhou (" + res.status + ")"); return; }
       const d = await res.json();
       setAttachments((v) => [...v, { path: d.path, name: d.name }]);
@@ -857,12 +880,12 @@ function useClaudeSession() {
   const disabled = status !== "pronto";
   // "Conversa viva" = ligada e com algo acontecendo (turno rodando ou já há mensagens).
   const hasSession = active && (working || items.length > 0);
-  useEffect(() => { if (active && sessionId && validSessionId(sessionId)) setDockSession(sessionId); }, [active, sessionId]);   // F5 reabre o dock
+  useEffect(() => { if (active && sessionId && validSessionId(sessionId)) setDockSession(sessionId, project); }, [active, sessionId, project]);   // F5 reabre o dock
 
   return {
     effort, changeEffort, ctxUse, lastUsage,
     queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove,
-    status, items, working, mode, netperms, netpermsMax, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
+    project, status, items, working, mode, netperms, netpermsMax, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
     send, submit, stop, newSession, resumeSession, forkFrom, editFrom, answerPermission, changeMode, changeModel, uploadFile,
@@ -1555,17 +1578,17 @@ export function ClaudeSessionTitle() {
   useEffect(() => {
     if (!s.sessionId) { setTitle(""); setDone(false); return; }
     let dead = false;
-    api.get("/claude/sessions").then((d) => {
+    api.get(s.project ? `/projects/${encodeURIComponent(s.project)}/sessions` : "/claude/sessions").then((d) => {
       const f = (d.sessions || []).find((x) => x.id === s.sessionId);
       if (!dead) { setTitle(f && f.title ? f.title : ""); setDone(!!(f && f.completed)); }
     }).catch(() => {});
     return () => { dead = true; };
-  }, [s.sessionId, s.working]);
+  }, [s.sessionId, s.working, s.project]);
   useEffect(() => { if (s.working) setDone(false); }, [s.working]);   // novo pedido reabre a sessão (o servidor também desmarca)
   async function toggle(e) {
     const v = e.target.checked;
     setDone(v);
-    try { await api.put(`/claude/sessions/${encodeURIComponent(s.sessionId)}/completed`, { completed: v }); }
+    try { await api.put(`/claude/sessions/${encodeURIComponent(s.sessionId)}/completed${projQ(s.project)}`, { completed: v }); }
     catch (_) { setDone(!v); toast.err("Falha ao salvar a marca de concluída"); }
   }
   const [editing, setEditing] = useState(false);
@@ -1575,7 +1598,7 @@ export function ClaudeSessionTitle() {
     const v = draft.trim();
     setEditing(false);
     if (!v || v === title) return;
-    try { await api.put(`/claude/sessions/${encodeURIComponent(s.sessionId)}/title`, { title: v }); setTitle(v.slice(0, 80)); toast.ok("Sessão renomeada"); }
+    try { await api.put(`/claude/sessions/${encodeURIComponent(s.sessionId)}/title${projQ(s.project)}`, { title: v }); setTitle(v.slice(0, 80)); toast.ok("Sessão renomeada"); }
     catch (_) { toast.err("Falha ao renomear a sessão"); }
   }
   return html`${validSessionId(s.sessionId) && html`<label class="cc-topbar-chk"
@@ -1599,8 +1622,8 @@ export function ClaudeTopbarControls() {
   // Ordem (padrão de mercado): ação primária → navegação → estado → configurações.
   // O mesmo DOM alimenta o desktop (barra) e o celular (folha "⋯").
   return html`
-    <button class="sm primary" onClick=${(e) => { if (!openInNewWindow(e, "#claude/new")) s.newSession(); }}
-      onAuxClick=${(e) => openInNewWindow(e, "#claude/new")} onMouseDown=${noAutoscroll}
+    <button class="sm primary" onClick=${(e) => { if (!openInNewWindow(e, claudeNewHash(s.project))) s.newSession(); }}
+      onAuxClick=${(e) => openInNewWindow(e, claudeNewHash(s.project))} onMouseDown=${noAutoscroll}
       title="Encerra esta sessão e abre uma nova (Ctrl+clique abre em nova janela)">＋ Nova sessão</button>
     <button class="sm cc-sessbtn" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
     <span class="badge ${s.badge} desk-only">${s.status}</span>
@@ -1620,8 +1643,8 @@ export function ClaudeCodePage() {
   return html`<div class="claude-page">
     <${Transcript} />
     <${Composer} />
-    ${s.showSessions && html`<${SessionsModal} currentId=${s.sessionId}
-      onClose=${() => s.setShowSessions(false)} onResume=${s.resumeSession} />`}
+    ${s.showSessions && html`<${SessionsModal} currentId=${s.sessionId} project=${s.project}
+      onClose=${() => s.setShowSessions(false)} onResume=${(id) => s.resumeSession(id)} />`}
     ${s.showAuth && html`<${LoginModal} auth=${s.auth} onClose=${() => s.setShowAuth(false)}
       onChanged=${s.refreshAuth} onRelaunch=${s.relaunch} onVerifyModels=${s.refreshModels} />`}
     ${s.showModelPick && html`<${ModelPickModal} detail=${s.modelErr} current=${s.modelSel} models=${s.models}
@@ -1893,7 +1916,7 @@ export function ChatDock() {
       <b>Claude Code</b>
       ${s.working && html`<span class="chat-dock-live">● ao vivo</span>`}
       <span class="spacer"></span>
-      <a class="sm dock-btn" href=${claudeSessionHash(s.sessionId)} title="Abrir em tela cheia">⤢</a>
+      <a class="sm dock-btn" href=${claudeSessionHash(s.sessionId, s.project)} title="Abrir em tela cheia">⤢</a>
       <button class="sm dock-btn" onClick=${s.endSession} title="Encerrar conversa">✕</button>
     </div>
     <${Transcript} />
@@ -1908,10 +1931,21 @@ export function ChatDock() {
 }
 
 // Lista de sessões passadas (retomar / excluir) — com busca por título e conteúdo.
-function SessionsModal({ currentId, onClose, onResume }) {
+function SessionsModal({ currentId, onClose, onResume, project = "" }) {
+  return html`<${Modal} title="Sessões anteriores" onClose=${onClose} wide=${true}>
+    <${SessionsList} currentId=${currentId} project=${project} onResume=${onResume} />
+  <//>`;
+}
+
+// Lista de sessões de uma pasta: a do NetOps (project vazio) ou a de um Projeto. Usada no modal
+// "Sessões" do chat e na página do projeto (#projects/<id>), com busca, concluída, renomear e excluir.
+export function SessionsList({ currentId = "", project = "", onResume, q: qProp, onQ }) {
   const [list, setList] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [q, setQ] = useState("");
+  const [qLocal, setQLocal] = useState("");
+  const q = qProp !== undefined ? qProp : qLocal;           // controlado (URL ?q=) ou local
+  const setQ = onQ || setQLocal;
+  const base = project ? `/projects/${encodeURIComponent(project)}/sessions` : "/claude/sessions";
   // filtro "só pendentes" (não concluídas); lembrado entre aberturas do modal
   const [onlyPending, setOnlyPending] = useState(() => { try { return localStorage.getItem("netops.cc.sessOnlyPending") === "1"; } catch (_) { return false; } });
   const setPending = (v) => { setOnlyPending(v); try { localStorage.setItem("netops.cc.sessOnlyPending", v ? "1" : "0"); } catch (_) {} };
@@ -1920,13 +1954,13 @@ function SessionsModal({ currentId, onClose, onResume }) {
     const term = (query || "").trim();
     if (!term) {
       if (!silent) setList(null);
-      api.get("/claude/sessions").then((d) => setList(d.sessions || [])).catch(() => setList([]));
+      api.get(base).then((d) => setList(d.sessions || [])).catch(() => setList([]));
     } else {
-      api.get("/claude/sessions/search?q=" + encodeURIComponent(term))
+      api.get(base + "/search?q=" + encodeURIComponent(term))
         .then((d) => setList(d.sessions || [])).catch(() => setList([]));
     }
   };
-  useEffect(() => { load(""); }, []);
+  useEffect(() => { load(q); }, [project]);
   // debounce: busca por título + conteúdo da conversa enquanto digita
   useEffect(() => { const h = setTimeout(() => load(q), 250); return () => clearTimeout(h); }, [q]);
   // atualiza o status (em andamento × finalizada) enquanto o modal está aberto
@@ -1935,7 +1969,7 @@ function SessionsModal({ currentId, onClose, onResume }) {
   async function del(id, e) {
     e.stopPropagation();
     setBusy(true);
-    try { await api.del(`/claude/sessions/${encodeURIComponent(id)}`); forgetClaudeSession(id); load(q); }
+    try { await api.del(`/claude/sessions/${encodeURIComponent(id)}${projQ(project)}`); forgetClaudeSession(id); load(q); }
     catch (_) { toast.err("Falha ao excluir"); }
     finally { setBusy(false); }
   }
@@ -1943,7 +1977,7 @@ function SessionsModal({ currentId, onClose, onResume }) {
   // checkbox manual "concluída por completo" (persiste no servidor); atualiza a lista na hora
   async function toggleDone(id, completed) {
     setList((cur) => (cur || []).map((x) => (x.id === id ? { ...x, completed } : x)));
-    try { await api.put(`/claude/sessions/${encodeURIComponent(id)}/completed`, { completed }); }
+    try { await api.put(`/claude/sessions/${encodeURIComponent(id)}/completed${projQ(project)}`, { completed }); }
     catch (_) {
       toast.err("Falha ao salvar a marca de concluída");
       setList((cur) => (cur || []).map((x) => (x.id === id ? { ...x, completed: !completed } : x)));
@@ -1965,7 +1999,7 @@ function SessionsModal({ currentId, onClose, onResume }) {
     const cur = (list || []).find((x) => x.id === r.id);
     if (!v || (cur && v === cur.title)) return;
     try {
-      await api.put(`/claude/sessions/${encodeURIComponent(r.id)}/title`, { title: v });
+      await api.put(`/claude/sessions/${encodeURIComponent(r.id)}/title${projQ(project)}`, { title: v });
       setList((l) => (l || []).map((x) => (x.id === r.id ? { ...x, title: v.slice(0, 80) } : x)));
       toast.ok("Sessão renomeada");
     } catch (_) { toast.err("Falha ao renomear a sessão"); }
@@ -1973,7 +2007,7 @@ function SessionsModal({ currentId, onClose, onResume }) {
 
   const term = q.trim();
   const shown = list && onlyPending ? list.filter((x) => !x.completed) : list;
-  return html`<${Modal} title="Sessões anteriores" onClose=${onClose} wide=${true}>
+  return html`<div class="cc-sess-wrap">
     <input class="cc-sess-search" type="search" value=${q} autoFocus
       placeholder="Buscar por título ou conteúdo da conversa…"
       onInput=${(e) => setQ(e.target.value)} />
@@ -1987,9 +2021,9 @@ function SessionsModal({ currentId, onClose, onResume }) {
       ? html`<div class="help">${onlyPending ? "Nenhuma sessão pendente." : term ? "Nenhuma sessão casa com a busca." : "Nenhuma sessão neste projeto ainda."}</div>`
       : html`<div class="cc-sess-list">
         ${shown.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "") + (s.completed ? " concluida" : "")}
-            onClick=${(e) => { if (renaming && renaming.id === s.id) return; if (!openInNewWindow(e, claudeSessionHash(s.id))) onResume(s.id); }}
+            onClick=${(e) => { if (renaming && renaming.id === s.id) return; if (!openInNewWindow(e, claudeSessionHash(s.id, project))) onResume(s.id); }}
             onContextMenu=${(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, s }); }}
-            onAuxClick=${(e) => openInNewWindow(e, claudeSessionHash(s.id))} onMouseDown=${noAutoscroll}
+            onAuxClick=${(e) => openInNewWindow(e, claudeSessionHash(s.id, project))} onMouseDown=${noAutoscroll}
             title="Retomar esta sessão (Ctrl+clique ou clique do meio abre em nova aba)">
           <span class=${"cc-sess-st " + (s.waiting ? "wait" : s.running ? "run" : "done")}
             title=${s.waiting ? "Aguardando sua resposta ou aprovação" : s.running ? "Em andamento" : "Finalizada"}
@@ -2000,7 +2034,7 @@ function SessionsModal({ currentId, onClose, onResume }) {
                   onClick=${(e) => e.stopPropagation()} onInput=${(e) => setRenaming({ id: s.id, draft: e.target.value })}
                   onBlur=${commitRename}
                   onKeyDown=${(e) => { e.stopPropagation(); if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setRenaming(null); }} />`
-              : html`<a href=${claudeSessionHash(s.id)} onAuxClick=${(e) => e.stopPropagation()} onClick=${(e) => {
+              : html`<a href=${claudeSessionHash(s.id, project)} onAuxClick=${(e) => e.stopPropagation()} onClick=${(e) => {
               e.stopPropagation();
               if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.button === 0) {
                 e.preventDefault(); onResume(s.id);
@@ -2014,7 +2048,7 @@ function SessionsModal({ currentId, onClose, onResume }) {
             <label class="cc-sess-chk" title=${s.completed ? "Concluída por completo (clique para desmarcar)" : "Marcar como concluída por completo"}>
               <input type="checkbox" aria-label="Concluída por completo" checked=${!!s.completed} onChange=${(e) => toggleDone(s.id, e.target.checked)} />
             </label>
-            <button class="sm cc-sess-ib" title="Copiar link da sessão" aria-label="Copiar link da sessão" onClick=${(e) => { e.stopPropagation(); copySessionLink(s.id); }}>🔗</button>
+            <button class="sm cc-sess-ib" title="Copiar link da sessão" aria-label="Copiar link da sessão" onClick=${(e) => { e.stopPropagation(); copySessionLink(s.id, project); }}>🔗</button>
             <button class="sm danger cc-sess-ib" disabled=${busy} title="Excluir sessão" aria-label="Excluir sessão" onClick=${(e) => del(s.id, e)}>🗑</button>
           </div>
         </div>`)}
@@ -2022,10 +2056,10 @@ function SessionsModal({ currentId, onClose, onResume }) {
     ${menu && html`<div class="fm-menu" style=${`left:${Math.min(menu.x, innerWidth - 190)}px;top:${Math.min(menu.y, innerHeight - 130)}px`} onClick=${(e) => e.stopPropagation()}>
       <button onClick=${() => { const m = menu.s; setMenu(null); setRenaming({ id: m.id, draft: m.title }); }}>Renomear</button>
       <button onClick=${() => { const m = menu.s; setMenu(null); onResume(m.id); }}>Retomar</button>
-      <button onClick=${() => { const m = menu.s; setMenu(null); copySessionLink(m.id); }}>Copiar link</button>
+      <button onClick=${() => { const m = menu.s; setMenu(null); copySessionLink(m.id, project); }}>Copiar link</button>
       <hr /><button class="fm-danger" onClick=${(e) => { const m = menu.s; setMenu(null); del(m.id, e); }}>Excluir</button>
     </div>`}
-  <//>`;
+  </div>`;
 }
 
 // Realça as ocorrências de `term` em `text` (case-insensitive) com <mark>.

@@ -288,8 +288,8 @@ def test_claude_sessions_filtered_by_owner(env, monkeypatch):
     _mk_user(admin, "op2", ["operador"])
     fake = [{"id": "s-admin"}, {"id": "s-op"}, {"id": "s-velha"}]
     monkeypatch.setattr(claude_svc, "list_project_sessions", lambda *a, **k: list(fake))
-    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid: True)
-    monkeypatch.setattr(claude_svc, "session_items", lambda sid: [])
+    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid, cwd=None: True)
+    monkeypatch.setattr(claude_svc, "session_items", lambda sid, cwd=None: [])
     accessdb.set_claude_owner(deps.db_file(), "s-admin", "admin")
     accessdb.set_claude_owner(deps.db_file(), "s-op", "op")
     op = _bare()
@@ -309,6 +309,36 @@ def test_claude_sessions_filtered_by_owner(env, monkeypatch):
     _login(c, "semia", "senha-forte-1")
     assert c.get("/api/claude/sessions").status_code == 403
 
+
+def test_projects_follow_claude_permission_and_owner_filter(env, monkeypatch, tmp_path):
+    """Projetos abrem sessões do agente (shell no servidor, na pasta escolhida): mesma permissão da aba
+    Claude (`claude.use`) e o mesmo filtro por dono — o operador só vê as sessões dele no projeto."""
+    import deps
+    from lib import accessdb
+    from services import claude_svc
+    deps.STATE.enable_claude = True
+    admin = _bootstrap(env)
+    _mk_user(admin, "op", ["operador"])
+    pasta = tmp_path / "proj"
+    pasta.mkdir()
+    assert admin.post("/api/projects", json={"name": "Site", "path": str(pasta)}).status_code == 200
+    fake = [{"id": "s-admin"}, {"id": "s-op"}, {"id": "s-velha"}]
+    monkeypatch.setattr(claude_svc, "list_project_sessions", lambda *a, **k: list(fake))
+    accessdb.set_claude_owner(deps.db_file(), "s-admin", "admin")
+    accessdb.set_claude_owner(deps.db_file(), "s-op", "op")
+    op = _bare()
+    _login(op, "op", "senha-forte-1")
+    assert [x["id"] for x in op.get("/api/projects/site/sessions").json()["sessions"]] == ["s-op"]
+    assert {x["id"] for x in admin.get("/api/projects/site/sessions").json()["sessions"]} == {"s-admin", "s-op", "s-velha"}
+    # sem claude.use: nem lista, nem cria, nem navega nas pastas do servidor
+    assert admin.post("/api/access-groups", json={"name": "sem-ia", "permissions": ["hosts.view"]}).status_code == 201
+    _mk_user(admin, "semia", ["sem-ia"])
+    c = _bare()
+    _login(c, "semia", "senha-forte-1")
+    assert c.get("/api/projects").status_code == 403
+    assert c.get("/api/projects/browse", params={"path": "/"}).status_code == 403
+    assert c.post("/api/projects", json={"name": "x", "path": str(pasta)}).status_code == 403
+    assert c.get("/api/projects/site/sessions").status_code == 403
 
 def test_claude_netperms_capped_by_group(env):
     import deps

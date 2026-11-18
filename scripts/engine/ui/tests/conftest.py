@@ -35,7 +35,8 @@ def _isolated_vault_session(tmp_path_factory, monkeypatch):
                                ("services.claude_models", "_CACHE_FILE", "models-cache.json"),
                                ("services.audio_svc", "_FILE", "audio-transcription.json"),
                                ("services.claude_svc", "_AGENT_LOG", "agent-stderr.log"),
-                               ("services.claude_svc", "_RESUME_FILE", "resume-on-restart.json")):
+                               ("services.claude_svc", "_RESUME_FILE", "resume-on-restart.json"),
+                               ("services.projects_svc", "_FILE", "projects.json")):
         monkeypatch.setattr(importlib.import_module(module), attr, claude_runs / name)
     # Banco de acesso: nem teste que não usa `env` pode tocar o runs/netops.db da instalação.
     monkeypatch.setattr(importlib.import_module("deps"), "DB_FILE", claude_runs / "netops.db")

@@ -23,6 +23,8 @@ import { UsersPage, AccessGroupsPage } from "./pages/users.js";
 import { AuditPage } from "./pages/audit.js";
 import { AccountPage } from "./pages/account.js";
 import { ClaudeCodePage, ClaudeTopbarControls, ClaudeStatusDot, ClaudeSessionTitle, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
+import { ProjectsPage, useProjects } from "./pages/projects.js";
+import { isClaudeChatHash } from "./claude-sessions.js";
 
 // perm = permissão exigida (services/authz.py / lib/accessdb.PERMISSIONS); hidden = fora do menu.
 const ROUTES = {
@@ -42,6 +44,8 @@ const ROUTES = {
   dashboard: { label: "Painel", comp: DashboardPage, group: "Sistema", perm: "dashboard.view" },
   schedules: { label: "Tarefas agendadas", comp: SchedulesPage, group: "Sistema", badge: "schedules", perm: "schedules.view" },
   claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled", perm: "claude.use" },
+  // Sem `group`: não vira item fixo da sidebar. Os itens do grupo "Projetos" são os projetos cadastrados (ver Sidebar).
+  projects: { label: "Projetos", comp: ProjectsPage, flag: "claude_enabled", perm: "claude.use" },
   terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled", perm: "server.terminal" },
   files: { label: "Arquivos", comp: FilesPage, group: "Sistema", flag: "files_enabled", perm: "server.files" },
   settings: { label: "Configuração", comp: SettingsPage, group: "Sistema", perm: "config" },
@@ -50,7 +54,7 @@ const ROUTES = {
   audit: { label: "Auditoria", comp: AuditPage, group: "Sistema", perm: "audit.view" },
   account: { label: "Minha conta", comp: AccountPage, group: "Sistema", hidden: true },
 };
-const ORDER = ["Inventário", "Conhecimento", "Saída", "Sistema"];
+const ORDER = ["Inventário", "Conhecimento", "Saída", "Projetos", "Sistema"];
 
 function useHash() {
   const readHash = () => {
@@ -91,14 +95,33 @@ function firstAllowed(meta, me) {
   return hit ? hit[0] : "account";
 }
 
-function Sidebar({ current, meta, me, open, onNavigate }) {
+function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
   const visible = ([, r]) => routeVisible(r, meta, me);
   const badges = useScheduleBadge(can("schedules.view", me));
-  const groups = ORDER.filter((g) => Object.values(ROUTES).some((r) => r.group === g && routeVisible(r, meta, me)));
+  const showProjects = !!meta.claude_enabled && can("claude.use", me);   // grupo Projetos = quem usa o Claude
+  const projects = useProjects(showProjects);
+  const projSeg = current === "projects" ? hash.split("/")[1] || "" : "";   // projeto (ou "new") aberto agora
+  // Grupos abertos pelo usuário (persistido). Padrão: lista vazia = todos os grupos recolhidos.
+  const [openGroups, setOpenGroups] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("netops_nav_groups") || "[]"); } catch { return []; }
+  });
+  const toggleGroup = (g) => setOpenGroups((cur) => {
+    const next = cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g];
+    localStorage.setItem("netops_nav_groups", JSON.stringify(next));
+    return next;
+  });
+  const groups = ORDER.filter((g) => g === "Projetos" ? showProjects : Object.values(ROUTES).some((r) => r.group === g && routeVisible(r, meta, me)));
   return html`<nav class=${"sidebar" + (open ? " open" : "")} onClick=${(e) => { if (e.target.closest("a")) onNavigate(); }}>
     ${groups.map((g) => html`<div key=${g}>
-      <div class="group-label">${g}</div>
-      ${Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
+      <button type="button" class="group-label group-toggle" aria-expanded=${openGroups.includes(g)}
+        onClick=${() => toggleGroup(g)}>
+        <span class="group-chevron">${openGroups.includes(g) ? "▾" : "▸"}</span>${g}
+      </button>
+      ${g === "Projetos" && openGroups.includes(g) && html`
+        ${projects.map((p) => html`<a key=${p.id} href=${"#projects/" + p.id} title=${p.path}
+          class=${projSeg === p.id ? "active" : ""}>${p.name}</a>`)}
+        <a href="#projects/new" class=${projSeg === "new" ? "active" : ""}>＋ Novo projeto</a>`}
+      ${openGroups.includes(g) && Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
         <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${r.label}${r.badge && badges[r.badge] > 0
           ? html`<span class="nav-badge" title="execuções com resultado não lido">${badges[r.badge]}</span>` : ""}</a>`)}
     </div>`)}
@@ -158,19 +181,20 @@ function Shell({ onLogout, showLogout }) {
   const denied = me && !forced && !can(target.perm, me);
   const Page = target.comp;
   // Chat encaixado à direita: só fora da página cheia (#claude) e com conversa viva.
-  const dockVisible = route !== "claude" && !!(claude && claude.hasSession) && can("claude.use", me);
+  const isChat = isClaudeChatHash("#" + hash);   // #claude[/…] ou #projects/<proj>/<id|new>
+  const dockVisible = !isChat && !!(claude && claude.hasSession) && can("claude.use", me);
   return html`<div class=${"shell" + (dockVisible ? " has-dock" : "") + (collapsed ? " nav-collapsed" : "")}>
     <div class="topbar">
       <button class="sm mob-only nav-toggle" aria-label="Menu" onClick=${() => { setMoreOpen(false); setNavOpen(!navOpen); }}>☰</button>
-      ${route === "claude"
+      ${isChat
         ? html`<${ClaudeSessionTitle} />`
         : html`<span class="brand">NetOps Console</span><span class="net">· ${meta.network_name}</span>`}
       <div id="topbar-slot" class="topbar-slot"></div>
-      ${route === "claude" && html`<${ClaudeStatusDot} />`}
+      ${isChat && html`<${ClaudeStatusDot} />`}
       <button class="sm mob-only more-toggle" aria-label="Ações" onClick=${() => { setNavOpen(false); setMoreOpen(!moreOpen); }}>⋯</button>
       <div class=${"topbar-actions" + (moreOpen ? " open" : "")}
         onClick=${(e) => { if (e.target.closest("button") && !e.target.closest(".keep-open")) setMoreOpen(false); }}>
-        ${route === "claude" && html`<${ClaudeTopbarControls} />`}
+        ${isChat && html`<${ClaudeTopbarControls} />`}
         <div class="keep-open"><${UpdatesControl} part="version" /></div>
         <button class="sm" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}>
           ${theme === "light" ? "🌙 escuro" : "☀ claro"}</button>
@@ -179,7 +203,7 @@ function Shell({ onLogout, showLogout }) {
       </div>
     </div>
     ${(navOpen || moreOpen) && html`<div class="mob-backdrop" onClick=${() => { setNavOpen(false); setMoreOpen(false); }}></div>`}
-    <${Sidebar} current=${route} meta=${meta} me=${me} open=${navOpen} onNavigate=${() => setNavOpen(false)} />
+    <${Sidebar} current=${route} hash=${hash} meta=${meta} me=${me} open=${navOpen} onNavigate=${() => setNavOpen(false)} />
     <button class="sidebar-toggle" aria-label=${collapsed ? "Mostrar barra lateral" : "Esconder barra lateral"}
       title=${collapsed ? "Mostrar barra lateral" : "Esconder barra lateral"} onClick=${() => setCollapsed(!collapsed)}>${collapsed ? "›" : "‹"}</button>
     <main class=${"content" + (route === "maps" ? " maps-content" : "") + (route === "files" ? " files-content" : "")}>
