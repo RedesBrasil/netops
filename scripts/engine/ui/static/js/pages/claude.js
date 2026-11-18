@@ -109,6 +109,10 @@ function closeOpen(arr) {
 // ------------------------------------------------------------------ contexto
 // Uma única sessão viva, compartilhada por todas as visões (página cheia + dock).
 const ClaudeCtx = createContext(null);
+// Dock aberto sobrevive ao F5/Ctrl+Shift+R: guarda (por aba) o id da conversa encaixada.
+const DOCK_KEY = "netops_dock_session";
+function setDockSession(id) { try { id ? sessionStorage.setItem(DOCK_KEY, id) : sessionStorage.removeItem(DOCK_KEY); } catch (_) {} }
+function getDockSession() { try { const id = sessionStorage.getItem(DOCK_KEY); return validSessionId(id) ? id : ""; } catch (_) { return ""; } }
 export function useClaude() { return useContext(ClaudeCtx); }
 
 export function ClaudeProvider({ children }) {
@@ -231,13 +235,21 @@ function useClaudeSession() {
     // Um init antigo não pode trocar um link explícito recém-aberto.
     if (route && route.kind === "session" && route.id !== id) return;
     if (changed) rememberClaudeSession(id);
+    setDockSession(id);
     if (route && route.kind !== "invalid") replaceClaudeHash(claudeSessionHash(id));
   }
 
   async function openRoute() {
     const request = ++routeRequestRef.current;
     const route = readClaudeRoute(location.hash);
-    if (!route) return; // navegar para Hosts mantém a sessão viva no dock
+    if (!route) {   // navegar para Hosts mantém a sessão viva no dock
+      const dockId = getDockSession();   // recarga da página: reabre o dock da conversa que estava aberta
+      if (dockId && !activeRef.current) {
+        try { await api.get(`/claude/sessions/${encodeURIComponent(dockId)}`); } catch (_) { setDockSession(""); return; }
+        if (request === routeRequestRef.current && !activeRef.current) activateSession(dockId);
+      }
+      return;
+    }
     const current = () => request === routeRequestRef.current;
     try {
       if (route.kind === "invalid") throw new Error("Link de sessão inválido. Escolha uma conversa em Sessões ou abra Nova sessão.");
@@ -779,7 +791,7 @@ function useClaudeSession() {
     try { const w = wsRef.current; if (w && w.readyState === 1) w.send(JSON.stringify({ type: "bye" })); } catch (_) {}  // encerrar: mata a sessão viva
     try { wsRef.current && wsRef.current.close(); } catch (_) {}
     wsRef.current = null;
-    resumeIdRef.current = ""; sessionIdRef.current = "";
+    resumeIdRef.current = ""; sessionIdRef.current = ""; setDockSession("");
     setActive(false); setWorking(false); setItems([]); setSessionId(""); setStatus("conectando");
   }, []);
 
@@ -845,6 +857,7 @@ function useClaudeSession() {
   const disabled = status !== "pronto";
   // "Conversa viva" = ligada e com algo acontecendo (turno rodando ou já há mensagens).
   const hasSession = active && (working || items.length > 0);
+  useEffect(() => { if (active && sessionId && validSessionId(sessionId)) setDockSession(sessionId); }, [active, sessionId]);   // F5 reabre o dock
 
   return {
     effort, changeEffort, ctxUse, lastUsage,

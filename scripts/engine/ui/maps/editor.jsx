@@ -15,9 +15,16 @@ const uid = () => globalThis.crypto?.randomUUID?.() || `item-${Date.now()}-${Mat
 const hostId = id => 'host:' + id;
 const objectId = id => 'object:' + id;
 const roleLabel = { core: 'Core', distribution: 'Distribuição', access: 'Acesso', firewall: 'Firewall', wireless: 'Wireless', server: 'Servidor', other: 'Dispositivo' };
-export const speeds = { '1G': { color: 'var(--map-1g)' }, '10G': { color: 'var(--map-10g)' }, WAN: { color: 'var(--map-wan)', dash: '7 5' } };
+export const speeds = {
+  '10M': { color: 'var(--map-10m)', dash: '3 3' },
+  '100M': { color: 'var(--map-100m)', dash: '3 3' },
+  '1G': { color: 'var(--map-1g)' },
+  '10G': { color: 'var(--map-10g)' },
+  '100G': { color: 'var(--map-100g)' },
+  WAN: { color: 'var(--map-wan)', dash: '7 5' },
+};
 const multiSelectionKeys = ['Control', 'Meta'];
-const speedStyle = speed => speeds[speed] || { color: 'var(--muted)', dash: '3 3' };
+const speedStyle = speed => speeds[String(speed || '').trim().toUpperCase()] || { color: 'var(--muted)', dash: '3 3' };
 function NodeHandles() {
   return <>{[['top', Position.Top], ['bottom', Position.Bottom], ['left', Position.Left], ['right', Position.Right]].map(([id, position]) =>
     <Handle key={id} type="source" id={id} position={position} isConnectable={false} aria-hidden="true" />)}</>;
