@@ -8,11 +8,13 @@ O cache semanal guarda só IDs/nomes; refresh manual força nova descoberta loca
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
 import threading
 import time
+from pathlib import Path
 
 import deps
 
@@ -27,12 +29,70 @@ _cache_lock = threading.Lock()
 # O próprio CLI resolve o padrão da conta; não inventa versões nem presume acesso.
 _FALLBACK = [{"id": "default", "name": "Padrão do Claude Code"}]
 
+_SECRET_KEYS = ("AUTH_TOKEN", "API_KEY")
+
+
+def _settings_files() -> list[Path]:
+    """Mesma ordem de precedência do CLI (setting_sources=user, project, local)."""
+    home = Path(os.path.expanduser("~")) / ".claude"
+    project = deps.NETOPS_ROOT / ".claude"
+    return [home / "settings.json", project / "settings.json", project / "settings.local.json"]
+
+
+def _read_settings() -> list[dict]:
+    out = []
+    for path in _settings_files():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            out.append(data)
+    return out
+
+
+def _picker() -> list[dict]:
+    """`modelPicker` dos settings (gateway/proxy de terceiros): é o que o `/model` do CLI mostra.
+
+    O handshake (`get_server_info`) NÃO inclui essas opções, então sem isto a aba só enxergava
+    os apelidos embutidos (default/opus/sonnet/haiku) e nunca os modelos do proxy.
+    Devolve [] se não houver; `replaceBuiltInOptions` vai na chave `_replace` do primeiro item.
+    """
+    options, replace = [], False
+    for data in _read_settings():
+        picker = data.get("modelPicker")
+        if not isinstance(picker, dict) or not isinstance(picker.get("options"), list):
+            continue
+        options, replace = [], bool(picker.get("replaceBuiltInOptions"))   # o mais específico vence
+        for opt in picker["options"]:
+            if isinstance(opt, dict) and isinstance(opt.get("model"), str) and opt["model"]:
+                options.append({"id": opt["model"], "name": opt.get("label") or opt["model"]})
+    if options:
+        options[0] = {**options[0], "_replace": replace}
+    return options
+
+
+def _fingerprint() -> str:
+    """Impressão digital NÃO secreta da config de provedor/modelos.
+
+    Se `ANTHROPIC_BASE_URL`, os `ANTHROPIC_*_MODEL` ou o `modelPicker` mudam, o catálogo em cache
+    deixa de valer: antes ele durava 7 dias e seguia oferecendo ids que o novo provedor rejeita.
+    """
+    env = {k: v for k, v in os.environ.items() if k.startswith("ANTHROPIC_")}
+    for data in _read_settings():
+        if isinstance(data.get("env"), dict):
+            env.update({k: str(v) for k, v in data["env"].items() if str(k).startswith("ANTHROPIC_")})
+    env = {k: v for k, v in env.items() if not any(x in k for x in _SECRET_KEYS)}
+    blob = json.dumps({"env": env, "picker": _picker()}, sort_keys=True)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
+
 
 def _load_disk() -> dict | None:
     try:
         with _CACHE_FILE.open(encoding="utf-8") as fh:
             data = json.load(fh)
         if (isinstance(data, dict) and data.get("source") == _CACHE_SOURCE
+                and data.get("fp") == _fingerprint()
                 and isinstance(data.get("models"), list) and data["models"]):
             return {"at": float(data.get("at") or 0.0), "models": data["models"]}
     except (OSError, ValueError, TypeError):
@@ -45,7 +105,7 @@ def _save_disk(models: list[dict], at: float) -> None:
         _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         temporary = _CACHE_FILE.with_suffix(".tmp")
         with temporary.open("w", encoding="utf-8") as fh:
-            json.dump({"source": _CACHE_SOURCE, "at": at, "models": models}, fh)
+            json.dump({"source": _CACHE_SOURCE, "at": at, "fp": _fingerprint(), "models": models}, fh)
         temporary.replace(_CACHE_FILE)
     except OSError:
         pass
@@ -77,6 +137,11 @@ async def _fetch_cli() -> list[dict] | None:
         if isinstance(mid, str) and mid and mid not in seen:
             seen.add(mid)
             out.append({"id": mid, "name": entry.get("displayName") or mid})
+    picker = _picker()
+    if picker:
+        replace = picker[0].pop("_replace", False)
+        extra = [m for m in picker if replace or m["id"] not in seen]
+        out = extra if replace else out + extra
     return out or None
 
 

@@ -110,13 +110,39 @@ def _first_json(text: str) -> dict | None:
     return obj if isinstance(obj, dict) else None
 
 
-def _run(args: list[str], timeout: int = _STATUS_TIMEOUT) -> subprocess.CompletedProcess | None:
+_AUTH_ENV_KEYS = ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
+                  "CLAUDE_CODE_OAUTH_TOKEN")
+
+def _settings_auth_env() -> dict:
+    """Variáveis de autenticação declaradas no bloco `env` dos settings (user/project/local).
+
+    O agente da aba sobe com `setting_sources=["user","project","local"]`, então o CLI aplica
+    esse `env` ao próprio processo — é assim que ele autentica via proxy/token mesmo sem
+    `.credentials.json`. Já o `claude auth status` NÃO lê esse bloco: sem repassá-lo aqui ele
+    responde "deslogado" para um agente que está funcionando (falso positivo do banner).
+    Ordem = precedência crescente (local vence project vence user), como no CLI.
+    """
+    out: dict = {}
+    for base in (os.path.expanduser("~/.claude"),
+                 os.path.join(str(deps.NETOPS_ROOT), ".claude")):
+        for name in ("settings.json", "settings.local.json"):
+            try:
+                with open(os.path.join(base, name), encoding="utf-8") as fh:
+                    env = json.load(fh).get("env")
+            except (OSError, ValueError, AttributeError):
+                continue
+            if isinstance(env, dict):
+                out.update({k: str(v) for k, v in env.items() if k in _AUTH_ENV_KEYS and v})
+    return out
+
+def _run(args: list[str], timeout: int = _STATUS_TIMEOUT,
+         extra_env: dict | None = None) -> subprocess.CompletedProcess | None:
     cli = claude_svc.claude_path()
     if not cli:
         return None
     try:
         return subprocess.run(  # noqa: S603 - argv fixo, sem shell
-            [cli, *args], env=_env(), cwd=str(deps.NETOPS_ROOT),
+            [cli, *args], env={**_env(), **(extra_env or {})}, cwd=str(deps.NETOPS_ROOT),
             capture_output=True, text=True, timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError):
@@ -128,7 +154,7 @@ def status() -> dict:
     if not claude_svc.claude_path():
         return {"available": False, "loggedIn": False,
                 "detail": "binário `claude` não encontrado no PATH do servidor"}
-    proc = _run(["auth", "status", "--json"])
+    proc = _run(["auth", "status", "--json"], extra_env=_settings_auth_env())
     if proc is None:
         return {"available": True, "loggedIn": False, "store": _store(),
                 "detail": "falha ao executar `claude auth status`"}
