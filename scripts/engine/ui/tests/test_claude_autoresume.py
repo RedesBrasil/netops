@@ -41,7 +41,7 @@ def fake(monkeypatch):
 
     monkeypatch.setattr(claude_svc.ClaudeWebSession, "start", start)
     monkeypatch.setattr(claude_svc.ClaudeWebSession, "_send", send)
-    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid: True)
+    monkeypatch.setattr(claude_svc, "project_session_exists", lambda sid, cwd=None: True)
     monkeypatch.setattr(claude_svc.claude_prefs, "get_session", lambda sid: {})
     monkeypatch.setattr(claude_svc.claude_prefs, "set_session", lambda *a, **k: None)
     monkeypatch.setattr(claude_svc, "_SHUTTING_DOWN", False)

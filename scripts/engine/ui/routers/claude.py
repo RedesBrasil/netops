@@ -24,7 +24,7 @@ from fastapi import APIRouter, Request, Response, UploadFile, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 
 import deps
-from services import claude_auth, claude_models, claude_prefs, claude_svc
+from services import claude_auth, claude_models, claude_prefs, claude_svc, projects_svc
 
 router = APIRouter(tags=["claude"])
 
@@ -34,6 +34,22 @@ _MAX_UPLOAD = 20 * 1024 * 1024  # 20 MiB
 # Cookie HttpOnly que identifica o DONO de uma sessão viva (re-anexo). Ver claude_svc.mint_owner.
 _ATTACH_COOKIE = "netops_claude_attach"
 
+
+class _BadProject(Exception):
+    """`?project=` aponta para um projeto inexistente (ou cuja pasta sumiu)."""
+
+def _cwd(project: str | None) -> str | None:
+    """Pasta do projeto, ou None (= NetOps, aba Claude Code). Nunca cai no NetOps por engano:
+    projeto informado e inválido levanta _BadProject, senão a conversa rodaria na pasta errada."""
+    if not project:
+        return None
+    path = projects_svc.path_of(project)
+    if not path:
+        raise _BadProject(project)
+    return path
+
+def _bad_project() -> JSONResponse:
+    return JSONResponse({"error": "project_not_found", "detail": "Projeto não encontrado."}, status_code=404)
 
 def _ws_authorized(ws: WebSocket, *, need_sdk: bool = True, perm: str = "claude.use") -> bool:
     """Mesmas defesas do middleware http (que NÃO cobre WebSocket) — ver routers/terminal.py.
@@ -98,7 +114,13 @@ async def claude_ws(ws: WebSocket):
     if resume and not _may_access(principal, resume):
         await ws.close(code=4403)   # conversa de outro usuário
         return
-    if resume and not claude_svc.project_session_exists(resume):
+    try:
+        cwd = _cwd(ws.query_params.get("project") or None)
+    except _BadProject:
+        await ws.accept()
+        await ws.close(code=4404, reason="project_not_found")
+        return
+    if resume and not claude_svc.project_session_exists(resume, cwd):
         # Nunca passar um UUID ausente/de outro projeto ou caminho arbitrário ao agente.
         await ws.accept()
         await ws.close(code=4404, reason="session_not_found")
@@ -106,7 +128,7 @@ async def claude_ws(ws: WebSocket):
     # Modo clássico (persist OFF): vida do agente = vida do socket, como sempre.
     if not deps.STATE.claude_persist:
         await ws.accept()
-        await claude_svc.ClaudeWebSession(ws, user=principal.username).run()
+        await claude_svc.ClaudeWebSession(ws, user=principal.username, cwd=cwd).run()
         return
     # Modo persistente. O WS já passou por _ws_authorized (login). O cookie de dono NÃO é mais
     # requisito p/ persistir: antes, cookie ausente/expirado/perdido no restart degradava CALADO p/
@@ -117,7 +139,7 @@ async def claude_ws(ws: WebSocket):
     model = ws.query_params.get("model") or None
     session, how = claude_svc.attach_or_create(owner=owner, resume=resume, model=model,
                                                   effort=ws.query_params.get("effort") or None,
-                                                  user=principal.username)
+                                                  user=principal.username, cwd=cwd)
     if how == "too_many":
         await ws.accept()
         try:
@@ -225,27 +247,34 @@ def claude_sessions_search(request: Request, q: str = ""):
 
 
 @router.get("/claude/sessions/{sid}/messages")
-def claude_session_messages(sid: str, request: Request):
-    """Histórico de uma sessão, já no formato da transcrição da UI."""
+def claude_session_messages(sid: str, request: Request, project: str = ""):
+    """Histórico de uma sessão, já no formato da transcrição da UI. `project` = pasta do Projeto."""
     _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
-    return {"items": claude_svc.session_items(sid)}
+    try:
+        return {"items": claude_svc.session_items(sid, _cwd(project))}
+    except _BadProject:
+        return _bad_project()
 
 
 @router.get("/claude/sessions/{sid}")
-def claude_session_info(sid: str, request: Request):
+def claude_session_info(sid: str, request: Request, project: str = ""):
     """Lookup individual: links antigos funcionam além do limite da lista recente."""
     _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
-    if not claude_svc.project_session_exists(sid):
+    try:
+        cwd = _cwd(project)
+    except _BadProject:
+        return _bad_project()
+    if not claude_svc.project_session_exists(sid, cwd):
         return JSONResponse({"error": "session_not_found"}, status_code=404)
     return {"id": sid}
 
 
 @router.post("/claude/sessions/{sid}/fork")
-def claude_session_fork(sid: str, body: dict, request: Request):
+def claude_session_fork(sid: str, body: dict, request: Request, project: str = ""):
     """Ramifica a conversa ANTES de um prompt (histórico até o turno anterior; o front repõe o texto no campo).
 
     body: {uuid?, text?, occurrence?, title?} — uuid vem do histórico; text+occurrence da
@@ -259,9 +288,13 @@ def claude_session_fork(sid: str, body: dict, request: Request):
     except (TypeError, ValueError):
         occ = 0
     try:
+        cwd = _cwd(project)
+    except _BadProject:
+        return _bad_project()
+    try:
         new = claude_svc.fork_project_session(
             sid, uuid=(body.get("uuid") or None), text=(body.get("text") or None),
-            occurrence=occ, title=((body.get("title") or "").strip()[:120] or None))
+            occurrence=occ, title=((body.get("title") or "").strip()[:120] or None), cwd=cwd)
     except FileNotFoundError:
         return JSONResponse({"error": "session_not_found"}, status_code=404)
     except ValueError as e:
@@ -276,7 +309,7 @@ def claude_session_fork(sid: str, body: dict, request: Request):
 
 
 @router.post("/claude/sessions/{sid}/rewind")
-async def claude_session_rewind(sid: str, body: dict, request: Request):
+async def claude_session_rewind(sid: str, body: dict, request: Request, project: str = ""):
     """Edita um prompt: APAGA o prompt escolhido e tudo depois dele, na MESMA conversa.
 
     body: {uuid?, text?, occurrence?, dry?} — mesma identificação do fork. `dry` só informa o
@@ -293,14 +326,18 @@ async def claude_session_rewind(sid: str, body: dict, request: Request):
     except (TypeError, ValueError):
         occ = 0
     try:
+        cwd = _cwd(project)
+    except _BadProject:
+        return _bad_project()
+    try:
         plan = claude_svc.rewind_plan(sid, uuid=(body.get("uuid") or None),
-                                      text=(body.get("text") or None), occurrence=occ)
+                                      text=(body.get("text") or None), occurrence=occ, cwd=cwd)
         if body.get("dry"):
             return plan
         live = claude_svc._LIVE.get(sid)
         if live is not None and not live._closing_done:
             await live.teardown()   # sem subprocesso vivo escrevendo no arquivo
-        res = claude_svc.rewind_apply(sid, plan["prompt_uuid"], first=plan["first"])
+        res = claude_svc.rewind_apply(sid, plan["prompt_uuid"], first=plan["first"], cwd=cwd)
     except FileNotFoundError:
         return JSONResponse({"error": "session_not_found"}, status_code=404)
     except ValueError as e:
@@ -311,12 +348,16 @@ async def claude_session_rewind(sid: str, body: dict, request: Request):
 
 
 @router.put("/claude/sessions/{sid}/completed")
-def claude_session_completed(sid: str, body: dict, request: Request):
+def claude_session_completed(sid: str, body: dict, request: Request, project: str = ""):
     """Marca/desmarca a conversa como concluída por completo (checkbox manual do usuário)."""
     _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
-    if not claude_svc.project_session_exists(sid):
+    try:
+        cwd = _cwd(project)
+    except _BadProject:
+        return _bad_project()
+    if not claude_svc.project_session_exists(sid, cwd):
         return JSONResponse({"error": "session_not_found"}, status_code=404)
     done = bool(body.get("completed"))
     claude_prefs.set_completed(sid, done)
@@ -324,7 +365,7 @@ def claude_session_completed(sid: str, body: dict, request: Request):
 
 
 @router.put("/claude/sessions/{sid}/title")
-def claude_session_rename(sid: str, body: dict, request: Request):
+def claude_session_rename(sid: str, body: dict, request: Request, project: str = ""):
     """Renomeia a conversa (grava o custom_title no transcript, via SDK)."""
     _owner_guard(request)
     if not deps.STATE.enable_claude:
@@ -332,27 +373,35 @@ def claude_session_rename(sid: str, body: dict, request: Request):
     title = " ".join(str(body.get("title") or "").split())[:120]
     if not title:
         return JSONResponse({"error": "empty_title"}, status_code=400)
-    if not claude_svc.project_session_exists(sid):
+    try:
+        cwd = _cwd(project)
+    except _BadProject:
+        return _bad_project()
+    if not claude_svc.project_session_exists(sid, cwd):
         return JSONResponse({"error": "session_not_found"}, status_code=404)
     try:
-        claude_svc.rename_project_session(sid, title)
+        claude_svc.rename_project_session(sid, title, cwd)
     except Exception as e:
         return JSONResponse({"error": "rename_failed", "detail": str(e)[:300]}, status_code=500)
     return {"id": sid, "title": title}
 
 
 @router.delete("/claude/sessions/{sid}", status_code=204)
-def claude_session_delete(sid: str, request: Request):
+def claude_session_delete(sid: str, request: Request, project: str = ""):
     _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
-    claude_svc.delete_project_session(sid)
+    try:
+        cwd = _cwd(project)
+    except _BadProject:
+        return _bad_project()
+    claude_svc.delete_project_session(sid, cwd)
     from lib import accessdb  # noqa: PLC0415
     accessdb.forget_claude_owner(deps.db_file(), sid)
 
 
 @router.post("/claude/upload")
-async def claude_upload(file: UploadFile):
+async def claude_upload(file: UploadFile, project: str = ""):
     """Recebe um anexo e grava em runs/claude/uploads/; devolve o caminho relativo p/ @referência.
 
     Passa pelo middleware http normal (sessão + Origin + not read-only). Só responde
@@ -360,6 +409,10 @@ async def claude_upload(file: UploadFile):
     """
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
+    try:
+        cwd = _cwd(project)
+    except _BadProject:
+        return _bad_project()
     raw = await file.read(_MAX_UPLOAD + 1)
     if len(raw) > _MAX_UPLOAD:
         return JSONResponse(
@@ -377,7 +430,8 @@ async def claude_upload(file: UploadFile):
             dest = UPLOAD_DIR / f"{stem}-{i}{dot}{ext}"
             i += 1
     dest.write_bytes(raw)
-    rel = dest.relative_to(deps.NETOPS_ROOT).as_posix()
+    # Projeto: o agente roda em OUTRA pasta, onde "runs/claude/uploads/x" não existe -> caminho absoluto.
+    rel = dest.as_posix() if cwd else dest.relative_to(deps.NETOPS_ROOT).as_posix()
     return {"path": rel, "name": dest.name, "size": len(raw)}
 
 

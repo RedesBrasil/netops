@@ -47,6 +47,9 @@ code, .mono { font-family: var(--mono); }
 .sidebar a:hover { background: var(--surface-2); }
 .sidebar a.active { background: var(--accent-weak); border-left-color: var(--accent); color: var(--accent); font-weight: 600; }
 .sidebar .group-label { padding: 12px 18px 4px; font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .5px; }
+.sidebar .group-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: 0; cursor: pointer; text-align: left; font-family: inherit; }
+.sidebar .group-toggle:hover { color: var(--text); }
+.sidebar .group-chevron { display: inline-block; width: 10px; }
 /* Esconder a barra lateral (desktop): a coluna vai a 0 e o conteúdo ocupa a tela. */
 .shell.nav-collapsed { --sidebar: 0px; }
 /* não usar display:none: tirar a <nav> do grid empurra o <main> para a coluna de 0px */
@@ -1046,3 +1049,25 @@ fieldset.perm-area .perm-check { display: flex; padding: 2px 0; }
 .cc-np-row.capped { opacity: .45; }
 .perm-check input[type=checkbox] { width: auto; flex: none; margin: 0; }
 fieldset.perm-area .perm-check { justify-content: flex-start; color: var(--text); font-size: 14px; margin: 0; }
+/* ---------- Projetos (pasta do servidor + sessões do Claude Code) ---------- */
+.pj-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.pj-head h2 { margin: 0; font-size: 18px; }
+.pj-head .spacer { flex: 1; }
+.pj-rename { font: inherit; font-size: 18px; font-weight: 600; min-width: 220px; }
+.pj-path { margin: 0 0 12px; word-break: break-all; }
+.pj-item { display: flex; flex-direction: column; gap: 2px; text-decoration: none; color: inherit; }
+.pj-item:hover { background: var(--surface-2); }
+.pj-form { max-width: 640px; }
+.pj-form h2 { margin: 0 0 6px; font-size: 18px; }
+.pj-pick-path { display: flex; gap: 8px; }
+.pj-pick-path input { flex: 1; min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); font: inherit; }
+.pj-pick-path input.mono { font-family: var(--mono); }
+.pj-rename { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+.pj-hidden { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+.pj-folders { display: flex; flex-direction: column; gap: 2px; max-height: 48vh; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 8px; padding: 4px; margin: 8px 0; }
+.pj-folder { text-align: left; background: transparent; border-color: transparent; padding: 6px 8px; word-break: break-all; }
+.pj-folder:hover { background: var(--surface-2); }
+.cc-sess-wrap .cc-sess-list { max-height: none; }
+.pj-sess .cc-sess-search { background: var(--surface); }

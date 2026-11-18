@@ -59,6 +59,7 @@ Todos os menus do console seguem a regra. Helpers: `static/js/route.js` (`useMen
 | Grupos de acesso | `#access-groups/<nome>`, `#access-groups/new` | `q sort dir` |
 | Auditoria | página única (lista paginada) | `user action q page sort dir` |
 | Minha conta | `#account` (fora do menu; botão com o nome no topo) | — |
+| Projetos | `#projects` (lista), `#projects/new`, `#projects/<id>` (sessões do projeto), `#projects/<id>/new`, `#projects/<id>/<uuid>` (conversa) | `q` (busca nas sessões do projeto) |
 | Memória | `#memory` (=MEMORY.md), `#memory/AGENTS.md`, `#memory/notas`, `#memory/<nota>.md` | `q` (lista de notas) |
 | Terminal | página única (sem item aberto) | — |
 | Arquivos | `#files?path=<pasta>` (cada pasta = uma entrada no histórico; Voltar = pasta anterior) | `path q sort hidden open` (`open=<arquivo>` = editor aberto) |

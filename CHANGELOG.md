@@ -14,6 +14,7 @@
   - **Banco:** usuários, sessões e auditoria ficam em SQLite (`runs/netops.db`). O que a IA lê continua em arquivo.
   - **Recuperação:** `scripts/engine/users/cli.py` (inclui `reset-admin`).
   - **Migração automática:** sem usuários, a tela pede o e-mail do administrador e a senha-mestra, e o 1º login cria o `admin` com esse e-mail. Quem estava logado continua logado.
+- **Projetos (menu Projetos).** Novo grupo na barra lateral: cada projeto é um **nome + uma pasta do servidor** (escolhida num navegador de pastas ou digitada). Abrir o projeto mostra as sessões do Claude Code daquela pasta e permite abrir sessões novas ali (`#projects/<id>`, `#projects/<id>/new`, `#projects/<id>/<uuid>`). O agente roda com `cwd` na pasta do projeto e usa só o `AGENTS.md`/skills dela, sem herdar as regras do NetOps. A aba **Claude Code** continua igual e segue com as conversas na pasta do NetOps. Remover um projeto só tira o registro (`runs/claude/projects.json`): a pasta e as conversas ficam intactas. A retomada automática pós-restart volta na pasta certa. Sidebar: os grupos do menu passam a abrir e recolher (o estado fica salvo no navegador; começam todos recolhidos). Em instalação com multiusuário, o grupo Projetos aparece para quem tem `claude.use`.
 
 ### Correções
 

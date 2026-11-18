@@ -75,6 +75,25 @@ falhou**, cheque aqui:
 - **Não vejo NADA além do login?** O cofre está inicializado e você ainda não logou — o gate de login
   (senha-mestra) trava todo o `/api`. Não há mais token de transporte na URL (`?token=`); foi removido.
 
+## Projetos (menu Projetos)
+
+Um **projeto** é um nome + uma **pasta do servidor**. As sessões do Claude Code abertas nele rodam com `cwd` nessa pasta,
+e "as sessões do projeto" são as conversas daquela pasta (o Claude Code já separa os transcripts por pasta em
+`~/.claude/projects/`; o SDK recebe `directory=<pasta>`). Não há tabela sessão→projeto.
+
+- **Registro:** `runs/claude/projects.json` (`services/projects_svc.py`). `id` = slug do nome, imutável ao renomear. Recusa pasta
+  inexistente, pasta duplicada (dois projetos dividiriam as mesmas conversas) e a pasta do NetOps (essa é a aba Claude Code).
+  Remover só apaga o registro; nunca a pasta nem as conversas.
+- **API:** `GET/POST /api/projects`, `PATCH/DELETE /api/projects/<id>`, `GET /api/projects/browse?path=` (só subpastas),
+  `GET /api/projects/<id>/sessions[/search?q=]`. As rotas `/api/claude/sessions/<sid>/…` e `/api/claude/upload` aceitam `?project=<id>`;
+  o WebSocket `/api/claude` aceita `&project=<id>`. **Projeto informado e inválido = 404/4404**, nunca cai na pasta do NetOps.
+- **Contexto do agente:** projeto fora do NetOps usa só o `AGENTS.md`/skills da própria pasta (o hook de backup de equipamento e as
+  regras do NetOps não carregam). Para mexer em equipamento, use a aba Claude Code. Anexos num projeto voltam com caminho absoluto.
+- **Retomada pós-restart:** a anotação em `resume-on-restart.json` guarda o `cwd` só dos projetos; sem ele a sessão voltaria na pasta errada.
+- **Front:** `pages/projects.js` (lista, novo, página do projeto, seletor de pasta) e `claude-sessions.js` (`#projects/<proj>/<id|new>`).
+  O chat é o mesmo `ClaudeProvider`; `?project=` no WebSocket liga o agente à pasta.
+- **Testes:** `tests/test_projects.py` (registro, HTTP, `cwd`, retomada) e `tests/projects-routes.test.mjs` (rotas).
+
 ## Setup inicial (uma vez, com internet)
 
 As dependências do frontend são **vendadas localmente** (offline/air-gap-safe):

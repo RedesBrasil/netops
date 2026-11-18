@@ -123,6 +123,11 @@ def claude_path() -> str | None:
     return shutil.which("claude") or ("/usr/bin/claude" if os.path.exists("/usr/bin/claude") else None)
 
 
+def _dir(cwd: str | None = None) -> str:
+    """Pasta cujas conversas valem: a do Projeto, ou a do NetOps quando vazio (aba Claude Code).
+    É o `directory=` do SDK, que separa os transcripts por pasta em ~/.claude/projects/."""
+    return str(cwd) if cwd else str(deps.NETOPS_ROOT)
+
 def _stringify(content) -> str:
     """ToolResultBlock.content pode ser str ou lista de blocos; vira texto enxuto."""
     if isinstance(content, str):
@@ -278,7 +283,7 @@ async def resume_after_restart(delay: float = _RESUME_DELAY, snapshot: dict | No
                 continue
             chain = int(e.get("chain") or 0)
             age = now - float(e.get("t") or 0)
-            if age > _RESUME_MAX_AGE or chain >= _RESUME_MAX_CHAIN or not project_session_exists(sid):
+            if age > _RESUME_MAX_AGE or chain >= _RESUME_MAX_CHAIN or not project_session_exists(sid, e.get("cwd") or None):
                 _rlog(f"{sid}: descartada (idade {age:.0f}s, cadeia {chain})")
                 data.pop(sid, None)
                 continue
@@ -289,7 +294,7 @@ async def resume_after_restart(delay: float = _RESUME_DELAY, snapshot: dict | No
                     _rlog(f"{sid}: teto de sessões, fica p/ o próximo start")
                     continue           # teto: fica anotada p/ um próximo start, não força
                 s = ClaudeWebSession(persist=True, resume=sid, user=_owner_of(sid), model=e.get("model") or None,
-                                     effort=e.get("effort") or None)
+                                     effort=e.get("effort") or None, cwd=e.get("cwd") or None)
                 _LIVE[sid] = s
             await s.start()
             s._auto_chain = chain + 1
@@ -323,7 +328,7 @@ async def resume_after_restart(delay: float = _RESUME_DELAY, snapshot: dict | No
 
 
 def attach_or_create(*, owner: str, resume: str | None, model: str | None, effort: str | None = None,
-                     user: str = ""):
+                     user: str = "", cwd: str | None = None):
     """Decide entre RE-ANEXAR a uma sessão viva e CRIAR uma nova (respeitando o teto estático).
 
     Retorna (session|None, how) com how em {"reattach","new","too_many","forbidden"}.
@@ -344,7 +349,7 @@ def attach_or_create(*, owner: str, resume: str | None, model: str | None, effor
     if _detached_count() >= deps.STATE.claude_max_sessions:
         return None, "too_many"       # teto estático: recusa com mensagem (o cliente avisa)
     s = ClaudeWebSession(owner=owner, persist=True, resume=resume, model=model, effort=effort,
-                         user=user or (_owner_of(resume) if resume else ""))
+                         user=user or (_owner_of(resume) if resume else ""), cwd=cwd)
     if resume:
         # Registra JÁ (o init só chega no 1º turno): duas abas — ou a aba + a retomada automática
         # pós-restart — reconectando na mesma conversa caem na MESMA sessão, nunca em dois `claude`.
@@ -419,9 +424,12 @@ class ClaudeWebSession:
 
     def __init__(self, ws: WebSocket | None = None, *, owner: str = "",
                  persist: bool = False, resume: str | None = None, model: str | None = None,
-                 effort: str | None = None, user: str = ""):
+                 effort: str | None = None, user: str = "", cwd: str | None = None):
         self._wss: list = [ws] if ws is not None else []   # MULTI-ANEXO: várias abas na mesma sessão
         self.owner = owner
+        # Pasta onde o agente roda. Vazio = NetOps (aba Claude Code); um Projeto passa a pasta dele.
+        self._cwd = _dir(cwd)
+        self._is_project = bool(cwd) and self._cwd != str(deps.NETOPS_ROOT)
         # USUÁRIO do console dono da conversa (multiusuário). O teto de permissões de rede vem do(s)
         # grupo(s) dele: o seletor 🔐 Rede nunca passa disso (None = sem teto: admin / sem login).
         self.user = user or ""
@@ -494,6 +502,8 @@ class ClaudeWebSession:
         if self._busy or self._queue:
             data[self.sid] = {"busy": self._busy, "queue": [q["text"] for q in self._queue],
                               "model": self._model, "effort": self._effort,
+                              # pasta do projeto: sem ela a retomada pós-restart cairia no NetOps
+                              **({"cwd": self._cwd} if self._is_project else {}),
                               "chain": self._auto_chain, "t": time.time()}
         elif data.pop(self.sid, None) is None:
             return
@@ -542,7 +552,7 @@ class ClaudeWebSession:
         # Escolha explícita ou Sonnet anunciado pelo MESMO CLI/provider da sessão.
         model = self._model or claude_models.default_model()
         return ClaudeAgentOptions(
-            cwd=str(deps.NETOPS_ROOT),
+            cwd=self._cwd,
             resume=resume,
             model=model,
             **({"effort": self._effort} if self._effort else {}),
@@ -555,7 +565,10 @@ class ClaudeWebSession:
             #  2) o `claude` recusa esse flag sob root/sudo (o console sobe por sudo em container).
             #     IS_SANDBOX=1 declara o ambiente isolado (LXC) e libera. Escopo mínimo: só o
             #     subprocesso `claude`. Merge com os.environ p/ preservar PATH/HOME/credenciais.
-            env={**os.environ, "IS_SANDBOX": "1", "NETOPS_USER": self.user or ""},
+            # Projeto (outra pasta): a conta/proxy do agente mora nos settings do NetOps, que o CLI não lê
+            # fora dele. Sem isto: "OAuth session expired". Ver claude_models.provider_env.
+            env={**os.environ, "IS_SANDBOX": "1", "NETOPS_USER": self.user or "",
+                 **(claude_models.provider_env() if self._is_project else {})},
             extra_args={"dangerously-skip-permissions": None},
             permission_mode="default",                       # seguro-mas-usável; UI troca p/ qualquer um
             include_partial_messages=True,                   # streaming de texto/pensamento
@@ -1268,21 +1281,22 @@ class ClaudeWebSession:
 # --------------------------------------------------------------------------- #
 # Sessões passadas (retomar) — lê os transcripts em ~/.claude/projects/<projeto>.
 # --------------------------------------------------------------------------- #
-def project_session_exists(sid: str) -> bool:
+def project_session_exists(sid: str, cwd: str | None = None) -> bool:
     """Confere UUID e pertencimento ao projeto, sem iniciar o agente nem ler mensagens."""
     if not re.fullmatch(r"[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}", sid):
         return False
     live = _LIVE.get(sid)
     if live is not None and not live._closing_done:
-        return True
+        # A sessão viva só vale na pasta onde roda: ?project= trocado não reanexa a conversa de outro projeto.
+        return live._cwd == _dir(cwd)
     if not _SDK_OK:
         return False
     try:
         from claude_agent_sdk import get_session_info  # noqa: PLC0415
-        return get_session_info(sid, directory=str(deps.NETOPS_ROOT)) is not None
+        return get_session_info(sid, directory=_dir(cwd)) is not None
     except ImportError:
         # SDKs anteriores ao lookup individual ainda oferecem list_sessions.
-        return any(s["id"] == sid for s in list_project_sessions(limit=None))
+        return any(s["id"] == sid for s in list_project_sessions(limit=None, cwd=cwd))
     except Exception:
         return False
 
@@ -1397,19 +1411,19 @@ def _real_activity_ts(sid: str, fallback: float) -> float:
         return fallback
 
 
-def rename_project_session(sid: str, title: str) -> None:
+def rename_project_session(sid: str, title: str, cwd: str | None = None) -> None:
     """Define o título (custom_title) da conversa pelo SDK."""
     from claude_agent_sdk import rename_session  # noqa: PLC0415
-    rename_session(sid, title, directory=str(deps.NETOPS_ROOT))
+    rename_session(sid, title, directory=_dir(cwd))
 
 
-def list_project_sessions(limit: int | None = 60) -> list[dict]:
-    """Sessões Claude Code deste projeto (cwd=NETOPS_ROOT), mais recentes primeiro."""
+def list_project_sessions(limit: int | None = 60, cwd: str | None = None) -> list[dict]:
+    """Sessões Claude Code da pasta `cwd` (padrão: o NetOps), mais recentes primeiro."""
     if not _SDK_OK:
         return []
     try:
         from claude_agent_sdk import list_sessions  # noqa: PLC0415
-        sess = list_sessions(directory=str(deps.NETOPS_ROOT), limit=limit)
+        sess = list_sessions(directory=_dir(cwd), limit=limit)
     except Exception:
         return []
     out = []
@@ -1458,10 +1472,10 @@ def _content_snippet(text, idx, qlen, width=70):
     return ("…" if start > 0 else "") + frag + ("…" if end < len(text) else "")
 
 
-def search_project_sessions(query, limit=80):
+def search_project_sessions(query, limit=80, cwd: str | None = None):
     """Sessoes cujo titulo/preview OU conteudo do transcript casam com query (case-insensitive)."""
     q = (query or "").strip().lower()
-    sessions = list_project_sessions(limit=limit)
+    sessions = list_project_sessions(limit=limit, cwd=cwd)
     if not q:
         return sessions
     pdir = _sessions_project_dir([s["id"] for s in sessions])
@@ -1588,13 +1602,13 @@ def _merge_interjections(items: list[dict], inter: list[dict]) -> list[dict]:
     return res
 
 
-def session_items(sid: str) -> list[dict]:
+def session_items(sid: str, cwd: str | None = None) -> list[dict]:
     """Traduz o histórico de uma sessão para os mesmos itens da transcrição da UI."""
     if not _SDK_OK:
         return []
     try:
         from claude_agent_sdk import get_session_messages  # noqa: PLC0415
-        msgs = get_session_messages(sid, directory=str(deps.NETOPS_ROOT))
+        msgs = get_session_messages(sid, directory=_dir(cwd))
     except Exception:
         return []
     items: list[dict] = []
@@ -1671,12 +1685,12 @@ def session_items(sid: str) -> list[dict]:
     return _merge_interjections(items, inter)
 
 
-def delete_project_session(sid: str) -> None:
+def delete_project_session(sid: str, cwd: str | None = None) -> None:
     if not _SDK_OK:
         return
     try:
         from claude_agent_sdk import delete_session  # noqa: PLC0415
-        delete_session(sid, directory=str(deps.NETOPS_ROOT))
+        delete_session(sid, directory=_dir(cwd))
     except Exception:
         pass
     finally:
@@ -1745,20 +1759,20 @@ def _find_prompt_index(msgs, *, uuid: str | None = None, text: str | None = None
 
 
 def fork_project_session(sid: str, *, uuid: str | None = None, text: str | None = None,
-                         occurrence: int = 0, title: str | None = None) -> str:
+                         occurrence: int = 0, title: str | None = None, cwd: str | None = None) -> str:
     """Cria a conversa ramificada (até ANTES do prompt) e devolve o novo sid ("" = 1º prompt). ValueError/FileNotFoundError se inválido."""
     if not _SDK_OK:
         raise RuntimeError("SDK do Claude indisponível")
-    if not project_session_exists(sid):
+    if not project_session_exists(sid, cwd):
         raise FileNotFoundError(sid)
     from claude_agent_sdk import fork_session, get_session_messages  # noqa: PLC0415
-    msgs = get_session_messages(sid, directory=str(deps.NETOPS_ROOT))
+    msgs = get_session_messages(sid, directory=_dir(cwd))
     cut = fork_cut_uuid(msgs, uuid=uuid, text=text, occurrence=occurrence)
     if cut is None:
         raise ValueError("prompt não encontrado no histórico gravado")
     if cut == "":
         return ""   # 1º prompt: não há histórico a copiar — o front abre conversa nova
-    res = fork_session(sid, directory=str(deps.NETOPS_ROOT), up_to_message_id=cut,
+    res = fork_session(sid, directory=_dir(cwd), up_to_message_id=cut,
                        title=(title or None))
     src = claude_prefs.get_session(sid)   # o ramo herda modelo/modo da conversa de origem
     if src:
@@ -1782,14 +1796,14 @@ def _transcript_file(sid: str) -> Path | None:
 
 
 def rewind_plan(sid: str, *, uuid: str | None = None, text: str | None = None,
-                occurrence: int = 0) -> dict:
+                occurrence: int = 0, cwd: str | None = None) -> dict:
     """Valida o pedido SEM alterar nada. {prompt_uuid, first, removed}; ValueError/FileNotFoundError se inválido."""
     if not _SDK_OK:
         raise RuntimeError("SDK do Claude indisponível")
-    if not project_session_exists(sid):
+    if not project_session_exists(sid, cwd):
         raise FileNotFoundError(sid)
     from claude_agent_sdk import get_session_messages  # noqa: PLC0415
-    msgs = get_session_messages(sid, directory=str(deps.NETOPS_ROOT))
+    msgs = get_session_messages(sid, directory=_dir(cwd))
     idx = _find_prompt_index(msgs, uuid=uuid, text=text, occurrence=occurrence)
     if idx is None:
         raise ValueError("prompt não encontrado no histórico gravado")
@@ -1798,7 +1812,7 @@ def rewind_plan(sid: str, *, uuid: str | None = None, text: str | None = None,
             "removed_messages": len(msgs) - idx}
 
 
-def rewind_apply(sid: str, prompt_uuid: str, *, first: bool = False) -> dict:
+def rewind_apply(sid: str, prompt_uuid: str, *, first: bool = False, cwd: str | None = None) -> dict:
     """Corta o transcript ANTES do prompt (a conversa NÃO pode ter `claude` vivo). Faz cópia de segurança antes.
 
     first=True (era o 1º prompt): não sobra histórico — a conversa é apagada (o front abre outra nova).
@@ -1826,7 +1840,7 @@ def rewind_apply(sid: str, prompt_uuid: str, *, first: bool = False) -> dict:
     backup = bdir / f"{sid}-{datetime.datetime.now():%Y%m%d-%H%M%S}.jsonl"
     shutil.copy2(src, backup)
     if first:
-        delete_project_session(sid)
+        delete_project_session(sid, cwd)
         return {"backup": str(backup)}
     kept = lines[:cut]
     tail_titles: dict[str, str] = {}

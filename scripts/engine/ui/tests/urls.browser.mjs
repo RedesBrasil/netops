@@ -80,6 +80,16 @@ const CASES = {
     await page.goto(`${BASE}/#memory/nao-existe.md`); await page.locator("text=não encontrado").waitFor();
   } },
   credentials: { row: "table a[href^='#credentials/']", open: ".modal", q: "demo", qRows: 1, deep: ["#credentials/cred_demo/password", ".modal:has-text('Definir password')"] },
+  projects: { custom: async (page, BASE, { assert, settle, hash }) => {   // lista, novo, projeto e conversa do projeto têm URL
+    await page.goto(`${BASE}/#projects`); await page.locator("a[href='#projects/new']").first().waitFor();
+    await page.goto(`${BASE}/#projects/new`); await page.locator("#pj-name").waitFor();
+    await page.reload(); await page.locator("#pj-name").waitFor();
+    assert.equal(hash(), "#projects/new", "projects: F5 mantém o formulário");
+    await page.goto(`${BASE}/#projects/projeto-inexistente`); await page.locator("text=não encontrado").waitFor();
+    await page.goto(`${BASE}/#projects/projeto-inexistente?q=abc`); await page.locator("text=não encontrado").waitFor();
+    await page.goBack(); await settle();
+    assert.equal(hash(), "#projects/projeto-inexistente", "projects: Voltar volta ao item anterior");
+  } },
   reports: { row: "table a[href^='#reports/']", open: ".modal", q: "b.md", qRows: 1 },
   "access-groups": { row: "table a[href^='#access-groups/']", open: ".modal", q: "operador", qRows: 1,
     extra: [["#access-groups/new", ".modal:has-text('Novo grupo')"]] },

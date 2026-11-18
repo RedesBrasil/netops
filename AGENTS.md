@@ -59,6 +59,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Subir **ou reiniciar** o console web (SEMPRE por aqui) | `scripts/engine/ui/start.sh` |
 | Gerenciador de arquivos do console (menu **Arquivos** + painel SFTP ao lado do terminal de host) | `scripts/engine/ui/` (`routers/files.py`, `static/js/file-browser.js`; ver `SKILL.md`) |
 | Usuários, grupos de acesso, auditoria do console (SQLite `runs/netops.db`) | `scripts/engine/users/` (`SKILL.md`; console: **Usuários / Grupos de acesso / Auditoria**) |
+| Projetos do console (nome + pasta; sessões do Claude Code por pasta; menu **Projetos**) | `scripts/engine/ui/` (`routers/projects.py`, `services/projects_svc.py`, `static/js/pages/projects.js`; ver `SKILL.md`) |
 | Tarefas agendadas (script / agente de IA / script + agente) | `scripts/engine/scheduler/` (`SKILL.md`; console: menu **Tarefas agendadas**) |
 | Descobrir CTs/VMs de um Proxmox, cadastrar e organizar no mapa | `scripts/tools/inventory/` (`SKILL.md`; `map_place.py register` / `place`) |
 | Modelos de planejamento | `planning-examples/` |
