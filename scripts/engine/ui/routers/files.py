@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Gerenciador de arquivos — menu Arquivos (este servidor) e painel SFTP do terminal de host.
 
-`src` escolhe a fonte: `local` (padrão) = o servidor NetOps; qualquer outro valor = token da sessão
+`src` escolhe a fonte: `local` (padrão) = o servidor NetOps; `project:<id>` = só a pasta do Projeto
+(ProjectFS, permissão `projects.files`); qualquer outro valor = token da sessão
 SFTP que o terminal de host recebeu ao conectar (services/host_term_svc.py). Toda a lógica fica em
 services/files_svc.py; aqui só HTTP, gate e auditoria.
 
@@ -38,7 +39,10 @@ async def _files_perm(request: Request) -> None:
             src = body.get("src") if isinstance(body, dict) else None
         except Exception:  # noqa: BLE001 — corpo inválido: o próprio endpoint responde 422
             src = None
-    authz.require(request, "server.files" if (src or "local") == "local" else "host.files")
+    src = src or "local"
+    # pasta de um Projeto (presa a ela: services/files_svc.ProjectFS) = projects.files
+    authz.require(request, "server.files" if src == "local"
+                  else "projects.files" if src.startswith("project:") else "host.files")
 
 
 router = APIRouter(tags=["files"], dependencies=[Depends(_files_perm)])
@@ -130,6 +134,8 @@ async def files_info(src: str = "local"):
             import getpass
             import socket
             out.update(hostname=socket.gethostname(), user=getpass.getuser())
+        if fs.kind == "project":
+            out.update(project=fs.pid, root=fs.root)
         if fs.kind == "remote":
             h = fs.s.host
             out.update(host_id=h.get("id"), hostname=h.get("hostname", ""), user=fs.s.user)

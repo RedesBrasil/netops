@@ -34,11 +34,18 @@ def _not_found() -> JSONResponse:
     return JSONResponse({"error": "project_not_found", "detail": "Projeto não encontrado."}, status_code=404)
 
 
+def _user(request: Request) -> str:
+    from services import authz  # noqa: PLC0415
+    p = authz.request_principal(request)
+    return (p.username if p else "") or ""
+
+
 @router.get("/projects")
-def projects_list():
+def projects_list(request: Request):
+    """Na ordem do usuário, com `archived` dele (a UI separa ativos × arquivados)."""
     if not deps.STATE.enable_claude:
         return _off()
-    return {"projects": projects_svc.list_projects(),
+    return {"projects": projects_svc.list_for(_user(request)),
             # conta do agente só nos settings do NetOps = sessões de projeto não a acham (ver claude_models)
             "account_warning": claude_models.account_only_in_netops()}
 
@@ -50,6 +57,28 @@ def projects_create(body: dict):
     try:
         return projects_svc.create(body.get("name"), body.get("path"), trust=bool(body.get("trust")),
                                    new_folder=(body.get("new_folder") or None))
+    except projects_svc.ProjectError as e:
+        return _err(e)
+
+
+@router.put("/projects/order")
+def projects_order(body: dict, request: Request):
+    """Ordem da lista (arrastar e soltar) — preferência do usuário. body: {ids: [...]}"""
+    if not deps.STATE.enable_claude:
+        return _off()
+    try:
+        return {"projects": projects_svc.set_order(_user(request), body.get("ids"))}
+    except projects_svc.ProjectError as e:
+        return _err(e)
+
+
+@router.put("/projects/{pid}/archived")
+def projects_archive(pid: str, body: dict, request: Request):
+    """Arquiva/desarquiva SÓ para este usuário (some da barra lateral). body: {archived: bool}"""
+    if not deps.STATE.enable_claude:
+        return _off()
+    try:
+        return projects_svc.set_archived(_user(request), pid, bool(body.get("archived")))
     except projects_svc.ProjectError as e:
         return _err(e)
 
@@ -66,10 +95,10 @@ def projects_browse(path: str = "", hidden: bool = False):
 
 
 @router.get("/projects/{pid}")
-def projects_get(pid: str):
+def projects_get(pid: str, request: Request):
     if not deps.STATE.enable_claude:
         return _off()
-    p = projects_svc.get(pid)
+    p = next((x for x in projects_svc.list_for(_user(request)) if x["id"] == pid), None)
     return p if p else _not_found()
 
 

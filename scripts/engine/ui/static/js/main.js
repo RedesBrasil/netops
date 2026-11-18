@@ -23,7 +23,7 @@ import { UsersPage, AccessGroupsPage } from "./pages/users.js";
 import { AuditPage } from "./pages/audit.js";
 import { AccountPage } from "./pages/account.js";
 import { ClaudeCodePage, ClaudeTopbarControls, ClaudeStatusDot, ClaudeSessionTitle, ClaudeProvider, ChatDock, useClaude } from "./pages/claude.js";
-import { ProjectsPage, useProjects } from "./pages/projects.js";
+import { ProjectsPage, useProjects, useProjectDrag } from "./pages/projects.js";
 import { isClaudeChatHash } from "./claude-sessions.js";
 
 // perm = permissão exigida (services/authz.py / lib/accessdb.PERMISSIONS); hidden = fora do menu.
@@ -99,8 +99,11 @@ function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
   const visible = ([, r]) => routeVisible(r, meta, me);
   const badges = useScheduleBadge(can("schedules.view", me));
   const showProjects = !!meta.claude_enabled && can("claude.use", me);   // grupo Projetos = quem usa o Claude
-  const projects = useProjects(showProjects);
-  const projSeg = current === "projects" ? hash.split("/")[1] || "" : "";   // projeto (ou "new") aberto agora
+  const allProjects = useProjects(showProjects);
+  const projects = allProjects.filter((p) => !p.archived);          // arquivados: só em #projects?arquivados=1
+  const nArchived = allProjects.length - projects.length;
+  const projDrag = useProjectDrag(projects);
+  const projSeg = current === "projects" ? (hash.split("?")[0].split("/")[1] || "") : "";   // projeto (ou "new") aberto agora
   // Grupos abertos pelo usuário (persistido). Padrão: lista vazia = todos os grupos recolhidos.
   const [openGroups, setOpenGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem("netops_nav_groups") || "[]"); } catch { return []; }
@@ -118,9 +121,10 @@ function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
         <span class="group-chevron">${openGroups.includes(g) ? "▾" : "▸"}</span>${g}
       </button>
       ${g === "Projetos" && openGroups.includes(g) && html`
-        ${projects.map((p) => html`<a key=${p.id} href=${"#projects/" + p.id} title=${p.path}
-          class=${projSeg === p.id ? "active" : ""}>${p.name}</a>`)}
-        <a href="#projects/new" class=${"needs-projects-manage" + (projSeg === "new" ? " active" : "")}>＋ Novo projeto</a>`}
+        ${projects.map((p) => html`<a key=${p.id} href=${"#projects/" + p.id} title=${p.path + " — segure e arraste para reordenar"}
+          ...${projDrag.props(p.id)} class=${(projSeg === p.id ? "active" : "") + projDrag.cls(p.id)}>${p.name}</a>`)}
+        <a href="#projects/new" class=${"needs-projects-manage" + (projSeg === "new" ? " active" : "")}>＋ Novo projeto</a>
+        ${nArchived > 0 && html`<a href="#projects?arquivados=1" class="nav-sub">🗄 Arquivados (${nArchived})</a>`}`}
       ${openGroups.includes(g) && Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
         <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${r.label}${r.badge && badges[r.badge] > 0
           ? html`<span class="nav-badge" title="execuções com resultado não lido">${badges[r.badge]}</span>` : ""}</a>`)}

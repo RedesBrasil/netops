@@ -448,3 +448,122 @@ def test_pasta_base_padrao_com_barra_no_fim_e_criada(tmp_path_factory, monkeypat
     monkeypatch.setattr(P, "DEFAULT_BASE", str(base))
     p = P.create("Testes", str(base) + "/", new_folder="testes")
     assert p["path"] == str((base / "testes").resolve()) and p["trusted"] is True
+
+
+# ------------------------------------------------------------------ ordem e arquivados (por usuário)
+def test_ordem_e_arquivados_sao_por_usuario(tmp_path_factory):
+    base = tmp_path_factory.mktemp("ord")
+    for n in ("a", "b", "c"):
+        (base / n).mkdir()
+        P.create(n.upper(), str(base / n))
+    assert [p["id"] for p in P.list_for("ana")] == ["a", "b", "c"]          # sem ordem salva: alfabética
+    P.set_order("ana", ["c", "a", "fantasma", "c"])                          # id desconhecido/duplicado é ignorado
+    assert [p["id"] for p in P.list_for("ana")] == ["c", "a", "b"]           # sem posição (b) vai p/ o fim
+    assert [p["id"] for p in P.list_for("bia")] == ["a", "b", "c"]           # outro usuário não muda
+    assert P.set_archived("ana", "a", True)["archived"] is True
+    assert [p["id"] for p in P.list_for("ana") if p["archived"]] == ["a"]
+    assert not any(p["archived"] for p in P.list_for("bia"))
+    P.set_archived("ana", "a", False)
+    assert not any(p["archived"] for p in P.list_for("ana"))
+    with pytest.raises(P.ProjectError):
+        P.set_archived("ana", "nao-existe", True)
+    with pytest.raises(P.ProjectError):
+        P.set_order("ana", "c,a")
+
+
+def test_remover_projeto_limpa_ordem_e_arquivados(tmp_path_factory):
+    base = tmp_path_factory.mktemp("rm")
+    (base / "x").mkdir(); (base / "y").mkdir()
+    P.create("X", str(base / "x")); P.create("Y", str(base / "y"))
+    P.set_order("ana", ["y", "x"]); P.set_archived("ana", "x", True)
+    P.delete("x")
+    assert P._user_prefs(P._prefs_all(), "ana") == {"order": ["y"], "archived": []}
+
+
+def test_http_ordem_e_arquivar(api, pasta, tmp_path_factory):
+    outra = tmp_path_factory.mktemp("o") / "outra"
+    outra.mkdir()
+    api.post("/api/projects", json={"name": "Site", "path": str(pasta)})
+    api.post("/api/projects", json={"name": "Outra", "path": str(outra)})
+    assert [p["id"] for p in api.put("/api/projects/order", json={"ids": ["site", "outra"]}).json()["projects"]] == ["site", "outra"]
+    assert [p["id"] for p in api.get("/api/projects").json()["projects"]] == ["site", "outra"]
+    assert api.put("/api/projects/site/archived", json={"archived": True}).json()["archived"] is True
+    assert api.get("/api/projects/site").json()["archived"] is True
+    assert api.put("/api/projects/nao-existe/archived", json={"archived": True}).status_code == 404
+
+
+# ------------------------------------------------------------------ arquivos do projeto (presos à pasta)
+@pytest.fixture
+def pfs(pasta):
+    import asyncio
+    from services import files_svc
+    (pasta / "src").mkdir()
+    (pasta / "src" / "a.txt").write_text("oi")
+    fora = pasta.parent / "fora"
+    fora.mkdir()
+    (fora / "segredo.txt").write_text("x")
+    (pasta / "link-arq").symlink_to(fora / "segredo.txt")
+    (pasta / "link-dir").symlink_to(fora)
+    P.create("Site", str(pasta))
+    fs = files_svc.backend("project:site")
+    run = lambda c: asyncio.run(c)
+    return fs, run, pasta, fora, files_svc
+
+
+def test_fonte_do_projeto_comeca_e_fica_na_pasta(pfs):
+    fs, run, pasta, fora, fsvc = pfs
+    root = str(pasta.resolve())
+    assert run(fs.home()) == root and fs.kind == "project"
+    assert {e["name"] for e in run(fs.list(root))["entries"]} >= {"src", "link-arq", "link-dir"}
+    data, _ = run(fs.read_bytes(root + "/src/a.txt", 100))
+    assert data == b"oi"
+    for bad in ("/etc", str(fora), root + "/..", root + "/link-dir"):
+        with pytest.raises(fsvc.Denied):
+            run(fs.list(bad))
+    with pytest.raises(fsvc.Denied):
+        run(fs.read_bytes(root + "/link-arq", 100))          # link p/ fora não vaza conteúdo
+    with pytest.raises(fsvc.Denied):
+        run(fs.read_bytes("/etc/hostname", 100))
+
+
+def test_fonte_do_projeto_escrita_presa_a_pasta(pfs):
+    fs, run, pasta, fora, fsvc = pfs
+    root = str(pasta.resolve())
+    run(fs.mkdir(root + "/novo"))
+    run(fs.write_bytes(root + "/novo/b.txt", b"x", None))
+    assert (pasta / "novo" / "b.txt").read_text() == "x"
+    for op in (lambda: fs.mkdir(str(fora) + "/z"), lambda: fs.mkdir(root + "/link-dir/z"),
+               lambda: fs.write_bytes(root + "/link-arq", b"hack", None),
+               lambda: fs.chmod(root + "/link-arq", 0o777),
+               lambda: fs.copy(root + "/src/a.txt", str(fora) + "/a.txt"),
+               lambda: fs.rename(root + "/src/a.txt", str(fora) + "/a.txt"),
+               lambda: fs.delete(root), lambda: fs.rename(root, root + "-x")):
+        with pytest.raises(fsvc.Denied):
+            run(op())
+    assert (fora / "segredo.txt").read_text() == "x"
+    run(fs.delete(root + "/link-arq"))                    # apagar o link apaga só o link
+    assert (fora / "segredo.txt").exists() and not (pasta / "link-arq").exists()
+
+
+def test_zip_do_projeto_nao_inclui_arquivo_de_fora(pfs):
+    fs, run, pasta, fora, fsvc = pfs
+    names = [rel for _f, rel, _s, _d in fs.sync_walk(str(pasta.resolve()))]
+    assert any(n.endswith("src/a.txt") for n in names) and not any("link-arq" in n for n in names)
+
+
+def test_fonte_de_projeto_inexistente_ou_proibido():
+    from services import files_svc
+    with pytest.raises(files_svc.NotFound):
+        files_svc.backend("project:nao-existe")
+
+
+def test_http_arquivos_do_projeto(api, pasta, monkeypatch):
+    monkeypatch.setattr(deps, "files_enabled", lambda: True)
+    (pasta / "a.txt").write_text("oi")
+    api.post("/api/projects", json={"name": "Site", "path": str(pasta)})
+    i = api.get("/api/files/info", params={"src": "project:site"}).json()
+    assert i["root"] == str(pasta.resolve()) and i["home"] == i["root"] and i["kind"] == "project"
+    r = api.get("/api/files/list", params={"src": "project:site", "path": i["root"]})
+    assert "a.txt" in [e["name"] for e in r.json()["entries"]]
+    assert api.get("/api/files/list", params={"src": "project:site", "path": "/etc"}).status_code == 403
+    assert api.get("/api/files/read", params={"src": "project:site", "path": "/etc/hostname"}).status_code == 403

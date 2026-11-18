@@ -1077,4 +1077,22 @@ fieldset.perm-area .perm-check { justify-content: flex-start; color: var(--text)
 .pj-config code { font-size: 12px; }
 .pj-deny { color: var(--danger); margin: 6px 0; }
 .pj-warn { border-color: var(--warn); }
+.pj-row { flex-direction: row; align-items: center; gap: 10px; padding-top: 8px; padding-bottom: 8px; }
+.pj-row-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; text-decoration: none; color: inherit; }
+.pj-row-actions { display: flex; gap: 4px; opacity: .55; }
+.pj-row:hover .pj-row-actions, .pj-row:focus-within .pj-row-actions { opacity: 1; }
+.pj-grip { cursor: grab; color: var(--muted); font-size: 18px; user-select: none; }
+.pj-dragging { opacity: .45; }
+.pj-dropover { box-shadow: inset 0 3px 0 var(--accent, #3b82f6); }
+.sidebar a.pj-dropover { box-shadow: inset 0 2px 0 var(--accent, #3b82f6); }
+.sidebar a.nav-sub { font-size: 12px; color: var(--muted); }
+.pj-hint { margin: 0 0 6px; }
+.cc-split { display: flex; flex: 1; min-height: 0; gap: 8px; }
+.cc-split > .claude-page { flex: 1; min-width: 0; }
+.cc-files { width: clamp(320px, 38%, 640px); display: flex; flex-direction: column; min-height: 0;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.cc-files-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.cc-files-head .spacer { flex: 1; }
+.cc-files > :last-child { flex: 1; min-height: 0; overflow: auto; }
+@media (max-width: 900px) { .cc-split.with-files { flex-direction: column; } .cc-files { width: auto; height: 45vh; } }
 .pj-sess .cc-sess-search { background: var(--surface); }

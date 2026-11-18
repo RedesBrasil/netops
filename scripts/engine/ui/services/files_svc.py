@@ -900,9 +900,127 @@ class RemoteFS:
 _LOCAL = LocalFS()
 
 
+# --------------------------------------------------------------------------- #
+# Fonte "pasta do projeto": o mesmo disco local, PRESO à pasta de um Projeto (src="project:<id>")
+# --------------------------------------------------------------------------- #
+class ProjectFS:
+    """LocalFS confinado à pasta do projeto. Todo caminho é resolvido (symlinks inclusive) e tem de
+    cair DENTRO da pasta: um link no projeto apontando p/ /etc não vira porta de saída.
+
+    - leitura/escrita de conteúdo (list, stat, read, write, chmod, download, origem da cópia) seguem o
+      link -> o DESTINO real tem de estar dentro;
+    - operações sobre a própria entrada (criar, renomear, apagar, destino da cópia/upload) olham a
+      pasta-mãe real + o nome -> apagar um link que aponta p/ fora apaga só o link;
+    - a raiz do projeto em si não é apagada, renomeada nem movida.
+    """
+    kind = "project"
+    remote_copy = True
+
+    def __init__(self, inner: "LocalFS", root: str, pid: str):
+        self._fs, self.root, self.pid = inner, os.path.realpath(root), pid
+        self.label = f"projeto {pid}"
+
+    def _inside(self, real: str) -> bool:
+        return real == self.root or real.startswith(self.root.rstrip("/") + "/")
+
+    def _deny(self, p: str):
+        return Denied(f"{p} está fora da pasta do projeto")
+
+    def _target(self, path: str) -> str:
+        """Conteúdo: segue links até o fim."""
+        p = norm(path)
+        if not self._inside(os.path.realpath(p)):
+            raise self._deny(p)
+        return p
+
+    def _entry_path(self, path: str, *, allow_root: bool = False) -> str:
+        """A entrada em si: pasta-mãe real dentro e (salvo allow_root) não é a raiz do projeto."""
+        p = norm(path)
+        name = posixpath.basename(p)
+        parent_real = os.path.realpath(posixpath.dirname(p) or "/")
+        full = posixpath.join(parent_real, name) if name else parent_real
+        if not self._inside(full):
+            raise self._deny(p)
+        if not allow_root and full == self.root:
+            raise Denied("a pasta do projeto não pode ser apagada, renomeada nem movida")
+        return p
+
+    async def home(self) -> str:
+        return self.root
+
+    async def list(self, path):
+        return await self._fs.list(self._target(path))
+
+    async def stat(self, path):
+        p = norm(path)
+        if os.path.islink(p):              # stat de um link: a entrada (pasta-mãe dentro) basta
+            self._entry_path(p, allow_root=True)
+        else:
+            self._target(p)
+        return await self._fs.stat(p)
+
+    async def exists(self, path):
+        return await self._fs.exists(self._entry_path(path, allow_root=True))
+
+    async def mkdir(self, path):
+        return await self._fs.mkdir(self._entry_path(path))
+
+    async def touch(self, path):
+        return await self._fs.touch(self._entry_path(path))
+
+    async def rename(self, src, dst, overwrite=False):
+        return await self._fs.rename(self._entry_path(src), self._entry_path(dst), overwrite=overwrite)
+
+    async def copy(self, src, dst):
+        return await self._fs.copy(self._target(src), self._entry_path(dst))
+
+    async def delete(self, path):
+        return await self._fs.delete(self._entry_path(path))
+
+    async def chmod(self, path, mode):
+        return await self._fs.chmod(self._target(path), mode)
+
+    async def read_bytes(self, path, limit):
+        return await self._fs.read_bytes(self._target(path), limit)
+
+    async def write_bytes(self, path, data, expect):
+        p = norm(path)
+        p = self._target(p) if os.path.lexists(p) else self._entry_path(p)
+        return await self._fs.write_bytes(p, data, expect)
+
+    async def upload_chunk(self, path, uid, offset, data, final, overwrite, mkdirs):
+        p = self._entry_path(path)
+        if os.path.lexists(p) and not self._inside(os.path.realpath(p)):
+            raise self._deny(p)            # sobrescrever via link p/ fora: não
+        return await self._fs.upload_chunk(p, uid, offset, data, final, overwrite, mkdirs)
+
+    async def upload_abort(self, path, uid):
+        return await self._fs.upload_abort(self._entry_path(path), uid)
+
+    def sync_walk(self, root):
+        r = self._target(root)
+        for full, rel, size, is_dir in self._fs.sync_walk(r):
+            if self._inside(os.path.realpath(full)):   # link p/ arquivo fora do projeto: fica de fora do zip
+                yield full, rel, size, is_dir
+
+    def sync_open(self, path):
+        return self._fs.sync_open(self._target(path))
+
+    async def iter_file(self, path):
+        async for chunk in self._fs.iter_file(self._target(path)):
+            yield chunk
+
+
 def backend(src: str | None):
     if not src or src == "local":
         return _LOCAL
+    if src.startswith("project:"):
+        from services import projects_svc  # noqa: PLC0415 — evita import circular
+        pid = src[len("project:"):]
+        root = projects_svc.path_of(pid)
+        if not root:
+            raise NotFound("projeto não encontrado (ou a pasta dele não existe mais)")
+        return ProjectFS(_LOCAL, root, pid)
     s = SFTP_SESSIONS.get(src)
     if s is None:
         raise NotFound("sessão SFTP encerrada (o terminal do host foi fechado) — reabra o terminal")

@@ -45,10 +45,11 @@ export function setClaudeSessionsHash(open) { setModalHash(SESSIONS_SUFFIX, open
 export function readClaudeRoute(hash) {
   hash = stripClaudeModal(hash);
   if (hash.startsWith("#projects/")) {
-    // Só #projects/<proj>/<id|new> é conversa; #projects, #projects/new e #projects/<proj> são páginas
+    // Só #projects/<proj>/<id|new> é conversa; #projects, #projects/new, #projects/<proj> e .../files são páginas
     // (a conversa viva segue no dock). Rota de projeto devolve também `project`.
-    const parts = hash.slice(1).split("/");
+    const parts = hash.slice(1).split("?")[0].split("/");
     if (parts.length < 3 || parts[1] === "new" || (parts.length === 3 && parts[2] === "")) return null;
+    if (parts.length === 3 && parts[2] === "files") return null;   // #projects/<proj>/files = página de arquivos
     const project = parts[1];
     if (!validProjectId(project) || parts.length > 3) return { kind: "invalid" };
     if (parts[2] === "new") return { kind: "new", project };

@@ -105,6 +105,16 @@ e "as sessões do projeto" são as conversas daquela pasta (o Claude Code já se
     alterar equipamento), que fora do NetOps não carregaria, roda como hook programático (`_hook_netops_guard`; guarda ausente = bloqueia).
   Anexos num projeto voltam com caminho absoluto.
 - **Retomada pós-restart:** a anotação em `resume-on-restart.json` guarda o `cwd` só dos projetos; sem ele a sessão voltaria na pasta errada.
+- **Ordem e arquivados (por usuário):** `runs/claude/projects-prefs.json` (`{"<usuário>": {"order": [...], "archived": [...]}}`).
+  `PUT /api/projects/order {ids}` (arrastar e soltar na lista e na barra lateral) e `PUT /api/projects/<id>/archived {archived}`
+  = `claude.use` (gosto de cada um, não mexe no registro). Arquivado some da barra lateral e da lista; fica em `#projects?arquivados=1`.
+  Remover projeto tira o id da ordem/arquivados de todos. Renomear (✏) e remover (🗑) também direto na lista (`projects.manage`).
+- **Arquivos do projeto:** fonte `src=project:<id>` do gerenciador de arquivos (`files_svc.ProjectFS`), **presa à pasta do projeto**:
+  todo caminho é resolvido (symlink inclusive) e tem de cair dentro; conteúdo (ler/escrever/chmod/download/origem da cópia) segue o
+  link, operação na entrada (criar/renomear/apagar/destino) olha a pasta-mãe real; link p/ fora não entra no zip; a raiz do projeto não é
+  apagada/renomeada. Permissão **`projects.files`** (concedível por grupo; admin tem). Página cheia `#projects/<id>/files?path=&open=`
+  (botão 📁 Arquivos na página do projeto) e **painel ao lado do chat** do projeto: **fechado por padrão**, abre/fecha pelo botão
+  📁 Arquivos da barra (estado e pasta por projeto em `localStorage` `netops_pjfiles_<id>`, a URL da conversa não muda).
 - **Front:** `pages/projects.js` (lista, novo, página do projeto, seletor de pasta) e `claude-sessions.js` (`#projects/<proj>/<id|new>`).
   O chat é o mesmo `ClaudeProvider`; `?project=` no WebSocket liga o agente à pasta.
 - **Testes:** `tests/test_projects.py` (registro, HTTP, `cwd`, retomada, pastas proibidas, confiança, guarda, conta) e `tests/projects-routes.test.mjs` (rotas).

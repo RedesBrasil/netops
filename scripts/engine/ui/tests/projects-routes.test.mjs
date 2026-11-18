@@ -49,3 +49,10 @@ test("popup Padrões/Sessões só vale com 4 segmentos (projeto chamado 'padroes
   assert.equal(s.stripClaudeModal("#projects/meu-site/" + A + "/padroes"), "#projects/meu-site/" + A);
   assert.equal(s.stripClaudeModal("#projects/padroes"), "#projects/padroes");
 });
+
+test("#projects/<proj>/files é página (arquivos do projeto), não conversa", () => {
+  assert.equal(s.readClaudeRoute("#projects/meu-site/files"), null);
+  assert.equal(s.readClaudeRoute("#projects/meu-site/files?path=%2Fopt%2Fx&open=%2Fopt%2Fx%2Fa"), null);
+  assert.equal(s.isClaudeChatHash("#projects/meu-site/files"), false);
+  assert.deepEqual(s.readClaudeRoute("#projects/meu-site/" + A), { kind: "session", id: A, project: "meu-site" });
+});

@@ -331,6 +331,14 @@ def test_projects_follow_claude_permission_and_owner_filter(env, monkeypatch, tm
     assert op0.post("/api/projects", json={"name": "x", "path": str(pasta)}).status_code == 403
     assert op0.patch("/api/projects/site", json={"trusted": True}).status_code == 403
     assert op0.delete("/api/projects/site").status_code == 403
+    # ordem/arquivar = preferência do próprio usuário (claude.use); não afeta o admin
+    assert op0.put("/api/projects/order", json={"ids": ["site"]}).status_code == 200
+    assert op0.put("/api/projects/site/archived", json={"archived": True}).json()["archived"] is True
+    assert admin.get("/api/projects/site").json()["archived"] is False
+    # arquivos da pasta do projeto = projects.files (o grupo operador não tem; admin tem)
+    monkeypatch.setattr(deps, "files_enabled", lambda: True)
+    assert op0.get("/api/files/info", params={"src": "project:site"}).status_code == 403
+    assert admin.get("/api/files/info", params={"src": "project:site"}).status_code == 200
     fake = [{"id": "s-admin"}, {"id": "s-op"}, {"id": "s-velha"}]
     monkeypatch.setattr(claude_svc, "list_project_sessions", lambda *a, **k: list(fake))
     accessdb.set_claude_owner(deps.db_file(), "s-admin", "admin")

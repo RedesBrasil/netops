@@ -5,7 +5,8 @@
 // e um chat compacto encaixado à direita (ChatDock), que aparece quando você navega para
 // outra rota com uma conversa viva — dá p/ acompanhar o streaming, enviar e aprovar.
 // Protocolo JSON nos dois sentidos (ver scripts/engine/ui/services/claude_svc.py).
-import { html, useState, useEffect, useRef, useCallback, toast, api, refreshVault } from "../ui.js";
+import { html, useState, useEffect, useRef, useCallback, toast, api, refreshVault, can } from "../ui.js";
+import { FileBrowser } from "../file-browser.js";
 import { useDictation, MAX_SECONDS } from "../audio-dictation.js";
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
@@ -1617,6 +1618,12 @@ export function ClaudeStatusDot() {
   return html`<span class="badge dot-mob ${s.badge}" title=${s.status}>${s.status}</span>`;
 }
 
+function ProjectFilesToggle({ project }) {
+  const [open, setOpen] = useProjectFilesOpen(project);
+  return html`<button class=${"sm needs-projects-files" + (open ? " primary" : "")} aria-pressed=${open}
+    onClick=${() => setOpen(!open)} title=${open ? "Fechar os arquivos do projeto" : "Ver os arquivos do projeto ao lado do chat"}>📁 Arquivos</button>`;
+}
+
 export function ClaudeTopbarControls() {
   const s = useClaude();
   // Ordem (padrão de mercado): ação primária → navegação → estado → configurações.
@@ -1626,6 +1633,7 @@ export function ClaudeTopbarControls() {
       onAuxClick=${(e) => openInNewWindow(e, claudeNewHash(s.project))} onMouseDown=${noAutoscroll}
       title="Encerra esta sessão e abre uma nova (Ctrl+clique abre em nova janela)">＋ Nova sessão</button>
     <button class="sm cc-sessbtn" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
+    ${s.project && html`<${ProjectFilesToggle} project=${s.project} />`}
     <span class="badge ${s.badge} desk-only">${s.status}</span>
     ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
     <div class="keep-open"><${VaultBanner} compact=${true} /></div>
@@ -1638,9 +1646,55 @@ export function ClaudeTopbarControls() {
     <button class="sm" onClick=${() => s.setShowPrefs(true)} title="Modelo e modo de permissão padrão p/ novas conversas">⚙ Padrões</button>`;
 }
 
+// Painel de arquivos ao lado do chat de um Projeto: FECHADO por padrão, abre pelo botão 📁 da barra.
+// Estado (aberto + pasta) por projeto em localStorage: é estado de visualização, como o dock — a URL
+// da conversa (#projects/<id>/<uuid>) não muda. Página cheia com URL própria: #projects/<id>/files.
+const PJF_KEY = (p) => "netops_pjfiles_" + p;
+function pjFilesGet(p) { try { return JSON.parse(localStorage.getItem(PJF_KEY(p)) || "{}"); } catch (_) { return {}; } }
+function pjFilesSet(p, patch) {
+  try { localStorage.setItem(PJF_KEY(p), JSON.stringify({ ...pjFilesGet(p), ...patch })); } catch (_) {}
+  dispatchEvent(new CustomEvent("netops:pjfiles", { detail: p }));
+}
+export function useProjectFilesOpen(project) {
+  const [open, setOpen] = useState(() => !!(project && pjFilesGet(project).open));
+  useEffect(() => {
+    setOpen(!!(project && pjFilesGet(project).open));
+    const on = (e) => { if (e.detail === project) setOpen(!!pjFilesGet(project).open); };
+    addEventListener("netops:pjfiles", on);
+    return () => removeEventListener("netops:pjfiles", on);
+  }, [project]);
+  return [open, (v) => project && pjFilesSet(project, { open: !!v })];
+}
+
+function ProjectFilesPanel({ project }) {
+  const [root, setRoot] = useState(null);
+  const [err, setErr] = useState("");
+  const [st, setSt] = useState(() => ({ path: pjFilesGet(project).path || "", q: "", sort: "", hidden: true, open: "" }));
+  const [, setOpen] = useProjectFilesOpen(project);
+  useEffect(() => {
+    setErr(""); setRoot(null);
+    api.get(`/files/info?src=${encodeURIComponent("project:" + project)}`)
+      .then((i) => { setRoot(i.root); setSt((s) => ({ ...s, path: s.path || i.root })); })
+      .catch((e) => setErr((e && e.payload && (e.payload.detail || e.payload.error)) || e.message || String(e)));
+  }, [project]);
+  useEffect(() => { if (st.path) pjFilesSet(project, { path: st.path }); }, [st.path]);
+  const setState = (patch) => setSt((s) => ({ ...s, ...patch }));
+  return html`<aside class="cc-files" aria-label="Arquivos do projeto">
+    <div class="cc-files-head">
+      <b>📁 Arquivos do projeto</b><span class="spacer"></span>
+      <a class="sm btn" href=${"#projects/" + project + "/files"} title="Abrir em tela cheia">⤢</a>
+      <button class="sm" onClick=${() => setOpen(false)} title="Fechar painel" aria-label="Fechar painel de arquivos">✕</button>
+    </div>
+    ${err ? html`<div class="fm-msg-box err">${err}</div>` : !root ? html`<div class="fm-msg-box">Abrindo…</div>`
+      : html`<${FileBrowser} src=${"project:" + project} home=${root} state=${st} setState=${setState} compact />`}
+  </aside>`;
+}
+
 export function ClaudeCodePage() {
   const s = useClaude();
-  return html`<div class="claude-page">
+  const [filesOpen] = useProjectFilesOpen(s.project);
+  const showFiles = !!s.project && filesOpen && can("projects.files");
+  return html`<div class=${"cc-split" + (showFiles ? " with-files" : "")}><div class="claude-page">
     <${Transcript} />
     <${Composer} />
     ${s.showSessions && html`<${SessionsModal} currentId=${s.sessionId} project=${s.project}
@@ -1653,7 +1707,7 @@ export function ClaudeCodePage() {
       onClose=${() => s.setShowRateLimit(false)} />`}
     ${s.showPrefs && html`<${PrefsModal} prefs=${s.prefs} models=${s.models} onSave=${s.savePrefs}
       onClose=${() => s.setShowPrefs(false)} />`}
-  </div>`;
+  </div>${showFiles && html`<${ProjectFilesPanel} key=${s.project} project=${s.project} />`}</div>`;
 }
 
 // Padrões p/ conversas NOVAS. Conversas existentes sempre voltam no último modelo/modo usados.

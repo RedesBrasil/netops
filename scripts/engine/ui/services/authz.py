@@ -80,6 +80,8 @@ RULES: list[tuple[frozenset, re.Pattern, str | None]] = [
     # Projetos (nome + pasta do servidor): cada projeto abre sessões do agente, que tem shell no servidor
     # na pasta escolhida — mesma confiança da aba Claude Code. O seletor de pasta só lista diretórios.
     # Escolher a pasta (navegar, criar, confiar, renomear, remover) = só admin; ver/usar = claude.use.
+    # Ordem e arquivados são preferência de cada usuário (não mexem no registro).
+    (WRITE, _R(r"^/projects/(order|[a-z0-9-]+/archived)$"), "claude.use"),
     (GET, _R(r"^/projects/browse$"), "projects.manage"),
     (WRITE, _R(r"^/projects(/|$)"), "projects.manage"),
     (GET, _R(r"^/projects(/|$)"), "claude.use"),

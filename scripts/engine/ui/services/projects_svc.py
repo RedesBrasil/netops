@@ -33,6 +33,9 @@ from pathlib import Path
 import deps
 
 _FILE = deps.RUNS_DIR / "claude" / "projects.json"
+# Preferências POR USUÁRIO do console (ordem e arquivados): {"<username>": {"order": [ids], "archived": [ids]}}.
+# Separado do registro: arquivar/reordenar é gosto de cada um e não exige projects.manage.
+_PREFS_FILE = deps.RUNS_DIR / "claude" / "projects-prefs.json"
 _LOCK = threading.Lock()
 _MAX_PROJECTS = 200
 _MAX_NAME = 80
@@ -164,6 +167,76 @@ def list_projects() -> list[dict]:
     return [_public(p) for p in sorted(items, key=lambda x: (x.get("name") or "").lower())]
 
 
+# ------------------------------------------------------------------ preferências por usuário
+def _prefs_all() -> dict:
+    try:
+        with _PREFS_FILE.open(encoding="utf-8") as fh:
+            d = json.load(fh)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _prefs_save(d: dict) -> None:
+    _PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _PREFS_FILE.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(d, fh, ensure_ascii=False, indent=1)
+    tmp.replace(_PREFS_FILE)
+
+
+def _user_prefs(d: dict, user: str) -> dict:
+    u = d.get(user or "")
+    u = u if isinstance(u, dict) else {}
+    ids = lambda k: [x for x in (u.get(k) or []) if isinstance(x, str) and valid_id(x)]
+    return {"order": ids("order"), "archived": ids("archived")}
+
+
+def list_for(user: str) -> list[dict]:
+    """Projetos na ordem do usuário (arrastar e soltar) com `archived` dele. Projeto sem posição
+    salva (novo) vai para o fim, em ordem alfabética."""
+    with _LOCK:
+        up = _user_prefs(_prefs_all(), user)
+    pos = {pid: i for i, pid in enumerate(up["order"])}
+    arch = set(up["archived"])
+    items = list_projects()   # já em ordem alfabética: desempate estável
+    items.sort(key=lambda p: pos.get(p["id"], len(pos)))
+    return [{**p, "archived": p["id"] in arch} for p in items]
+
+
+def set_order(user: str, ids) -> list[dict]:
+    if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids):
+        raise ProjectError("bad_order", "Envie a lista de ids na ordem desejada.")
+    known = {p["id"] for p in list_projects()}
+    seen, order = set(), []
+    for x in ids:
+        if x in known and x not in seen:
+            seen.add(x)
+            order.append(x)
+    with _LOCK:
+        d = _prefs_all()
+        up = _user_prefs(d, user)
+        up["order"] = order
+        d[user or ""] = up
+        _prefs_save(d)
+    return list_for(user)
+
+
+def set_archived(user: str, pid: str, archived: bool) -> dict:
+    if not get(pid):
+        raise ProjectError("not_found", "Projeto não encontrado.", 404)
+    with _LOCK:
+        d = _prefs_all()
+        up = _user_prefs(d, user)
+        arch = [x for x in up["archived"] if x != pid]
+        if archived:
+            arch.append(pid)
+        up["archived"] = arch
+        d[user or ""] = up
+        _prefs_save(d)
+    return next(p for p in list_for(user) if p["id"] == pid)
+
+
 def get(pid: str) -> dict | None:
     if not valid_id(pid):
         return None
@@ -288,6 +361,13 @@ def delete(pid: str) -> bool:
         if len(keep) == len(items):
             return False
         _save(keep)
+        # some da ordem/arquivados de todos (um projeto novo com o mesmo id não herda a posição)
+        d = _prefs_all()
+        if d:
+            for u in list(d):
+                up = _user_prefs(d, u)
+                d[u] = {k: [x for x in v if x != pid] for k, v in up.items()}
+            _prefs_save(d)
     return True
 
 
