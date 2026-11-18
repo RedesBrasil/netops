@@ -60,6 +60,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Gerenciador de arquivos do console (menu **Arquivos** + painel SFTP ao lado do terminal de host) | `scripts/engine/ui/` (`routers/files.py`, `static/js/file-browser.js`; ver `SKILL.md`) |
 | Usuários, grupos de acesso, auditoria do console (SQLite `runs/netops.db`) | `scripts/engine/users/` (`SKILL.md`; console: **Usuários / Grupos de acesso / Auditoria**) |
 | Tarefas agendadas (script / agente de IA / script + agente) | `scripts/engine/scheduler/` (`SKILL.md`; console: menu **Tarefas agendadas**) |
+| Descobrir CTs/VMs de um Proxmox, cadastrar e organizar no mapa | `scripts/tools/inventory/` (`SKILL.md`; `map_place.py register` / `place`) |
 | Modelos de planejamento | `planning-examples/` |
 | O que o framework já aprendeu | `memory/` |
 | Saída bruta de execuções | `runs/` |
@@ -72,11 +73,11 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 
 - **Identificação de equipamentos nas respostas (INEGOCIÁVEL):** ao citar qualquer host, container (CT/VM),
   roteador, switch, servidor ou outro equipamento, **nunca use só o ID**. Escreva sempre **nome (ID)**, com o
-  nome primeiro e o número entre parênteses: `SERVIDOR-PROXMOX-01 (host 14)`, `rt-borda (host 2)`,
+  nome primeiro e o número entre parênteses: `SERVIDOR-PROXMOX-01 (host 14)`, `RT-BORDA (host 2)`,
   `PROXY-TESTE (CT 102)`. O nome vem de `network/hosts.yaml`
   (`hostname`) ou, para CT/VM, do `pct list`/`qm list`. Vale para relatórios, resumos, tabelas e mensagens
   de status. Só o ID, sem nome, obriga o usuário a procurar no inventário: não faça. Se o nome for longo,
-  use um curto reconhecível (ex.: `pve-site-a`), mas sempre com o número ao lado.
+  use um curto reconhecível (ex.: `PVE-SITE-A`), mas sempre com o número ao lado.
 
 - **Releases:** antes de gerar qualquer release, leia `core/rules/releases.md`, consulte a release
   atual no GitHub e escolha uma versão superior. Atualize `core/config/core-config.yaml` e
@@ -133,6 +134,11 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   Respeite o aviso "[NetOps — permissões de rede]": categoria desmarcada = colete, planeje e entregue os comandos sem aplicar;
   comando fora disso abre aprovação na tela e, negado, **não contorne**. Full = sem pedir aprovação (salvo se o prompt pedir);
   backup/rollback/teste seguem obrigatórios. Ver `scripts/engine/ui/SKILL.md`.
+- **Nome de equipamento em MAIÚSCULAS (INEGOCIÁVEL):** todo `hostname` cadastrado em `network/hosts.yaml` (host físico, CT, VM,
+  roteador, switch, servidor) é escrito **TUDO EM MAIÚSCULAS**, com hífen no lugar de espaço/underscore quando for nome técnico
+  (ex.: `9ROUTER-TEST`, `COOLIFY-FRANCISCO`, `PROXY-TESTE`). Vale para cadastro novo **e** para renomear existente; o nome
+  também aparece em maiúsculas nas respostas (`nome (ID)`). Nunca cadastre `9router-test`, `Proxy-Teste` etc.
+  Antes de gravar em `hosts.yaml`, confira `hostname == hostname.upper()`.
 - **Inventário é a verdade:** nunca conecte em host fora de `network/hosts.yaml`.
 - **Segurança:** baseline antes de mudar, rollback pronto, rollback automático em falha.
 - **Projeto vivo:** toda execução termina registrando o que aprendeu em `memory/`.

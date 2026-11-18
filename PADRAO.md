@@ -50,6 +50,7 @@ com versão única em `core/config/core-config.yaml`, notas em `CHANGELOG.md` e 
 | Plano modelo | `<nome>.plan.md` | `security-audit.plan.md` |
 | Lição aprendida | bullet datado `AAAA-MM-DD — fato` em `memory/MEMORY.md` | `2026-06-01 — Cofre antes do acesso` |
 | Pasta de execução | `runs/YYYY-MM-DD-HHMM-<tarefa>/` | `runs/2026-05-18-1430-security-audit/` |
+| Nome de equipamento (`hostname` em `network/hosts.yaml`) | **MAIÚSCULAS**, hífen em vez de espaço | `9ROUTER-TEST`, `COOLIFY-FRANCISCO` |
 | Vendor (identificador) | minúsculo, sem espaço | `mikrotik`, `cisco`, `linux`, `unifi` |
 
 Arquivos especiais (prefixo `_`):

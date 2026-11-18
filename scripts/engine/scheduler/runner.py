@@ -280,10 +280,62 @@ def _write_run(root, rec: dict) -> None:
                         json.dumps(rec, ensure_ascii=False, indent=1), 0o600)
 
 
+AUTH_FAIL_RE = re.compile(
+    r"Failed to authenticate|OAuth session expired|authentication_error|Invalid API key|Please run /login|"
+    r"could not be refreshed", re.I)
+AUTH_ALERT_COOLDOWN = 3600       # no máx. 1 alerta de login por hora e por tarefa
+MAX_FAILED_RUNS_KEPT = 200       # execuções com erro/timeout ficam bem mais tempo que as ok
+
+
+def is_auth_failure(text: str) -> bool:
+    return bool(AUTH_FAIL_RE.search(text or ""))
+
+
+def _telegram(text: str) -> bool:
+    """Alerta curto no Telegram (network/telegram.yaml). Nunca derruba a execução."""
+    try:
+        import urllib.parse
+        import urllib.request
+        import yaml
+        tg = yaml.safe_load((store.NETOPS_ROOT / "network" / "telegram.yaml").read_text()) or {}
+        body = urllib.parse.urlencode({"chat_id": tg["chat_id"], "text": text[:1000]}).encode()
+        req = urllib.request.Request(f"https://api.telegram.org/bot{tg['bot_token']}/sendMessage", data=body)
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _alert_auth_failure(task: dict, rec: dict, root) -> None:
+    with store.edit_state(root) as st:
+        ts = st["tasks"].setdefault(task["id"], {})
+        if time.time() - (ts.get("auth_alert_at") or 0) < AUTH_ALERT_COOLDOWN:
+            return
+        ts["auth_alert_at"] = time.time()
+    hora = _now(store.load(root)["config"].get("timezone") or store.DEFAULT_TZ).strftime("%d/%m %H:%M")
+    _telegram(f"⚠️ Tarefa agendada NÃO rodou: login do Claude expirou\n\n"
+              f"Tarefa: {task.get('name')} ({hora})\n"
+              f"O agente não iniciou, então a análise desta execução se perdeu.\n\n"
+              f"Corrigir: fazer /login na aba Claude do console.")
+
+
 def _prune(task_id: str, root) -> None:
+    """Mantém as MAX_RUNS_PER_TASK execuções mais recentes e, além disso, as últimas
+    MAX_FAILED_RUNS_KEPT com erro/timeout (para dar para diagnosticar falhas antigas)."""
     d = store.runs_dir(root) / task_id
     runs = sorted(d.glob("*.json"))
-    for p in runs[:-store.MAX_RUNS_PER_TASK]:
+    old = runs[:-store.MAX_RUNS_PER_TASK]
+    failed = []
+    for p in old:
+        try:
+            if json.loads(p.read_text(encoding="utf-8")).get("status") in ("error", "timeout"):
+                failed.append(p)
+        except (OSError, ValueError):
+            pass
+    keep = set(failed[-MAX_FAILED_RUNS_KEPT:])
+    for p in old:
+        if p in keep:
+            continue
         for f in (p, p.with_suffix(".log")):
             with _suppress():
                 f.unlink()
@@ -352,6 +404,9 @@ def run(task_id: str, run_id: str, trigger: str = "manual", root=None) -> dict:
                 rec.update(status="error", error=(meta.get("subtype") or f"claude saiu com código {code}"))
                 if not text.strip():
                     rec["agent_output"] = out.strip()[-4000:]
+                if is_auth_failure(text) or is_auth_failure(out):
+                    rec.update(error="login do Claude expirado (OAuth) — o agente não iniciou",
+                               auth_failure=True)
             elif text.strip().startswith("[FALHA]"):
                 rec.update(status="error", error="o agente reportou falha")
             else:
@@ -362,6 +417,11 @@ def run(task_id: str, run_id: str, trigger: str = "manual", root=None) -> dict:
     rec["notified"] = should_notify(task, rec["status"], rec["silent"])
     _write_run(root, rec)
     _finish_state(task, rec, root, notify=rec["notified"])
+    if rec.get("auth_failure"):
+        try:
+            _alert_auth_failure(task, rec, root)
+        except Exception:  # noqa: BLE001 — alerta nunca derruba a execução
+            pass
     _prune(task_id, root)
     fcntl.flock(fh, fcntl.LOCK_UN)
     fh.close()

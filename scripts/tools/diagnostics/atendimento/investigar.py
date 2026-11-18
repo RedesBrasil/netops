@@ -156,6 +156,51 @@ def prepare() -> int:
     return 0
 
 
+BASE_URL_CONSOLE = "https://netops.redesbrasil.com.br"     # domínio do console (Traefik); NETOPS_UI_BASE_URL sobrescreve
+
+
+def link_conversa() -> str:
+    """URL da conversa desta execução na aba Claude do console (<domínio>/#claude/<id>).
+    O id vem de CLAUDE_CODE_SESSION_ID; sem ele devolve '' e a linha é omitida."""
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "").strip()
+    if not sid:
+        return ""
+    base = (os.environ.get("NETOPS_UI_BASE_URL", "").strip() or BASE_URL_CONSOLE).rstrip("/")
+    return f"{base}/#claude/{sid}"
+
+
+def resumo_telegram(report: str, caminho: str) -> str:
+    """Versão curta do relatório para o Telegram: causa, impacto e 1ª ação (texto puro, ~900 caracteres)."""
+    corpo = re.split(r"\n\*\*Auto-aperfeiçoamento|```coleta-add", report)[0]
+    cab = r"\*\*([^*\n]+?)(?::\*\*|\*\*\s*\([^)\n]*\):)"      # **Rótulo:** ou **Rótulo** (obs):
+    secoes = {m.group(1).strip().lower(): m.group(2).strip()
+              for m in re.finditer(cab + r"\s*(.*?)(?=\n" + cab + r"|\Z)", corpo, re.S)}
+
+    def limpa(t: str, n: int) -> str:
+        t = re.sub(r"\s+", " ", re.sub(r"[`*]", "", t)).strip()
+        if len(t) <= n:
+            return t
+        corte = t[:n]
+        ponto = max(corte.rfind(". "), corte.rfind("; "))
+        return (corte[:ponto + 1] if ponto > n // 2 else corte.rstrip() + "…")
+
+    acoes = [ln.lstrip("- ").strip() for ln in secoes.get("ação recomendada", "").splitlines()
+             if ln.strip().startswith("- ")]
+    acao = acoes[0] if acoes else secoes.get("ação recomendada", "")
+    partes = ["🔎 Atendimento — investigação concluída", ""]
+    for rotulo, chave, n in (("Causa", "causa provável", 260), ("Impacto", "impacto", 160), ("Ação", None, 160)):
+        txt = limpa(acao if chave is None else secoes.get(chave, ""), n)
+        if txt:
+            partes.append(f"{rotulo}: {txt}")
+    if len(partes) == 2:               # relatório fora do formato: pega o começo
+        partes.append(limpa(corpo, 600))
+    link = link_conversa()
+    if link:
+        partes += ["", f"Mais informações na conversa: {link}"]
+    partes += ["", f"Relatório: {caminho}"]
+    return "\n".join(partes)
+
+
 def finish(path: str) -> int:
     f = Path(path)
     report, log = aprender(f.read_text())
@@ -163,7 +208,7 @@ def finish(path: str) -> int:
         report += "\n\n**Auto-aperfeiçoamento da coleta:**\n" + "\n".join(f"- {l}" for l in log)
     f.write_text(report + "\n")
     print("\n".join(log) or "nada a aprender")
-    monitor.telegram(f"🔎 Investigação do atendimento concluída\n\n{report[:3300]}\n\nRelatório completo: {f.relative_to(ROOT) if f.is_absolute() else f}")
+    monitor.telegram(resumo_telegram(report, str(f.relative_to(ROOT) if f.is_absolute() else f)))
     return 0
 
 
@@ -205,7 +250,7 @@ def main() -> int:
     out.write_text(f"# Investigação de lentidão — atendimento ({stamp})\n\n{report}\n\n---\n## Evidência do monitor\n```\n{evidence}\n```\n\n## Coleta automática\n{collected}\n")
     print(out)
     if not a.no_telegram:
-        monitor.telegram(f"🔎 Investigação do atendimento concluída\n\n{report[:3300]}\n\nRelatório completo: reports/{out.name}")
+        monitor.telegram(resumo_telegram(report, f"reports/{out.name}"))
     return 0
 
 
