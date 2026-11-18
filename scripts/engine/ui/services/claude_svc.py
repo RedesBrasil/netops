@@ -1449,6 +1449,7 @@ def rename_project_session(sid: str, title: str, cwd: str | None = None) -> None
     """Define o título (custom_title) da conversa pelo SDK."""
     from claude_agent_sdk import rename_session  # noqa: PLC0415
     rename_session(sid, title, directory=_dir(cwd))
+    claude_prefs.pin_titles({sid: title}, force=True)   # título do usuário nunca é sobrescrito
 
 
 def list_project_sessions(limit: int | None = 60, cwd: str | None = None) -> list[dict]:
@@ -1464,8 +1465,16 @@ def list_project_sessions(limit: int | None = 60, cwd: str | None = None) -> lis
     running = running_session_ids()
     waiting = waiting_session_ids()
     completed = claude_prefs.completed_ids()
+    pinned = claude_prefs.pinned_titles()
+    to_pin = {}
     for x in sess:
-        title = (x.custom_title or x.summary or x.first_prompt or "").strip()
+        # Título fixo: o gerado pela IA (aiTitle) é congelado na 1ª vez que aparece e não
+        # muda mais com o rumo da conversa; renomear (custom-title) sobrescreve.
+        title = (pinned.get(x.session_id) or "").strip()
+        if not title:
+            title = (x.custom_title or x.summary or x.first_prompt or "").strip()
+            if x.custom_title and x.custom_title.strip():
+                to_pin[x.session_id] = x.custom_title.strip()
         out.append({
             "id": x.session_id,
             "running": x.session_id in running,
@@ -1478,6 +1487,11 @@ def list_project_sessions(limit: int | None = 60, cwd: str | None = None) -> lis
             "tag": x.tag,
             "branch": x.git_branch,
         })
+    if to_pin:
+        try:
+            claude_prefs.pin_titles(to_pin)
+        except Exception:
+            pass
     out.sort(key=lambda r: r["mtime"] or 0, reverse=True)
     return out
 

@@ -1609,7 +1609,7 @@ export function ClaudeSessionTitle() {
       ? html`<input class="cc-topbar-title-edit" value=${draft} autoFocus maxlength="120" aria-label="Renomear sessão"
           onInput=${(e) => setDraft(e.target.value)} onBlur=${commit}
           onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") { setEditing(false); } }} />`
-      : title && html`<span class="cc-topbar-title" title=${title + " — duplo clique para renomear"} onDblClick=${startEdit}>${title}</span>`}`;
+      : title && html`<span class="cc-topbar-title" title=${title + " — duplo clique para renomear"} onDblClick=${startEdit}>${title}</span><button class="sm cc-sess-ib" style="margin-left:4px" title="Renomear sessão (o nome fica fixo)" aria-label="Renomear sessão" onClick=${startEdit}>✎</button>`}`;
 }
 
 // Bolinha de status sempre visível na barra do topo (no celular o resto vai p/ a folha "⋯").
@@ -2102,6 +2102,7 @@ export function SessionsList({ currentId = "", project = "", onResume, q: qProp,
             <label class="cc-sess-chk" title=${s.completed ? "Concluída por completo (clique para desmarcar)" : "Marcar como concluída por completo"}>
               <input type="checkbox" aria-label="Concluída por completo" checked=${!!s.completed} onChange=${(e) => toggleDone(s.id, e.target.checked)} />
             </label>
+            <button class="sm cc-sess-ib" title="Renomear sessão (o nome fica fixo)" aria-label="Renomear sessão" onClick=${(e) => { e.stopPropagation(); setRenaming({ id: s.id, draft: s.title }); }}>✎</button>
             <button class="sm cc-sess-ib" title="Copiar link da sessão" aria-label="Copiar link da sessão" onClick=${(e) => { e.stopPropagation(); copySessionLink(s.id, project); }}>🔗</button>
             <button class="sm danger cc-sess-ib" disabled=${busy} title="Excluir sessão" aria-label="Excluir sessão" onClick=${(e) => del(s.id, e)}>🗑</button>
           </div>

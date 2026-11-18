@@ -90,6 +90,31 @@ def set_session(sid: str | None, *, model: str | None = None, mode: str | None =
         _save(d)
 
 
+def pinned_titles() -> dict[str, str]:
+    """Títulos fixos por conversa (definidos pelo usuário ou congelados do 1º título gerado)."""
+    with _LOCK:
+        return {k: v["title"] for k, v in _load()["sessions"].items()
+                if isinstance(v, dict) and isinstance(v.get("title"), str) and v["title"]}
+
+
+def pin_titles(items: dict[str, str], *, force: bool = False) -> None:
+    """Fixa títulos. Sem `force`, não sobrescreve um título já fixo (o gerado não muda mais)."""
+    items = {k: " ".join(str(v).split())[:120] for k, v in items.items() if k and v}
+    if not items:
+        return
+    with _LOCK:
+        d = _load()
+        changed = False
+        for sid, t in items.items():
+            s = d["sessions"].setdefault(sid, {})
+            if force or not s.get("title"):
+                if s.get("title") != t:
+                    s["title"] = t
+                    changed = True
+        if changed:
+            _save(d)
+
+
 def completed_ids() -> set[str]:
     """Conversas que o usuário marcou como concluídas por completo (checkbox da lista de sessões)."""
     with _LOCK:
