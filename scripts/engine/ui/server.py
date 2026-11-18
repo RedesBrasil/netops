@@ -48,6 +48,22 @@ def _free_port(host: str, preferred: int) -> int:
     return preferred
 
 
+def _prepare_tls(host: str, https_port: int):
+    """Gera/renova o certificado e confere a porta. Qualquer falha desliga só o HTTPS (nunca o console)."""
+    try:
+        from services import tls_svc  # noqa: PLC0415
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, https_port))
+        cert, key = tls_svc.ensure_cert(deps.DATA_ROOT / "runs" / "tls", host)
+        print(f"\n  🔐 HTTPS (autoassinado) -> https://{host}:{https_port}/  (permite microfone/ditado por IP)")
+        print(f"     SHA-256 do certificado: {tls_svc.fingerprint(cert)}")
+        return cert, key
+    except Exception as exc:  # noqa: BLE001
+        print(f"\n  ⚠ HTTPS por IP DESLIGADO ({exc}) — o console HTTP segue normal.")
+        return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="NetOps Console — CRUD web local.")
     parser.add_argument("--host", default="127.0.0.1", help="Bind (só loopback; default 127.0.0.1)")
@@ -70,6 +86,9 @@ def main() -> int:
                         help="Segundos que uma sessão desanexada e ociosa sobrevive antes do teardown")
     parser.add_argument("--claude-ask-timeout", type=int, default=180,
                         help="Segundos que uma pergunta sem resposta espera (desanexado) antes de negar")
+    parser.add_argument("--https-port", type=int, default=None,
+                        help="Porta do listener HTTPS (certificado autoassinado, mesmo IP). Default: porta HTTP + 1000 "
+                             "(env NETOPS_UI_HTTPS_PORT); 0 desliga. Necessário p/ microfone/ditado por IP")
     args = parser.parse_args()
 
     is_loopback = args.host in LOOPBACK
@@ -149,8 +168,46 @@ def main() -> int:
     # services/web_access_svc.resolve_client), só de proxy confiável (web_access.trusted_proxies, loopback ou
     # NETOPS_UI_FORWARDED_ALLOW_IPS). NÃO usar proxy_headers do uvicorn: com "*" ele aceitava o IP de qualquer
     # origem (forjável) e apagava o IP real do socket, que a allowlist de acesso web precisa.
-    uvicorn.run(application, host=args.host, port=port, log_level="info", access_log=False,
-                proxy_headers=False)
+    https_port = args.https_port
+    if https_port is None:
+        env = os.environ.get("NETOPS_UI_HTTPS_PORT", "")
+        https_port = int(env) if env.isdigit() else port + 1000
+    tls = _prepare_tls(args.host, https_port) if https_port else None
+
+    import asyncio  # noqa: PLC0415
+
+    class _Secondary(uvicorn.Server):
+        # Sinais ficam com o servidor HTTP principal; este só acompanha o should_exit dele.
+        def capture_signals(self):
+            import contextlib  # noqa: PLC0415
+            return contextlib.nullcontext()
+
+    async def _run() -> None:
+        main_srv = uvicorn.Server(uvicorn.Config(application, host=args.host, port=port, log_level="info",
+                                                 access_log=False, proxy_headers=False))
+        sec_task = None
+        sec_srv = None
+        if tls:
+            # Mesma app e MESMO event loop (serviços usam asyncio.get_event_loop). lifespan off: os
+            # eventos de startup/shutdown já rodam no servidor principal. Falha aqui NUNCA derruba o HTTP.
+            sec_srv = _Secondary(uvicorn.Config(application, host=args.host, port=https_port, log_level="info",
+                                                access_log=False, proxy_headers=False, lifespan="off",
+                                                ssl_certfile=str(tls[0]), ssl_keyfile=str(tls[1])))
+
+            async def _sec() -> None:
+                try:
+                    await sec_srv.serve()
+                except BaseException as exc:  # noqa: BLE001  (uvicorn faz sys.exit(1) se não conseguir bind)
+                    print(f"  ⚠ listener HTTPS encerrou: {exc!r} — HTTP segue normal")
+            sec_task = asyncio.create_task(_sec())
+        try:
+            await main_srv.serve()
+        finally:
+            if sec_srv is not None:
+                sec_srv.should_exit = True
+                await sec_task
+
+    asyncio.run(_run())
     return 0
 
 

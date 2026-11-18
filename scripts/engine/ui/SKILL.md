@@ -635,3 +635,12 @@ Tela **Configuração → Acesso web**; config em `core/config/project-config.ya
 - `GET /api/web-access`: política, IP que o servidor vê p/ quem pergunta e bloqueios recentes (RAM, desde o restart).
 - Firewall do SO no CT do console NÃO resolve: ele só vê o IP do proxy. Barrar antes do app = allowlist no próprio proxy reverso (ex.: `ipAllowList` do Traefik).
 - **Testes:** `tests/test_web_access.py` (o `conftest` remove `web_access` do config de teste: TestClient não tem IP).
+
+## HTTPS por IP (certificado autoassinado)
+O console abre, além do HTTP, um listener **HTTPS na porta HTTP + 1000** (ex.: 8765 → `https://<IP>:9765/`), na mesma
+app e no mesmo processo. Existe porque o navegador só libera microfone (ditado por voz) em contexto seguro.
+- Certificado: `services/tls_svc.py` gera em `runs/tls/` (cert.pem/key.pem, git-ignorado), com SAN de todos os IPs da
+  máquina; regera sozinho se faltar, faltar IP ou vencer em < 30 dias (validade 825 dias).
+- Aviso do navegador na 1ª vez é esperado (autoassinado): "Avançado → continuar". O microfone funciona depois disso.
+  Para sumir o aviso, importe `runs/tls/cert.pem` como autoridade confiável no SO/navegador.
+- `--https-port N` / `NETOPS_UI_HTTPS_PORT=N` muda a porta; `0` desliga. Falha de cert/porta desliga só o HTTPS, nunca o HTTP.
