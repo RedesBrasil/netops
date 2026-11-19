@@ -447,6 +447,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     <div className="map-toolbar"><div className="map-picker"><label htmlFor="map-select">Mapa</label><select id="map-select" value={layout.id} disabled={saving} onChange={e => onSwitch(e.currentTarget.value)}>{maps.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
         {!readOnly && <button aria-label="Novo mapa" onClick={onNewMap}>+</button>}{!readOnly && layout.kind !== 'all' && <button aria-label="Excluir mapa" title="Excluir mapa" disabled={saving} onClick={onDeleteMap}>🗑</button>}</div>
         <SaveBadge readOnly={readOnly} saving={saving} status={status} saveError={saveError} onRetry={onRetry} onReload={onReload} />
+        <span className="map-counts" title="Hosts e conexões deste mapa">{layout.host_ids.length} hosts / {edges.length} conexões</span>
         <div className="map-tools">{!readOnly && <><button aria-label="Desfazer (Ctrl+Z)" title={`Desfazer (Ctrl+Z) — ${history.undo} de 10`} disabled={!history.undo} onClick={undo}>↶</button>
           <button aria-label="Refazer (Ctrl+Shift+Z)" title="Refazer (Ctrl+Shift+Z ou Ctrl+Y)" disabled={!history.redo} onClick={redo}>↷</button></>}
           {!readOnly && <button className={`map-lock ${locked ? 'locked' : ''}`} aria-pressed={locked} aria-label={locked ? 'Destravar edição do mapa' : 'Travar edição do mapa'} title={locked ? 'Mapa travado — clique para destravar' : 'Mapa destravado — clique para travar'} onClick={() => { setLocked(!locked); clearSelection(); }}>{locked ? '🔒' : '🔓'}</button>}
@@ -501,7 +502,6 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           <Background gap={24} size={1} color="var(--border)" /><Controls showInteractive={false} /><MiniMap className="map-overview" pannable zoomable />
         </ReactFlow>
       </LineEditing.Provider>
-      <div className="canvas-caption"><strong>{layout.name}</strong><span>{layout.host_ids.length} hosts / {edges.length} conexões</span></div>
       {linkMode && <div className="connect-banner">{origin ? 'Toque no host ou forma de destino' : 'Toque no host ou forma de origem e depois no destino'}<button onClick={() => setLinkMode(false)}>Cancelar</button></div>}
       {multiSelect && <div className="connect-banner">Toque nos dispositivos para selecionar ({selectedDevices().length}). Use ⋯ para alinhar.<button onClick={() => { setMultiSelect(false); clearSelection(); }}>Cancelar</button></div>}
       {!nodes.length && <div className="map-empty">{layout.kind === 'custom' ? 'Adicione um host existente ou cadastre um novo dispositivo.' : 'Os dispositivos cadastrados em Hosts aparecem aqui automaticamente.'}</div>}
