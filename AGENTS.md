@@ -114,6 +114,11 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   **Root NESTE servidor = `sudo <comando>` direto, liberado SÓ com o cofre destrancado** (sem senha; o PAM confere o
   cofre a cada chamada via `/usr/local/sbin/netops-sudo-cofre`). Use `sudo` comum — **nunca `sudo -n`** (o `-n` recusa
   antes da checagem). Se responder "a password is required" = cofre trancado: peça ao humano para destrancar e pare.
+  **Sudo automático:** com o cofre destrancado, `apt`, `apt-get`, `dpkg`, `systemctl`/`journalctl` (sem `--user`), `nft`,
+  `iptables`, `conntrack`, `docker`, `mount`, `useradd`, `sysctl`, `ss`, `lsof`, `reboot`... já rodam como root sem
+  digitar `sudo` (funções em `/usr/local/share/netops/auto-sudo.bash`, carregadas pelo `~/.bashrc`). Para arquivo do
+  sistema: `rootcat <arq>` (ler), `rootedit <arq>` (editar), `rootsh '<pipeline>'` (redireção/pipe como root). Scripts
+  não interativos não carregam as funções: neles escreva `sudo` explícito.
   Só use root quando o pedido exigir (instalar pacote, mexer em serviço/arquivo do sistema, ler log do sistema); o
   resto roda direto como `netops`. Alternativa (ex.: tarefa sem terminal) = **host Local** (`access.method: local`, protegido):
   `python3 scripts/tools/access/session.py exec --host-id <ID-LOCAL> --command "..."` roda como root, por operação,
