@@ -131,8 +131,6 @@ async def save(account_id: str | None, token: str | None) -> dict:
     with _LOCK:
         d = _load()
         if aid:
-            if d.get("account_id") and d["account_id"] != aid and not tok:
-                raise AudioError(422, "Ao trocar de conta, informe também o token da nova conta.")
             d["account_id"] = aid
         if tok:
             d["token"] = tok

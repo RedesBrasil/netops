@@ -1780,7 +1780,7 @@ function AudioSettings() {
     try { await fn(); if (okMsg) toast.ok(okMsg); } catch (e) { toast.err(e.message); } finally { setBusy(false); }
   }
   const save = () => run(async () => {
-    const d = await call("PUT", "config", { account_id: aid, token: tok });
+    const d = await call("PUT", "config", { account_id: aid.trim(), token: tok });
     if (d.needs_account) { setChoices(d.accounts); setAid(d.accounts[0].id); toast.ok("Escolha a conta e salve de novo"); return; }
     apply(d);
   }, "");
@@ -1789,14 +1789,17 @@ function AudioSettings() {
   return html`<div class="cc-audio-cfg">
     <h4>Transcrição de áudio (ditado)</h4>
     <${Field} label="Cloudflare API Token"
-      hint=${cfg && cfg.has_token ? "Token configurado. Deixe vazio para manter, ou cole outro para substituir." : "Só o token: o Account ID é descoberto sozinho. Permissões: Workers AI Read e Edit."}>
+      hint=${cfg && cfg.has_token ? "Token configurado. Deixe vazio para manter, ou cole outro para substituir." : "Permissões: Workers AI Read e Edit. O Account ID pode ser informado abaixo."}>
       <input type="password" autocomplete="off" value=${tok} onInput=${(e) => setTok(e.target.value)}
         placeholder=${cfg && cfg.has_token ? "Token configurado" : "Cole o token"} /><//>
-    ${choices && html`<${Field} label="Conta" hint="Este token enxerga mais de uma conta.">
-      <select value=${aid} onChange=${(e) => setAid(e.target.value)}>
-        ${choices.map((c) => html`<option key=${c.id} value=${c.id}>${c.name || c.id}</option>`)}
-      </select><//>`}
-    ${cfg && cfg.account_id && !choices && html`<div class="help">Conta: <code class="mono">${cfg.account_id}</code></div>`}
+    ${choices
+      ? html`<${Field} label="Conta" hint="Este token enxerga mais de uma conta.">
+          <select value=${aid} onChange=${(e) => setAid(e.target.value)}>
+            ${choices.map((c) => html`<option key=${c.id} value=${c.id}>${c.name || c.id}</option>`)}
+          </select><//>`
+      : html`<${Field} label="Account ID" hint="32 caracteres (Cloudflare → Workers AI → Account ID). Vazio com token novo = descobre sozinho.">
+          <input type="text" class="mono" autocomplete="off" spellcheck="false" value=${aid} maxlength="32"
+            onInput=${(e) => setAid(e.target.value)} placeholder="Account ID da Cloudflare" /><//>`}
     <div class="modal-actions" style="justify-content:flex-start;flex-wrap:wrap">
       <a class="btn sm" href=${CF_TOKEN_URL} target="_blank" rel="noopener noreferrer">Criar token na Cloudflare</a>
       <button class="sm primary" disabled=${busy} onClick=${save}>Salvar</button>

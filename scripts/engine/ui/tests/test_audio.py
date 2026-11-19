@@ -22,10 +22,11 @@ def test_config_never_returns_token_and_preserves_on_empty(client):
     assert client.delete("/api/audio/config").json()["configured"] is False
 
 
-def test_invalid_account_id_and_account_swap_needs_token(client):
+def test_invalid_account_id_and_account_swap_keeps_token(client):
     assert client.put("/api/audio/config", json={"account_id": "xyz"}).status_code == 422
     client.put("/api/audio/config", json={"account_id": AID, "token": "t"})
-    assert client.put("/api/audio/config", json={"account_id": "b" * 32}).status_code == 422
+    r = client.put("/api/audio/config", json={"account_id": "b" * 32})
+    assert r.status_code == 200 and r.json()["account_id"] == "b" * 32 and r.json()["has_token"] is True
 
 
 def test_transcribe_validations(client):

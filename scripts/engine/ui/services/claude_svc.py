@@ -1736,6 +1736,7 @@ def session_items(sid: str, cwd: str | None = None) -> list[dict]:
     items: list[dict] = []
     tool_index: dict[str, dict] = {}
     ask_ids: set[str] = set()
+    ask_index: dict[str, dict] = {}
     stamps = _transcript_timestamps(sid)
     for sm in msgs:
         role_item = "user" if sm.type == "user" else "assistant"
@@ -1777,7 +1778,13 @@ def session_items(sid: str, cwd: str | None = None) -> list[dict]:
                     items.append({"type": "thinking", "text": t})
             elif bt == "tool_use":
                 if b.get("name") == "AskUserQuestion":
+                    # Reconstrói o card já respondido (senão a pergunta/resposta some no F5).
                     ask_ids.add(b.get("id"))
+                    it = {"type": "permission", "id": b.get("id"), "tool": "AskUserQuestion",
+                          "input": b.get("input") or {}, "resolved": True, "decision": "deny",
+                          "answers": {}, "ts": ts}
+                    items.append(it)
+                    ask_index[b.get("id")] = it
                     continue
                 it = {"type": "tool", "id": b.get("id"), "name": b.get("name"),
                       "input": b.get("input"), "tstatus": "done"}
@@ -1786,6 +1793,11 @@ def session_items(sid: str, cwd: str | None = None) -> list[dict]:
             elif bt == "tool_result":
                 tid = b.get("tool_use_id")
                 if tid in ask_ids:
+                    it = ask_index.get(tid)
+                    if it is not None and not b.get("is_error"):
+                        answers = _parse_ask_answers(_stringify(b.get("content")))
+                        if answers:
+                            it["decision"], it["answers"] = "allow", answers
                     continue
                 it = tool_index.get(tid)
                 if it is not None:
@@ -1805,6 +1817,12 @@ def session_items(sid: str, cwd: str | None = None) -> list[dict]:
             else:
                 used.add(hit)
     return _merge_interjections(items, inter)
+
+
+def _parse_ask_answers(text: str) -> dict:
+    """Extrai {pergunta: resposta} do tool_result do AskUserQuestion ('"q"="a", "q2"="a2"')."""
+    import re  # noqa: PLC0415
+    return {q: a for q, a in re.findall(r'"((?:[^"\\]|\\.)*)"="((?:[^"\\]|\\.)*)"', text or "")}
 
 
 def delete_project_session(sid: str, cwd: str | None = None) -> None:
