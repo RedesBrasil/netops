@@ -55,7 +55,6 @@
 
 - Sem migração destrutiva: dados (`network/`, `runs/`, `memory/`) são preservados pelo atualizador.
 - `AGENTS.md`: quem já tem o seu continua com ele (não é tocado); quem não tem recebe o modelo limpo ao reiniciar o console.
-- Atualizando a partir da 2.3.1 ou anterior: atualize primeiro para a 2.4.0.
 
 ## [2.4.0] - 2026-11-16
 
