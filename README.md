@@ -24,19 +24,10 @@ Opções (`sudo VAR=valor bash` no fim do pipe): `NETOPS_DIR`, `NETOPS_PORT`, `N
 
 ### Repositório privado: instalação por chave SSH (deploy key)
 
-A linha acima só funciona com o repositório público. Com ele privado, use uma **deploy key**: chave SSH
-somente leitura, cadastrada só neste repositório (GitHub > Settings > Deploy keys > `netops-instalacao`, id `170095567`).
-Quem a tem consegue clonar, mas não escrever nem ver outros repositórios.
-
-**Linha pronta** (instala git se faltar, grava a chave, clona e roda o instalador; pede a senha-mestra no meio):
-
-```bash
-sudo bash -c 'set -e; command -v git >/dev/null && command -v curl >/dev/null && command -v ssh >/dev/null || { apt-get update -q && apt-get install -y -q git curl openssh-client ca-certificates || dnf install -y git curl openssh-clients ca-certificates || zypper -n install git curl openssh-clients || pacman -Sy --noconfirm git curl openssh; }; install -d -m 700 /root/.ssh; echo LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0KYjNCbGJuTnphQzFyWlhrdGRqRUFBQUFBQkc1dmJtVUFBQUFFYm05dVpRQUFBQUFBQUFBQkFBQUFNd0FBQUF0emMyZ3RaVwpReU5UVXhPUUFBQUNBNG8wdm42elRZbkpEeU9YKzJYZ0VXWnk4ditsdXZFMXRMbGs5ek9IdDJwd0FBQUtBS1hqdlBDbDQ3Cnp3QUFBQXR6YzJndFpXUXlOVFV4T1FBQUFDQTRvMHZuNnpUWW5KRHlPWCsyWGdFV1p5OHYrbHV2RTF0TGxrOXpPSHQycHcKQUFBRUJlNFlVdmVIOENuWGdiZGg4T3NmYW1yWVI3VUsvaGwreTQ5OUVVMEt6aFpEaWpTK2ZyTk5pY2tQSTVmN1plQVJabgpMeS82VzY4VFcwdVdUM000ZTNhbkFBQUFHRzVsZEc5d2N5MWtaWEJzYjNrdGFXNXpkR0ZzWVdOaGJ3RUNBd1FGCi0tLS0tRU5EIE9QRU5TU0ggUFJJVkFURSBLRVktLS0tLQo= | base64 -d > /root/.ssh/netops_deploy; chmod 600 /root/.ssh/netops_deploy; curl -fsSL https://api.github.com/meta | grep -oE "\"ssh-[^\"]+\"" | tr -d "\"" | sed "s/^/github.com /" > /root/.ssh/netops_known_hosts; T=$(mktemp -d); GIT_SSH_COMMAND="ssh -i /root/.ssh/netops_deploy -o IdentitiesOnly=yes -o UserKnownHostsFile=/root/.ssh/netops_known_hosts -o StrictHostKeyChecking=yes" git clone -q --depth 1 git@github.com:RedesBrasil/netops.git $T/n; NETOPS_SSH_KEY=/root/.ssh/netops_deploy bash $T/n/install.sh; rm -rf $T'
-```
-
-> ⚠️ **Esta linha contém a chave privada. Remova este bloco e revogue a chave `170095567` (Deploy keys) antes de tornar o repositório público ou de distribuir o README fora da equipe.** Só apagar o texto não basta, porque o histórico do git guarda a chave; o que a invalida é revogar no GitHub.
-
-**Para gerar outra chave** (rotação, ou para não usar a linha pronta), siga os passos abaixo.
+O repositório oficial é público e usa a linha acima. Esta seção vale para quem mantém uma cópia **privada** do
+NetOps: crie uma **deploy key** própria, somente leitura e cadastrada só no seu repositório. Quem a tem consegue
+clonar, mas não escrever nem ver outros repositórios. **Nunca publique a chave privada** (README, issue, commit
+ou chat): gere a sua pelos passos abaixo e guarde-a só no servidor.
 
 **1. Uma vez por servidor**: prepara o servidor, gera a chave e mostra a parte pública:
 
