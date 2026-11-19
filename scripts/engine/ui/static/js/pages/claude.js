@@ -1616,10 +1616,17 @@ export function ClaudeSessionTitle() {
 }
 
 // Bolinha de status sempre visível na barra do topo (no celular o resto vai p/ a folha "⋯").
-export function ClaudeStatusDot() {
+// Bolinha de conexão com o agente: verde = conectado (pronto), amarela piscando = conectando,
+// vermelha = desconectado/erro. O texto fica no tooltip (e para leitor de tela).
+const STATUS_TIP = { pronto: "Agente conectado", conectando: "Conectando ao agente…", reconectando: "Reconectando ao agente…",
+  desconectado: "Agente desconectado — tentando reconectar", desabilitado: "Aba Claude desabilitada", erro: "Erro na conexão com o agente" };
+function StatusDot({ cls = "" }) {
   const s = useClaude();
-  return html`<span class="badge dot-mob ${s.badge}" title=${s.status}>${s.status}</span>`;
+  const kind = s.status === "pronto" ? "ok" : (s.status === "conectando" || s.status === "reconectando") ? "wait" : "danger";
+  const tip = STATUS_TIP[s.status] || s.status;
+  return html`<span class=${"cc-conn " + kind + " " + cls} title=${tip} role="status" aria-label=${tip}></span>`;
 }
+export function ClaudeStatusDot() { return html`<${StatusDot} cls="mob-only-dot" />`; }
 
 function ProjectFilesToggle({ project }) {
   const [open, setOpen] = useProjectFilesOpen(project);
@@ -1637,7 +1644,7 @@ export function ClaudeTopbarControls() {
       title="Encerra esta sessão e abre uma nova (Ctrl+clique abre em nova janela)">＋ Nova sessão</button>
     <button class="sm cc-sessbtn" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
     ${s.project && html`<${ProjectFilesToggle} project=${s.project} />`}
-    <span class="badge ${s.badge} desk-only">${s.status}</span>
+    <${StatusDot} cls="desk-only" />
     ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
     <div class="keep-open"><${VaultBanner} compact=${true} /></div>
     ${s.auth && s.auth.available && !s.auth.loggedIn && html`<button class="sm danger" onClick=${() => s.setShowAuth(true)}
@@ -1976,7 +1983,7 @@ export function ChatDock() {
   const s = useClaude();
   return html`<aside class="chat-dock">
     <div class="chat-dock-head">
-      <span class="badge ${s.badge} dot" title=${s.status}></span>
+      <${StatusDot} />
       <b>Claude Code</b>
       ${s.working && html`<span class="chat-dock-live">● ao vivo</span>`}
       <span class="spacer"></span>

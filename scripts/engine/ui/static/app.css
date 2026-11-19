@@ -1207,3 +1207,13 @@ span.vault-icon { cursor: default; border-radius: var(--radius); height: 28px; }
   .topbar-actions.open .keep-open .vault-icon { width: 100%; }
   .topbar-actions.open .user-chip { justify-content: flex-start; height: 46px; padding: 0 14px; }
 }
+
+/* Conexão da aba Claude: bolinha (verde conectado, amarela conectando, vermelha desconectado/erro) */
+.cc-conn { display: inline-block; flex: none; width: 11px; height: 11px; border-radius: 50%; margin: 0 4px; }
+.cc-conn.ok { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-weak); }
+.cc-conn.wait { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-weak); animation: cc-conn-blink 1s ease-in-out infinite; }
+.cc-conn.danger { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-weak); }
+@keyframes cc-conn-blink { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .cc-conn.wait { animation: none; } }
+.cc-conn.mob-only-dot { display: none; }
+@media (max-width: 760px) { .cc-conn.mob-only-dot { display: inline-block; } }
