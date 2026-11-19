@@ -2,7 +2,7 @@
 
 ## [Não lançado]
 
-## [2.4.1] - 2026-11-19
+## [2.5.0] - 2026-11-19
 
 ### Novidades
 
@@ -47,6 +47,7 @@
 - **Agendador:** execução apagada na poda sai da lista de não lidas (badge fantasma no menu).
 
 - **Ping só funcionava como root em CT LXC não privilegiado.** O padrão do Debian para `net.ipv4.ping_group_range` é recusado pelo kernel nesses containers; agora o instalador usa a faixa de GIDs mapeada.
+- **Projetos: pasta do sistema recusada pelo motivo certo.** Rodando como `netops`, abrir `/root` como projeto dizia "sem permissão" em vez de "pasta do sistema não pode ser projeto".
 - **Console não subia com outra aplicação na mesma porta em outro endereço.** O `start.sh` dava "porta ocupada" para qualquer listener na porta (ex.: `127.0.0.1:8765`) e barrava o console em `IP:8765`; agora só conta o endereço do console ou curinga.
 
 ### Notas de compatibilidade

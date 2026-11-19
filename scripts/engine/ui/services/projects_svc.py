@@ -102,7 +102,7 @@ def _clean_name(name) -> str:
     return n
 
 
-def _resolve_dir(path) -> str:
+def _resolve_dir(path, deny_first: bool = False) -> str:
     raw = str(path or "").strip()
     if not raw or not os.path.isabs(raw):
         raise ProjectError("bad_path", "Informe o caminho absoluto da pasta (começa com /).")
@@ -113,6 +113,8 @@ def _resolve_dir(path) -> str:
         raise ProjectError("path_not_found", "Essa pasta não existe no servidor.", 404)
     if not real.is_dir():
         raise ProjectError("not_a_dir", "O caminho informado não é uma pasta.")
+    if deny_first:  # pasta do sistema é recusada pelo motivo certo mesmo quando a conta nem consegue lê-la
+        check_allowed(str(real))
     if not os.access(real, os.R_OK | os.X_OK):
         raise ProjectError("no_access", "O servidor não tem permissão para ler essa pasta.", 403)
     return str(real)
@@ -301,8 +303,7 @@ def create(name, path, *, trust: bool = False, new_folder: str | None = None) ->
     clean = _clean_name(name)
     real = None   # pasta nova: validada e criada dentro do lock (_new_folder)
     if not new_folder:
-        real = _resolve_dir(path)
-        check_allowed(real)
+        real = _resolve_dir(path, deny_first=True)
     with _LOCK:
         items = _load()
         if len(items) >= _MAX_PROJECTS:
