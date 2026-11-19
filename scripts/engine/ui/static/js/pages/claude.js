@@ -1640,13 +1640,10 @@ export function ClaudeTopbarControls() {
     <span class="badge ${s.badge} desk-only">${s.status}</span>
     ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
     <div class="keep-open"><${VaultBanner} compact=${true} /></div>
-    ${s.auth && s.auth.available && html`<button
-      class=${"sm cc-authbtn " + (s.auth.loggedIn ? "" : "danger")}
-      onClick=${() => s.setShowAuth(true)}
-      title=${s.auth.loggedIn ? "Conta do agente: " + (s.auth.email || s.auth.authMethod || "conectado") + " (/login)" : "O agente está deslogado — clique para entrar"}>
-      ${s.auth.loggedIn ? "👤" : "🔓 entrar (/login)"}
-    </button>`}
-    <button class="sm" onClick=${() => s.setShowPrefs(true)} title="Modelo e modo de permissão padrão p/ novas conversas">⚙ Padrões</button>`;
+    ${s.auth && s.auth.available && !s.auth.loggedIn && html`<button class="sm danger" onClick=${() => s.setShowAuth(true)}
+      title="O agente está deslogado — clique para entrar">entrar (/login)</button>`}
+    <button class="sm icon-btn" onClick=${() => s.setShowPrefs(true)} aria-label="Configurações"
+      title="Configurações: conta do agente, modelo, modo de permissão e ditado">⚙<span class="mob-label">Configurações</span></button>`;
 }
 
 // Painel de arquivos ao lado do chat de um Projeto: FECHADO por padrão, abre pelo botão 📁 da barra.
@@ -1709,12 +1706,13 @@ export function ClaudeCodePage() {
     ${s.showRateLimit && html`<${RateLimitModal} detail=${s.rateLimitDetail}
       onClose=${() => s.setShowRateLimit(false)} />`}
     ${s.showPrefs && html`<${PrefsModal} prefs=${s.prefs} models=${s.models} onSave=${s.savePrefs}
+      auth=${s.auth} onAccount=${() => { s.setShowPrefs(false); s.setShowAuth(true); }}
       onClose=${() => s.setShowPrefs(false)} />`}
   </div>${showFiles && html`<${ProjectFilesPanel} key=${s.project} project=${s.project} />`}</div>`;
 }
 
 // Padrões p/ conversas NOVAS. Conversas existentes sempre voltam no último modelo/modo usados.
-function PrefsModal({ prefs, models, onSave, onClose }) {
+function PrefsModal({ prefs, models, onSave, onClose, auth, onAccount }) {
   const [model, setM] = useState(prefs.default_model || "");
   const [mode, setMd] = useState(prefs.default_mode || "default");
   const [np, setNp] = useState(npNorm(prefs.default_netperms));
@@ -1722,7 +1720,16 @@ function PrefsModal({ prefs, models, onSave, onClose }) {
     try { await onSave({ default_model: model, default_mode: mode, default_netperms: np }); toast.ok("Padrões salvos"); onClose(); }
     catch (_) { toast.err("Falha ao salvar"); }
   }
-  return html`<${Modal} title="Padrões para novas conversas" onClose=${onClose}>
+  return html`<${Modal} title="Configurações" onClose=${onClose}>
+    ${auth && auth.available && html`<div class="cc-prefs-account">
+      <h4>Conta do agente (Claude)</h4>
+      <div class="cc-prefs-account-row">
+        <span>${auth.loggedIn ? html`👤 <b>${auth.email || auth.authMethod || "conectado"}</b>` : html`<span class="err">Deslogado</span>`}</span>
+        <span style="flex:1"></span>
+        <button class=${"sm " + (auth.loggedIn ? "" : "primary")} onClick=${onAccount}>${auth.loggedIn ? "Gerenciar conta" : "Entrar (/login)"}</button>
+      </div>
+    </div>`}
+    <h4>Padrões para novas conversas</h4>
     <${Field} label="Modelo padrão">
       <select value=${model} onChange=${(e) => setM(e.target.value)}>
         <option value="">Automático (Sonnet mais recente)</option>

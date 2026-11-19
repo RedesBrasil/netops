@@ -439,22 +439,23 @@ export function VaultBanner({ compact = false } = {}) {
     if (v.state === "cache") {
       const left = Math.max(0, (v.expires_in || 0) - tick);
       const mm = String(Math.floor(left / 60)).padStart(2, "0"), ss = String(left % 60).padStart(2, "0");
-      if (compact) return html`<span class="vault-chip ok" title="Cofre destrancado (sessão) — expira em ${mm}:${ss}">🔓 ${mm}:${ss}
-        <button class="sm" onClick=${doLock}>Trancar</button></span>`;
+      if (compact) return html`<button type="button" class="sm icon-btn vault-icon ok" onClick=${doLock}
+        title=${`Cofre destrancado — expira em ${mm}:${ss}. Clique para trancar agora.`} aria-label="Cofre destrancado: clique para trancar">🔓<span class="mob-label">Trancar o cofre</span></button>`;
       return html`<div class="vault-banner ok">🔓 Cofre destrancado (sessão) — expira em ${mm}:${ss}
         <span class="spacer"></span>
         <button class="sm" onClick=${doLock}>Trancar</button></div>`;
     }
     if (v.state === "env") return compact
-      ? html`<span class="vault-chip ok" title="Cofre destrancado (variável de ambiente)">🔓</span>`
+      ? html`<span class="sm icon-btn vault-icon ok" title="Cofre destrancado pela variável de ambiente (não tranca pela web)">🔓</span>`
       : html`<div class="vault-banner ok">🔓 Cofre destrancado (variável de ambiente)</div>`;
     return null;
   }
 
   const cmd = v.unlock_cmd || "cd /opt/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock";
-  if (compact) return html`<span class=${"vault-chip " + (v.state === "insecure" ? "insecure" : "locked")}
-    title=${v.state === "insecure" ? "Permissões inseguras no cache do cofre — " + v.detail : "Cofre TRANCADO — edições de senha desabilitadas"}>
-    ${v.state === "insecure" ? "⚠ Cofre inseguro" : "🔒 Cofre trancado"}${unlockBtn}${modal}</span>`;
+  if (compact) return html`<button type="button" class=${"sm icon-btn vault-icon " + (v.state === "insecure" ? "insecure" : "locked")}
+    onClick=${() => canUnlock ? setShowUnlock(true) : toast.info("Destrancar pela web está desabilitado — rode: " + cmd)}
+    title=${(v.state === "insecure" ? "Permissões inseguras no cache do cofre — " + v.detail : "Cofre TRANCADO")
+      + (canUnlock ? ". Clique para destrancar." : "")} aria-label="Cofre trancado: clique para destrancar">${v.state === "insecure" ? "⚠" : "🔒"}<span class="mob-label">Destrancar o cofre</span></button>${modal}`;
   if (v.state === "insecure")
     return html`<div class="vault-banner insecure">⚠ Permissões inseguras no cache do cofre — ${v.detail}
       ${unlockBtn}

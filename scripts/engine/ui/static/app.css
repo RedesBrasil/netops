@@ -1189,3 +1189,21 @@ tr.ib-row-pending td { background: var(--warn-weak); }
 /* sino: no desktop ao lado do "Sair" (dentro das ações); no celular fora da folha ⋯, sempre visível */
 .ib-slot { align-items: center; }
 .ib-slot.desk-only { display: flex; }
+
+/* Topo só com ícones (usuário, tema, configurações, cofre). No celular (folha ⋯) o rótulo volta. */
+.icon-btn { min-width: 32px; padding: 0 7px; font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.user-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 28px; padding: 0 7px; font-size: 16px; }
+.mob-label { display: none; }
+.vault-icon { cursor: pointer; border-color: transparent; }
+.vault-icon.locked { background: var(--danger-weak); }
+.vault-icon.insecure { background: var(--warn-weak); }
+.vault-icon.ok { background: var(--ok-weak); }
+span.vault-icon { cursor: default; border-radius: var(--radius); height: 28px; }
+.cc-prefs-account { margin-bottom: 10px; }
+.cc-prefs-account-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+@media (max-width: 760px) {
+  .topbar-actions.open .mob-label { display: inline; font-size: 15px; }
+  .topbar-actions.open .icon-btn, .topbar-actions.open .user-chip { justify-content: flex-start; gap: 10px; width: 100%; min-height: 46px; padding: 0 14px; }
+  .topbar-actions.open .keep-open .vault-icon { width: 100%; }
+  .topbar-actions.open .user-chip { justify-content: flex-start; height: 46px; padding: 0 14px; }
+}

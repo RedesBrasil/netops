@@ -222,9 +222,11 @@ function Shell({ onLogout, showLogout }) {
         onClick=${(e) => { if (e.target.closest("button") && !e.target.closest(".keep-open")) setMoreOpen(false); }}>
         ${isChat && html`<${ClaudeTopbarControls} />`}
         <div class="keep-open"><${UpdatesControl} part="version" /></div>
-        <button class="sm" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}>
-          ${theme === "light" ? "🌙 escuro" : "☀ claro"}</button>
-        ${me && showLogout && html`<a class="user-chip" href="#account" title=${"Minha conta — " + (me.email || me.username) + " — grupos: " + (me.groups || []).join(", ")}>👤 ${me.display_name || me.username}</a>`}
+        <button class="sm icon-btn" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}
+          title=${theme === "light" ? "Tema escuro" : "Tema claro"} aria-label=${theme === "light" ? "Mudar para o tema escuro" : "Mudar para o tema claro"}>
+          ${theme === "light" ? "🌙" : "☀"}<span class="mob-label">${theme === "light" ? " Tema escuro" : " Tema claro"}</span></button>
+        ${me && showLogout && html`<a class="user-chip" href="#account" title=${"Minha conta — " + (me.display_name || me.username) + " (" + (me.email || me.username) + ") — grupos: " + (me.groups || []).join(", ")}
+          aria-label="Minha conta">👤<span class="mob-label"> ${me.display_name || me.username}</span></a>`}
         <div class="desk-only ib-slot"><${InboxBell} /></div>
         ${showLogout && html`<button class="sm" onClick=${doLogout}>Sair</button>`}
       </div>
