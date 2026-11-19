@@ -334,6 +334,32 @@ def as_op(argv: list, cwd=None, input_text=None, check=True) -> subprocess.Compl
     return sh("runuser", "-u", OP_USER, "--", *argv, env=env, cwd=cwd, input_text=input_text, check=check)
 
 
+REQUIRED_PKGS = {"apt": ["dbus-user-session", "sudo", "openssh-sftp-server"],
+                 "dnf": ["dbus", "sudo", "openssh-server"], "yum": ["dbus", "sudo", "openssh-server"],
+                 "zypper": ["dbus-1", "sudo", "openssh-server"], "pacman": ["dbus", "sudo", "openssh"]}
+
+
+def ensure_packages(j: dict) -> None:
+    """Pacotes que o layout 2 exige (bus do usuário, sudo p/ netops-admin, sftp-server p/ Arquivos root).
+    Roda ANTES de parar o console: falhar aqui não derruba nada."""
+    pm = next((m for m in ("apt", "dnf", "yum", "zypper", "pacman") if shutil.which("apt-get" if m == "apt" else m)), None)
+    if not pm:
+        raise SystemExit("ERRO: gerenciador de pacotes não reconhecido")
+    if pm == "apt":
+        miss = [p for p in REQUIRED_PKGS["apt"]
+                if "install ok installed" not in sh("dpkg-query", "-W", "-f=${Status}", p, check=False).stdout]
+        if miss:
+            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+            sh("apt-get", "update", "-q", check=False, env=env)
+            sh("apt-get", "install", "-y", "-q", "--no-install-recommends", *miss, env=env)
+    else:
+        miss = REQUIRED_PKGS[pm]
+        cmd = {"dnf": ["dnf", "install", "-y"], "yum": ["yum", "install", "-y"],
+               "zypper": ["zypper", "--non-interactive", "install"], "pacman": ["pacman", "-S", "--noconfirm", "--needed"]}[pm]
+        sh(*cmd, *miss)
+    step(j, "pacotes do layout 2 presentes", installed=miss)
+
+
 def _user_manager_timeout(uid: int) -> None:
     """Máquina lenta (I/O) pode passar dos 90 s padrão para subir o user@UID: dá 5 min só para a conta netops."""
     d = Path(f"/etc/systemd/system/user@{uid}.service.d")
@@ -347,6 +373,7 @@ def account(j: dict) -> None:
     try:
         pw = pwd.getpwnam(OP_USER)
         j["account_before"] = {"home": pw.pw_dir}
+        save_journal(j)                      # rollback precisa saber o HOME antigo mesmo se falhar adiante
         if pw.pw_dir != OP_HOME:
             sh("usermod", "--home", OP_HOME, OP_USER)
     except KeyError:
@@ -358,6 +385,8 @@ def account(j: dict) -> None:
     os.chmod(OP_HOME, 0o700)
     _user_manager_timeout(pw.pw_uid)
     sh("loginctl", "enable-linger", OP_USER)
+    if not Path(f"/run/user/{pw.pw_uid}/bus").exists():   # subiu antes do dbus-user-session: reinicia
+        sh("systemctl", "restart", f"user@{pw.pw_uid}.service", check=False)
     for _ in range(300):
         if Path(f"/run/user/{pw.pw_uid}/bus").exists():
             break
@@ -507,7 +536,8 @@ def cmd_apply(root: Path, a) -> int:
     j["state"] = "applying"
     save_journal(j)
     try:
-        account(j)              # antes de parar o console: se o gerenciador do usuário falhar, nada caiu
+        ensure_packages(j)      # antes de parar o console: falhar aqui não derruba nada
+        account(j)              # idem: se o gerenciador do usuário falhar, nada caiu
         stop_legacy(root, j)
         chown_tree(root, j)
         copy_profile(root, j)
@@ -567,7 +597,8 @@ def cmd_rollback(root: Path, a) -> int:
             if not stat.S_ISLNK(st.st_mode) and stat.S_IMODE(st.st_mode) != mode:
                 os.chmod(p, mode)
     say(f"  ✓ dono/modo restaurados ({n} entradas; arquivos novos ficam como estão)")
-    if (d / CRON_FILE.name).exists():
+    cron_removed = any(st.get("step") == "despachante root do agendador retirado" for st in j.get("steps", []))
+    if cron_removed and (d / CRON_FILE.name).exists():
         cur = CRON_FILE.read_text().splitlines() if CRON_FILE.exists() else []
         old = (d / CRON_FILE.name).read_text().splitlines()
         merged = old + [ln for ln in cur if ln not in old]
@@ -581,8 +612,12 @@ def cmd_rollback(root: Path, a) -> int:
     before = j.get("account_before") or {}
     if before.get("home") and before["home"] != OP_HOME:
         sh("usermod", "--home", before["home"], OP_USER, check=False)
-    if (d / SYSTEM_UNIT.name).exists():
+    stopped = any(st.get("step") == "console root parado" for st in j.get("steps", []))
+    if stopped and (d / SYSTEM_UNIT.name).exists():
         sh("systemctl", "enable", "netops-console.service", check=False)
+    if supervisors(root):
+        say("  ✓ console antigo já está no ar (não foi parado nesta tentativa) — mantido")
+    elif (d / SYSTEM_UNIT.name).exists() and "start.sh --yes" not in (d / SYSTEM_UNIT.name).read_text():
         sh("systemctl", "start", "netops-console.service", check=False)
     else:
         sh(str(root / "scripts" / "engine" / "ui" / "start.sh"), "--yes", check=False)
