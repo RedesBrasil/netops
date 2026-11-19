@@ -214,6 +214,8 @@ def auth_me(request: Request) -> dict:
         if u:
             out.update(email=u["email"], last_login=u["last_login"], vault_slot=u["vault_slot"],
                        password_changed_at=u["password_changed_at"])
+            from lib import github_identity as ghid  # noqa: PLC0415
+            out["github_login"] = (ghid.get_meta(deps.DATA_ROOT, p.username) or {}).get("login") or ""
     return out
 
 

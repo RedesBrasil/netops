@@ -82,8 +82,9 @@ $P preview --cron "0 9 * * 1-5"                 # próximos horários
 ```
 
 Agendas: `--cron` (5 campos, fuso do cadastro; `@daily`, `L` = último dia do mês, `1#2` = 2ª segunda — lib `croniter`, a mesma do Hermes), `--every N` (minutos), `--at AAAA-MM-DDTHH:MM`.
-Outros: `--notify`, `--permissions restricted|full`, `--model`, `--timeout` (min, padrão 15), `--description`,
-`--disabled`. Saída sempre em JSON; erro de validação = exit 2 com `errors[]`.
+Outros: `--notify`, `--permissions restricted|full`, `--model`, `--github-as <usuario>`, `--timeout` (min, padrão 15), `--description`,
+`--disabled`. `--github-as`: o agente usa a conta do GitHub conectada por esse usuário do console. Sem conta conectada, fica sem GitHub;
+sem `--github-as`, usa o `gh` do servidor. Saída sempre em JSON; erro de validação = exit 2 com `errors[]`.
 Tarefas criadas pelo CLI ficam marcadas `created_by: chat` (selo "via chat" na tela) e são editáveis no console.
 
 ## Regras

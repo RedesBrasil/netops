@@ -58,7 +58,8 @@ def _fields(a, creating: bool) -> dict:
     sch = _schedule(a)
     if sch:
         f["schedule"] = sch
-    agent = {k: v for k, v in (("permissions", a.permissions), ("model", a.model)) if v is not None}
+    agent = {k: v for k, v in (("permissions", a.permissions), ("model", a.model),
+                               ("github_as", getattr(a, "github_as", None))) if v is not None}
     if agent:
         f["agent"] = agent
     if a.disabled:
@@ -79,6 +80,8 @@ def _add_fields(p) -> None:
     p.add_argument("--notify", choices=store.NOTIFY)
     p.add_argument("--permissions", choices=store.PERMISSIONS)
     p.add_argument("--model")
+    p.add_argument("--github-as", dest="github_as",
+                   help="ID do usuário do console cuja conta do GitHub o agente usa (padrão: gh do servidor)")
     p.add_argument("--timeout", type=int, help="minutos (padrão 15)")
     p.add_argument("--description")
     p.add_argument("--disabled", action="store_true")

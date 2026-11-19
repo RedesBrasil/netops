@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 import deps
 from lib import accessdb
+from lib import github_identity as ghid
 from services import authz
 
 router = APIRouter(tags=["users"])
@@ -92,7 +93,10 @@ def access_catalog() -> dict:
 # ----------------------------------------------------------------- usuários
 @router.get("/users")
 def users_list() -> dict:
-    return {"users": accessdb.list_users(_db()), "multiuser": deps.has_users(),
+    users = accessdb.list_users(_db())
+    for u in users:   # só o @login (sem token): coluna "GitHub" da lista
+        u["github_login"] = (ghid.get_meta(deps.DATA_ROOT, u["username"]) or {}).get("login") or ""
+    return {"users": users, "multiuser": deps.has_users(),
             "groups": [g["name"] for g in accessdb.list_groups(_db())]}
 
 
@@ -138,6 +142,7 @@ def users_reset_password(username: str, body: PasswordReset, request: Request):
 @router.delete("/users/{username}", status_code=204)
 def users_delete(username: str, request: Request):
     accessdb.delete_user(_db(), username, actor=_actor(request).username)
+    ghid.purge_user(deps.DATA_ROOT, username.lower())   # some o login do GitHub dele também
     _audit(request, "user_deleted", username)
 
 

@@ -296,6 +296,10 @@ def _clean(task: dict, tz_name: str) -> dict:
     perm = agent.get("permissions") or "restricted"
     if perm not in PERMISSIONS:
         errs.append({"loc": "agent/permissions", "msg": "permissões devem ser restricted ou full"})
+    # GitHub POR USUÁRIO: o agente da tarefa usa a conta conectada por esse usuário do console (vazio = gh do servidor).
+    github_as = str(agent.get("github_as") or "").strip().lower()
+    if github_as and not re.match(r"^[a-z0-9][a-z0-9._-]{1,31}$", github_as):
+        errs.append({"loc": "agent/github_as", "msg": "github_as deve ser o ID de um usuário do console"})
     try:
         timeout = int(task.get("timeout_min") or 15)
         if not 1 <= timeout <= 24 * 60:
@@ -320,6 +324,8 @@ def _clean(task: dict, tz_name: str) -> dict:
     if kind in ("agent", "hybrid"):
         out["prompt"] = prompt
         out["agent"] = {"permissions": perm, "model": str(agent.get("model") or "").strip()}
+        if github_as:
+            out["agent"]["github_as"] = github_as
     for k in ("created_at", "created_by"):
         if task.get(k):
             out[k] = task[k]

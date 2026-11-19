@@ -107,6 +107,7 @@ function TaskEditor({ initial, scripts, onSave, onClose, onDelete }) {
   const [prompt, setPrompt] = useState(init.prompt || "");
   const [perm, setPerm] = useState((init.agent && init.agent.permissions) || "restricted");
   const [model, setModel] = useState((init.agent && init.agent.model) || "");
+  const [githubAs, setGithubAs] = useState((init.agent && init.agent.github_as) || "");
   const [notify, setNotify] = useState(init.notify || "auto");
   const [timeout, setTimeoutMin] = useState(init.timeout_min || 15);
   const [prev, setPrev] = useState({ next_runs: [], error: null });
@@ -126,7 +127,7 @@ function TaskEditor({ initial, scripts, onSave, onClose, onDelete }) {
   async function submit() {
     const body = { name, description, enabled, kind, schedule, notify, timeout_min: parseInt(timeout, 10) || 15 };
     if (kind !== "agent") body.script = script;
-    if (kind !== "script") { body.prompt = prompt; body.agent = { permissions: perm, model }; }
+    if (kind !== "script") { body.prompt = prompt; body.agent = { permissions: perm, model, ...(githubAs.trim() ? { github_as: githubAs.trim().toLowerCase() } : {}) }; }
     const errs = await onSave(body);
     if (errs) setErrors(Object.fromEntries(errs.map((e) => [e.loc.split("/")[0], e.msg])));
   }
@@ -180,6 +181,9 @@ function TaskEditor({ initial, scripts, onSave, onClose, onDelete }) {
         </label>
         <label><span>Modelo <span class="help">(vazio = padrão)</span></span>
           <input type="text" value=${model} placeholder="ex.: sonnet" onInput=${(e) => setModel(e.target.value)} />
+        </label>
+        <label><span>GitHub de <span class="help">(ID do usuário do console; vazio = conta do servidor)</span></span>
+          <input type="text" value=${githubAs} placeholder="ex.: joao.silva" onInput=${(e) => setGithubAs(e.target.value)} />
         </label>
       </div>`}
 

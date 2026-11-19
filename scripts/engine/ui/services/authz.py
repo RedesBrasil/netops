@@ -39,6 +39,8 @@ RULES: list[tuple[frozenset, re.Pattern, str | None]] = [
     (WRITE, _R(r"^/vault/unlock$"), ANY),                     # exige a senha-mestra de qualquer jeito
     (WRITE, _R(r"^/vault/lock$"), "credentials.edit"),
     (GET, _R(r"^/updates/status$"), ANY),
+    # GitHub DO PRÓPRIO usuário (Minha conta → GitHub); o de outro usuário cai em /users/ (users.manage)
+    (ALL, _R(r"^/account/github(/|$)"), ANY),
     # inventário
     (GET, _R(r"^/(hosts|groups)(/|$)"), "hosts.view"),
     (WRITE, _R(r"^/hosts/[^/]+/web-launch$"), "host.web"),

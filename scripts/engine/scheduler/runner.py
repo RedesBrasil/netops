@@ -224,6 +224,16 @@ def claude_bin() -> str | None:
          if os.path.exists(p)), None)
 
 
+def _github_env(task: dict, env: dict, root=None) -> dict:
+    """agent.github_as = usuário do console: o agente usa o GitHub DELE (sem conta conectada = sem GitHub,
+    nunca o do servidor). Vazio = comportamento antigo (gh do servidor)."""
+    user = ((task.get("agent") or {}).get("github_as") or "").strip()
+    if not user:
+        return env
+    from lib import github_identity  # noqa: PLC0415
+    return github_identity.apply_env(env, github_identity.env_for(store.data_root(root), user, multiuser=True))
+
+
 def agent_command(task: dict, prompt: str) -> list[str]:
     agent = task.get("agent") or {}
     cmd = [claude_bin() or "claude", "-p", prompt, "--output-format", "json",
@@ -402,7 +412,7 @@ def run(task_id: str, run_id: str, trigger: str = "manual", root=None) -> dict:
                 raise RuntimeError("binário `claude` não encontrado no PATH")
             prompt = build_prompt(task, tz_name, script_out if task["kind"] == "hybrid" else None)
             left = max(60, int(deadline - time.time()))
-            code, out, tout = _run_proc(agent_command(task, prompt), env={**env, "IS_SANDBOX": "1"},
+            code, out, tout = _run_proc(agent_command(task, prompt), env=_github_env(task, {**env, "IS_SANDBOX": "1"}, root),
                                         cwd=str(store.NETOPS_ROOT), timeout=left)
             text, meta = out, {}
             try:

@@ -59,6 +59,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Subir **ou reiniciar** o console web (SEMPRE por aqui) | `scripts/engine/ui/start.sh` |
 | Gerenciador de arquivos do console (menu **Arquivos** + painel SFTP ao lado do terminal de host) | `scripts/engine/ui/` (`routers/files.py`, `static/js/file-browser.js`; ver `SKILL.md`) |
 | Usuários, grupos de acesso, auditoria do console (SQLite `runs/netops.db`) | `scripts/engine/users/` (`SKILL.md`; console: **Usuários / Grupos de acesso / Auditoria**) |
+| GitHub de cada usuário (conta própria no agente; **Minha conta → GitHub**) | `scripts/engine/lib/github_identity.py` (ver `scripts/engine/users/SKILL.md`, "GitHub por usuário") |
 | Projetos do console (nome + pasta; sessões do Claude Code por pasta; menu **Projetos**) | `scripts/engine/ui/` (`routers/projects.py`, `services/projects_svc.py`, `static/js/pages/projects.js`; ver `SKILL.md`) |
 | Tarefas agendadas (script / agente de IA / script + agente) | `scripts/engine/scheduler/` (`SKILL.md`; console: menu **Tarefas agendadas**) |
 | **Central de Avisos**: alertas, avisos e pedidos de aprovação (sino 🔔 no topo + menu **Saída → Central de Avisos**) | `scripts/engine/inbox/` (`SKILL.md`; `inbox/cli.py add`) |
@@ -98,6 +99,9 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   - **Exclusivo do admin:** o que roda como root no servidor (terminal/arquivos do servidor, scripts, tarefas agendadas, config, updates).
   - **Na aba Claude:** `NETOPS_USER` identifica quem pediu. O teto de rede do grupo dele vale e **não se contorna**.
   - **Recuperação:** `python3 scripts/engine/users/cli.py reset-admin`. Ver `scripts/engine/users/SKILL.md`.
+  - **GitHub por usuário:** na aba Claude e nos Projetos, git/gh usam a conta do GitHub **de quem abriu a conversa**.
+    Sem conta conectada, push, PR e `gh` falham: peça para conectar em **Minha conta → GitHub** (`#account/github`) e
+    reabrir a conversa. Nunca use a conta do servidor nem troque `GH_CONFIG_DIR`, `GH_TOKEN` ou a identidade do git.
 - **Tabelas do console (regra de desenvolvimento):** toda listagem usa `DataTable` (`scripts/engine/ui/static/js/table.js`),
   com `tableId` único e colunas com `sort`. Nunca use `<table>` cru numa tela: o teste `tests/table-core.test.mjs` reprova.
   Assim toda tabela tem redimensionar, mover, ocultar e ordenar. Leia `core/rules/tabelas-console.md`.

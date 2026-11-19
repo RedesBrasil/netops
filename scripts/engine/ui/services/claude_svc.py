@@ -76,7 +76,7 @@ from pathlib import Path
 from fastapi import WebSocket, WebSocketDisconnect
 
 import deps
-from lib import net_perms, shell_cmds
+from lib import github_identity, net_perms, shell_cmds
 from services import claude_models, claude_prefs, projects_svc
 
 # Importado de forma preguiçosa para não quebrar a UI quando o SDK não está instalado
@@ -465,6 +465,8 @@ class ClaudeWebSession:
         else:
             self._netperms = self._capped(None if self._resume else dflt["default_netperms"])
         self._netperms_told: tuple | None = None   # último estado avisado ao agente (UserPromptSubmit)
+        self._github_env: dict = {}                # GitHub DO USUÁRIO (montado em _options, a cada lançamento)
+        self._github_told = False
         self._last_turn: dict | None = None   # {t, usage, ctx} do último turno (re-anexo restaura cache/contexto)
         self.client: ClaudeSDKClient | None = None
         self._pending: dict[str, asyncio.Future] = {}   # id de permissão -> Future
@@ -572,7 +574,10 @@ class ClaudeWebSession:
             #     subprocesso `claude`. Merge com os.environ p/ preservar PATH/HOME/credenciais.
             # Projeto: NENHUM token é copiado p/ o ambiente. A conta do agente vale em qualquer pasta porque
             # mora no nível do usuário (~/.claude/), como no VS Code; ver projects_svc e SKILL.md.
-            env={**os.environ, "IS_SANDBOX": "1", "NETOPS_USER": self.user or ""},
+            # GitHub POR USUÁRIO (multiusuário): GH_CONFIG_DIR/identidade git de quem abriu a conversa; sem conta
+            # conectada = pasta vazia (push falha, nunca cai no gh do servidor). Ver lib/github_identity.py.
+            env=github_identity.apply_env(
+                {**os.environ, "IS_SANDBOX": "1", "NETOPS_USER": self.user or ""}, self._compute_github_env()),
             extra_args={"dangerously-skip-permissions": None},
             permission_mode="default",                       # seguro-mas-usável; UI troca p/ qualquer um
             include_partial_messages=True,                   # streaming de texto/pensamento
@@ -585,6 +590,9 @@ class ClaudeWebSession:
                 # timeout > VAULT_WAIT_MAX: o hook espera o humano digitar a senha-mestra.
                 HookMatcher(matcher="Bash", hooks=[self._hook_vault_gate], timeout=VAULT_WAIT_MAX + 60),
                 HookMatcher(matcher="Bash", hooks=[self._hook_netperms], timeout=NETPERMS_HOOK_TIMEOUT),
+                # GitHub por usuário: não deixa o agente pegar o login de outra pessoa / do servidor.
+                *([HookMatcher(matcher="Bash|Read|Edit|Write|MultiEdit|Grep|Glob|NotebookEdit",
+                               hooks=[self._hook_github_guard])] if self._github_guarded() else []),
                 # Projeto: o hook de backup do NetOps (.claude/settings.json do NetOps) não carrega fora dele;
                 # roda aqui, programático, p/ que "backup antes de alterar equipamento" valha em qualquer pasta.
                 *([HookMatcher(matcher="Bash", hooks=[self._hook_netops_guard], timeout=GUARD_HOOK_TIMEOUT)]
@@ -704,13 +712,79 @@ class ClaudeWebSession:
                 "nunca tente contornar (outro script, API, comando equivalente).")
 
     async def _hook_prompt_netperms(self, input_data: dict, tool_use_id, context):
-        """UserPromptSubmit: injeta as permissões de rede no contexto do turno (restritas, ou mudaram)."""
+        """UserPromptSubmit: injeta as permissões de rede no contexto do turno (restritas, ou mudaram)
+        e, no 1º turno do processo, qual conta do GitHub vale nesta conversa."""
+        parts = []
+        if self._github_env and not self._github_told:
+            self._github_told = True
+            parts.append(self._github_context())
         cur = tuple(self._netperms)
-        if net_perms.is_full(cur) and self._netperms_told in (None, cur):
+        if not (net_perms.is_full(cur) and self._netperms_told in (None, cur)):
+            self._netperms_told = cur
+            parts.append(self._netperms_context())
+        if not parts:
             return {}
-        self._netperms_told = cur
         return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
-                                       "additionalContext": self._netperms_context()}}
+                                       "additionalContext": "\n\n".join(parts)}}
+
+    # ------------------------------------------------------- GitHub por usuário
+    def _compute_github_env(self) -> dict:
+        """Ambiente GitHub do usuário da conversa. {} = modo antigo (sem usuários / sem dono)."""
+        env: dict = {}
+        try:
+            multi = bool(self.user) and deps.has_users()
+            if multi:
+                from lib import accessdb  # noqa: PLC0415
+                u = accessdb.get_user(deps.db_file(), self.user) or {}
+                env = github_identity.env_for(deps.DATA_ROOT, self.user, multiuser=True,
+                                              fallback_name=u.get("display_name") or "",
+                                              fallback_email=u.get("email") or "")
+        except Exception:  # noqa: BLE001
+            # Na dúvida, SEM GitHub (pasta vazia) — nunca a conta do servidor.
+            env = github_identity.env_for(deps.DATA_ROOT, self.user or "desconhecido", multiuser=True) \
+                if self.user else {}
+        self._github_env = env
+        return env
+
+    def _github_guarded(self) -> bool:
+        """Guarda só p/ NÃO-admin: o admin já é root no servidor (terminal/arquivos) e mexe no próprio código
+        do NetOps (que cita GH_CONFIG_DIR etc.); travá-lo só atrapalharia sem proteger nada."""
+        if not self._github_env:
+            return False
+        try:
+            from services import authz  # noqa: PLC0415
+            p = authz.principal_for_user(self.user)
+            return not (p and p.is_admin)
+        except Exception:  # noqa: BLE001
+            return True
+
+    def _github_context(self) -> str:
+        login = self._github_env.get("NETOPS_GITHUB_LOGIN") or ""
+        who = f"{self._github_env.get('GIT_AUTHOR_NAME', '')} <{self._github_env.get('GIT_AUTHOR_EMAIL', '')}>"
+        if login:
+            return ("[NetOps — GitHub] Nesta conversa o git/gh usam a conta do GitHub do usuário do console: "
+                    f"@{login}; commits saem como {who}. Não troque de conta, identidade ou credencial.")
+        return ("[NetOps — GitHub] O usuário do console desta conversa NÃO conectou uma conta do GitHub: "
+                f"commits saem como {who}, mas push, PR e `gh` vão falhar por falta de login. Não tente usar outra "
+                "conta nem a do servidor. Peça ao usuário para conectar em Minha conta → GitHub (#account/github) "
+                "e reabrir a conversa.")
+
+    async def _hook_github_guard(self, input_data: dict, tool_use_id, context):
+        """PreToolUse: bloqueia o agente de ler/trocar login do GitHub (de outro usuário ou do servidor).
+        Grade contra erro, não fronteira de segurança: o agente roda como root."""
+        ti = input_data.get("tool_input") or {}
+        text = " ".join(str(ti.get(k) or "") for k in ("command", "file_path", "path", "pattern", "notebook_path"))
+        what = github_identity.guard_check(text)
+        if not what:
+            return {}
+        return {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": (
+                f"BLOQUEADO (GitHub por usuário): o comando mexe em {what}. Cada usuário do console usa a própria "
+                "conta do GitHub, já configurada no ambiente desta conversa. Não tente contornar; se faltar acesso, "
+                "peça ao usuário para conectar/ajustar em Minha conta → GitHub."),
+        }}
 
     async def _hook_netperms(self, input_data: dict, tool_use_id, context):
         """PreToolUse(Bash): `session.py run|exec` com comando de categoria desmarcada -> pede

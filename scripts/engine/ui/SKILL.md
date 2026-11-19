@@ -148,6 +148,8 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
     - Rota nova: inclua a regra em `authz.RULES`.
     - Botão de ação: marque com a classe `needs-<perm>`.
   - **Login:** o login de cada usuário destranca o cofre pelo keyslot dele.
+  - **GitHub por usuário:** `#account/github` conecta a conta de cada um, e o agente da conversa usa só ela (`GH_CONFIG_DIR`
+    e identidade git no env de `claude_svc._options`). Detalhes em `scripts/engine/users/SKILL.md`.
   - **Sem usuários:** vale o modo antigo (senha-mestra), descrito abaixo. O 1º login cria o `admin`.
   - **Exclusivo do admin** (rodam como root no servidor):
     - terminal e arquivos do servidor, configuração, atualização, usuários, auditoria;

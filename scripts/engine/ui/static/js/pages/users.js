@@ -51,6 +51,9 @@ export function UsersPage() {
     { key: "sessions", label: "Sessões", sort: true, render: (u) => String(u.sessions) },
     { key: "vault_slot", label: "Cofre", sort: (u) => (u.vault_slot ? 1 : 0),
       render: (u) => (u.vault_slot ? html`<${Badge} kind="ok">🔑 destranca<//>` : html`<span class="help" title="O login cria a chave quando o cofre estiver destrancado">—</span>`) },
+    { key: "github_login", label: "GitHub", sort: (u) => u.github_login || "",
+      render: (u) => (u.github_login ? html`<a href=${"https://github.com/" + u.github_login} target="_blank" rel="noopener" onClick=${(e) => e.stopPropagation()}>@${u.github_login}</a>`
+        : html`<span class="help" title="O agente deste usuário fica sem GitHub até ele conectar em Minha conta → GitHub">—</span>`) },
     { key: "last_ip", label: "Último IP", sort: true, hidden: true, render: (u) => u.last_ip || "—" },
     { key: "created_at", label: "Criado em", sort: (u) => u.created_at || 0, hidden: true, render: (u) => `${fmtTs(u.created_at)} (${u.created_by || "—"})` },
   ];
@@ -71,6 +74,7 @@ export function UsersPage() {
       actions=${(u) => html`
         <button class="sm" onClick=${() => r.open([u.username, "password"])}>Senha…</button>
         <button class="sm" disabled=${!u.sessions} onClick=${() => setConfirm({ kind: "logout", u })}>Encerrar sessões</button>
+        <button class="sm needs-users-manage" disabled=${!u.github_login} title="Desconecta o GitHub deste usuário no NetOps" onClick=${() => setConfirm({ kind: "github", u })}>Revogar GitHub</button>
         <button class="sm danger" disabled=${me && me.username === u.username} onClick=${() => setConfirm({ kind: "delete", u })}>Excluir</button>`}
       empty="Nenhum usuário." />
 
@@ -80,13 +84,15 @@ export function UsersPage() {
     ${resetting && html`<${ResetPasswordModal} user=${resetting} cat=${cat} onClose=${() => r.close()}
         onSaved=${() => { r.close(); res.reload(); }} />`}
     ${confirm && html`<${ConfirmDialog} danger=${confirm.kind === "delete"}
-        title=${confirm.kind === "delete" ? "Excluir usuário" : "Encerrar sessões"}
+        title=${confirm.kind === "delete" ? "Excluir usuário" : confirm.kind === "github" ? "Revogar GitHub" : "Encerrar sessões"}
         message=${confirm.kind === "delete" ? `Apagar o usuário ${confirm.u.email || confirm.u.username}? As sessões dele caem na hora.`
+          : confirm.kind === "github" ? `Desconectar o GitHub @${confirm.u.github_login} de ${confirm.u.email || confirm.u.username}? Conversas novas dele ficam sem GitHub. Para invalidar o token no GitHub, o dono revoga em github.com → Settings → Applications.`
           : `Derrubar as ${confirm.u.sessions} sessão(ões) abertas de ${confirm.u.email || confirm.u.username}?`}
         onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
           try {
             if (confirm.kind === "delete") { await api.del(`/users/${encodeURIComponent(confirm.u.username)}`); toast.ok("Usuário apagado"); }
+            else if (confirm.kind === "github") { await api.del(`/users/${encodeURIComponent(confirm.u.username)}/github`); toast.ok("GitHub revogado"); }
             else { await api.del(`/users/${encodeURIComponent(confirm.u.username)}/sessions`); toast.ok("Sessões encerradas"); }
             res.reload();
           } catch (e) { handleError(e); } }} />`}

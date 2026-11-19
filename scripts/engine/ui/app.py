@@ -80,6 +80,7 @@ from routers import (
     credentials,
     dashboard,
     files,
+    github,
     host_term,
     web_launch,
     hosts,
@@ -216,7 +217,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (audio, auth, meta, dashboard, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, inbox, terminal, host_term, files, web_launch, claude, projects, updates, web_access, users, audit):
+    for mod in (audio, auth, meta, dashboard, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, inbox, terminal, host_term, files, web_launch, claude, projects, updates, web_access, users, github, audit):
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("startup")
@@ -337,6 +338,12 @@ def _register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(AccessError)
     async def _access_error(_request, exc: AccessError):
+        return JSONResponse({"error": exc.code, "detail": exc.detail}, status_code=exc.status)
+
+    from lib.github_identity import GitHubError
+
+    @app.exception_handler(GitHubError)
+    async def _github_error(_request, exc: GitHubError):
         return JSONResponse({"error": exc.code, "detail": exc.detail}, status_code=exc.status)
 
     @app.exception_handler(MigrationIncomplete)

@@ -64,6 +64,36 @@ O backup completo (`scripts/tools/backup/full_mirror.sh`) já espelha `runs/neto
 - **Sessões antigas:** quem estava logado (arquivo `runs/.ui-auth-sessions.json`) continua logado, como `admin`. A importação acontece uma vez.
 - **Compatibilidade:** `POST /api/auth/login {master_password}` sem `username` = senha do `admin`.
 
+## GitHub por usuário
+
+Cada usuário conecta a **própria** conta do GitHub em **Minha conta → GitHub** (`#account/github`). O agente das
+conversas que **ele** abre (aba Claude Code, Projetos) usa essa conta para push, PR e `gh`, e os commits saem com o
+nome e o e-mail dele. Código: `scripts/engine/lib/github_identity.py`, `ui/services/github_auth.py`, `ui/routers/github.py`.
+
+- **Como conecta:** login por dispositivo do GitHub CLI (código + `github.com/login/device`, autorizado no navegador
+  da pessoa) ou um token pessoal. A senha do GitHub nunca passa pelo NetOps.
+- **Onde fica:** `runs/users/<username>/gh/` (GH_CONFIG_DIR do `gh`, token em `hosts.yml` com `--insecure-storage`,
+  pasta 0700) e `runs/users/<username>/github.json` (login, nome, e-mail escolhido, sem token). Tudo git-ignorado.
+- **Ambiente do agente** (`claude_svc._options` → `github_identity.env_for`): `GH_CONFIG_DIR` dele,
+  `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, credential helper do github.com por `GIT_CONFIG_*` (vale sobre qualquer gitconfig),
+  `GIT_TERMINAL_PROMPT=0`; `GH_TOKEN`/`GITHUB_TOKEN` herdados são removidos.
+- **Sem conta conectada:** `GH_CONFIG_DIR` aponta para `runs/users/_sem-github/gh` (vazia). Push, PR e `gh` falham e
+  **nunca** usam a conta do servidor. Os commits saem com o nome e o e-mail do cadastro no console.
+- **Vale para conversas novas ou reabertas:** o ambiente é fixado quando o processo do agente nasce. Quem retoma
+  a conversa de outra pessoa (admin) usa o GitHub **dele próprio**.
+- **Guarda** (`_hook_github_guard`, só para não-admin): bloqueia ler `/root/.config/gh`, `runs/users/`, `gh auth token`,
+  trocar `GH_CONFIG_DIR`/`GH_TOKEN`, `env -i/-u`, `git config credential/user.*` e `--author`. É uma grade contra
+  erro, **não** uma fronteira: o agente roda como root.
+- **Admin:** a coluna "GitHub" em Usuários mostra o @login, e "Revogar GitHub" usa `DELETE /api/users/<u>/github`.
+  Apagar o usuário apaga a pasta dele. A auditoria registra `github_connected`, `github_disconnected`, `github_email`
+  e `github_revoked`.
+- **Modo sem usuários:** nada muda; o agente usa o `gh` do servidor.
+- **Servidor:** o atualizador e o backup completo continuam com o `gh` do root (`/root/.config/gh`). O ideal é uma
+  conta de serviço, não a pessoal de alguém.
+- **Tarefas agendadas:** `agent.github_as: <username>` (CLI `--github-as`) faz o agente da tarefa usar o GitHub
+  desse usuário. Vazio mantém o `gh` do servidor.
+- **Testes:** `scripts/engine/ui/tests/test_github_per_user.py`.
+
 ## CLI
 
 ```bash
