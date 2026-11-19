@@ -1645,7 +1645,6 @@ export function ClaudeTopbarControls() {
     <button class="sm cc-sessbtn" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
     ${s.project && html`<${ProjectFilesToggle} project=${s.project} />`}
     <${StatusDot} cls="desk-only" />
-    ${s.working && html`<button class="sm danger" onClick=${() => s.send({ type: "interrupt" })}>Interromper</button>`}
     <div class="keep-open"><${VaultBanner} compact=${true} /></div>
     ${s.auth && s.auth.available && !s.auth.loggedIn && html`<button class="sm danger" onClick=${() => s.setShowAuth(true)}
       title="O agente está deslogado — clique para entrar">entrar (/login)</button>`}
