@@ -27,7 +27,7 @@ export function CredentialsPage() {
     : s.encrypted ? html`<${Badge} kind="ok">🔒 cifrado<//>` : html`<${Badge} kind="warn">⚠ texto puro<//>`;
 
   const cols = [
-    { key: "name", label: "Credencial", hideable: false, sort: true, render: (r) => html`<a href=${"#credentials/" + encodeURIComponent(r.name)} onClick=${(e) => e.stopPropagation()}><b>${r.name}</b></a>` },
+    { key: "name", label: "Credencial", hideable: false, sort: true, render: (r) => html`<a href=${"#credentials/" + encodeURIComponent(r.name)} onClick=${(e) => e.stopPropagation()}><b>${r.name}</b></a>${r.system === "local_admin" ? html` <${Badge} kind="accent" title="Senha do admin local (netops-admin). Gerada pelo instalador; troca só por provision.py rotate.">Admin local<//>` : ""}` },
     { key: "username", label: "Usuário", sort: true, render: (r) => r.username || "—" },
     { key: "password", label: "Senha", sort: (r) => !r.password ? 0 : r.password.encrypted ? 2 : 1, render: (r) => secretBadge(r.password) },
     { key: "secret", label: "Secret", sort: (r) => !r.secret ? 0 : r.secret.encrypted ? 2 : 1, render: (r) => r.secret ? secretBadge(r.secret) : "—" },
@@ -43,7 +43,7 @@ export function CredentialsPage() {
     ${seg && seg !== "new" && !found && html`<div class="card">Credencial '${seg}' não encontrada. <a href="#credentials">Voltar às credenciais</a></div>`}
     <${DataTable} tableId="credentials" urlSort columns=${cols} rows=${credentials.map((c) => ({ ...c, _key: c.name }))}
       onRowClick=${(r) => setEditing(r)}
-      actions=${(r) => html`
+      actions=${(r) => r.system === "local_admin" ? html`<span class="muted" title="Gerenciada pelo sistema: sudo scripts/engine/localadmin/provision.py rotate">🛡 sistema</span>` : html`
         <button class="sm" disabled=${!writable} title=${writable ? "" : "Destranque o cofre na aba Terminal"}
           onClick=${() => setRotating({ name: r.name, field: "password" })}>Senha…</button>
         <button class="sm" disabled=${!writable}

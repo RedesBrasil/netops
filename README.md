@@ -7,20 +7,37 @@
 Copie, cole no terminal e pronto:
 
 ```bash
+# já autenticado como root:
+curl -fsSL https://raw.githubusercontent.com/RedesBrasil/netops/main/install.sh | bash
+# com uma conta administrativa e sudo:
 curl -fsSL https://raw.githubusercontent.com/RedesBrasil/netops/main/install.sh | sudo bash
 ```
 
-O instalador ([`install.sh`](install.sh)) faz tudo sozinho. Ele instala os pacotes do sistema
-(Python, nmap, cron, ping, traceroute, mtr, ssh, git e gh). Depois baixa a última release, confere
-o SHA256 e extrai em `/opt/netops`. Cria o `.venv` com as dependências, cria o usuário `netops` do
-terminal web e instala o agente `claude`. Pede a **senha-mestra**, que é o login do console. Por fim,
-registra o serviço de boot, sobe o console, testa tudo e mostra o endereço `http://IP:porta/`.
-Debian 12+, Ubuntu 22.04+, RHEL/Rocky/Alma 9+, Fedora, openSUSE Tumbleweed e Arch.
+O instalador ([`install.sh`](install.sh)) faz tudo sozinho. Root só **prepara o sistema**: pacotes
+(Python, nmap, cron, ping, traceroute, mtr, ssh, git, gh, sudo), a conta operacional `netops` (HOME
+`/var/lib/netops`, sem sudo) e o serviço. Depois baixa a última release, confere o SHA256 e extrai em
+`/opt/netops`. O `.venv`, o agente `claude` e o cofre são criados **como `netops`**. Pede a
+**senha-mestra**, que é o login do console. Registra o serviço systemd do usuário
+`netops-console@opt-netops` (sobe no boot, sem login), sobe o console, testa tudo e mostra o endereço
+`http://IP:porta/`.
+
+**O NetOps nunca roda como root:** console, IA, subagentes, terminal web, tarefas agendadas e
+atualizações usam a conta `netops`. Para administrar **este** servidor como root (ex.: "instale o
+Docker aqui"), o instalador cadastra o host **Local** (`NETOPS-LOCAL`, protegido) e a conta de elevação
+`netops-admin`, cuja senha aleatória fica só no cofre: com o cofre destrancado, a operação roda como
+root sem SSH e sem você digitar senha (ver [`scripts/engine/localadmin/SKILL.md`](scripts/engine/localadmin/SKILL.md)).
+Arquivos como root: menu **Arquivos → 🔓 Abrir como root**.
+
+Exige systemd (VM ou CT/LXC com systemd). Testado em Ubuntu 24.04 (CT LXC); Debian 12+, RHEL/Rocky/Alma 9+,
+Fedora, openSUSE Tumbleweed e Arch seguem suportados pelo instalador, mas ainda sem validação da conta
+dedicada nesta versão.
 Rodar de novo é seguro: numa instalação existente ele só confere e repara, sem tocar em código nem
-em dados.
+em dados. **Instalação antiga** (console como root) não é migrada sozinha: o instalador avisa e a
+migração é um comando próprio, com dry-run e rollback
+([`scripts/engine/identity/SKILL.md`](scripts/engine/identity/SKILL.md)).
 
 Opções (`sudo VAR=valor bash` no fim do pipe): `NETOPS_DIR`, `NETOPS_PORT`, `NETOPS_HOST`,
-`NETOPS_VERSION`.
+`NETOPS_VERSION`, `NETOPS_NO_LOCALADMIN=1` (não cria o host Local/`netops-admin`).
 
 ### Repositório privado: instalação por chave SSH (deploy key)
 

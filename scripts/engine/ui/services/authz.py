@@ -7,8 +7,8 @@
   rota sem regra só passa p/ admin, e o teste `test_every_route_is_mapped` reprova rota nova sem regra.
   `None` = qualquer usuário logado; "@router" = o próprio router decide (depende do corpo/da query).
 - O grupo `admin` tem "*". Permissões `admin_only` (terminal/arquivos do servidor, config, updates,
-  usuários, auditoria, editar scripts e tarefas agendadas — os dois rodam como root) não são
-  concedíveis a outros grupos.
+  usuários, auditoria, editar scripts e tarefas agendadas — os dois rodam com a conta do servidor —
+  e `server.admin`, a administração Local como root) não são concedíveis a outros grupos.
 
 A aba Claude Code roda o agente com shell no servidor: liberar `claude.use` é decisão de confiança.
 O teto de `net_perms` do grupo limita o que ela faz nos EQUIPAMENTOS (grade contra erro, não fronteira).
@@ -75,6 +75,7 @@ RULES: list[tuple[frozenset, re.Pattern, str | None]] = [
     (WRITE, _R(r"^/updates/apply$"), "updates"),
     (ALL, _R(r"^/term$"), "server.terminal"),                  # WebSocket (checado em routers/terminal.py)
     (ALL, _R(r"^/term/host/"), "host.terminal"),               # WebSocket (routers/host_term.py)
+    (ALL, _R(r"^/files/root/(status|open|close)$"), "server.admin"),  # modo root dos Arquivos (localadmin)
     (GET, _R(r"^/files/dl/"), ANY),                           # ticket de uso único (emitido já autorizado)
     (ALL, _R(r"^/files/"), ROUTER),                           # local = server.files; SFTP de host = host.files
     # IA / ditado

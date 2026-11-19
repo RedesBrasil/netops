@@ -45,6 +45,8 @@ def load_creds() -> tuple[dict, str]:
 def _mask_one(name: str, raw: dict) -> dict:
     from lib.vault import is_encrypted  # noqa: PLC0415
     out = {"name": name}
+    if str(name).casefold() == "cred_local_admin":
+        out["system"] = "local_admin"      # selo "Admin local" na tela; só o rotate altera
     for field in ("username", "key_file", "api_ssl"):
         if field in raw:
             out[field] = raw[field]
@@ -86,6 +88,15 @@ def _clean_fields(fields: dict) -> dict:
     return out
 
 
+LOCAL_CREDENTIAL = "CRED_LOCAL_ADMIN"   # admin local (scripts/engine/localadmin): só o rotate mexe
+
+
+def _protect(name: str) -> None:
+    if str(name or "").strip().casefold() == LOCAL_CREDENTIAL.casefold():
+        raise deps.ValidationFailed([{"loc": "name", "msg": "credencial do admin local é gerenciada pelo sistema: "
+                                      "troque a senha com `sudo scripts/engine/localadmin/provision.py rotate`"}])
+
+
 @yaml_io.serialized
 def create_credential(name: str, fields: dict, rev: str | None) -> dict:
     data, y = _load_doc()
@@ -100,6 +111,7 @@ def create_credential(name: str, fields: dict, rev: str | None) -> dict:
 
 @yaml_io.serialized
 def update_credential(name: str, fields: dict, rev: str | None, *, partial: bool) -> dict:
+    _protect(name)
     data, y = _load_doc()
     creds = data.get("credentials") or {}
     name = _ckey(creds, name)
@@ -118,6 +130,7 @@ def update_credential(name: str, fields: dict, rev: str | None, *, partial: bool
 
 @yaml_io.serialized
 def delete_credential(name: str, rev: str | None, *, force: bool) -> dict:
+    _protect(name)
     data, y = _load_doc()
     creds = data.get("credentials") or {}
     name = _ckey(creds, name)
@@ -163,6 +176,8 @@ def credential_references(name: str) -> dict:
 
 @yaml_io.serialized
 def rename_credential(old: str, new: str, rev: str | None) -> dict:
+    _protect(old)
+    _protect(new)
     """Renomeia a chave da credencial e atualiza 'credential' em hosts/grupos, numa
     transação atômica. credentials.yaml mantém modo 0600 e o bloco vault: intacto
     (ruamel round-trip); os tokens enc.v1: viajam junto com o valor."""
@@ -204,6 +219,7 @@ def rename_credential(old: str, new: str, rev: str | None) -> dict:
 # --------------------------------------------------------------------------- #
 @yaml_io.serialized
 def set_secret(name: str, field: str, value: str, rev: str | None) -> dict:
+    _protect(name)
     """Encripta `value` com a chave da sessão e grava via substituição textual.
 
     Cofre trancado => VaultLocked (423). Cofre não iniciado => VaultNotInitialized (409).

@@ -19,7 +19,7 @@ O servidor (atualizador, backup completo) continua usando o `gh` do root, fora d
 
 Segredo: o token fica SÓ no hosts.yml do `gh` dentro da pasta do usuário. Este módulo nunca o lê,
 imprime nem devolve; os metadados exibidos (login, nome, e-mail) ficam em `github.json` ao lado.
-⚠ Limite: o agente roda como root, então a separação é LÓGICA (guarda no hook do claude_svc), não do
+⚠ Limite: o agente tem shell com a conta do servidor, então a separação é LÓGICA (guarda no hook do claude_svc), não do
 sistema operacional. Ver scripts/engine/users/SKILL.md ("GitHub por usuário").
 """
 from __future__ import annotations

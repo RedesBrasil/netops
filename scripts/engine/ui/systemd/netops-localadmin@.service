@@ -1,0 +1,20 @@
+# NetOps — backend de administração Local (layout 2). Serviço de USUÁRIO separado do console
+# e da IA: quem pede uma operação fala com ele por socket; a senha de `netops-admin` só existe
+# na memória deste processo, fora da árvore de processos da IA (ptrace_scope=1).
+# Ver scripts/engine/localadmin/SKILL.md.
+[Unit]
+Description=NetOps administração Local (%i)
+ConditionPathExists=/etc/netops/instances/%i.env
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/netops/instances/%i.env
+ExecStart=/bin/bash -c 'cd "$NETOPS_DIR" && exec "$NETOPS_DIR/.venv/bin/python3" -I "$NETOPS_DIR/scripts/engine/localadmin/daemon.py" --root "$NETOPS_DIR"'
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=20
+UMask=0077
+
+[Install]
+WantedBy=default.target

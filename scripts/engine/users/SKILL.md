@@ -38,7 +38,7 @@ O backup completo (`scripts/tools/backup/full_mirror.sh`) já espelha `runs/neto
   - O teste `test_every_route_is_mapped_to_a_permission` reprova rota nova sem regra.
 - **Grupo `admin` (fixo):** tem `*`. Só ele tem as permissões `admin_only`:
   terminal e arquivos do servidor, configuração, atualização, usuários, auditoria,
-  **editar scripts/skills** e **criar/editar tarefas agendadas**. Essas duas últimas rodam como root no servidor.
+  **editar scripts/skills** e **criar/editar tarefas agendadas**. Essas duas últimas rodam com a conta do servidor (`netops`; root só na instalação legada). `server.admin` = administração Local como root (só admin).
 - **Grupos sugeridos** (editáveis): `operador` e `leitura`.
 - **Sem escopo por host:** quem tem `hosts.view` vê todos os hosts.
 - **Aba Claude:** liberável por grupo (`claude.use`).
@@ -83,7 +83,7 @@ nome e o e-mail dele. Código: `scripts/engine/lib/github_identity.py`, `ui/serv
   a conversa de outra pessoa (admin) usa o GitHub **dele próprio**.
 - **Guarda** (`_hook_github_guard`, só para não-admin): bloqueia ler `/root/.config/gh`, `runs/users/`, `gh auth token`,
   trocar `GH_CONFIG_DIR`/`GH_TOKEN`, `env -i/-u`, `git config credential/user.*` e `--author`. É uma grade contra
-  erro, **não** uma fronteira: o agente roda como root.
+  erro, **não** uma fronteira: o agente tem shell com a conta do servidor.
 - **Onde aparece:** só em **Minha conta → GitHub**. Não aparece na aba Claude nem na lista de Usuários (decisão do
   usuário, 19/11). O admin consulta e revoga só pela API: `GET`/`DELETE /api/users/<u>/github`.
   Apagar o usuário apaga a pasta dele. A auditoria registra `github_connected`, `github_disconnected`, `github_email`

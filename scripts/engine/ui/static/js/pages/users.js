@@ -209,7 +209,7 @@ export function AccessGroupsPage() {
       <button class="primary" onClick=${() => r.open("new")}>+ Novo grupo</button></div>
     <p class="help">O grupo define o que o usuário vê e faz no console. Quem tem acesso a hosts vê todos os
       hosts. Terminal e arquivos do servidor, configuração, atualização, usuários, auditoria, scripts e tarefas
-      agendadas ficam só com o grupo <b>admin</b>, porque esses recursos rodam como root no servidor.</p>
+      agendadas ficam só com o grupo <b>admin</b>, porque esses recursos rodam com a conta do servidor (e <b>server.admin</b> dá root local).</p>
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar grupo ou membro" count=${groups.length} total=${all.length} />
     ${seg && seg !== "new" && !found && html`<div class="card">Grupo '${seg}' não encontrado. <a href="#access-groups">Voltar aos grupos</a></div>`}
     <${DataTable} tableId="access-groups" urlSort columns=${cols} rows=${groups.map((g) => ({ ...g, _key: g.name }))}

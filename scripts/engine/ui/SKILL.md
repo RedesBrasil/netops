@@ -66,11 +66,11 @@ falhou**, cheque aqui:
   `claude auth login`, mostra a URL para você autorizar no navegador e recebe o código colado. O
   campo de mensagem **não trava** quando a sessão cai — dá para digitar `/login` mesmo desconectado.
   Depois do login, "Recarregar sessão" relança o agente **retomando a mesma conversa**.
-- **Loguei pelo terminal web e a aba continua deslogada.** Esperado, e é a pegadinha mais cara aqui: a
-  credencial mora em `$HOME/.claude/.credentials.json` **do processo que roda o `claude`**. A aba lança o
-  agente com o env do **servidor**; o terminal web **dropa privilégio** para `netops` (ver `NETOPS_TERM_USER`
-  em `routers/terminal.py`). Com o servidor subindo como root, são dois stores diferentes — e duas listas de
-  conversas (`$HOME/.claude/projects/`). Logue **pela própria aba**: aí cai no store certo. O modal mostra
+- **Loguei pelo terminal web e a aba continua deslogada.** No layout 2 (conta `netops`, padrão desde o
+  plano de 19/11/2026) console, terminal web, tarefas e subagentes usam a MESMA conta e o MESMO
+  `$HOME/.claude` (`/var/lib/netops/.claude`): logar em qualquer um vale para todos. Só na instalação
+  **legada** (console root) o terminal dropa para `netops` (ver `NETOPS_TERM_USER` em `routers/terminal.py`)
+  e são dois stores diferentes — e duas listas de conversas. Na dúvida, logue **pela própria aba**. O modal mostra
   qual arquivo/usuário está em jogo, e `GET /api/claude/auth/status` responde o mesmo (sem token nenhum).
 - **Não vejo NADA além do login?** O cofre está inicializado e você ainda não logou — o gate de login
   (senha-mestra) trava todo o `/api`. Não há mais token de transporte na URL (`?token=`); foi removido.
@@ -151,9 +151,10 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   - **GitHub por usuário:** `#account/github` conecta a conta de cada um, e o agente da conversa usa só ela (`GH_CONFIG_DIR`
     e identidade git no env de `claude_svc._options`). Detalhes em `scripts/engine/users/SKILL.md`.
   - **Sem usuários:** vale o modo antigo (senha-mestra), descrito abaixo. O 1º login cria o `admin`.
-  - **Exclusivo do admin** (rodam como root no servidor):
+  - **Exclusivo do admin** (rodam com a conta do servidor, `netops`):
     - terminal e arquivos do servidor, configuração, atualização, usuários, auditoria;
-    - editar scripts e tarefas agendadas.
+    - editar scripts e tarefas agendadas;
+    - `server.admin`: administração Local como root (host Local e Arquivos → 🔓 Abrir como root).
   - **Aba Claude:** liberável por grupo, com dono por conversa e teto de `net_perms`.
     - É proteção contra erro, não fronteira de segurança: o agente tem shell no servidor.
   - **Endpoints:** `GET /api/auth/me`, `POST /api/auth/password`, `/api/users*`, `/api/access-groups*`, `/api/access-catalog`, `/api/audit`.

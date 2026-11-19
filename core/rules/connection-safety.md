@@ -43,7 +43,22 @@ de rollback automático).
 **A IA nunca manuseia segredo em texto puro.** Descriptografar, ler, imprimir, salvar ou copiar
 o valor de um campo `password`/`secret` e **proibido** — mesmo com o cofre destrancado, mesmo
 "para conferir" ou "por transparencia". Quem descriptografa sao **exclusivamente** os scripts de
-acesso (`scripts/tools/access/*`), no instante de conectar.
+acesso (`scripts/tools/access/*`), no instante de conectar, e o backend **Local**
+(`scripts/engine/localadmin/`), que autentica o `su` de `netops-admin` no proprio servidor.
+
+## Host Local (este servidor NetOps)
+
+- E o host com `access.method: local` (criado pelo instalador, protegido: nao se apaga nem se troca
+  acesso/credencial). Nao usa rede: `session.py exec|run --host-id <ID-LOCAL> --command "..."` roda
+  **como root**, uma operacao por comando (sem shell root persistente: junte `cd`/`export` no mesmo comando).
+- Comando que nao precisa de root: rode direto no Bash (a IA ja e `netops`). Root so quando o pedido exigir.
+- Pre-requisitos: cofre destrancado e usuario com `server.admin`. Falta algo -> o script diz o que (codigo
+  `vault_locked`, `authorization_denied`, `local_access_disabled`...): **informe o humano e pare**; nunca tente
+  `sudo`, `su`, SSH em 127.0.0.1 ou ler a credencial.
+- Backup antes/depois (`change.py begin/end --host-id <ID-LOCAL>`) vale igual: o baseline do Local inclui
+  pacotes, servicos, portas, grupos e firewall. Gerenciador de pacotes **nao** tem rollback universal: diga
+  antes o que e irreversivel. Instalar Docker nao inclui `netops` no grupo `docker`.
+- Nunca trate o IP de um host remoto como local, nem `127.0.0.1` como prova de que e o Local.
 
 - Para conectar/coletar/mudar, **invoque o script de acesso** com `--host-id <inteiro>`
   (ou `--host <hostname-ou-alias>` para compatibilidade). Ele resolve a

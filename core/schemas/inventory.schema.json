@@ -87,6 +87,7 @@
               }
             }
           },
+          "local_instance": {"type": "string", "pattern": "^[0-9a-f-]{36}$", "description": "Só no host Local: ID da instalação NetOps a que ele pertence (vínculo; ver scripts/engine/lib/runtime_identity.py)."},
           "runs_on": {"allOf": [{"$ref": "#/$defs/hostId"}], "description": "ID do host que hospeda este (CT/VM -> hypervisor). Só informativo."}
         }
       }]
@@ -116,7 +117,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "method": { "type": "string", "enum": ["ssh", "telnet", "api", "winbox", "http", "https", "ftp", "snmp"] },
+            "method": { "type": "string", "enum": ["ssh", "telnet", "api", "winbox", "http", "https", "ftp", "snmp", "local"], "description": "local = este próprio servidor NetOps (sem rede; elevação por netops-admin — scripts/engine/localadmin)." },
             "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
           }
         }

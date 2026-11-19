@@ -14,13 +14,15 @@ Vendor = Literal[
 ]
 Role = Literal["core", "distribution", "access", "firewall", "wireless", "server", "other"]
 Method = Literal["ssh", "telnet", "api", "winbox", "http", "https", "ftp", "snmp"]
+# `local` = este próprio servidor (host Local protegido, criado pelo instalador; ver scripts/engine/localadmin).
+AccessMethod = Literal["ssh", "telnet", "api", "winbox", "http", "https", "ftp", "snmp", "local"]
 Port = Annotated[int, Field(ge=1, le=65535)]
 HostId = Annotated[StrictInt, Field(ge=1, le=2**53 - 1)]
 
 
 class Access(BaseModel):
     model_config = {"extra": "forbid"}
-    method: Optional[Method] = None
+    method: Optional[AccessMethod] = None
     port: Optional[Port] = None
 
     @field_validator("method", mode="before")
@@ -120,6 +122,7 @@ class HostUpsert(NodeUpsert):
     group: Optional[str] = None
     apps: Optional[list[App]] = Field(default=None, max_length=MAX_APPS)
     runs_on: Optional[HostId] = None  # host que hospeda este (CT/VM -> hypervisor)
+    local_instance: Optional[str] = Field(default=None, pattern=r"^[0-9a-f-]{36}$")  # só host Local (imutável)
     icon: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
     @field_validator("icon")

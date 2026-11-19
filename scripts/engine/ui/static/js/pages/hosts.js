@@ -17,6 +17,8 @@ const OS_SUGGEST = ["ROUTEROS", "DEBIAN", "UBUNTU", "ROCKY LINUX", "ALMALINUX", 
 const APP_SUGGEST = ["ZABBIX SERVER", "ZABBIX PROXY", "ZABBIX FRONTEND", "ZABBIX AGENT", "PROXMOX VE", "PROXMOX BACKUP SERVER", "EVE-NG", "POSTGRESQL", "MYSQL", "MARIADB", "DOCKER", "COOLIFY", "NGINX", "APACHE", "GRAFANA", "NETOPS"];
 // Texto do SO (o campo legado `version` é tratado à parte, para hosts ainda não migrados).
 export const osText = (e) => [e.os, e.os_version].filter(Boolean).join(" ");
+// Host Local = este servidor (access.method=local; criado pelo instalador, protegido — ver scripts/engine/localadmin)
+export const isLocalHost = (h) => String(((h && (h.explicit || h).access) || {}).method || "").toLowerCase() === "local";
 const appText = (a) => [a.name, a.version].filter(Boolean).join(" ");  // (credential/method dos métodos ficam em form.accesses)
 const INHERIT = ["vendor", "role", "credential"];
 const MAX_EXTRA_ACCESS = 10;  // mesmo teto do backend (models.MAX_EXTRA_ACCESS)
@@ -54,7 +56,7 @@ export function HostsPage() {
 
   const cols = [
     { key: "id", label: "ID", sort: (r) => String(r.id), render: (r) => html`<span class="mono">${r.id}</span>` },
-    { key: "hostname", label: "Nome do host", hideable: false, sort: (r) => r.explicit.hostname || "", render: (r) => html`<a href=${"#hosts/" + encodeURIComponent(r.id)} onClick=${(e) => e.stopPropagation()}><b>${r.explicit.hostname}</b></a>` },
+    { key: "hostname", label: "Nome do host", hideable: false, sort: (r) => r.explicit.hostname || "", render: (r) => html`<a href=${"#hosts/" + encodeURIComponent(r.id)} onClick=${(e) => e.stopPropagation()}><b>${r.explicit.hostname}</b></a>${isLocalHost(r) ? html` <${Badge} kind="accent" title="Este servidor NetOps (acesso Local, sem SSH)">LOCAL<//>` : ""}` },
     { key: "mgmt_ip", label: "IP", sort: (r) => r.explicit.mgmt_ip || "", render: (r) => html`<span class="mono">${r.explicit.mgmt_ip}</span>` },
     { key: "vendor", label: "Vendor", sort: (r) => r.effective.vendor || "", render: (r) => html`<${Badge} kind="accent">${r.effective.vendor || "?"}<//>` },
     { key: "role", label: "Role", sort: (r) => r.effective.role || "", render: (r) => r.effective.role || "—" },
@@ -95,7 +97,8 @@ export function HostsPage() {
         return html`<button class="sm needs-host-terminal" disabled=${!te.length}
             title=${te.length ? "Acessar (" + te.map((e) => (e.kind === "web" ? "WEB " : "") + e.method.toUpperCase() + ":" + e.port).join(", ") + ")" : "Host sem SSH/Telnet/HTTP(S) cadastrado"}
             onClick=${() => te.length === 1 ? openEntry(r.id, te[0]) : openAccess(r.id)}>⌨ Acessar</button>
-          <button class="sm danger needs-hosts-edit" onClick=${() => setConfirm(r.id)}>Excluir</button>`; }}
+          ${isLocalHost(r) ? html`<span class="muted" title="Host Local protegido: não pode ser apagado (desative com provision.py disable)">🛡 protegido</span>`
+            : html`<button class="sm danger needs-hosts-edit" onClick=${() => setConfirm(r.id)}>Excluir</button>`}`; }}
       empty="Nenhum host. Clique em + Novo host." />
 
     ${accessHost && html`<${AccessChooser} host=${accessHost} entries=${accessEntries(accessHost)} onClose=${() => openAccess("")} />`}
@@ -113,7 +116,9 @@ export function HostsPage() {
 export function HostForm({ host, groups, rev, onClose, onSaved, placement, initial = {} }) {
   const isNew = !!host.__new;
   const enums0 = useEnums();
-  const enums = enums0 && { ...enums0, vendor: upList(enums0.vendor), role: upList(enums0.role), method: upList(enums0.method) };
+  const local = !isNew && isLocalHost(host);
+  const enums = enums0 && { ...enums0, vendor: upList(enums0.vendor), role: upList(enums0.role),
+    method: upList(enums0.method).filter((m) => local || m !== "LOCAL") };
   const [groupDetails, setGroupDetails] = useState({});
   const [creds, setCreds] = useState([]);
   const [conflict, setConflict] = useState(false);
@@ -276,7 +281,11 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
         <${EnumSelect} value=${form.role} options=${enums?.role} allowInherit=${!!form.group}
           inheritLabel=${`herdar: ${inh("role") || "—"}`} onChange=${(v) => set("role", v)} /><//>
     </div>
-    <div class="field access-methods">
+    ${local && html`<div class="card warn" role="note">🛡 <b>Host Local protegido</b> — é este servidor NetOps. O acesso é Local (sem SSH):
+      comandos administrativos usam a conta <span class="mono">netops-admin</span> com a senha do cofre (destranque quando precisar de root).
+      Acesso, credencial, IP e vínculo não podem ser alterados nem o host apagado; para desligar o root local:
+      <span class="mono">sudo scripts/engine/localadmin/provision.py disable</span>.</div>`}
+    <fieldset class="field access-methods" disabled=${local} style="border:0;padding:0;margin:0;min-width:0">
       <label>Métodos de acesso <span class="muted">(${form.accesses.length}/${MAX_EXTRA_ACCESS + 1}) — o 1º é o principal; arraste ⠿ para reordenar</span></label>
       ${form.accesses.map((a, i) => html`<div class=${"access-row" + (drag.from === i ? " dragging" : "") + (drag.over === i && drag.from !== i ? (drag.from < i ? " drop-after" : " drop-before") : "")} key=${i}
         onDragOver=${(e) => { if (drag.from == null) return; e.preventDefault(); if (drag.over !== i) setDrag((d) => ({ ...d, over: i })); }}
@@ -309,7 +318,7 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
         ${accErr(i) && html`<div class="err">${accErr(i)}</div>`}
       </div>`)}
       <div><button type="button" disabled=${form.accesses.length > MAX_EXTRA_ACCESS} onClick=${addAcc}>+ Adicionar método de acesso</button></div>
-    </div>
+    </fieldset>
     ${isNew && !placement && mapOptions && html`<${Field} label="Também incluir em um mapa adicional">
       <select value=${mapChoice} onChange=${e => setMapChoice(e.target.value)}><option value="">Só geral e localidade (automático)</option>
         ${mapOptions.maps.filter(m => m.kind === "custom").map(m => html`<option value=${m.id}>${m.name}</option>`)}</select><//>`}

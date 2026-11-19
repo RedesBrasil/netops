@@ -42,7 +42,157 @@ cd "$ROOT"
 unset NETOPS_UI_FOREGROUND NETOPS_RESTART_DETACHED \
       NETOPS_UPDATE_FROZEN NETOPS_UPDATE_MANAGED NETOPS_UPDATE_NONCE NETOPS_UPDATE_RECOVERING
 
-# ----------------------------------------------------------------------------- modo gerenciado
+# ----------------------------------------------------------------------------- identidade (layout 2)
+# Instalação com /etc/netops/instances/<slug>.env (root-owned) roda como a conta operacional
+# (`netops`), como serviço systemd DO USUÁRIO (netops-console@<slug>.service, linger = boot).
+# Sem o arquivo = instalação legada (layout 1, console root): comportamento antigo, intacto.
+# Fonte única: scripts/engine/lib/runtime_identity.py (mesmo formato; aqui lido em bash puro,
+# para que root nunca execute Python da árvore gravável pela conta operacional).
+IDENT_SLUG=$(printf '%s' "${ROOT#/}" | sed -E 's/[^A-Za-z0-9]+/-/g; s/^-+//; s/-+$//')
+IDENT_FILE="${NETOPS_IDENTITY_DIR:-/etc/netops/instances}/$IDENT_SLUG.env"
+USER_MODE=0
+if [ -f "$IDENT_FILE" ]; then
+  USER_MODE=1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|\#*) continue ;; esac
+    k="${line%%=*}"; v="${line#*=}"
+    case "$k" in
+      NETOPS_LAYOUT|NETOPS_DIR|NETOPS_RUNTIME_USER|NETOPS_RUNTIME_HOME|NETOPS_INSTANCE_ID|NETOPS_UI_HOST|NETOPS_UI_PORT|NETOPS_UI_TERMINAL|NETOPS_UI_CLAUDE|NETOPS_UI_CLAUDE_PERSIST) ;;
+      *) echo "ERRO: chave inválida em $IDENT_FILE: $k" >&2; exit 2 ;;
+    esac
+    [[ "$v" =~ ^[A-Za-z0-9_./:@%+,-]*$ ]] || { echo "ERRO: valor inválido em $IDENT_FILE ($k)" >&2; exit 2; }
+    printf -v "ID_$k" '%s' "$v"
+  done < "$IDENT_FILE"
+  [ "${ID_NETOPS_LAYOUT:-}" = 2 ] || { echo "ERRO: $IDENT_FILE: layout desconhecido" >&2; exit 2; }
+  [ "${ID_NETOPS_DIR:-}" = "$ROOT" ] || { echo "ERRO: $IDENT_FILE aponta para ${ID_NETOPS_DIR:-?}, não para $ROOT" >&2; exit 2; }
+  RT_USER="${ID_NETOPS_RUNTIME_USER:-netops}"
+  RT_UID=$(id -u "$RT_USER" 2>/dev/null) || { echo "ERRO: a conta operacional $RT_USER não existe" >&2; exit 2; }
+  [ "$RT_UID" != 0 ] || { echo "ERRO: a conta operacional não pode ser root" >&2; exit 2; }
+  RT_HOME=$(getent passwd "$RT_USER" | cut -d: -f6)
+  UNIT="netops-console@$IDENT_SLUG.service"
+  ME=$(id -u)
+  if [ "$ME" = 0 ]; then
+    # Root nunca sobe o console: delega para a conta operacional, com o ambiente DELA
+    # (HOME, runtime e bus do gerenciador do usuário). Trocar só o $HOME mantendo UID 0 não vale.
+    if [ ! -S "/run/user/$RT_UID/bus" ]; then
+      loginctl enable-linger "$RT_USER" 2>/dev/null || true
+      for _ in $(seq 180); do [ -S "/run/user/$RT_UID/bus" ] && break; sleep 1; done
+    fi
+    [ -S "/run/user/$RT_UID/bus" ] || { echo "ERRO: gerenciador systemd do usuário $RT_USER indisponível (linger?). Veja: loginctl show-user $RT_USER" >&2; exit 2; }
+    cd /
+    exec runuser -u "$RT_USER" -- env -i \
+      PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME="$RT_HOME" USER="$RT_USER" LOGNAME="$RT_USER" \
+      XDG_RUNTIME_DIR="/run/user/$RT_UID" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$RT_UID/bus" \
+      LANG="${LANG:-C.UTF-8}" TERM="${TERM:-dumb}" "$ROOT/scripts/engine/ui/start.sh" "$@"
+  elif [ "$ME" != "$RT_UID" ]; then
+    echo "ERRO: esta instalação roda como '$RT_USER'; você é '$(id -un)'. Rode: sudo $ROOT/scripts/engine/ui/start.sh $*" >&2
+    exit 2
+  fi
+  export HOME="$RT_HOME" USER="$RT_USER" LOGNAME="$RT_USER"
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$RT_UID}"
+  export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+fi
+
+# Pré-validação comum aos dois layouts: nada é parado se o novo console não tiver como subir.
+preflight_checks() {  # stdout = motivo da falha; exit != 0 se falhou
+  [ -x "$ROOT/.venv/bin/python3" ] || [ -f "$ROOT/.netops-update/journal.json" ] || { echo "venv ausente"; return 1; }
+  [ -f "$ROOT/scripts/engine/update/supervisor.py" ] || { echo "supervisor.py ausente"; return 1; }
+  local pyv="$ROOT/.venv/bin/python3" err rc smoke
+  [ -x "$pyv" ] || pyv=python3
+  # Sintaxe de TODO o backend (server, services, routers, update) — não só do server.py.
+  err=$("$pyv" - "$ROOT/scripts/engine/ui" "$ROOT/scripts/engine/update" <<'PYEOF' 2>&1
+import ast, pathlib, sys
+bad = []
+for base in sys.argv[1:]:
+    for f in pathlib.Path(base).rglob("*.py"):
+        if "tests" in f.parts or "__pycache__" in f.parts:
+            continue
+        try:
+            ast.parse(f.read_text(encoding="utf-8"), str(f))
+        except Exception as e:
+            bad.append(f"{f}: {e}")
+print("\n".join(bad)); sys.exit(1 if bad else 0)
+PYEOF
+) || { echo "erro de sintaxe no backend: $err"; return 1; }
+  # Import SECO do app (o mesmo venv do console), com dados/HOME numa pasta vazia.
+  if [ -x "$ROOT/.venv/bin/python3" ]; then
+    smoke=$(mktemp -d); rc=0
+    (cd "$ROOT/scripts/engine/ui" && env -i PATH="/usr/bin:/bin" HOME="$smoke" \
+      NETOPS_UI_DATA_ROOT="$smoke" timeout 60 "$ROOT/.venv/bin/python3" \
+      -c "import sys; sys.path.insert(0, '.'); import app") >"$smoke.log" 2>&1 || rc=$?
+    err=$(tail -3 "$smoke.log" 2>/dev/null); rm -rf "$smoke" "$smoke.log"
+    [ "$rc" = 0 ] || { echo "o app não importa: $err"; return 1; }
+  fi
+  return 0
+}
+
+# ----------------------------------------------------------------------------- modo gerenciado (layout 2)
+# Sobe/reinicia o serviço de usuário. O helper roda numa unidade transitória DO USUÁRIO
+# (systemd-run --user), fora do cgroup do console: não morre junto com a aba Claude que pediu.
+if [ "$USER_MODE" = 1 ] && [ "${1:-}" != "--foreground" ]; then
+  STATE_DIR="$RT_HOME/.local/state/netops"; mkdir -p "$STATE_DIR"; chmod 700 "$RT_HOME/.local/state" "$STATE_DIR" 2>/dev/null || true
+  LOG="$STATE_DIR/restart-$IDENT_SLUG.log"
+  log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
+  ASSUME_YES=0; NO_DETACH=0; PASS=()
+  for a in "$@"; do
+    case "$a" in -y|--yes) ASSUME_YES=1;; --no-detach) NO_DETACH=1;; *) PASS+=("$a");; esac
+  done
+  if [ ${#PASS[@]} -gt 0 ]; then
+    echo "ERRO: flags extras (${PASS[*]}) só valem com --foreground (depuração). A configuração do serviço fica em $IDENT_FILE." >&2
+    exit 2
+  fi
+  HOST="${ID_NETOPS_UI_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"; HOST="${HOST:-127.0.0.1}"
+  PORT="${ID_NETOPS_UI_PORT:-8765}"
+  URLH="$HOST"; case "$HOST" in *:*) URLH="[$HOST]";; esac
+  ACTIVE=$(systemctl --user is-active "$UNIT" 2>/dev/null || true)
+  if [ "$NO_DETACH" = 0 ]; then
+    if [ "$ACTIVE" = active ] && [ "$ASSUME_YES" = 0 ] && [ -t 0 ] && [ -t 1 ]; then
+      echo "O console já está rodando. Reiniciar ENCERRA as sessões vivas da aba Claude (tarefas em andamento)."
+      read -r -p "Reiniciar mesmo assim? [s/N] " ans
+      case "$ans" in s|S|y|Y) ;; *) echo "Cancelado."; exit 0;; esac
+    fi
+    : >"$LOG"; chmod 600 "$LOG"
+    systemd-run --user --quiet --collect --unit="netops-restart-$IDENT_SLUG-$(date +%s)" \
+      "$ROOT/scripts/engine/ui/start.sh" --no-detach \
+      || { echo "ERRO: systemd-run --user falhou (gerenciador do usuário indisponível?)" >&2; exit 1; }
+    echo "$([ "$ACTIVE" = active ] && echo Reinício || echo Subida) agendado(a) (desacoplado). Acompanhe: tail -f $LOG"
+    echo "Console volta em ~15 s; aba Claude reconecta sozinha / F5."
+    exit 0
+  fi
+  # helper: pré-validação -> restart do serviço -> HTTP + boot_id novo + processo da conta certa
+  OLD_ROOT_SUP=$(pgrep -u 0 -of "update/supervisor.py --root $ROOT --" || true)
+  [ -z "$OLD_ROOT_SUP" ] || { log "PRÉ-VALIDAÇÃO FALHOU: um console ROOT antigo desta pasta está rodando (pid $OLD_ROOT_SUP) — migração pendente; nada foi tocado"; exit 1; }
+  if ! why=$(preflight_checks); then log "PRÉ-VALIDAÇÃO FALHOU: $why — console atual NÃO foi tocado"; exit 1; fi
+  if [ "$ACTIVE" != active ] && ss -ltn "sport = :$PORT" 2>/dev/null | grep -q LISTEN; then
+    log "PRÉ-VALIDAÇÃO FALHOU: porta $PORT ocupada por outro processo"; exit 1
+  fi
+  log "pré-validação OK ($UNIT, conta $RT_USER, http://$URLH:$PORT/)"
+  boot_id() { curl -s --max-time 2 "http://$URLH:$PORT/api/config/meta" 2>/dev/null | sed -nE 's/.*"boot_id": *"([^"]*)".*/\1/p'; }
+  OLD_BOOT=$(boot_id || true)
+  set +e
+  for try in 1 2 3; do
+    log "$([ "$ACTIVE" = active ] && echo reiniciando || echo subindo) (tentativa $try)"
+    if [ "$ACTIVE" = active ] || [ "$try" -gt 1 ]; then systemctl --user restart "$UNIT"; else systemctl --user start "$UNIT"; fi
+    for _ in $(seq 40); do
+      b=$(boot_id)
+      if [ -n "$b" ] && [ "$b" != "$OLD_BOOT" ]; then
+        sleep 8; b2=$(boot_id)
+        sup=$(systemctl --user show -p MainPID --value "$UNIT" 2>/dev/null)
+        owner=$(stat -c %u "/proc/${sup:-0}" 2>/dev/null)
+        if [ "$b2" = "$b" ] && [ "$owner" = "$RT_UID" ]; then
+          log "OK: console respondendo em http://$URLH:$PORT/ (boot $b, conta $RT_USER) e estável após 8 s"; exit 0
+        fi
+        log "console caiu ou mudou após subir (boot $b -> ${b2:-?}, dono ${owner:-?})"; break
+      fi
+      sleep 1
+    done
+    log "sem resposta válida; tentando de novo"; sleep 3
+  done
+  log "FALHA: console NÃO subiu. Veja: journalctl --user -u $UNIT -n 50 ; $LOG"
+  exit 1
+fi
+
+# ----------------------------------------------------------------------------- modo gerenciado (legado)
 # (padrão) sobe ou reinicia de forma desacoplada. O modo "primeiro plano" (mais abaixo) é o que o
 # systemd/setsid executa de fato, chamando este script com --foreground.
 if [ "${1:-}" != "--foreground" ]; then
@@ -103,37 +253,7 @@ if [ "${1:-}" != "--foreground" ]; then
 
   # 1b) PRÉ-VALIDAÇÃO: nada é parado se o novo console não tiver como subir (acesso web nunca pode cair)
   preflight_fail() { log "PRÉ-VALIDAÇÃO FALHOU: $1 — console atual NÃO foi tocado"; exit 1; }
-  PYV="$ROOT/.venv/bin/python3"; [ -x "$PYV" ] || PYV=python3
-  { [ -x "$ROOT/.venv/bin/python3" ] || [ -f "$ROOT/.netops-update/journal.json" ]; } || preflight_fail "venv ausente"
-  [ -f "$ROOT/scripts/engine/update/supervisor.py" ] || preflight_fail "supervisor.py ausente"
-  # Sintaxe de TODO o backend (server, services, routers, update) — não só do server.py.
-  SYNTAX_ERR=$("$PYV" - "$ROOT/scripts/engine/ui" "$ROOT/scripts/engine/update" <<'PYEOF' 2>&1
-import ast, pathlib, sys
-bad = []
-for base in sys.argv[1:]:
-    for f in pathlib.Path(base).rglob("*.py"):
-        if "tests" in f.parts or "__pycache__" in f.parts:
-            continue
-        try:
-            ast.parse(f.read_text(encoding="utf-8"), str(f))
-        except Exception as e:
-            bad.append(f"{f}: {e}")
-print("\n".join(bad)); sys.exit(1 if bad else 0)
-PYEOF
-) || preflight_fail "erro de sintaxe no backend: $SYNTAX_ERR"
-  # Import SECO do app (o mesmo venv do console), com dados/HOME numa pasta vazia: pega nome errado,
-  # import quebrado, dependência faltando — o que passa no parse mas derrubaria o console novo.
-  # Só importa (não sobe servidor, não abre porta, não toca nos dados reais).
-  if [ -x "$ROOT/.venv/bin/python3" ]; then
-    SMOKE_DIR=$(mktemp -d)
-    IMPORT_RC=0
-    (cd "$ROOT/scripts/engine/ui" && env -i PATH="/usr/bin:/bin" HOME="$SMOKE_DIR" \
-      NETOPS_UI_DATA_ROOT="$SMOKE_DIR" timeout 60 "$ROOT/.venv/bin/python3" \
-      -c "import sys; sys.path.insert(0, '.'); import app") >"$SMOKE_DIR.log" 2>&1 || IMPORT_RC=$?
-    IMPORT_ERR=$(tail -3 "$SMOKE_DIR.log" 2>/dev/null)
-    rm -rf "$SMOKE_DIR" "$SMOKE_DIR.log"
-    [ "$IMPORT_RC" = "0" ] || preflight_fail "o app não importa: $IMPORT_ERR"
-  fi
+  why=$(preflight_checks) || preflight_fail "$why"
   if [ -z "$SUP" ] && ss -ltn "sport = :$PORT" 2>/dev/null | grep -q LISTEN; then preflight_fail "porta $PORT ocupada por outro processo"; fi
   log "pré-validação OK"
 
@@ -201,7 +321,16 @@ fi
 # conversas (`$HOME/.claude/projects/`). Trocar de HOME entre um restart e outro troca as duas
 # coisas — e sob `sudo` o HOME muda sem avisar (root vs. o usuário que chamou). NETOPS_UI_HOME
 # fixa isso de propósito; sem ele, vale o HOME de quem subiu o console.
-if [ -n "${NETOPS_UI_HOME:-}" ]; then
+if [ "$USER_MODE" = 1 ]; then
+  # layout 2: HOME = o da conta operacional (já fixado acima); NETOPS_UI_HOME não se aplica.
+  # Defaults do serviço vêm do arquivo de identidade (o env explícito, se houver, prevalece).
+  NETOPS_UI_HOST="${NETOPS_UI_HOST:-${ID_NETOPS_UI_HOST:-}}"
+  NETOPS_UI_PORT="${NETOPS_UI_PORT:-${ID_NETOPS_UI_PORT:-}}"
+  NETOPS_UI_TERMINAL="${NETOPS_UI_TERMINAL:-${ID_NETOPS_UI_TERMINAL:-}}"
+  NETOPS_UI_CLAUDE="${NETOPS_UI_CLAUDE:-${ID_NETOPS_UI_CLAUDE:-}}"
+  NETOPS_UI_CLAUDE_PERSIST="${NETOPS_UI_CLAUDE_PERSIST:-${ID_NETOPS_UI_CLAUDE_PERSIST:-}}"
+  export NETOPS_INSTANCE_ID="${ID_NETOPS_INSTANCE_ID:-}"
+elif [ -n "${NETOPS_UI_HOME:-}" ]; then
   export HOME="$NETOPS_UI_HOME"
 fi
 

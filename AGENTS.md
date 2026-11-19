@@ -96,7 +96,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 - **Multiusuário do console (regra de desenvolvimento):** login por **e-mail** + senha, permissões por grupo de acesso.
   - **Rota nova na API:** precisa de regra em `scripts/engine/ui/services/authz.py` (`RULES`). É default-deny, e o teste `test_every_route_is_mapped_to_a_permission` reprova rota sem regra.
   - **Botão de ação na tela:** marque com a classe `needs-<perm>` (ex.: `needs-hosts-edit`).
-  - **Exclusivo do admin:** o que roda como root no servidor (terminal/arquivos do servidor, scripts, tarefas agendadas, config, updates).
+  - **Exclusivo do admin:** o que roda com a conta do servidor (terminal/arquivos do servidor, scripts, tarefas agendadas, config, updates) e a administração Local como root (`server.admin`).
   - **Na aba Claude:** `NETOPS_USER` identifica quem pediu. O teto de rede do grupo dele vale e **não se contorna**.
   - **Recuperação:** `python3 scripts/engine/users/cli.py reset-admin`. Ver `scripts/engine/users/SKILL.md`.
   - **GitHub por usuário:** na aba Claude e nos Projetos, git/gh usam a conta do GitHub **de quem abriu a conversa**.
@@ -109,8 +109,15 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 - **Git — SEMPRE na `main` (INEGOCIÁVEL):** nunca crie branch. Commit e push direto na `main` (`git pull --ff-only`
   antes). Vale para qualquer IA/IDE e sobrepõe a instrução padrão do agente de "criar branch antes de commitar".
 - **Padronize:** todo arquivo novo segue o `_TEMPLATE` da sua pasta. Ver `PADRAO.md`.
+- **Conta do servidor (INEGOCIÁVEL):** o NetOps roda como a conta Linux `netops` (HOME `/var/lib/netops`), nunca root:
+  console, IA, subagentes, terminal, agendador e atualizador. `netops` **não tem sudo** — nunca tente `sudo`/`su`.
+  Root NESTE servidor = **host Local** (`access.method: local`, cadastrado pelo instalador, protegido):
+  `python3 scripts/tools/access/session.py exec --host-id <ID-LOCAL> --command "..."` roda como root, por operação,
+  sem SSH, com a senha do admin local no cofre (a IA nunca a vê). Exige cofre destrancado e `server.admin`; se faltar,
+  informe e pare. Só use root quando o pedido exigir (ex.: "instale o Docker neste servidor"); o resto roda direto.
+  Ver `scripts/engine/localadmin/SKILL.md`. Instalação antiga (console root) migra com `scripts/engine/identity/`.
 - **Acesso a equipamento por CLI (INEGOCIÁVEL):** só dois scripts — `scripts/tools/access/session.py` (pedido do
-  usuário no chat/console; usa o cofre; SSH/Telnet) e `scripts/tools/access/task_exec.py` (tarefa agendada; chave
+  usuário no chat/console; usa o cofre; SSH/Telnet; e o host Local deste servidor) e `scripts/tools/access/task_exec.py` (tarefa agendada; chave
   dedicada, ver "Tarefa agendada que acessa equipamento"). `ssh.py`/`telnet.py` foram removidos e
   `ssh`/`sshpass`/`telnet` do sistema são proibidos.
   "Acesse/verifique/rode X no host N" → vá direto, sem preparar ambiente (já está pronto: `python3` ou `python`,
@@ -184,7 +191,8 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   - Console **parado** → o script **sobe**. Console **já rodando** → o script **reinicia**, preservando host/porta/terminal/claude.
   - Desacopla (funciona de dentro da aba Claude/terminal web), faz **pré-validação** (venv, sintaxe do `server.py`, porta) antes de
     parar qualquer coisa, espera o supervisor sair e o lock liberar, tenta até 3 vezes e só termina OK quando o HTTP responde
-    (log: `/tmp/netops-restart.log`). `--yes` pula a confirmação (em terminal interativo ele pergunta); `--foreground` roda em
+    (log: `~/.local/state/netops/restart-<instância>.log`; legado: `/tmp/netops-restart.log`). Como root, o script
+    delega para a conta `netops` (serviço systemd do usuário `netops-console@<instância>`, sobe no boot). `--yes` pula a confirmação (em terminal interativo ele pergunta); `--foreground` roda em
     primeiro plano, só para depurar. **Não existe script de restart separado** (o `restart-console.sh` foi removido em 12/11/2026).
   - Funciona de dentro da aba Claude/terminal web: os modos internos são escolhidos só por argumento, nunca pelo ambiente herdado do console.
   - **Reiniciar encerra as sessões vivas da aba Claude**, mas o **turno em andamento volta sozinho**: o console anota em
@@ -200,9 +208,9 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   valide que o console volta (sintaxe, venv, porta) e **nunca** teste contra o ROOT real "em outra porta". Depois,
   confirme HTTP no host:porta real. Perder o acesso web é inaceitável.
 - **Login do agente na aba Claude Code:** `/login` (e `/logout`) funcionam **na própria aba** — não são do
-  SDK, a aba os resolve sozinha e abre o fluxo OAuth. Logue **por ali**, não pelo terminal web: a credencial
-  vai para o `$HOME/.claude/` do **processo do servidor**, e o terminal web roda como outro usuário (`netops`),
-  ou seja, outro cofre e outra lista de conversas. Ver `scripts/engine/ui/SKILL.md`.
+  SDK, a aba os resolve sozinha e abre o fluxo OAuth. A credencial vai para `$HOME/.claude/` da conta do servidor
+  (`/var/lib/netops/.claude`); console, terminal web, tarefas e subagentes usam a MESMA conta e o MESMO perfil.
+  (Instalação legada, console root: o perfil é `/root/.claude` e o terminal web é outra conta.) Ver `scripts/engine/ui/SKILL.md`.
 - **Aba Claude Code — persistência e DÚVIDA (LIGADA por padrão no `start.sh`; `NETOPS_UI_CLAUDE_PERSIST=0` desliga):** a sessão sobrevive à queda
   do socket (standby/troca de aba): o turno **termina** mesmo com a aba fechada e você re-anexa ao voltar (a
   resposta é relida do transcript, sem buffer). Como um turno pode executar **sem ninguém olhando**, vale a

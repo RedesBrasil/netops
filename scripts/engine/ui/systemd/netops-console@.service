@@ -1,0 +1,21 @@
+# NetOps Console — serviço de USUÁRIO (layout 2). Instalado em /etc/systemd/user/ (root-owned)
+# pelo install.sh / migração; habilitado só para a conta operacional (linger = sobe no boot).
+# %i = slug da instalação ("/opt/netops" -> "opt-netops"); a configuração fica em
+# /etc/netops/instances/%i.env (root-owned). Subir/reiniciar SEMPRE por scripts/engine/ui/start.sh.
+[Unit]
+Description=NetOps Console (%i)
+ConditionPathExists=/etc/netops/instances/%i.env
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/netops/instances/%i.env
+# O console nunca roda como root: start.sh --foreground recusa se a conta não confere.
+ExecStart=/bin/bash -c 'cd "$NETOPS_DIR" && exec "$NETOPS_DIR/scripts/engine/ui/start.sh" --foreground'
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=45
+# Sem NoNewPrivileges: o backend Local precisa de `su` (setuid) — ver plano §5.3.
+
+[Install]
+WantedBy=default.target

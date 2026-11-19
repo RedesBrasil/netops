@@ -35,6 +35,34 @@ LINUX_CMD = ("for f in %s /etc/pve/*.cfg /etc/pve/nodes/*/host.fw /etc/pve/firew
              "[ -f \"$f\" ] && { echo \"### $f\"; cat \"$f\"; }; done; echo '### iptables-save'; iptables-save 2>/dev/null" % LINUX_FILES)
 
 
+# Host Local (este servidor; ver scripts/engine/localadmin): baseline mais completo, coletado como root
+# pelo serviço netops-localadmin (sem SSH). Inclui o que uma instalação de pacote costuma mudar.
+LOCAL_CMD = LINUX_CMD + (
+    "; echo '### os-release'; cat /etc/os-release"
+    "; echo '### pacotes'; (dpkg-query -W -f='${Package} ${Version}\\n' 2>/dev/null || rpm -qa --qf '%{NAME} %{VERSION}-%{RELEASE}\\n' 2>/dev/null || pacman -Q 2>/dev/null) | sort"
+    "; echo '### repositórios'; ls -1 /etc/apt/sources.list.d /etc/yum.repos.d 2>/dev/null"
+    "; echo '### serviços habilitados'; systemctl list-unit-files --state=enabled --no-legend --no-pager 2>/dev/null"
+    "; echo '### portas em escuta'; ss -ltnu 2>/dev/null | awk 'NR>1{print $1, $5}' | sort -u"
+    "; echo '### grupos'; getent group | cut -d: -f1,4 | sort"
+    "; echo '### nft'; nft list ruleset 2>/dev/null"
+    "; echo '### disco'; df -hP -x tmpfs -x devtmpfs 2>/dev/null")
+
+
+def _run_local(cmd: str, timeout: int = 300) -> str:
+    sys.path.insert(0, str(ROOT / "scripts" / "engine" / "localadmin"))
+    import client  # noqa: PLC0415
+    from common import LocalAdminError  # noqa: PLC0415
+    chunks = []
+    try:
+        end = client.run(ROOT, script=cmd, cwd="/", timeout=timeout, scope="backup pré/pós (change.py)",
+                         on_output=chunks.append)
+    except LocalAdminError as e:
+        raise SystemExit(f"backup do host Local falhou: {e.code}: {e.detail}")
+    if end.get("timeout"):
+        raise SystemExit("backup do host Local estourou o tempo")
+    return b"".join(chunks).decode(errors="replace").replace("\r\n", "\n")
+
+
 def collector(vendor: str):
     """(comando, limpeza) por vendor; None = vendor sem coletor."""
     v = vendor.lower()
@@ -96,6 +124,11 @@ def collect(hid: int, h: dict) -> str:
         raise SystemExit(f"vendor '{h.get('vendor')}' sem coletor de backup")
     cmd, clean = col
     method = (h.get("access") or {}).get("method", "ssh")
+    if method == "local":
+        text = clean(_run_local(LOCAL_CMD))
+        if len(text.strip()) < 200 or "### pacotes" not in text:
+            raise SystemExit("backup do host Local vazio/incompleto — abortando por segurança")
+        return text + "\n"
     if method not in ("ssh", "telnet"):
         raise SystemExit(f"acesso {method} não coleta config — cadastre SSH")
     out = _run(hid, method, cmd)

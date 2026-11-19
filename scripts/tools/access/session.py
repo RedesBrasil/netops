@@ -679,10 +679,14 @@ def acquire_session(host_ref, method: str, shell: bool, force_new: bool = False)
 def cmd_open(args) -> int:
     host_ref = args.host_id if args.host_id is not None else args.host
     try:
-        _canonical(host_ref)
+        host = _canonical(host_ref)
     except Exception as exc:  # noqa: BLE001
         print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
         return 1
+    if _is_local(host):
+        print("FALHA: o host Local não tem sessão persistente (root é por operação). Use exec/run --host-id "
+              f"{host['name']} --command '...'", file=sys.stderr)
+        return 2
     sid, msg = acquire_session(host_ref, "telnet" if args.telnet else "ssh", args.shell, args.new)
     if sid:
         print(sid)
@@ -713,16 +717,74 @@ def _print_result(cmd: str, res: dict, multi: bool) -> int | None:
     return res.get("exit") or None
 
 
+# --------------------------------------------------------------------------- host Local (este servidor)
+def _is_local(host: dict) -> bool:
+    return str((host.get("access") or {}).get("method", "")).lower() == "local"
+
+
+def run_local(host: dict, commands: list[str], timeout: int, multi: bool) -> int:
+    """Host Local = este servidor NetOps: SEM SSH. Cada comando roda como ROOT, uma operação por vez,
+    pelo serviço netops-localadmin (su autenticado com a credencial do cofre; ver
+    scripts/engine/localadmin/SKILL.md). Não há shell root persistente: `cd`/`export` não passam de
+    um comando para o outro — junte-os num só (`cd /x && ...`). Para rodar SEM root, use o terminal/Bash."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine" / "localadmin"))
+    import client  # noqa: PLC0415
+    from common import LocalAdminError  # noqa: PLC0415
+    log_dir = NETOPS_ROOT / "runs" / f"{datetime.now().strftime('%Y-%m-%d-%H%M%S')}-session-{host['name']}"
+    log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    log_path = log_dir / "session.log"
+    rc = 0
+    with open(log_path, "a", encoding="utf-8") as log:
+        os.chmod(log_path, 0o600)
+        log.write(f"LOCAL host={host['name']} hostname={host.get('hostname')} (root por operação, sem SSH)\n")
+        for cmd in commands:
+            if multi:
+                print(f"### {cmd}")
+            chunks = []
+
+            def out(d, chunks=chunks):
+                chunks.append(d)
+                sys.stdout.buffer.write(d)
+                sys.stdout.flush()
+            t0 = time.time()
+            try:
+                end = client.run(NETOPS_ROOT, script=cmd, cwd="/root", timeout=timeout,
+                                 scope=os.environ.get("NETOPS_LOCAL_SCOPE", cmd)[:500], on_output=out)
+            except LocalAdminError as e:
+                print(f"[local] {e.code}: {e.detail}", file=sys.stderr)
+                print(f"[status=erro exit=- {time.time() - t0:.2f}s local:{e.code}]", file=sys.stderr)
+                log.write(f"$ {cmd}\n[erro {e.code}]\n")
+                return 3
+            text = b"".join(chunks).decode(errors="replace")
+            if text and not text.endswith("\n"):
+                print()
+            log.write(f"$ {cmd}\n{text}\n[exit={end['exit_code']} uid={end['effective_uid']} op={end['operation_id']}]\n")
+            status = "timeout" if end.get("timeout") else "ok"
+            print(f"[status={status} exit={end['exit_code']} {end.get('duration_s')}s local uid=0 "
+                  f"op={end['operation_id']}{' saída truncada' if end.get('truncated') else ''}]", file=sys.stderr)
+            if end.get("timeout"):
+                return 3
+            if end["exit_code"]:
+                rc = end["exit_code"]
+    print(f"[log] {log_path}", file=sys.stderr)
+    return rc
+
+
 def cmd_exec(args) -> int:
     """Roda comando(s) numa sessão. Com --host-id/--host: reusa a sessão viva do host ou abre uma."""
     sid = args.session
     if sid is None:
         host_ref = args.host_id if args.host_id is not None else args.host
         try:
-            _canonical(host_ref)
+            host = _canonical(host_ref)
         except Exception as exc:  # noqa: BLE001
             print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
             return 1
+        if _is_local(host):
+            if args.telnet or args.shell:
+                print("FALHA: o host Local não usa SSH/Telnet nem shell interativo", file=sys.stderr)
+                return 2
+            return run_local(host, list(args.command), args.timeout, len(args.command) > 1)
         sid, msg = acquire_session(host_ref, "telnet" if args.telnet else "ssh", args.shell)
         if not sid:
             print(f"FALHA ao abrir sessão em '{host_ref}': {msg}", file=sys.stderr)
@@ -763,6 +825,11 @@ def cmd_run(args) -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
         return 1
+    if _is_local(host):
+        if args.telnet or args.shell:
+            print("FALHA: o host Local não usa SSH/Telnet nem shell interativo", file=sys.stderr)
+            return 2
+        return run_local(host, commands, args.timeout, len(commands) > 1)
     method = "telnet" if args.telnet else "ssh"
     if method == "telnet":
         print("AVISO: Telnet trafega em texto puro. Prefira SSH sempre que possível.", file=sys.stderr)

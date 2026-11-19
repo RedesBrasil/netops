@@ -2,8 +2,10 @@
 """Gerenciador de arquivos do console: menu **Arquivos** (este servidor) e painel SFTP do terminal de host.
 
 Duas fontes com a MESMA interface assíncrona (o router não sabe qual está usando):
-  - LocalFS  — o sistema de arquivos do servidor NetOps, como o usuário do processo (root na instalação
-               padrão). Sem jaula de diretório: é a "gerência completa" pedida (12/11/2026).
+  - LocalFS  — o sistema de arquivos do servidor NetOps, como o usuário do processo (a conta `netops`
+               desde o layout 2; root só em instalação legada). Sem jaula de diretório.
+  - modo ROOT — botão "Abrir como root": sessão SFTP curta como root via netops-localadmin
+               (services/root_files_svc.py; src `root:<token>`; exige `server.admin`).
   - RemoteFS — SFTP sobre a MESMA conexão SSH do terminal de host aberto (services/host_term_svc.py
                registra a sessão em SFTP_SESSIONS). Sem segundo login; acaba quando o terminal fecha.
 
@@ -240,7 +242,8 @@ class LocalFS:
 
     # ---- interface ----
     async def home(self) -> str:
-        return "/"
+        # layout 2 (conta operacional): abre na pasta do NetOps; root vai pelo botão "Abrir como root"
+        return "/" if os.geteuid() == 0 else str(Path(deps.NETOPS_ROOT).resolve())
 
     async def list(self, path: str) -> dict:
         return await self._run(self._list, path)
@@ -1021,6 +1024,9 @@ def backend(src: str | None):
         if not root:
             raise NotFound("projeto não encontrado (ou a pasta dele não existe mais)")
         return ProjectFS(_LOCAL, root, pid)
+    if src.startswith("root:"):
+        from services import root_files_svc  # noqa: PLC0415
+        return RemoteFS(root_files_svc.get(src))
     s = SFTP_SESSIONS.get(src)
     if s is None:
         raise NotFound("sessão SFTP encerrada (o terminal do host foi fechado) — reabra o terminal")

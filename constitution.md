@@ -1,6 +1,6 @@
 # Constituição do NetOps
 
-> **Versão:** 1.1.0 | **Ratificada:** 2026-05-18 | **Revisado:** 2026-11-13 (§VII: exceção Zabbix no acesso web; antes 2026-07-28, §V: segredo em texto puro pela IA)
+> **Versão:** 1.2.0 | **Ratificada:** 2026-05-18 | **Revisado:** 2026-11-19 (§V: conta operacional `netops` e backend de acesso Local; antes 2026-11-13, §VII: exceção Zabbix no acesso web)
 
 Este documento define os princípios inegociáveis do NetOps. Todos os agentes, workflows e
 scripts DEVEM respeitá-los. Adaptado da `constitution.md` do AIOX para o domínio de redes e
@@ -62,11 +62,17 @@ Mexer em rede de produção pode derrubar serviços. Toda mudança é reversíve
 - **DEVE:** Gerar o script de rollback junto com a config proposta.
 - **DEVE:** Em falha durante a aplicação, executar o rollback automaticamente.
 - **NÃO DEVE:** Conectar em host que não esteja no `network/hosts.yaml`.
+- **DEVE:** O NetOps roda como a conta Linux dedicada `netops` (console, IA, subagentes, terminal,
+  agendador, atualizador) — nunca como root. Root neste servidor é **por operação**, pelo host Local
+  (sem SSH, cofre destrancado, permissão `server.admin`); nunca sudo/grupo administrativo para `netops`,
+  nunca serviço ou cron root executando código gravável por `netops`.
 - **NÃO DEVE:** Expor credenciais em logs, relatórios ou saídas versionadas.
 - **NÃO DEVE:** A IA obter, descriptografar, ler, imprimir ou copiar o valor em texto puro de
   qualquer campo `password`/`secret` — nem "por transparência", nem com o cofre destrancado. A
   descriptografia é **exclusiva** dos scripts de acesso (`scripts/tools/access/*`), no instante de
-  conectar. A IA conecta **só** invocando esses scripts com `--host <nome>`; **nunca** escreve
+  conectar, e do backend **Local** (`scripts/engine/localadmin/`, serviço `netops-localadmin`), que usa a
+  senha do admin local (`CRED_LOCAL_ADMIN`) só para autenticar o `su` no próprio servidor — a IA o aciona
+  pelo `session.py --host-id <ID do host Local>`, nunca lê, pede ou imprime essa senha. A IA conecta **só** invocando esses scripts com `--host <nome>`; **nunca** escreve
   código que chame `resolve_host(decrypt=True)`, `resolve_secret` ou `decrypt_value`, nem lê os
   campos `password`/`secret`. Cofre destrancado = permissão para as FERRAMENTAS conectarem, não
   para a IA ler segredos.

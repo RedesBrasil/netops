@@ -109,6 +109,8 @@ async def term(ws: WebSocket):
     # (async-signal-safe), evitando alocação num fork de processo multi-thread.
     child_env = dict(os.environ)
     child_env["TERM"] = "xterm-256color"
+    # quem abriu o terminal (autorização da administração Local: server.admin; ver scripts/engine/localadmin)
+    child_env["NETOPS_USER"] = getattr(getattr(ws.state, "principal", None), "username", "") or ""
     if drop:
         child_env["HOME"] = drop["home"]
         child_env["USER"] = child_env["LOGNAME"] = drop["name"]

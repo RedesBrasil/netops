@@ -771,7 +771,7 @@ class ClaudeWebSession:
 
     async def _hook_github_guard(self, input_data: dict, tool_use_id, context):
         """PreToolUse: bloqueia o agente de ler/trocar login do GitHub (de outro usuário ou do servidor).
-        Grade contra erro, não fronteira de segurança: o agente roda como root."""
+        Grade contra erro, não fronteira de segurança: o agente tem shell com a conta do servidor."""
         ti = input_data.get("tool_input") or {}
         text = " ".join(str(ti.get(k) or "") for k in ("command", "file_path", "path", "pattern", "notebook_path"))
         what = github_identity.guard_check(text)

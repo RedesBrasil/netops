@@ -40,6 +40,10 @@ async def _files_perm(request: Request) -> None:
         except Exception:  # noqa: BLE001 — corpo inválido: o próprio endpoint responde 422
             src = None
     src = src or "local"
+    if request.url.path.startswith("/api/files/root/") or src.startswith("root:"):
+        authz.require(request, "server.files")
+        authz.require(request, "server.admin")     # modo root (services/root_files_svc.py)
+        return
     # pasta de um Projeto (presa a ela: services/files_svc.ProjectFS) = projects.files
     authz.require(request, "server.files" if src == "local"
                   else "projects.files" if src.startswith("project:") else "host.files")
@@ -124,6 +128,38 @@ class WriteBody(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# Modo ROOT (botão "Abrir como root"): sessão curta via netops-localadmin. Ver services/root_files_svc.py
+@router.get("/files/root/status")
+async def files_root_status():
+    from services import root_files_svc  # noqa: PLC0415
+    import asyncio  # noqa: PLC0415
+    return await asyncio.to_thread(root_files_svc.status)
+
+
+class RootCloseBody(BaseModel):
+    src: str
+
+
+@router.post("/files/root/open")
+async def files_root_open(request: Request):
+    from services import root_files_svc  # noqa: PLC0415
+    user = authz.request_principal(request).username
+
+    async def go():
+        out = await root_files_svc.open_session(user)
+        fsvc.audit("root", "abrir-root", user, _client(request))
+        return out
+    return await _do(go)
+
+
+@router.post("/files/root/close")
+async def files_root_close(body: RootCloseBody):
+    from services import root_files_svc  # noqa: PLC0415
+    root_files_svc.close_session(body.src)
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
 @router.get("/files/info")
 async def files_info(src: str = "local"):
     """Pasta inicial da fonte (local = /; SFTP = home do usuário) e descrição."""
@@ -136,7 +172,9 @@ async def files_info(src: str = "local"):
             out.update(hostname=socket.gethostname(), user=getpass.getuser())
         if fs.kind == "project":
             out.update(project=fs.pid, root=fs.root)
-        if fs.kind == "remote":
+        if src.startswith("root:"):
+            out.update(root_mode=True, user="root", hostname="este servidor", idle_seconds=300)
+        elif fs.kind == "remote":
             h = fs.s.host
             out.update(host_id=h.get("id"), hostname=h.get("hostname", ""), user=fs.s.user)
         return out

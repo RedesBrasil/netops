@@ -97,6 +97,59 @@ def list_groups() -> dict:
 # --------------------------------------------------------------------------- #
 # Validação (schema + pós-herança), formato {loc, msg}
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# Host Local (este servidor; ver scripts/engine/localadmin) — protegido
+# --------------------------------------------------------------------------- #
+LOCAL_CREDENTIAL = "CRED_LOCAL_ADMIN"
+LOCAL_LOCKED = ("access", "credential", "local_instance", "mgmt_ip", "group", "vendor", "extra_access")
+
+
+def is_local_node(node: dict | None) -> bool:
+    return str(((node or {}).get("access") or {}).get("method", "")).lower() == "local"
+
+
+def _local_errors(data: dict) -> list[dict]:
+    """Invariantes do host Local: no máximo um; só ele usa a credencial do admin local; sem herança."""
+    errors = []
+    locals_ = [h for h in (data.get("hosts") or []) if isinstance(h, dict) and is_local_node(h)]
+    if len(locals_) > 1:
+        errors.append({"loc": "hosts", "msg": "só pode existir um host com access.method=local"})
+    for gname, g in (data.get("groups") or {}).items():
+        if is_local_node(g) or _same((g or {}).get("credential"), LOCAL_CREDENTIAL):
+            errors.append({"loc": f"groups/{gname}", "msg": "grupo não pode usar o acesso Local nem a credencial do admin local"})
+    for h in data.get("hosts") or []:
+        if not isinstance(h, dict):
+            continue
+        refs = [h.get("credential")] + [(x or {}).get("credential") for x in (h.get("extra_access") or [])]
+        if is_local_node(h):
+            if not _same(h.get("credential"), LOCAL_CREDENTIAL) or not h.get("local_instance"):
+                errors.append({"loc": f"hosts/{h.get('id')}", "msg": "host Local precisa da credencial CRED_LOCAL_ADMIN e do vínculo local_instance"})
+        elif any(_same(r, LOCAL_CREDENTIAL) for r in refs if r):
+            errors.append({"loc": f"hosts/{h.get('id')}/credential", "msg": "a credencial do admin local só pode ser usada pelo host Local"})
+        elif h.get("local_instance"):
+            errors.append({"loc": f"hosts/{h.get('id')}/local_instance", "msg": "local_instance só existe no host Local"})
+    return errors
+
+
+def _protect_local(node: dict | None, fields: dict, *, creating: bool = False) -> None:
+    """API/UI não criam host Local, não transformam host comum em Local e não mexem no vínculo."""
+    wants_local = is_local_node(fields) or bool(fields.get("local_instance")) or _same(fields.get("credential"), LOCAL_CREDENTIAL)
+    if creating or not is_local_node(node):
+        if wants_local:
+            raise deps.ValidationFailed([{"loc": "access/method", "msg": "o host Local é criado pelo instalador (scripts/engine/localadmin/cli.py ensure-host)"}])
+        return
+    def canon(v):
+        v = _plain(v)
+        if isinstance(v, dict):
+            v = {a: b for a, b in v.items() if b not in (None, "")}
+        if isinstance(v, str):
+            v = v.casefold()
+        return v if v not in (None, "", [], {}) else None
+    changed = [k for k in LOCAL_LOCKED if k in fields and canon(fields[k]) != canon(node.get(k))]
+    if changed:
+        raise deps.ValidationFailed([{"loc": changed[0], "msg": "host Local protegido: acesso, credencial, IP e vínculo não podem ser alterados (use provision.py)"}])
+
+
 def validate_data(hosts_data: dict) -> list[dict]:
     import jsonschema  # noqa: PLC0415
     from lib.inventory import list_hosts, resolve_host, schema_view  # noqa: PLC0415
@@ -126,6 +179,7 @@ def validate_data(hosts_data: dict) -> list[dict]:
         if not (host.get("access") or {}).get("method"):
             errors.append({"loc": f"hosts/{name}/access/method", "msg": "'access.method' ausente"})
     errors.extend(_check_runs_on(hosts_data))
+    errors.extend(_local_errors(hosts_data))
     return errors
 
 
@@ -249,9 +303,11 @@ def _clean_new(fields: dict, order: list[str]) -> dict:
 # CRUD de hosts
 # --------------------------------------------------------------------------- #
 @yaml_io.serialized
-def create_host(fields: dict, rev: str | None, *, placement: dict | None = None) -> dict:
+def create_host(fields: dict, rev: str | None, *, placement: dict | None = None, system: bool = False) -> dict:
     if "id" in fields:
         raise deps.ValidationFailed([{"loc": "id", "msg": "ID é gerado automaticamente"}])
+    if not system:
+        _protect_local(None, fields, creating=True)
     data, doc, y = _load_doc()
     hosts = data.setdefault("hosts", [])
     host_id = require_host_id(data["next_host_id"])
@@ -275,7 +331,7 @@ def create_host(fields: dict, rev: str | None, *, placement: dict | None = None)
 
 
 @yaml_io.serialized
-def update_host(host_id: int, fields: dict, rev: str | None, *, partial: bool) -> dict:
+def update_host(host_id: int, fields: dict, rev: str | None, *, partial: bool, system: bool = False) -> dict:
     if "id" in fields:
         raise deps.ValidationFailed([{"loc": "id", "msg": "ID é permanente e não pode ser editado"}])
     data, doc, y = _load_doc()
@@ -283,6 +339,8 @@ def update_host(host_id: int, fields: dict, rev: str | None, *, partial: bool) -
     hosts = host_index(data)
     if host_id not in hosts:
         raise KeyError(f"host '{host_id}' não existe")
+    if not system:
+        _protect_local(hosts[host_id], fields)
     before = _plain(data)
     _apply_fields(hosts[host_id], fields, partial=partial)
     _gate(before, _plain(data))
@@ -297,6 +355,8 @@ def delete_host(host_id: int, rev: str | None) -> dict:
     hosts = host_index(data)
     if host_id not in hosts:
         raise KeyError(f"host '{host_id}' não existe")
+    if is_local_node(hosts[host_id]):
+        raise deps.ValidationFailed([{"loc": "id", "msg": "o host Local (este servidor) é protegido e não pode ser apagado; para desligar o root local use: sudo scripts/engine/localadmin/provision.py disable"}])
     data["hosts"].remove(hosts[host_id])
     for other in data["hosts"]:  # quem rodava neste host perde a referência (não fica apontando p/ nada)
         if other.get("runs_on") == host_id:

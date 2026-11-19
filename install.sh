@@ -8,10 +8,16 @@
 #   2. baixa o pacote da última release do GitHub (netops-X.Y.Z.tar.gz), confere o SHA256 e o
 #      manifesto (hash e permissão de cada arquivo) e extrai em /opt/netops;
 #   3. cria o .venv e instala requirements.txt;
-#   4. cria o usuário `netops` (o terminal web nunca abre shell root) e instala o agente `claude`;
-#   5. pede a senha-mestra do cofre (é o login do console);
-#   6. registra o serviço de boot e sobe o console com scripts/engine/ui/start.sh;
-#   7. testa tudo e mostra o endereço: http://<IP>:<porta>/
+#   4. cria a conta operacional `netops` (HOME /var/lib/netops). TODO o NetOps roda como ela:
+#      console, supervisor, IA, terminal, agendador e atualizador — nunca como root;
+#   5. instala o .venv e o agente `claude` COMO `netops`; pede a senha-mestra do cofre;
+#   6. serviço systemd DO USUÁRIO netops-console@<slug> (linger = sobe no boot sem login);
+#   7. administração Local: conta `netops-admin` (senha aleatória só no cofre) + host Local protegido;
+#   8. testa tudo e mostra o endereço: http://<IP>:<porta>/
+#
+# Root só PROVISIONA (pacotes, contas, serviço, firewall). Instalação antiga (console como root,
+# "layout 1") é detectada e NÃO é migrada sozinha: o instalador repara e mostra o comando de migração
+# (scripts/engine/identity/migrate.py).
 #
 # Rodar de novo é seguro: numa instalação existente ele NÃO substitui código nem dados — só
 # confere/repara dependências, serviço e console (atualizações são pelo console).
@@ -121,6 +127,11 @@ preflight() {
   NETOPS_DIR="${NETOPS_DIR%/}"
   PORT="${NETOPS_PORT:-8765}"
   TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  # identidade operacional (layout 2): ver scripts/engine/lib/runtime_identity.py
+  SLUG=$(printf '%s' "${NETOPS_DIR#/}" | sed -E 's/[^A-Za-z0-9]+/-/g; s/^-+//; s/-+$//')
+  IDENT_FILE="/etc/netops/instances/$SLUG.env"
+  OP_USER="netops"; OP_HOME="/var/lib/netops"
+  UNIT="netops-console@$SLUG.service"
   case "$PORT" in ''|*[!0-9]*) die "NETOPS_PORT inválida: $PORT" ;; esac
 }
 
@@ -151,12 +162,12 @@ install_system_packages() {
   case "$PM" in
     apt)
       pkg_install python3 python3-venv python3-pip ca-certificates curl tar gzip iproute2 util-linux \
-        procps hostname cron nmap iputils-ping openssh-client git zip unzip \
-        -- traceroute mtr-tiny python-is-python3 gh ;;
+        procps hostname cron nmap iputils-ping openssh-client git zip unzip sudo dbus-user-session \
+        -- traceroute mtr-tiny python-is-python3 gh openssh-sftp-server ;;
     dnf|yum)
       pkg_install python3 python3-pip ca-certificates curl tar gzip iproute util-linux procps-ng \
-        hostname cronie nmap iputils openssh-clients git zip unzip \
-        -- traceroute mtr
+        hostname cronie nmap iputils openssh-clients git zip unzip sudo dbus \
+        -- traceroute mtr openssh-server
       # gh não vem no RHEL/Rocky/Alma: usa o repositório oficial do GitHub CLI
       if ! have gh && ! run "$PM" install -y gh; then
         curl -fsSL https://cli.github.com/packages/rpm/gh-cli.repo -o /etc/yum.repos.d/gh-cli.repo 2>>"$LOG" \
@@ -164,11 +175,11 @@ install_system_packages() {
       fi ;;
     zypper)
       pkg_install python3 python3-pip ca-certificates curl tar gzip iproute2 util-linux procps \
-        hostname cron nmap iputils openssh-clients git zip unzip \
-        -- traceroute mtr gh ;;
+        hostname cron nmap iputils openssh-clients git zip unzip sudo dbus-1 \
+        -- traceroute mtr gh openssh-server ;;
     pacman)
       pkg_install python python-pip ca-certificates curl tar gzip iproute2 util-linux procps-ng \
-        inetutils cronie nmap iputils openssh git zip unzip \
+        inetutils cronie nmap iputils openssh git zip unzip sudo dbus \
         -- traceroute mtr github-cli ;;
   esac
   # cron: as Tarefas agendadas do console usam /etc/cron.d (precisa do daemon ativo)
@@ -361,6 +372,10 @@ install_code() {
     INSTALLED_VERSION=$(sed -nE 's/^  version: "([0-9.]+)".*/\1/p' "$NETOPS_DIR/core/config/core-config.yaml" | head -1)
     ok "NetOps v${INSTALLED_VERSION:-?} já instalado em $NETOPS_DIR — código e dados preservados (modo reparo)"
     info "atualizações: botão \"Verificar atualizações\" no console"
+    if [ -f "$IDENT_FILE" ]; then LAYOUT=2; else
+      LAYOUT=1
+      warn "instalação LEGADA (console roda como root). Ela continua funcionando, mas a migração para a conta dedicada \`netops\` é recomendada: sudo python3 -I $NETOPS_DIR/scripts/engine/identity/migrate.py plan"
+    fi
     return
   fi
   if [ -e "$NETOPS_DIR" ] && [ -n "$(ls -A "$NETOPS_DIR" 2>/dev/null)" ]; then
@@ -369,7 +384,9 @@ install_code() {
   resolve_release
   mkdir -p "$NETOPS_DIR"
   extract_package
-  INSTALLED_VERSION="$PKG_VERSION"; FRESH=1
+  INSTALLED_VERSION="$PKG_VERSION"; FRESH=1; LAYOUT=2
+  # versão antiga (sem suporte à conta dedicada no launcher): instala no modelo antigo
+  grep -q 'USER_MODE' "$NETOPS_DIR/scripts/engine/ui/start.sh" 2>/dev/null || { LAYOUT=1; warn "v$PKG_VERSION é anterior à conta dedicada: instalada no modelo antigo (root)"; }
   # pastas de trabalho que o pacote não traz (dados locais, git-ignorados no repositório)
   mkdir -p "$NETOPS_DIR"/{runs,reports,backups,memory}
   [ -f "$NETOPS_DIR/memory/MEMORY.md" ] || printf '# Memória — NetOps\n\n' >"$NETOPS_DIR/memory/MEMORY.md"
@@ -379,24 +396,25 @@ install_code() {
 
 # ----------------------------------------------------------------------------- 5. venv
 setup_venv() {
-  step "Instalando as dependências Python (.venv)"
+  step "Instalando as dependências Python (.venv${OP_USER:+ como $OP_USER})"
   local venv="$NETOPS_DIR/.venv"
+  local run=run; [ "${LAYOUT:-1}" = 2 ] && run=run_op
   if [ -x "$venv/bin/python3" ] && ! ver_ge "$(py_ver "$venv/bin/python3")" "$MIN_VENV_PY"; then
     warn ".venv existente usa Python antigo; recriando"
     rm -rf "$venv"
   fi
   if [ ! -x "$venv/bin/python3" ]; then
-    if ! run "$PY" -m venv "$venv"; then
+    if ! $run "$PY" -m venv "$venv"; then
       rm -rf "$venv"
       if [ "$PM" = apt ]; then   # Debian/Ubuntu separam o ensurepip no pacote pythonX.Y-venv
         run apt-get install -y -q "python$(py_ver "$PY")-venv" || true
       fi
-      run "$PY" -m venv "$venv" || die "não consegui criar o .venv com $PY."
+      $run "$PY" -m venv "$venv" || die "não consegui criar o .venv com $PY."
     fi
   fi
-  run "$venv/bin/python3" -m pip install --upgrade --disable-pip-version-check -q pip || warn "não consegui atualizar o pip"
+  $run "$venv/bin/python3" -m pip install --upgrade --disable-pip-version-check -q pip || warn "não consegui atualizar o pip"
   info "pip install -r requirements.txt ..."
-  run "$venv/bin/python3" -m pip install --disable-pip-version-check -q -r "$NETOPS_DIR/requirements.txt" \
+  $run "$venv/bin/python3" -m pip install --disable-pip-version-check -q -r "$NETOPS_DIR/requirements.txt" \
     || die "pip install falhou. Últimas linhas:
 $(tail -15 "$LOG")"
   ok ".venv pronto ($(py_ver "$venv/bin/python3"))"
@@ -440,6 +458,216 @@ setup_user() {
   else
     warn "não consegui instalar o agente claude; a aba Claude Code fica indisponível. Instale depois: curl -fsSL https://claude.ai/install.sh | bash"
   fi
+}
+
+
+# ----------------------------------------------------------------------------- 6b. conta operacional (layout 2)
+# Executa como a conta operacional, com o ambiente DELA (nunca só trocar $HOME mantendo UID 0).
+as_op() {
+  local uid; uid=$(id -u "$OP_USER")
+  runuser -u "$OP_USER" -- env -i PATH="$OP_HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    HOME="$OP_HOME" USER="$OP_USER" LOGNAME="$OP_USER" LANG=C.UTF-8 TERM="${TERM:-dumb}" \
+    XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" "$@"
+}
+# (segredos NUNCA entram na linha de comando acima: ela aparece no `ps` de qualquer usuário)
+run_op() { log "\$ (como $OP_USER) $*"; (cd "$NETOPS_DIR" && as_op "$@") >>"$LOG" 2>&1; }
+
+require_user_systemd() {
+  [ -d /run/systemd/system ] || die "systemd ausente: o NetOps roda como serviço systemd do usuário $OP_USER. Use uma máquina/CT com systemd."
+  have loginctl && have runuser || die "loginctl/runuser ausentes (pacotes systemd/util-linux)."
+}
+
+setup_account() {
+  step "Conta operacional ($OP_USER) — o NetOps nunca roda como root"
+  require_user_systemd
+  if getent passwd "$OP_USER" >/dev/null; then
+    local home uid; home=$(getent passwd "$OP_USER" | cut -d: -f6); uid=$(id -u "$OP_USER")
+    [ "$uid" != 0 ] || die "a conta $OP_USER tem UID 0 — incompatível; não vou reaproveitar."
+    if [ "$home" != "$OP_HOME" ]; then
+      [ "$home" = "$NETOPS_DIR" ] || die "a conta $OP_USER já existe com HOME $home (esperado $OP_HOME). Ajuste ou remova a conta antes."
+      run usermod --home "$OP_HOME" "$OP_USER" || die "não consegui ajustar o HOME de $OP_USER"
+    fi
+    if id -nG "$OP_USER" | tr ' ' '\n' | grep -qxE 'sudo|wheel|docker|lxd|disk|root'; then
+      die "a conta $OP_USER está num grupo administrativo (sudo/wheel/docker/lxd/disk/root). Remova antes de instalar."
+    fi
+    ok "conta $OP_USER já existe (HOME $OP_HOME)"
+  else
+    run useradd --system --home-dir "$OP_HOME" --create-home --shell /bin/bash --comment "NetOps" "$OP_USER" \
+      || die "não consegui criar a conta $OP_USER."
+    ok "conta $OP_USER criada (HOME $OP_HOME, sem senha, sem sudo)"
+  fi
+  install -d -m 700 -o "$OP_USER" -g "$OP_USER" "$OP_HOME"
+  chown "$OP_USER:$OP_USER" "$OP_HOME"; chmod 700 "$OP_HOME"
+  local uid i; uid=$(id -u "$OP_USER")
+  # host com I/O alto pode passar dos 90 s padrão para subir o user@UID: 5 min só para esta conta
+  install -d -m 755 "/etc/systemd/system/user@$uid.service.d"
+  printf '%s\n' "# NetOps: gerenciador do usuário operacional pode demorar em host com I/O alto" "[Service]" "TimeoutStartSec=5min" \
+    >"/etc/systemd/system/user@$uid.service.d/90-netops.conf"
+  run systemctl daemon-reload || true
+  # logind pode demorar logo após instalar pacotes (dbus/logind reiniciando): tenta de novo e, em último
+  # caso, usa o mesmo mecanismo do loginctl (arquivo de linger + user@UID.service)
+  for i in 1 2 3; do run loginctl enable-linger "$OP_USER" && break; sleep 5; done
+  if [ ! -e "/var/lib/systemd/linger/$OP_USER" ]; then
+    install -d -m 755 /var/lib/systemd/linger && : >"/var/lib/systemd/linger/$OP_USER"
+    run systemctl start "user@$uid.service" || die "não consegui habilitar o linger de $OP_USER (loginctl enable-linger $OP_USER)"
+  fi
+  [ -S "/run/user/$uid/bus" ] || info "aguardando o gerenciador systemd do usuário $OP_USER (pode levar 1–2 min na 1ª vez)..."
+  for i in $(seq 300); do [ -S "/run/user/$uid/bus" ] && break; sleep 1; done
+  [ -S "/run/user/$uid/bus" ] || die "o gerenciador systemd do usuário $OP_USER não subiu (/run/user/$uid/bus). Em Debian/Ubuntu: apt install dbus-user-session; confira 'loginctl show-user $OP_USER'."
+  ok "linger + gerenciador systemd do usuário ativo"
+}
+
+own_tree() {  # só numa instalação NOVA: pasta inteira para a conta operacional (sem seguir links)
+  [ "$FRESH" = 1 ] || return 0
+  chown -R --no-dereference "$OP_USER:$OP_USER" "$NETOPS_DIR"
+  chmod 750 "$NETOPS_DIR"
+  chmod 700 "$NETOPS_DIR/.netops-update"
+  ok "$NETOPS_DIR pertence a $OP_USER"
+}
+
+setup_hooks_claude_op() {
+  step "Hooks e agente Claude Code (como $OP_USER)"
+  local hooks="$NETOPS_DIR/scripts/engine/hooks/install_claude_hooks.py"
+  if [ -f "$hooks" ]; then
+    if run_op python3 "$hooks" --root "$NETOPS_DIR"; then ok "hooks de segurança do Claude Code em .claude/settings.json"
+    else warn "não consegui gravar os hooks em $NETOPS_DIR/.claude/settings.json (veja o log)"; fi
+  fi
+  if [ "${NETOPS_SKIP_CLAUDE:-0}" = "1" ]; then
+    warn "agente claude não instalado (NETOPS_SKIP_CLAUDE=1): a aba Claude Code não vai funcionar"; return
+  fi
+  if [ -x "$OP_HOME/.local/bin/claude" ]; then ok "agente claude já instalado em $OP_HOME/.local/bin"; return; fi
+  info "instalando o agente claude como $OP_USER (instalador oficial da Anthropic)..."
+  if curl -fsSL --retry 3 https://claude.ai/install.sh -o "$WORK/claude-install.sh" 2>>"$LOG"; then
+    install -m 644 -o "$OP_USER" -g "$OP_USER" "$WORK/claude-install.sh" "$OP_HOME/.claude-install.sh"
+    run_op bash "$OP_HOME/.claude-install.sh" || true
+    rm -f "$OP_HOME/.claude-install.sh"
+  fi
+  if [ -x "$OP_HOME/.local/bin/claude" ]; then ok "agente claude instalado ($(as_op "$OP_HOME/.local/bin/claude" --version 2>/dev/null | head -1))"
+  else warn "não consegui instalar o agente claude; a aba Claude Code fica indisponível. Depois: sudo -u $OP_USER -H bash -c 'curl -fsSL https://claude.ai/install.sh | bash'"; fi
+}
+
+setup_vault_op() {
+  step "Senha-mestra (login do console + cofre de credenciais)"
+  local creds="$NETOPS_DIR/network/credentials.yaml"
+  if vault_ready; then ok "cofre já inicializado — o login do console usa a senha-mestra existente"; return; fi
+  if [ -n "${NETOPS_MASTER_PASSWORD:-}" ]; then
+    # senha-mestra pelo stdin (nunca em argv/env de outro usuário)
+    (cd "$NETOPS_DIR" && printf '%s\n' "$NETOPS_MASTER_PASSWORD" | as_op "$NETOPS_DIR/.venv/bin/python3" -c '
+import sys
+from pathlib import Path
+sys.path.insert(0, "scripts/engine"); sys.path.insert(0, "scripts/engine/vault")
+import cli
+from lib import vault
+pw = sys.stdin.readline().rstrip("\n")
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8") if path.exists() else "version: 1\n\ncredentials: {}\n"
+meta, _key = vault.build_meta(pw)
+cli._atomic_write(path, cli._set_vault_block(text, meta))
+' "$creds") >>"$LOG" 2>&1 || die "não consegui inicializar o cofre."
+    ok "cofre inicializado com NETOPS_MASTER_PASSWORD"
+  elif has_tty; then
+    info "Crie a senha-mestra. Ela é o LOGIN do console e protege as senhas dos equipamentos."
+    info "Guarde-a bem: não há como recuperá-la."
+    local tries=0
+    until vault_ready; do
+      tries=$((tries + 1)); [ "$tries" -le 3 ] || die "senha-mestra não definida."
+      (cd "$NETOPS_DIR" && as_op "$NETOPS_DIR/.venv/bin/python3" scripts/engine/vault/cli.py init) </dev/tty >/dev/tty 2>&1 || true
+    done
+    ok "cofre inicializado"
+  else
+    NO_LOGIN=1
+    warn "sem terminal para definir a senha-mestra: o console vai escutar só em 127.0.0.1. Rode o instalador de novo num terminal para liberar o acesso pela rede."
+  fi
+  if [ -f "$creds" ]; then chown "$OP_USER:$OP_USER" "$creds"; chmod 600 "$creds"; fi
+  return 0
+}
+
+setup_projects_base() {
+  local base=/opt/projetos
+  if [ ! -e "$base" ]; then install -d -m 750 -o "$OP_USER" -g "$OP_USER" "$base"; ok "base de projetos $base (de $OP_USER)"
+  elif [ "$(stat -c %U "$base")" = "$OP_USER" ]; then ok "base de projetos $base"
+  else warn "$base existe e não pertence a $OP_USER: projetos novos ali vão falhar por permissão (não alterei nada)"; fi
+}
+
+write_identity() {
+  # bind: NETOPS_HOST > 127.0.0.1 (sem senha-mestra) > vazio (start.sh usa o 1º IP)
+  local host="${NETOPS_HOST:-}"
+  [ "${NO_LOGIN:-0}" = "1" ] && host=127.0.0.1
+  hostname -I >/dev/null 2>&1 || host="${host:-$(primary_ip)}"
+  [[ "$host" =~ ^[A-Za-z0-9_.:%-]*$ ]] || die "NETOPS_HOST inválido"
+  local id=""
+  [ -f "$IDENT_FILE" ] && id=$(sed -nE 's/^NETOPS_INSTANCE_ID=(.*)$/\1/p' "$IDENT_FILE")
+  [ -n "$id" ] || id=$(cat /proc/sys/kernel/random/uuid)
+  install -d -m 755 -o root -g root /etc/netops /etc/netops/instances
+  local tmp="$IDENT_FILE.tmp"
+  {
+    echo "# NetOps — identidade desta instalação (gerado por install.sh; root-owned)."
+    echo "# A conta operacional NÃO pode alterar este arquivo. Ver scripts/engine/lib/runtime_identity.py"
+    echo "NETOPS_LAYOUT=2"
+    echo "NETOPS_DIR=$NETOPS_DIR"
+    echo "NETOPS_RUNTIME_USER=$OP_USER"
+    echo "NETOPS_RUNTIME_HOME=$OP_HOME"
+    echo "NETOPS_INSTANCE_ID=$id"
+    echo "NETOPS_UI_PORT=$PORT"
+    if [ -n "$host" ]; then echo "NETOPS_UI_HOST=$host"; fi
+  } >"$tmp"
+  chmod 644 "$tmp"; chown root:root "$tmp"; mv -f "$tmp" "$IDENT_FILE"
+  ok "identidade: $IDENT_FILE (conta $OP_USER, instância $id)"
+}
+
+setup_user_service() {
+  step "Serviço de boot (systemd do usuário $OP_USER) e console web"
+  local src="$NETOPS_DIR/scripts/engine/ui/systemd" f
+  install -d -m 755 /etc/systemd/user
+  for f in netops-console@.service netops-localadmin@.service; do
+    [ -f "$src/$f" ] || die "unidade $f ausente no pacote"
+    install -m 644 -o root -g root "$src/$f" "/etc/systemd/user/$f"
+  done
+  # serviço root antigo desta pasta (instalação legada) nunca fica ativo junto
+  if [ -f /etc/systemd/system/netops-console.service ] && grep -q "$NETOPS_DIR" /etc/systemd/system/netops-console.service; then
+    warn "existe /etc/systemd/system/netops-console.service (root) para $NETOPS_DIR: desabilitado para não subir em paralelo"
+    run systemctl disable netops-console.service || true
+  fi
+  run_op systemctl --user daemon-reload || die "systemctl --user daemon-reload falhou"
+  run_op systemctl --user enable "$UNIT" || die "não consegui habilitar $UNIT"
+  ok "$UNIT habilitado (sobe no boot pelo linger, sem login)"
+  open_firewall
+  local h; h=$(sed -nE 's/^NETOPS_UI_HOST=(.*)$/\1/p' "$IDENT_FILE"); BIND_HOST="${h:-$(primary_ip)}"; BIND_HOST="${BIND_HOST:-127.0.0.1}"
+  URL="http://$BIND_HOST:$PORT/"
+  if as_op systemctl --user is-active --quiet "$UNIT"; then
+    case "$(http_code "$URL")" in
+      200|301|302|303|401|403) ok "console já está rodando em $URL (não reiniciado, para não derrubar sessões)"; return ;;
+    esac
+  fi
+  info "subindo o console (scripts/engine/ui/start.sh, delegado a $OP_USER)..."
+  "$NETOPS_DIR/scripts/engine/ui/start.sh" --yes >>"$LOG" 2>&1 </dev/null || true
+  local i code=""
+  for i in $(seq 90); do
+    code=$(http_code "$URL"); case "$code" in 200|301|302|303|401|403) break ;; esac; sleep 1
+  done
+  case "$code" in
+    200|301|302|303|401|403)
+      local pid owner
+      pid=$(as_op systemctl --user show -p MainPID --value "$UNIT" 2>/dev/null || true)
+      owner=$(stat -c %U "/proc/${pid:-0}" 2>/dev/null || true)
+      [ "$owner" = "$OP_USER" ] || die "algo responde em $URL, mas o serviço $UNIT não é dono dele (pid ${pid:-?}, conta ${owner:-?})."
+      ok "console respondendo em $URL (processo de $OP_USER)" ;;
+    *) die "o console não respondeu em $URL. Veja: sudo -u $OP_USER XDG_RUNTIME_DIR=/run/user/$(id -u "$OP_USER") journalctl --user -u $UNIT -n 50" ;;
+  esac
+}
+
+setup_localadmin() {
+  step "Administração Local (root sob demanda, sem SSH)"
+  if [ "${NETOPS_NO_LOCALADMIN:-0}" = 1 ]; then warn "administração Local não instalada (NETOPS_NO_LOCALADMIN=1)"; return 0; fi
+  local extra=() rc=0
+  vault_ready || extra=(--no-credential)
+  if has_tty && [ -z "${NETOPS_MASTER_PASSWORD:-}" ]; then
+    python3 -I -B "$NETOPS_DIR/scripts/engine/localadmin/provision.py" install --root "$NETOPS_DIR" "${extra[@]}" </dev/tty >/dev/tty 2>&1 || rc=$?
+  else
+    python3 -I -B "$NETOPS_DIR/scripts/engine/localadmin/provision.py" install --root "$NETOPS_DIR" "${extra[@]}" </dev/null >>"$LOG" 2>&1 || rc=$?
+  fi
+  if [ "$rc" = 0 ]; then ok "host Local pronto: destranque o cofre quando precisar de root neste servidor"
+  else warn "administração Local incompleta (veja $LOG). Depois: sudo python3 -I $NETOPS_DIR/scripts/engine/localadmin/provision.py install"; fi
 }
 
 # ----------------------------------------------------------------------------- 7. cofre = login
@@ -625,7 +853,9 @@ open_firewall() {
 health_check() {
   step "Testando a instalação"
   local fails=0 py="$NETOPS_DIR/.venv/bin/python3" out
-  if out=$(cd "$NETOPS_DIR" && "$py" - <<'PYEOF' 2>&1
+  # layout 2: os testes rodam como a conta operacional (root não executa código da árvore dela)
+  local X=(); [ "${LAYOUT:-1}" = 2 ] && X=(as_op)
+  if out=$(cd "$NETOPS_DIR" && "${X[@]}" "$py" - <<'PYEOF' 2>&1
 import re, subprocess, sys
 from importlib import metadata
 names = []
@@ -647,12 +877,14 @@ raise SystemExit(1 if bad else 0)
 PYEOF
   ); then ok "Python: $out"; else printf '    %s✗%s Python: %s\n' "$R" "$N" "$out"; log "FALHA $out"; fails=$((fails + 1)); fi
 
-  if (cd "$NETOPS_DIR/scripts/engine/ui" && env -i PATH=/usr/bin:/bin HOME="$WORK" NETOPS_UI_DATA_ROOT="$WORK/smoke" \
+  local smoke="$WORK"; [ "${LAYOUT:-1}" = 2 ] && smoke=$(as_op mktemp -d)
+  if (cd "$NETOPS_DIR/scripts/engine/ui" && "${X[@]}" env -i PATH=/usr/bin:/bin HOME="$smoke" NETOPS_UI_DATA_ROOT="$smoke/smoke" \
         timeout 60 "$py" -c "import sys; sys.path.insert(0, '.'); import app") >>"$LOG" 2>&1; then
     ok "backend do console importa sem erro"
   else printf '    %s✗%s backend do console não importa (ver log)\n' "$R" "$N"; fails=$((fails + 1)); fi
 
-  if (cd "$NETOPS_DIR" && python3 scripts/tools/access/session.py --help) >>"$LOG" 2>&1; then
+  [ "${LAYOUT:-1}" = 2 ] && rm -rf "$smoke"
+  if (cd "$NETOPS_DIR" && "${X[@]}" python3 scripts/tools/access/session.py --help) >>"$LOG" 2>&1; then
     ok "acesso a equipamentos (session.py) pronto"
   else printf '    %s✗%s session.py não executa (ver log)\n' "$R" "$N"; fails=$((fails + 1)); fi
 
@@ -668,15 +900,33 @@ PYEOF
     else warn "cron não está ativo: Tarefas agendadas não disparam"; fi
   fi
 
-  getent passwd netops >/dev/null && ok "usuário netops (terminal web)" || { printf '    %s✗%s usuário netops ausente\n' "$R" "$N"; fails=$((fails + 1)); }
-
-  if [ -x /root/.local/bin/claude ]; then ok "agente claude $(/root/.local/bin/claude --version 2>/dev/null | head -1)"
-  elif [ "${NETOPS_SKIP_CLAUDE:-0}" != "1" ]; then printf '    %s!%s agente claude ausente (aba Claude Code indisponível)\n' "$Y" "$N"; fi
+  if [ "${LAYOUT:-1}" = 2 ]; then
+    # identidade: supervisor e servidor rodando como a conta operacional; nada root nesta pasta
+    local bad; bad=$(pgrep -u 0 -f "($NETOPS_DIR/scripts/engine/ui/server.py|supervisor.py --root $NETOPS_DIR )" || true)
+    if [ -z "$bad" ] && pgrep -u "$OP_USER" -f "supervisor.py --root $NETOPS_DIR " >/dev/null; then ok "console roda como $OP_USER (nenhum processo root desta instalação)"
+    else printf '    %s✗%s identidade do console errada (root: %s)\n' "$R" "$N" "${bad:-—}"; fails=$((fails + 1)); fi
+    if [ -n "$(find "$NETOPS_DIR" -xdev \( -path "$NETOPS_DIR/.git" -prune \) -o -user root -print -quit 2>/dev/null)" ]; then
+      warn "há arquivos de root dentro de $NETOPS_DIR (ex.: $(find "$NETOPS_DIR" -xdev -user root -print -quit 2>/dev/null))"
+    else ok "nenhum arquivo de root em $NETOPS_DIR"; fi
+    if [ -x "$OP_HOME/.local/bin/claude" ]; then ok "agente claude $(as_op "$OP_HOME/.local/bin/claude" --version 2>/dev/null | head -1) (perfil em $OP_HOME/.claude)"
+    elif [ "${NETOPS_SKIP_CLAUDE:-0}" != "1" ]; then printf '    %s!%s agente claude ausente (aba Claude Code indisponível)\n' "$Y" "$N"; fi
+    if id -nG "$OP_USER" | tr ' ' '\n' | grep -qxE 'sudo|wheel|docker|lxd|disk|root' || sudo -l -n -U "$OP_USER" 2>/dev/null | grep -q 'may run'; then
+      printf '    %s✗%s %s tem sudo/grupo administrativo\n' "$R" "$N" "$OP_USER"; fails=$((fails + 1))
+    else ok "$OP_USER sem sudo e sem grupos administrativos"; fi
+    if [ -f "/etc/netops/instances/$SLUG.local" ]; then
+      local la; la=$(as_op systemctl --user is-active "netops-localadmin@$SLUG.service" 2>/dev/null || true)
+      [ "$la" = active ] && ok "administração Local instalada (serviço ativo; root só com o cofre destrancado)" || warn "serviço netops-localadmin@$SLUG não está ativo ($la)"
+    fi
+  else
+    getent passwd netops >/dev/null && ok "usuário netops (terminal web)" || { printf '    %s✗%s usuário netops ausente\n' "$R" "$N"; fails=$((fails + 1)); }
+    if [ -x /root/.local/bin/claude ]; then ok "agente claude $(/root/.local/bin/claude --version 2>/dev/null | head -1)"
+    elif [ "${NETOPS_SKIP_CLAUDE:-0}" != "1" ]; then printf '    %s!%s agente claude ausente (aba Claude Code indisponível)\n' "$Y" "$N"; fi
+  fi
 
   if vault_ready; then ok "cofre inicializado (login exigido no console)"; else warn "cofre sem senha-mestra"; fi
 
   if [ -f "$NETOPS_DIR/scripts/engine/hooks/install_claude_hooks.py" ]; then
-    if python3 "$NETOPS_DIR/scripts/engine/hooks/install_claude_hooks.py" --root "$NETOPS_DIR" --check >>"$LOG" 2>&1; then
+    if "${X[@]}" python3 "$NETOPS_DIR/scripts/engine/hooks/install_claude_hooks.py" --root "$NETOPS_DIR" --check >>"$LOG" 2>&1; then
       ok "hooks de segurança do Claude Code ativos"
     else printf '    %s✗%s hooks do Claude Code ausentes em .claude/settings.json\n' "$R" "$N"; fails=$((fails + 1)); fi
   fi
@@ -715,6 +965,12 @@ summary() {
   echo
   echo "   Pasta: $NETOPS_DIR   ·   Log: $LOG"
   echo "   Reiniciar o console: $NETOPS_DIR/scripts/engine/ui/start.sh --yes"
+  if [ "${LAYOUT:-1}" = 2 ]; then
+    echo "   Conta operacional: $OP_USER (HOME $OP_HOME) — console, IA e terminal rodam como ela, nunca como root."
+    echo "   Root neste servidor: host Local (Hosts) + cofre destrancado. Sem SSH. Ver scripts/engine/localadmin/SKILL.md"
+  else
+    echo "   ⚠ Instalação no modelo antigo (console como root). Migre: sudo python3 -I $NETOPS_DIR/scripts/engine/identity/migrate.py plan"
+  fi
   if [ ${#WARNINGS[@]} -gt 0 ]; then
     echo
     printf '   %sAvisos:%s\n' "$Y" "$N"
@@ -731,10 +987,22 @@ main() {
   install_system_packages
   pick_python
   install_code
-  setup_venv
-  setup_user
-  setup_vault
-  setup_service
+  if [ "$LAYOUT" = 2 ]; then
+    setup_account
+    own_tree
+    setup_venv
+    setup_hooks_claude_op
+    setup_vault_op
+    setup_projects_base
+    write_identity
+    setup_user_service
+    setup_localadmin
+  else
+    setup_venv
+    setup_user
+    setup_vault
+    setup_service
+  fi
   health_check
   summary
   trap - ERR
