@@ -55,6 +55,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Lista de equipamentos e como acessá-los | `network/hosts.yaml` |
 | Credenciais de hosts (acesso a equipamento; cofre `enc.v1:` ou texto puro, git-ignorado) | `network/credentials.yaml` |
 | Cofre de credenciais (criptografia + unlock) | `scripts/engine/vault/` (`SKILL.md`) |
+| Usar chave/senha do Cofre de senhas num comando ou `.env` sem expor o valor (`nvault://item/campo`) | `scripts/tools/secrets/` (`SKILL.md`; `nvault run -- <cmd>`) |
 | **Cofre de senhas**: segredos que NÃO são de host (portais, APIs, tokens) com templates e campos reutilizáveis (console: **Inventário → Cofre de senhas**) | `network/vault.yaml` (git-ignorado, `enc.v1:`); `scripts/engine/lib/pwvault.py`, `ui/services/vault_items_svc.py` (ver `scripts/engine/vault/SKILL.md`) |
 | Mapa de como a rede se interliga | `network/topology.yaml` + `network/topology.md` |
 | Boas práticas (texto) | `best-practices/<vendor>/` ou `best-practices/general/` |
@@ -167,6 +168,13 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   equipamento, invoque os scripts de `scripts/tools/access/` com `--host <nome>` (eles resolvem a
   credencial internamente); nunca chame `resolve_host(decrypt=True)`/`resolve_secret`/`decrypt_value`.
   Ver `constitution.md` §V e `core/rules/connection-safety.md`.
+- **Chave de API/senha do Cofre de senhas em comando, `.env` ou script = `nvault` (INEGOCIÁVEL):** para usar um segredo do
+  Cofre de senhas (Cloudflare/Wrangler, API do Coolify, `.env` de aplicação...), escreva a **referência** `nvault://<item>/<campo>`
+  (no `.env`, com `--set` ou `--item`) e rode `nvault run -- <comando>` (`scripts/tools/secrets/run.py`). O valor vai só para o
+  ambiente do processo e sai mascarado (`***`). Nunca grave o valor em arquivo, nunca leia o `network/vault.yaml`, nunca chame
+  `/reveal` e nunca transforme nem envie o segredo para outro lugar. `nvault list` mostra as referências. Precisa do cofre destrancado
+  (código 3 = trancado: peça ao humano para destrancar) e da permissão `vault.use` (código 4). Tarefa agendada não usa o `nvault`.
+  Ver `scripts/tools/secrets/SKILL.md`.
 - **Setup (só na instalação, nunca por pedido):** `.venv/` com `requirements.txt` + `apt install python-is-python3 nmap`
   (ver `README.md`). Todo script CLI se re-executa sozinho no `.venv` (`scripts/engine/lib/_venv.py`), então
   `python3 scripts/...` funciona sem ativar nada. Use `python3` nos comandos (existe em todo Debian/Ubuntu).

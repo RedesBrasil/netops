@@ -33,8 +33,9 @@ O mesmo cofre (senha-mestra e chave da sessão) protege também o **Cofre de sen
 - **API:** `/api/vault/catalog`, `/api/vault/fields`, `/api/vault/templates`, `/api/vault/items`,
   `POST /api/vault/items/<id>/reveal` (só com o cofre destrancado e a permissão `vault.reveal`).
 - `change-password` recifra o `vault.yaml` junto com o `credentials.yaml`.
+- **Usar em comando/`.env` sem expor o valor:** `nvault run -- <cmd>` com as referências `nvault://item/campo` (ver `scripts/tools/secrets/SKILL.md`).
 - **INEGOCIÁVEL:** a IA nunca lê nem decifra os segredos do `vault.yaml`, nem chama o endpoint `/reveal`.
-  Quem consulta é o humano, pela tela.
+  Quem consulta é o humano, pela tela. A IA usa as chaves só pelo `nvault`.
 
 ## Quando usar
 

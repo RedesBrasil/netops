@@ -1248,3 +1248,6 @@ span.vault-icon { cursor: default; border-radius: var(--radius); height: 28px; }
   .vault-tpl-head { display: none; }
   .vault-tpl-row { grid-template-columns: 1fr 1fr; }
 }
+.vault-ref { margin-top: 3px; font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.vault-ref code { background: transparent; padding: 0; }
+.vault-ref .link-btn { padding: 0 6px; font-size: 11px; }

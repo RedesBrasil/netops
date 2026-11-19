@@ -10,6 +10,10 @@ import { FilterBar, DataTable, Field, PasswordInput, VaultBanner } from "../comp
 
 const KIND_LABEL = { secret: "🔒 Segredo", text: "Texto" };
 const MASK = "••••••••";
+// Mesmo slug de lib/pwvault.slugify: referência usada no .env (scripts/tools/secrets/run.py).
+const slug = (t) => String(t || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/, "") || "item";
+export const vaultRef = (itemId, field) => `nvault://${itemId}/${slug(field)}`;
 
 async function copy(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
@@ -142,11 +146,17 @@ function ItemView({ item, tpl, unlocked, onEdit, onClose }) {
       ${vals.length === 0 && html`<div class="muted">Sem campos preenchidos.</div>`}
       ${vals.map((x) => html`<div class="vault-row" key=${x.field}>
         <div class="vault-row-label">${x.field}${x.kind === "secret" ? " 🔒" : ""}</div>
-        <div class="vault-row-value"><code>${x.kind === "text" ? x.value : (shown[x.field] ?? MASK)}</code></div>
+        <div class="vault-row-value"><code>${x.kind === "text" ? x.value : (shown[x.field] ?? MASK)}</code>
+          <div class="vault-ref" title="Use no .env ou em comandos: nvault run -- <comando>">
+            <code>${vaultRef(item.id, x.field)}</code>
+            <button class="sm link-btn" onClick=${async () => { if (await copy(vaultRef(item.id, x.field))) toast.ok("Referência copiada"); }}>copiar referência</button></div></div>
         <div class="vault-row-actions">${x.kind === "text"
           ? html`<button class="sm" onClick=${() => copyField(x)}>📋 Copiar</button>` : secretBtns(x)}</div>
       </div>`)}
     </div>
+    <div class="help">Para usar em sistemas e na IA sem expor o valor: no <code>.env</code> coloque a referência
+      (ex.: <code>API_KEY=${vaultRef(item.id, vals.find((v) => v.kind === "secret")?.field || "senha")}</code>) e rode
+      <code>nvault run -- &lt;comando&gt;</code> com o cofre destrancado. O valor só entra no processo e sai mascarado.</div>
     ${item.notes && html`<${Field} label="Notas"><div class="vault-notes">${item.notes}</div><//>`}
     <div class="modal-actions"><button onClick=${onClose}>Fechar</button>
       <button class="primary needs-vault-edit" onClick=${onEdit}>Editar</button></div>

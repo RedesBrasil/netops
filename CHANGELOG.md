@@ -11,6 +11,10 @@
   - **Cofre trancado ou aberto:** texto puro aparece sempre. Segredo é cifrado (`enc.v1:`, a mesma chave do cofre) e só se revela, copia ou grava com o cofre destrancado. Revelar fica na auditoria.
   - **Permissões novas:** `vault.view`, `vault.reveal`, `vault.edit` e `vault.templates`. Em instalações novas, o grupo `operador` vem com ver e revelar. Nas existentes, conceda em **Grupos de acesso**.
   - **Onde fica:** `network/vault.yaml` (0600, git-ignorado e preservado pelo atualizador). `vault/cli.py change-password` recifra o arquivo junto com as credenciais.
+- **`nvault`: segredos do Cofre de senhas em variáveis de ambiente.** No `.env`, num `export` ou no `--set`, vai a referência `nvault://<item>/<campo>` no lugar do valor, inteira ou embutida (`{{nvault://...}}`). `nvault run -- <comando>` (`scripts/tools/secrets/run.py`) resolve a referência com o cofre destrancado e injeta o valor só no processo filho.
+  - **Saída:** stdout e stderr saem com o segredo trocado por `***`. Serve para Wrangler (`CLOUDFLARE_API_TOKEN`), API do Coolify, aplicações com `.env` e para a IA usar as chaves sem ver o valor.
+  - **Comandos e tela:** `nvault list` e `nvault check` nunca mostram valores. A tela do item mostra a referência de cada campo, com o botão copiar.
+  - **Permissão e auditoria:** a permissão nova `vault.use` vale para quem pede pela aba Claude ou pelo terminal. Cada uso fica na auditoria como `vault.run`.
 
 ## [2.5.0] - 2026-11-19
 

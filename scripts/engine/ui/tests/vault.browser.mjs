@@ -47,6 +47,7 @@ try {
   const view = page.locator(".modal");
   assert.ok((await view.innerText()).includes("fulano"));
   assert.ok(!(await view.innerText()).includes("s3gr3d0-e2e"), "segredo mascarado antes de revelar");
+  assert.ok((await view.innerText()).includes("nvault://portal-claro/senha"), "referência para .env/nvault");
   await view.getByRole("button", { name: "👁 Revelar" }).click();
   await page.locator(".modal code", { hasText: "s3gr3d0-e2e" }).waitFor();
   await shot(page, "02-item-revelado");
