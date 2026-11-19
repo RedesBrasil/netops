@@ -35,20 +35,19 @@ export function VaultPage() {
   const tab = seg === "templates" || seg === "fields" ? seg : "items";
   const tabBtn = (key, label, go) => html`<button class=${tab === key ? "active" : ""} onClick=${go}>${label}</button>`;
   const ctx = { data: res.data, reload: res.reload, r, unlocked };
-  return html`<div>
-    <div class="page-title"><h1>Cofre de senhas</h1><span class="spacer"></span>
-      ${tab === "items" && html`<button class="primary needs-vault-edit" onClick=${() => r.open("new")}>+ Novo item</button>`}
-      ${tab === "templates" && html`<button class="primary needs-vault-templates" onClick=${() => r.open(["templates", "new"])}>+ Novo template</button>`}
-      ${tab === "fields" && html`<button class="primary needs-vault-templates" onClick=${() => r.open(["fields", "new"])}>+ Novo campo</button>`}
-    </div>
-    <p class="help">Senhas, chaves de API e logins de sistemas e portais, para consulta das pessoas.
-      O acesso a equipamentos continua em <a href="#credentials">Credenciais de hosts</a>.</p>
-    <${VaultBanner} />
-    ${!unlocked && html`<p class="help">Com o cofre trancado, os campos de texto aparecem; os segredos ficam ocultos até destrancar.</p>`}
+  const newBtn = tab === "items" ? html`<button class="primary sm needs-vault-edit" onClick=${() => r.open("new")}>+ Novo item</button>`
+    : tab === "templates" ? html`<button class="primary sm needs-vault-templates" onClick=${() => r.open(["templates", "new"])}>+ Novo template</button>`
+    : html`<button class="primary sm needs-vault-templates" onClick=${() => r.open(["fields", "new"])}>+ Novo campo</button>`;
+  return html`<div class="vault-page">
+    <div class="page-title"><h1 title="Senhas, chaves de API e logins de sistemas e portais. Acesso a equipamentos fica em Credenciais de hosts.">Cofre de senhas</h1>
+      <span class="spacer"></span>
+      <span class=${"vault-state " + (unlocked ? "ok" : "locked")}>${unlocked ? "destrancado" : "trancado: segredos ocultos"}</span>
+      <${VaultBanner} compact=${true} /></div>
     <div class="tabs">
       ${tabBtn("items", "Itens", () => r.close())}
       ${tabBtn("templates", "Templates", () => r.open("templates"))}
       ${tabBtn("fields", "Campos", () => r.open("fields"))}
+      <span class="tabs-actions">${newBtn}</span>
     </div>
     ${tab === "items" && html`<${ItemsTab} ...${ctx} />`}
     ${tab === "templates" && html`<${TemplatesTab} ...${ctx} />`}
@@ -87,7 +86,7 @@ function ItemsTab({ data, reload, r, unlocked }) {
     { key: "updated_by", label: "Por", sort: (it) => it.updated_by || "", render: (it) => it.updated_by || "—" },
   ];
   return html`<div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar no cofre (título, notas, campos de texto)"
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar no cofre"
       selects=${[{ key: "tpl", label: "Template", value: tplLabel, options: tplOptions }]} count=${items.length} total=${all.length} />
     ${seg && seg !== "new" && !found && html`<div class="card">Item '${seg}' não encontrado. <a href="#vault">Voltar ao cofre</a></div>`}
     <${DataTable} tableId="vault-items" urlSort columns=${cols} rows=${items.map((it) => ({ ...it, _key: it.id }))}
@@ -265,8 +264,7 @@ function TemplatesTab({ data, reload, r }) {
     { key: "items", label: "Itens", sort: (t) => t.items, render: (t) => t.items },
   ];
   return html`<div>
-    <p class="help">O template define quais campos um item tem e, em cada um, se é obrigatório e se aparece na lista do cofre.
-      Um campo digitado aqui vira um campo do catálogo e fica disponível para os outros templates.</p>
+    <p class="help vault-help">Campos de cada tipo de item; campo novo digitado aqui fica disponível para os outros templates.</p>
     ${tid && tid !== "new" && !found && html`<div class="card">Template '${tid}' não encontrado. <a href="#vault/templates">Voltar</a></div>`}
     <${DataTable} tableId="vault-templates" urlSort columns=${cols} rows=${templates.map((t) => ({ ...t, _key: t.id }))}
       onRowClick=${(t) => r.open(["templates", t.id])}
@@ -349,7 +347,7 @@ function FieldsTab({ data, reload, r }) {
     { key: "items", label: "Itens", sort: (f) => f.items, render: (f) => f.items },
   ];
   return html`<div>
-    <p class="help">Catálogo de campos reutilizáveis. O tipo (segredo ou texto) é do campo; obrigatório e visível se escolhem em cada template.</p>
+    <p class="help vault-help">Campos reutilizáveis. O tipo é do campo; obrigatório e visível se escolhem no template.</p>
     ${name && name !== "new" && !found && html`<div class="card">Campo '${name}' não encontrado. <a href="#vault/fields">Voltar</a></div>`}
     <${DataTable} tableId="vault-fields" urlSort columns=${cols} rows=${fields.map((f) => ({ ...f, _key: f.name }))}
       onRowClick=${(f) => r.open(["fields", f.name])}

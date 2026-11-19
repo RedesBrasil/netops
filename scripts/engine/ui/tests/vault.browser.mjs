@@ -81,8 +81,8 @@ try {
 
   // 3) tranca o cofre: texto aparece, segredo não abre
   await page.goto(BASE + "/#vault");
-  await page.locator(".vault-banner.ok button", { hasText: "Trancar" }).click();
-  await page.locator(".vault-banner.locked").first().waitFor();
+  await page.locator(".vault-page .vault-icon.ok").click();
+  await page.locator(".vault-page .vault-icon.locked").waitFor();
   await page.goto(BASE + "/#vault/portal-claro");
   await page.locator(".modal .muted", { hasText: "destranque o cofre" }).waitFor();
   assert.ok((await page.locator(".modal").innerText()).includes("fulano"));

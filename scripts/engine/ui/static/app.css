@@ -1238,6 +1238,17 @@ span.vault-icon { cursor: default; border-radius: var(--radius); height: 28px; }
 .vault-form-row > :first-child { flex: 1; }
 .vault-add { display: flex; gap: 8px; margin: 6px 0 12px; }
 .vault-add input { flex: 1; }
+/* campos soltos do cofre (fora de .field) no mesmo padrão dos formulários (.field input) */
+.vault-tpl-row input:not([type=checkbox]), .vault-tpl-row select, .vault-add input {
+  width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); font: inherit; box-sizing: border-box; }
+.vault-tpl-row input:focus, .vault-tpl-row select:focus, .vault-add input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-weak); }
+.vault-tpl-row input[type=checkbox] { accent-color: var(--accent); }
+.vault-tpl-row label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.vault-page .page-title { margin-bottom: 4px; }
+.vault-page .tabs { margin-bottom: 8px; }
+.vault-page .tabs > button { padding: 6px 12px; }
+.vault-help { margin: 0 0 8px; }
 .vault-tpl-head, .vault-tpl-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px 120px 130px 150px; gap: 8px; align-items: center; }
 .vault-tpl-head { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
 .vault-tpl-row { margin-bottom: 6px; }
@@ -1246,8 +1257,16 @@ span.vault-icon { cursor: default; border-radius: var(--radius); height: 28px; }
   .vault-row { grid-template-columns: 1fr; }
   .vault-row-actions { justify-content: flex-start; }
   .vault-tpl-head { display: none; }
-  .vault-tpl-row { grid-template-columns: 1fr 1fr; }
+  .vault-tpl-row { display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; }
+  .vault-tpl-row > input[list] { flex: 1 1 100%; }
+  .vault-tpl-row > select { flex: 1 1 140px; width: auto; }
+  .vault-tpl-btns { margin-left: auto; }
+  .vault-page .tabs > button { padding: 6px 8px; }
 }
 .vault-ref { margin-top: 3px; font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .vault-ref code { background: transparent; padding: 0; }
 .vault-ref .link-btn { padding: 0 6px; font-size: 11px; }
+.vault-state { font-size: 12px; color: var(--muted); margin-right: 6px; }
+.vault-state.locked { color: var(--danger); }
+.vault-page .page-title h1 { font-size: 20px; }
+@media (max-width: 700px) { .vault-page .tabs { flex-wrap: wrap; } .vault-page .tabs .tabs-actions { padding: 4px 0; } }
