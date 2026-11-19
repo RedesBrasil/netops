@@ -248,3 +248,15 @@ def test_status_does_not_expose_arbitrary_state(client, env, monkeypatch, instal
     response = client.get("/api/updates/status")
     assert response.status_code == 200
     assert "NEVER_EXPOSE" not in response.text
+
+
+def test_agents_md_is_local_and_template_is_clean():
+    """AGENTS.md é da instalação (nunca no pacote); o modelo limpo vai no pacote e não traz regra de desenvolvimento."""
+    from update.common import distributed
+    assert distributed("AGENTS.md") is False
+    tpl = Path(__file__).resolve().parents[4] / "core" / "templates" / "AGENTS.tmpl.md"
+    assert distributed("core/templates/AGENTS.tmpl.md") is True
+    text = tpl.read_text(encoding="utf-8")
+    assert "sudo" in text and "netops-netcaps" in text
+    for dev in ("**Releases:**", "**Git — SEMPRE na `main`", "**Tabelas do console", "**URLs de navegação"):
+        assert dev not in text

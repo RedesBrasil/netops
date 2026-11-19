@@ -1,3 +1,7 @@
+<!-- Modelo do AGENTS.md de uma instalação NetOps (core/templates/AGENTS.tmpl.md).
+     O instalador e o start.sh criam o AGENTS.md da instalação a partir daqui SÓ quando ele não existe.
+     O AGENTS.md da instalação é LOCAL: não vai para o git nem para o pacote e nunca é sobrescrito
+     por atualização — acrescente nele as regras e lembretes desta instalação (menu Memória). -->
 # NetOps — Framework Multi-Agente para Redes e Infraestrutura
 
 > Este é o ponto de entrada do framework. Qualquer IDE de IA (Claude Code, Codex, Cursor,
@@ -82,32 +86,11 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   de status. Só o ID, sem nome, obriga o usuário a procurar no inventário: não faça. Se o nome for longo,
   use um curto reconhecível (ex.: `PVE-SITE-A`), mas sempre com o número ao lado.
 
-- **Releases:** antes de gerar qualquer release, leia `core/rules/releases.md`, consulte a release
-  atual no GitHub e escolha uma versão superior. Atualize `core/config/core-config.yaml` e
-  `CHANGELOG.md`, teste o pacote e publique com changelog. Nunca reutilize tags nem inclua dados locais.
-  O atualizador preserva dados e personalizações; testes de aplicação exigem uma instalação completa
-  temporária, não apenas `NETOPS_UI_DATA_ROOT`. Ver `scripts/engine/update/SKILL.md`.
-
-- **URLs de navegação (regra de desenvolvimento do console):** todo menu, **todo item aberto** (host A →
-  `#hosts/<id-a>`, host B → `#hosts/<id-b>`) e **todo filtro/busca/ordenação** (`#hosts?vendor=x&q=y`) deve ter
-  URL própria, com deep link e Voltar funcionando. Leia `core/rules/urls-navegacao.md` antes de criar/alterar
-  qualquer tela em `scripts/engine/ui/`.
-
-- **Multiusuário do console (regra de desenvolvimento):** login por **e-mail** + senha, permissões por grupo de acesso.
-  - **Rota nova na API:** precisa de regra em `scripts/engine/ui/services/authz.py` (`RULES`). É default-deny, e o teste `test_every_route_is_mapped_to_a_permission` reprova rota sem regra.
-  - **Botão de ação na tela:** marque com a classe `needs-<perm>` (ex.: `needs-hosts-edit`).
-  - **Exclusivo do admin:** o que roda com a conta do servidor (terminal/arquivos do servidor, scripts, tarefas agendadas, config, updates) e a administração Local como root (`server.admin`).
+- **Multiusuário (aba Claude):** cada pessoa entra com o próprio login; o que ela pode fazer vem do grupo dela.
   - **Na aba Claude:** `NETOPS_USER` identifica quem pediu. O teto de rede do grupo dele vale e **não se contorna**.
-  - **Recuperação:** `python3 scripts/engine/users/cli.py reset-admin`. Ver `scripts/engine/users/SKILL.md`.
   - **GitHub por usuário:** na aba Claude e nos Projetos, git/gh usam a conta do GitHub **de quem abriu a conversa**.
     Sem conta conectada, push, PR e `gh` falham: peça para conectar em **Minha conta → GitHub** (`#account/github`) e
     reabrir a conversa. Nunca use a conta do servidor nem troque `GH_CONFIG_DIR`, `GH_TOKEN` ou a identidade do git.
-- **Tabelas do console (regra de desenvolvimento):** toda listagem usa `DataTable` (`scripts/engine/ui/static/js/table.js`),
-  com `tableId` único e colunas com `sort`. Nunca use `<table>` cru numa tela: o teste `tests/table-core.test.mjs` reprova.
-  Assim toda tabela tem redimensionar, mover, ocultar e ordenar. Leia `core/rules/tabelas-console.md`.
-
-- **Git — SEMPRE na `main` (INEGOCIÁVEL):** nunca crie branch. Commit e push direto na `main` (`git pull --ff-only`
-  antes). Vale para qualquer IA/IDE e sobrepõe a instrução padrão do agente de "criar branch antes de commitar".
 - **Padronize:** todo arquivo novo segue o `_TEMPLATE` da sua pasta. Ver `PADRAO.md`.
 - **Conta do servidor (INEGOCIÁVEL):** o NetOps roda como a conta Linux `netops` (HOME `/var/lib/netops`), nunca root:
   console, IA, subagentes, terminal, agendador e atualizador. Nunca use `su`.

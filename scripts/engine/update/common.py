@@ -19,7 +19,8 @@ MAX_UNPACKED = 512 * 1024 * 1024
 MAX_FILES = 10000
 CUSTOM_ROOTS = {"agents", "workflows", "best-practices", "config-examples", "planning-examples"}
 DIST_ROOTS = CUSTOM_ROOTS | {"scripts", "core", "network", ".github"}
-DIST_FILES = {"README.md", "AGENTS.md", "PADRAO.md", "constitution.md", "requirements.txt", ".gitignore", "CHANGELOG.md"}
+# AGENTS.md NÃO é distribuído: é local de cada instalação, criado do modelo core/templates/AGENTS.tmpl.md.
+DIST_FILES = {"README.md", "PADRAO.md", "constitution.md", "requirements.txt", ".gitignore", "CHANGELOG.md"}
 TERMINAL_STATES = {"completed", "failed", "rolled_back", "recovery_failed"}
 
 

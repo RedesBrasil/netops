@@ -351,6 +351,11 @@ fi
 # inclui ~/.local/bin; por isso o garantimos aqui.
 export PATH="$HOME/.local/bin:$PATH"
 
+# AGENTS.md é LOCAL de cada instalação (fora do git e do pacote): sem ele, nasce do modelo limpo.
+if [ ! -e "$ROOT/AGENTS.md" ] && [ -f "$ROOT/core/templates/AGENTS.tmpl.md" ]; then
+  sed '1,/-->/d' "$ROOT/core/templates/AGENTS.tmpl.md" > "$ROOT/AGENTS.md" 2>/dev/null && chmod 644 "$ROOT/AGENTS.md" || true
+fi
+
 PY="$ROOT/.venv/bin/python3"
 if [ ! -x "$PY" ] && [ ! -f "$ROOT/.netops-update/journal.json" ]; then
   echo "ERRO: venv ausente em .venv/. Rode:" >&2

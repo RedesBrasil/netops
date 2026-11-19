@@ -673,6 +673,18 @@ setup_localadmin() {
   else warn "administração Local incompleta (veja $LOG). Depois: sudo python3 -I $NETOPS_DIR/scripts/engine/localadmin/provision.py install"; fi
 }
 
+# AGENTS.md é LOCAL de cada instalação (fora do git e do pacote; nunca sobrescrito por atualização):
+# nasce do modelo limpo core/templates/AGENTS.tmpl.md. O usuário acrescenta o que é dele (menu Memória).
+setup_agents_md() {
+  local tpl="$NETOPS_DIR/core/templates/AGENTS.tmpl.md" dst="$NETOPS_DIR/AGENTS.md"
+  if [ -e "$dst" ]; then ok "AGENTS.md da instalação mantido (é local)"; return 0; fi
+  [ -f "$tpl" ] || { warn "modelo do AGENTS.md ausente nesta versão: o console cria quando houver"; return 0; }
+  sed '1,/-->/d' "$tpl" >"$dst"
+  chmod 644 "$dst"
+  if [ "${LAYOUT:-1}" = 2 ]; then chown "$OP_USER:$OP_USER" "$dst"; fi
+  ok "AGENTS.md criado do modelo limpo (regras padrão da IA, inclusive sudo e rede sem root)"
+}
+
 # ----------------------------------------------------------------------------- 7b. permissões da conta
 # Rede sem root + sudo só com o cofre destrancado + "sudo automático" no shell da conta operacional.
 setup_privileges() {
@@ -1022,6 +1034,7 @@ main() {
     setup_hooks_claude_op
     setup_vault_op
     setup_projects_base
+    setup_agents_md
     write_identity
     setup_user_service
     setup_localadmin
@@ -1029,6 +1042,7 @@ main() {
   else
     setup_venv
     setup_user
+    setup_agents_md
     setup_vault
     setup_service
   fi

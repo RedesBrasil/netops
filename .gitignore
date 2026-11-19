@@ -72,6 +72,8 @@ scripts/engine/ui/.ui-token
 *.orig
 *.bak
 *.bak-*
+# AGENTS.md é local de cada instalação (nasce de core/templates/AGENTS.tmpl.md): nunca vai para o git
+/AGENTS.md
 # backups da UI ao editar o AGENTS.md pelo menu Memória
 /AGENTS.md.bak.*
 

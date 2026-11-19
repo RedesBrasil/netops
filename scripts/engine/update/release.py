@@ -26,9 +26,8 @@ def release_notes(text: str, version: str) -> str:
     return match[1].strip() + "\n"
 
 
-# Atualizadores já instalados (até 2.3.1) só aceitam CLAUDE.md na lista de arquivos distribuídos e
-# recusam o pacote inteiro (protected_path) se ele trouxer AGENTS.md. Não entra no pacote até que
-# a base instalada seja >= 2.4.0 (que aceita AGENTS.md); remover esta entrada na release seguinte.
+# AGENTS.md nunca entra no pacote (é local; ver common.DIST_FILES). A trava fica como cinto de
+# segurança: atualizadores até 2.3.1 recusariam o pacote inteiro (protected_path) se ele o trouxesse.
 LEGACY_HOLDBACK = {"AGENTS.md"}
 
 
