@@ -866,6 +866,11 @@ function useClaudeSession() {
     activateSession(sid, true);
   }
 
+  // Vários arquivos de uma vez: sobe em sequência (o servidor resolve nomes repetidos sem corrida).
+  async function uploadFiles(files) {
+    for (const f of files || []) await uploadFile(f);
+  }
+
   async function uploadFile(file) {
     if (!file) return;
     const fd = new FormData(); fd.append("file", file);
@@ -892,7 +897,7 @@ function useClaudeSession() {
     project, status, items, working, mode, netperms, netpermsMax, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
-    send, submit, stop, newSession, resumeSession, forkFrom, editFrom, answerPermission, changeMode, changeModel, uploadFile,
+    send, submit, stop, newSession, resumeSession, forkFrom, editFrom, answerPermission, changeMode, changeModel, uploadFile, uploadFiles,
     endSession,
     auth, showAuth, setShowAuth, refreshAuth, relaunch, refreshModels,
     showModelPick, setShowModelPick, modelErr, pickModelAndRelaunch,
@@ -1229,7 +1234,7 @@ function loadMentionCatalog(force) {
 // Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
-  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, netperms, netpermsMax, changeNetperms, modelSel, models, changeModel, uploadFile, slash, fileRef, attachments, setAttachments,
+  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, netperms, netpermsMax, changeNetperms, modelSel, models, changeModel, uploadFile, uploadFiles, slash, fileRef, attachments, setAttachments,
     queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove, sessionId } = useClaude();
   const taRef = useRef(null);
   // Menções "#host:…" / "#group:…": menu junto ao cursor, ↑↓ navega, Enter/Tab escolhe, Esc fecha.
@@ -1276,10 +1281,10 @@ function Composer() {
     e.preventDefault();
     if (disabled) { return; }
     const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
-    imgs.forEach((f, i) => {
+    uploadFiles(imgs.map((f, i) => {
       const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg").replace(/[^a-z0-9]/gi, "");
-      uploadFile(new File([f], `colada-${stamp}-${i + 1}.${ext}`, { type: f.type }));
-    });
+      return new File([f], `colada-${stamp}-${i + 1}.${ext}`, { type: f.type });
+    }));
   }
 
   function onKeyDown(e) {
@@ -1339,10 +1344,10 @@ function Composer() {
         onInput=${(e) => { setInput(e.target.value); syncCaret(e); }} onKeyDown=${onKeyDown} onKeyUp=${syncCaret} onClick=${syncCaret} onPaste=${onPaste}></textarea>
       <div class="cc-composer-bar">
         <div class="cc-composer-left">
-          <input type="file" ref=${fileRef} style="display:none"
-            onChange=${(e) => { uploadFile(e.target.files[0]); e.target.value = ""; }} />
+          <input type="file" multiple ref=${fileRef} style="display:none"
+            onChange=${(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; uploadFiles(fs); }} />
           <button class="cc-iconbtn" disabled=${disabled} onClick=${() => fileRef.current && fileRef.current.click()}
-            title="Anexar arquivo (vira @caminho) — ou cole uma imagem com Ctrl+V">+</button>
+            title="Anexar arquivos (vira @caminho; selecione vários) — ou cole uma imagem com Ctrl+V">+</button>
           ${dict.phase === "starting" && html`<span class="cc-dict">Abrindo microfone…</span>`}
           ${dict.phase === "recording" && html`<span class="cc-dict rec"><i class="cc-dict-dot"></i>Gravando ${mmss(dict.elapsed)} / ${mmss(MAX_SECONDS)}
             <button class="sm primary" onClick=${dict.stop}>Parar</button>
