@@ -122,6 +122,15 @@ export function MapsPage() {
     if (entries.length === 1 && hostRows.current?.includes(row)) { openEntry(row.id, entries[0]); loadHostRows().catch(() => {}); return; }
     setAccessHost(row);
   }
+  // "Chat": abre conversa nova no Claude Code com os hosts selecionados citados (#host:<nome>; o envio expande p/ IDs do inventário).
+  async function openChat(ids) {
+    if (!await flush()) return;
+    const tokens = ids.map(id => "#host:" + String((snapshot.hosts[id] || {}).hostname || id).trim().replace(/\s+/g, "_"));
+    const text = `Sobre ${ids.length > 1 ? "os hosts" : "o host"} ${tokens.join(" ")}: `;
+    try { localStorage.setItem("cc-fork-prefill", JSON.stringify({ id: "new", text, t: Date.now() })); } catch (_) {}
+    navigate("#claude/new");
+    setTimeout(() => dispatchEvent(new Event("netops:claude-prefill")), 400);
+  }
   async function openHost(args, fromUrl = false) {
     if (!await flush()) return;
     if (!fromUrl) { opening.current = true; r.pushParams({ host: args.id != null ? String(args.id) : "new", link: "" }); }
@@ -191,7 +200,7 @@ export function MapsPage() {
   const map = snapshot.maps.find(m => m.id === current) || snapshot.maps[0];
   return html`<div class="maps-page">
     <${Editor} IconPicker=${IconPicker} map=${map} maps=${snapshot.maps} hosts=${snapshot.hosts} links=${snapshot.topology.links} readOnly=${snapshot.read_only || deleting}
-      saving=${saving || !!pending.current.size || deleting} status=${status} saveError=${saveError} onSave=${save} onHost=${openHost} onLink=${openLink} onSwitch=${switchMap} onAccess=${openAccess}
+      saving=${saving || !!pending.current.size || deleting} status=${status} saveError=${saveError} onSave=${save} onHost=${openHost} onLink=${openLink} onSwitch=${switchMap} onAccess=${openAccess} onChat=${openChat}
       onNewMap=${async () => { if (await flush()) setNewMap(true); }} onDeleteMap=${() => setConfirm({ kind: "map", id: map.id })}
       onDeleteSelection=${async selection => { if (await flush()) setConfirm({ kind: "selection", ...selection }); }}
       onError=${message => toast.err(message)} onBusy=${setBusy}
