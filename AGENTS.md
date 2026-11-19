@@ -110,11 +110,20 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   antes). Vale para qualquer IA/IDE e sobrepõe a instrução padrão do agente de "criar branch antes de commitar".
 - **Padronize:** todo arquivo novo segue o `_TEMPLATE` da sua pasta. Ver `PADRAO.md`.
 - **Conta do servidor (INEGOCIÁVEL):** o NetOps roda como a conta Linux `netops` (HOME `/var/lib/netops`), nunca root:
-  console, IA, subagentes, terminal, agendador e atualizador. `netops` **não tem sudo** — nunca tente `sudo`/`su`.
-  Root NESTE servidor = **host Local** (`access.method: local`, cadastrado pelo instalador, protegido):
+  console, IA, subagentes, terminal, agendador e atualizador. Nunca use `su`.
+  **Root NESTE servidor = `sudo <comando>` direto, liberado SÓ com o cofre destrancado** (sem senha; o PAM confere o
+  cofre a cada chamada via `/usr/local/sbin/netops-sudo-cofre`). Use `sudo` comum — **nunca `sudo -n`** (o `-n` recusa
+  antes da checagem). Se responder "a password is required" = cofre trancado: peça ao humano para destrancar e pare.
+  Só use root quando o pedido exigir (instalar pacote, mexer em serviço/arquivo do sistema, ler log do sistema); o
+  resto roda direto como `netops`. Alternativa (ex.: tarefa sem terminal) = **host Local** (`access.method: local`, protegido):
   `python3 scripts/tools/access/session.py exec --host-id <ID-LOCAL> --command "..."` roda como root, por operação,
   sem SSH, com a senha do admin local no cofre (a IA nunca a vê). Exige cofre destrancado e `server.admin`; se faltar,
-  informe e pare. Só use root quando o pedido exigir (ex.: "instale o Docker neste servidor"); o resto roda direto.
+  informe e pare.
+  **Diagnóstico de rede roda DIRETO como `netops`, sem root e sem cofre** (o servidor já está preparado:
+  `net.ipv4.ping_group_range` + capabilities via `/usr/local/sbin/netops-netcaps`): `ping`, `traceroute` (inclusive
+  `-I`/`-T`), `mtr`, `nmap` (SYN scan `-sS`, `-O`), `nping`, `tcpdump`, `arping`, `fping`, `arp-scan`, `iperf3`,
+  `dig`, `snmpwalk`, `curl`. Nunca mande essas ferramentas para o host Local; se uma delas der "Operation not
+  permitted", avise o humano para rodar `sudo /usr/local/sbin/netops-netcaps` (não contorne pelo Local).
   Ver `scripts/engine/localadmin/SKILL.md`. Instalação antiga (console root) migra com `scripts/engine/identity/`.
 - **Acesso a equipamento por CLI (INEGOCIÁVEL):** só dois scripts — `scripts/tools/access/session.py` (pedido do
   usuário no chat/console; usa o cofre; SSH/Telnet; e o host Local deste servidor) e `scripts/tools/access/task_exec.py` (tarefa agendada; chave

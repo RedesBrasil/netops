@@ -35,7 +35,10 @@ python3 scripts/engine/localadmin/cli.py status
 precisa de root roda direto no Bash. Arquivos como root: menu **Arquivos → 🔓 Abrir como root** (sessão
 curta de 5 min, faixa vermelha, auditada; nunca disponível para a IA).
 
-## Erros (falha fechada — informe o humano e pare; nunca tente sudo/su/SSH)
+> Caminho principal hoje: `sudo <comando>` direto (liberado só com o cofre destrancado — ver AGENTS.md). O host
+> Local continua valendo como alternativa.
+
+## Erros (falha fechada — informe o humano e pare; nunca tente su/SSH)
 
 | Código | Significado / o que fazer |
 |---|---|
