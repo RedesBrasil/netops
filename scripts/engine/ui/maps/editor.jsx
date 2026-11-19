@@ -178,6 +178,10 @@ function SaveBadge({ readOnly, saving, status, saveError, onRetry, onReload }) {
   return <span className={'map-save-badge ' + (flash ? 'ok flash' : 'ok')} title={time ? `Último salvamento às ${time}` : 'Tudo salvo no servidor'}>
     ✓ {time ? `Salvo às ${time}` : 'Salvo'}</span>;
 }
+const vpKey = id => 'netops_map_viewport_' + id;
+function savedViewport(id) {
+  try { const v = JSON.parse(localStorage.getItem(vpKey(id)) || 'null'); return v && [v.x, v.y, v.zoom].every(Number.isFinite) ? v : null; } catch { return null; }
+}
 export function MapEditor(props) { return <ReactFlowProvider><Editor {...props} /></ReactFlowProvider>; }
 function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, onSave, onHost, onLink, onSwitch, onAccess, onChat, onNewMap, onDeleteMap, onDeleteSelection, onError, onRetry, onReload, onBusy, IconPicker }) {
   const [layout, setLayout] = useState(map), [nodes, setNodes] = useState(() => makeNodes(map, hosts, readOnly, links));
@@ -207,7 +211,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     const desired = makeNodes(map, hosts, readOnly, links);
     visualNodes(changedMap ? desired : reconcileNodes(nodesRef.current, desired));
   }, [map, hosts, readOnly, links]);
-  useEffect(() => { undoStack.current = []; redoStack.current = []; syncHistory(); setSelected(null); setFocus(null); setMenu(null); setLinkMode(false); setMultiSelect(false); const t = setTimeout(() => flow.fitView({ padding: .2, maxZoom: 1.05 }), 80); return () => clearTimeout(t); }, [map.id]);
+  useEffect(() => { undoStack.current = []; redoStack.current = []; syncHistory(); setSelected(null); setFocus(null); setMenu(null); setLinkMode(false); setMultiSelect(false); const t = setTimeout(() => { const v = savedViewport(map.id); if (v) flow.setViewport(v); else flow.fitView({ padding: .2, maxZoom: 1.05 }); }, 80); return () => clearTimeout(t); }, [map.id]);
   // Desfazer/refazer: até 10 estados de layout por mapa (posições, formas, notas, camadas,
   // ligações visuais, remoções do mapa). Cada arraste/redimensionamento conta como 1 passo.
   const undoStack = useRef([]), redoStack = useRef([]);
@@ -493,7 +497,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           onSelectionContextMenu={event => context(event, 'selection')} onSelectionStart={() => nodeGesture(true)} onSelectionEnd={() => nodeGesture(false)}
           onPaneContextMenu={event => context(event)} onMoveStart={() => setMenu(null)}
           onNodeDragStart={() => nodeGesture(true)} onNodeDragStop={() => nodeGesture(false)}
-          fitView fitViewOptions={{ padding: .2, maxZoom: 1.05 }} minZoom={.15} maxZoom={2} nodeDragThreshold={3} deleteKeyCode={null} preventScrolling selectionOnDrag={!linkMode && !multiSelect} panOnDrag={[1]} panActivationKeyCode="Control" selectionKeyCode="Shift" multiSelectionKeyCode={multiSelectionKeys} elevateNodesOnSelect={false} elevateEdgesOnSelect={false} zIndexMode="manual">
+          fitView={!savedViewport(map.id)} defaultViewport={savedViewport(map.id) || undefined} onMoveEnd={(e, v) => { if (e) try { localStorage.setItem(vpKey(map.id), JSON.stringify(v)); } catch {} }} fitViewOptions={{ padding: .2, maxZoom: 1.05 }} minZoom={.15} maxZoom={2} nodeDragThreshold={3} deleteKeyCode={null} preventScrolling selectionOnDrag={!linkMode && !multiSelect} panOnDrag={[1]} panActivationKeyCode="Control" selectionKeyCode="Shift" multiSelectionKeyCode={multiSelectionKeys} elevateNodesOnSelect={false} elevateEdgesOnSelect={false} zIndexMode="manual">
           <Background gap={24} size={1} color="var(--border)" /><Controls showInteractive={false} /><MiniMap className="map-overview" pannable zoomable />
         </ReactFlow>
       </LineEditing.Provider>
