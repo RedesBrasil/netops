@@ -342,12 +342,17 @@ def _prune(task_id: str, root) -> None:
         except (OSError, ValueError):
             pass
     keep = set(failed[-MAX_FAILED_RUNS_KEPT:])
+    gone = set()
     for p in old:
         if p in keep:
             continue
+        gone.add(f"{task_id}/{p.stem}")
         for f in (p, p.with_suffix(".log")):
             with _suppress():
                 f.unlink()
+    if gone:   # execução apagada não pode continuar "não lida" (badge fantasma no menu)
+        with store.edit_state(root) as st:
+            st["unread"] = [u for u in st["unread"] if u not in gone]
 
 
 def run(task_id: str, run_id: str, trigger: str = "manual", root=None) -> dict:
