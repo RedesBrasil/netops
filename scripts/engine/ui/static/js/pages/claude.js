@@ -5,7 +5,7 @@
 // e um chat compacto encaixado à direita (ChatDock), que aparece quando você navega para
 // outra rota com uma conversa viva — dá p/ acompanhar o streaming, enviar e aprovar.
 // Protocolo JSON nos dois sentidos (ver scripts/engine/ui/services/claude_svc.py).
-import { html, useState, useEffect, useRef, useCallback, toast, api, refreshVault, can, useMe } from "../ui.js";
+import { html, useState, useEffect, useRef, useCallback, toast, api, refreshVault, can } from "../ui.js";
 import { FileBrowser } from "../file-browser.js";
 import { useDictation, MAX_SECONDS } from "../audio-dictation.js";
 import { createContext } from "preact";
@@ -1367,7 +1367,6 @@ function Composer() {
           <//>
         </div>
         <div class="cc-composer-actions">
-          <${GitHubPill} />
           <${Popover} up=${true} align="right" btnClass=${"cc-pill cc-np-pill" + (npFull(netperms) ? "" : " restricted")}
             title="Permissões de rede: o que o agente pode fazer nos equipamentos"
             label=${html`<span class="cc-pill-ico">🔐</span><span class="cc-pill-txt"> Rede: ${npShort(netperms)}</span>`}>
@@ -2426,14 +2425,4 @@ function ToolCard({ it, initialOpen = false }) {
       ${it.result != null && html`<${Collapsible} text=${it.result} max=${12} kind=${it.isError ? "err" : ""} />`}
     </div>`}
   </div>`;
-}
-
-// GitHub por usuário: qual conta o agente desta conversa usa (só no multiusuário). Ver #account/github.
-function GitHubPill() {
-  const me = useMe();
-  if (!me || !me.multiuser || me.legacy) return null;
-  const login = me.github_login;
-  return html`<a class=${"cc-pill" + (login ? "" : " restricted")} href="#account/github"
-    title=${login ? `GitHub desta conversa: @${login} (vale p/ conversas novas/reabertas)` : "Sem GitHub: push e gh falham. Clique para conectar a sua conta."}>
-    <span class="cc-pill-ico">🐙</span><span class="cc-pill-txt"> ${login ? "@" + login : "sem GitHub"}</span></a>`;
 }

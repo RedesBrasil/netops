@@ -106,8 +106,7 @@ def test_connect_with_token_status_email_and_disconnect(env, fake_gh):
 def test_admin_sees_and_revokes_and_delete_user_purges(env, fake_gh):
     admin, joao, maria = _users(env)
     joao.post("/api/account/github/token", json={"token": "ghp_ok_joaogh"})
-    rows = {u["username"]: u for u in admin.get("/api/users").json()["users"]}
-    assert rows["joao"]["github_login"] == "joaogh" and rows["maria"]["github_login"] == ""
+    assert all("github_login" not in u for u in admin.get("/api/users").json()["users"])   # GitHub só em Minha conta
     assert maria.get("/api/users/joao/github").status_code == 403           # só admin
     assert maria.delete("/api/users/joao/github").status_code == 403
     assert admin.get("/api/users/joao/github").json()["login"] == "joaogh"

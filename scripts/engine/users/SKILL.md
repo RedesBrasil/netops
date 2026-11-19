@@ -84,7 +84,8 @@ nome e o e-mail dele. Código: `scripts/engine/lib/github_identity.py`, `ui/serv
 - **Guarda** (`_hook_github_guard`, só para não-admin): bloqueia ler `/root/.config/gh`, `runs/users/`, `gh auth token`,
   trocar `GH_CONFIG_DIR`/`GH_TOKEN`, `env -i/-u`, `git config credential/user.*` e `--author`. É uma grade contra
   erro, **não** uma fronteira: o agente roda como root.
-- **Admin:** a coluna "GitHub" em Usuários mostra o @login, e "Revogar GitHub" usa `DELETE /api/users/<u>/github`.
+- **Onde aparece:** só em **Minha conta → GitHub**. Não aparece na aba Claude nem na lista de Usuários (decisão do
+  usuário, 19/11). O admin consulta e revoga só pela API: `GET`/`DELETE /api/users/<u>/github`.
   Apagar o usuário apaga a pasta dele. A auditoria registra `github_connected`, `github_disconnected`, `github_email`
   e `github_revoked`.
 - **Modo sem usuários:** nada muda; o agente usa o `gh` do servidor.

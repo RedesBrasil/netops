@@ -93,10 +93,7 @@ def access_catalog() -> dict:
 # ----------------------------------------------------------------- usuários
 @router.get("/users")
 def users_list() -> dict:
-    users = accessdb.list_users(_db())
-    for u in users:   # só o @login (sem token): coluna "GitHub" da lista
-        u["github_login"] = (ghid.get_meta(deps.DATA_ROOT, u["username"]) or {}).get("login") or ""
-    return {"users": users, "multiuser": deps.has_users(),
+    return {"users": accessdb.list_users(_db()), "multiuser": deps.has_users(),
             "groups": [g["name"] for g in accessdb.list_groups(_db())]}
 
 
