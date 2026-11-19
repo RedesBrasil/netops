@@ -2,6 +2,8 @@
 
 ## [Não lançado]
 
+## [2.4.1] - 2026-11-19
+
 ### Novidades
 
 - **Multiusuário com grupos de acesso.** Cada pessoa entra com **e-mail e senha**; o e-mail é único e um ID interno derivado dele mantém o histórico quando o e-mail muda. Os grupos definem o que cada um vê e faz no console.
@@ -23,10 +25,26 @@
 - **Projetos (menu Projetos).** Novo grupo na barra lateral: cada projeto é um **nome + uma pasta do servidor** (escolhida num navegador de pastas ou digitada). Abrir o projeto mostra as sessões do Claude Code daquela pasta e permite abrir sessões novas ali (`#projects/<id>`, `#projects/<id>/new`, `#projects/<id>/<uuid>`). O agente roda com `cwd` na pasta do projeto e usa só o `AGENTS.md`/skills dela, sem herdar as regras do NetOps. A aba **Claude Code** continua igual e segue com as conversas na pasta do NetOps. Remover um projeto só tira o registro (`runs/claude/projects.json`): a pasta e as conversas ficam intactas. A retomada automática pós-restart volta na pasta certa. Sidebar: os grupos do menu passam a abrir e recolher (o estado fica salvo no navegador; começam todos recolhidos). Em instalação com multiusuário, quem tem `claude.use` vê e usa os projetos; criar, remover e escolher a pasta é só do admin (`projects.manage`).
   - **Organizar e arquivos.** Renomear e remover direto na lista; **segurar e arrastar** para mudar a ordem (lista e barra lateral); **arquivar** esconde o projeto só para você (fica em "Arquivados", `#projects?arquivados=1`). Ordem e arquivados são de cada usuário. **Arquivos do projeto** com o mesmo gerenciador do menu Arquivos, preso à pasta do projeto (symlink para fora não sai dela): página `#projects/<id>/files` e painel ao lado do chat do projeto, fechado por padrão e aberto pelo botão 📁 Arquivos. Permissão nova `projects.files`, concedível por grupo.
   - **Segurança no modelo do VS Code.** Dá para **criar uma pasta nova** (padrão em `/opt/projetos`) ou **abrir uma existente**. A conta do agente fica no nível do usuário do servidor (`~/.claude/`) e vale em qualquer pasta; o console não copia token para o projeto. Pasta com configuração que executa ao abrir (`.claude/settings*.json`, `.mcp.json`) abre em **modo restrito** até o admin marcar como confiável. Raiz, diretórios do sistema, o NetOps e as pastas ocultas do home não podem ser projeto. O backup obrigatório antes de alterar equipamento e o teto de rede do grupo continuam valendo dentro dos projetos.
+- **NetOps roda como a conta `netops` (não root) + administração Local.** Console, IA, terminal, agendador e atualizador usam a conta `netops`. O root deste servidor é o host **Local** (`access.method: local`), por operação e sem SSH, com a senha no cofre. Instalações antigas (console root) continuam funcionando e migram por `scripts/engine/identity/`.
+- **Central de Avisos.** Sino no topo e menu **Saída → Central de Avisos** para alertas, avisos e pedidos de aprovação (`scripts/engine/inbox/cli.py add` ou bloco `netops-inbox` do agente). Aprovar retoma a sessão.
+- **Snapshot antes de mudança em CT/VM de Proxmox.** `change.py begin --mode snapshot|none` (`scripts/tools/backup/snapshot.py`) confere espaço do pool, roda fstrim, bloqueia acima de 90 % e cria `netops-pre-AAAAMMDD-HHMM`. O `end` não apaga: o usuário decide (`snapshot.py delete/pending`).
+- **Ditado por voz:** configuração do Cloudflare Workers AI na aba Claude; o console também ganhou um listener HTTPS autoassinado por IP (porta HTTP+1000) para liberar o microfone.
+- **Mapa:** F5 restaura posição e zoom salvos, cor/estilo dos links por velocidade, opção Chat no menu de host/seleção e contagem de hosts/conexões na barra superior.
+- **Aba Claude:** título de sessão fixo com renomear, "Enviar agora" sobrevive ao F5 e a fila ganha Editar/Ramificar, status da conexão em bolinha e botão de parar mais visível.
+- **Inventário:** skill de CTs/VMs de Proxmox no mapa (`map_place.py register/place`) e regra de hostname em MAIÚSCULAS.
 
 ### Correções
 
 - **Aba Claude Code com proxy/gateway de terceiros.** O banner de login deixa de dar falso "deslogado" quando o agente autentica por `ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_BASE_URL` no bloco `env` dos settings (o `claude auth status` não lê esse bloco; agora ele é repassado). O catálogo de modelos passa a incluir o `modelPicker` dos settings, e o cache de 7 dias é descartado quando o provedor ou os modelos mudam. Sem proxy (direto na Anthropic) nada muda: sem `env` nem `modelPicker` o comportamento é o anterior.
+
+- **Ditado: Account ID não era recuperado pelo token.** Ao colar um token novo a tela reenviava o Account ID salvo, e a descoberta pela Cloudflare nunca rodava. Um 2º token herdava o ID de outra conta e a transcrição falhava com `401`. Agora token novo redescobre a conta (e pede para escolher se enxergar várias).
+- **Instalação/migração:** o instalador instala `dbus-user-session`/`sudo`/`sftp-server` antes de migrar, o journal de atualização já concluído não bloqueia a migração, o rollback não sobe um 2º console e uma porta ocupada só conta no endereço do console.
+- **README:** removida a deploy key privada que estava exposta (a chave foi revogada no GitHub).
+- **Agendador:** execução apagada na poda sai da lista de não lidas (badge fantasma no menu).
+
+### Notas de compatibilidade
+
+- Sem migração destrutiva: dados (`network/`, `runs/`, `memory/`) são preservados pelo atualizador.
 
 ## [2.4.0] - 2026-11-16
 
