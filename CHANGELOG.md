@@ -26,6 +26,7 @@
   - **Organizar e arquivos.** Renomear e remover direto na lista; **segurar e arrastar** para mudar a ordem (lista e barra lateral); **arquivar** esconde o projeto só para você (fica em "Arquivados", `#projects?arquivados=1`). Ordem e arquivados são de cada usuário. **Arquivos do projeto** com o mesmo gerenciador do menu Arquivos, preso à pasta do projeto (symlink para fora não sai dela): página `#projects/<id>/files` e painel ao lado do chat do projeto, fechado por padrão e aberto pelo botão 📁 Arquivos. Permissão nova `projects.files`, concedível por grupo.
   - **Segurança no modelo do VS Code.** Dá para **criar uma pasta nova** (padrão em `/opt/projetos`) ou **abrir uma existente**. A conta do agente fica no nível do usuário do servidor (`~/.claude/`) e vale em qualquer pasta; o console não copia token para o projeto. Pasta com configuração que executa ao abrir (`.claude/settings*.json`, `.mcp.json`) abre em **modo restrito** até o admin marcar como confiável. Raiz, diretórios do sistema, o NetOps e as pastas ocultas do home não podem ser projeto. O backup obrigatório antes de alterar equipamento e o teto de rede do grupo continuam valendo dentro dos projetos.
 - **NetOps roda como a conta `netops` (não root) + administração Local.** Console, IA, terminal, agendador e atualizador usam a conta `netops`. O root deste servidor é o host **Local** (`access.method: local`), por operação e sem SSH, com a senha no cofre. Instalações antigas (console root) continuam funcionando e migram por `scripts/engine/identity/`.
+- **`AGENTS.md` é da instalação.** Deixa de vir no pacote e no git: cada instalação tem o seu, criado a partir de um modelo limpo (`core/templates/AGENTS.tmpl.md`) pelo instalador ou pelo console quando não existe, e a atualização nunca o sobrescreve nem é bloqueada por ele. Acrescente nele (menu **Memória**) as regras da sua instalação.
 - **Permissões da conta `netops` (rede sem root; root só com o cofre destrancado).** O instalador já deixa pronto (`scripts/engine/privileges/`):
   - **Rede sem root e sem cofre:** `ping`, `traceroute -I`, `mtr`, `nmap -sS/-O`, `nping`, `tcpdump`, `arping`, `fping` e `arp-scan` rodam direto como `netops`, por capabilities de arquivo (não setuid) reaplicadas após todo `apt`. O instalador também traz `tcpdump`, `fping`, `iperf3`, `snmp`, `whois`, `ethtool`, `socat` e `arp-scan`.
   - **Root com o cofre destrancado:** `sudo <cmd>` sem senha, e `apt`/`systemctl`/`journalctl`/`nft`/`iptables`/`docker`… viram root sozinhos no shell da conta (aba Claude e terminal). O PAM confere o cofre a cada chamada contra um verificador fixado pelo root: trancou, o root some na hora.
@@ -53,6 +54,8 @@
 ### Notas de compatibilidade
 
 - Sem migração destrutiva: dados (`network/`, `runs/`, `memory/`) são preservados pelo atualizador.
+- `AGENTS.md`: quem já tem o seu continua com ele (não é tocado); quem não tem recebe o modelo limpo ao reiniciar o console.
+- Atualizando a partir da 2.3.1 ou anterior: atualize primeiro para a 2.4.0.
 
 ## [2.4.0] - 2026-11-16
 
