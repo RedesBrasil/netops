@@ -153,12 +153,25 @@ def inventory(root: Path) -> dict:
         "account": {"exists": bool(pw), "uid": pw.pw_uid if pw else None, "home": pw.pw_dir if pw else None},
         "owners": {pwd.getpwuid(u).pw_name if _uid_exists(u) else str(u): n for u, n in owners.items()},
         "entries": count, "foreign_owned": foreign[:20], "foreign_count": len(foreign), "mounts": mounts[:20],
-        "update_journal": (root / ".netops-update" / "journal.json").exists(),
+        "update_journal": _update_pending(root),
         "claude_profile": profile, "claude_settings": (ROOT_CLAUDE / "settings.json").exists(),
         "projects_file": str(root / "runs" / "claude" / "projects.json") if (root / "runs" / "claude" / "projects.json").exists() else "",
         "free_bytes": free, "has_systemd": Path("/run/systemd/system").is_dir(),
         "other_instances_shared_account": _other_instances(root),
     }
+
+
+def _update_pending(root: Path) -> bool:
+    """Atualização/recuperação EM ANDAMENTO = journal fora dos estados finais (mesma regra do supervisor:
+    update/common.py TERMINAL_STATES). Journal concluído/revertido antigo não bloqueia."""
+    p = root / ".netops-update" / "journal.json"
+    if not p.exists():
+        return False
+    try:
+        phase = json.loads(p.read_text()).get("phase")
+    except (OSError, ValueError):
+        return True
+    return phase not in {"completed", "failed", "rolled_back", "recovery_failed"}
 
 
 def _uid_exists(u: int) -> bool:
