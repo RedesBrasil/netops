@@ -1,0 +1,32 @@
+#!/bin/sh
+# NetOps — ferramentas de rede sem root (capabilities de arquivo, não setuid).
+# Dá só o poder de rede necessário (raw socket / captura) a cada binário, para qualquer conta
+# (inclusive `netops`) usar sem sudo e sem o cofre. Idempotente; reaplicado após todo apt/dpkg por
+# /etc/apt/apt.conf.d/80netops-netcaps (atualização de pacote apaga as capabilities do binário).
+# Ver: capabilities(7). Rodar como root: netops-netcaps [--check]
+set -u
+RAW="cap_net_raw+ep"
+RAWADM="cap_net_raw,cap_net_admin+ep"
+NMAP="cap_net_raw,cap_net_admin,cap_net_bind_service+ep"
+
+apply() {  # $1=caps  $2..=binários (ignora os ausentes)
+  caps="$1"; shift
+  for b in "$@"; do
+    p=$(readlink -f "$b" 2>/dev/null) || continue
+    [ -f "$p" ] || continue
+    if [ "${CHECK:-0}" = 1 ]; then
+      printf '%-28s %s\n' "$p" "$(getcap "$p" 2>/dev/null | cut -d' ' -f2-)"
+    else
+      setcap "$caps" "$p" 2>/dev/null || echo "netops-netcaps: falhou em $p" >&2
+    fi
+  done
+}
+
+[ "${1:-}" = "--check" ] && CHECK=1
+# caminhos de Debian/Ubuntu, RHEL/Rocky/Alma, openSUSE e Arch (os ausentes são ignorados)
+apply "$NMAP"   /usr/bin/nmap /usr/bin/nping
+apply "$RAWADM" /usr/bin/tcpdump /usr/sbin/tcpdump /usr/bin/dumpcap /usr/sbin/arp-scan /usr/bin/arp-scan \
+                /usr/sbin/hping3 /usr/bin/hping3
+apply "$RAW"    /usr/bin/mtr-packet /usr/sbin/mtr-packet /usr/bin/arping /usr/sbin/arping \
+                /usr/bin/traceroute /usr/sbin/traceroute /usr/bin/traceroute.db /usr/bin/fping /usr/sbin/fping
+exit 0

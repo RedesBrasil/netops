@@ -1,0 +1,4 @@
+#!/bin/sh
+# NetOps: ver /usr/local/bin/nmap.
+if /usr/sbin/getcap /usr/bin/nping 2>/dev/null | grep -q cap_net_raw; then exec /usr/bin/nping --privileged "$@"; fi
+exec /usr/bin/nping "$@"

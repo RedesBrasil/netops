@@ -1,0 +1,5 @@
+#!/bin/sh
+# NetOps: o /usr/bin/nmap tem cap_net_raw/cap_net_admin (netops-netcaps); --privileged faz o nmap
+# usar SYN scan/OS detection sem ser root. Se as capabilities sumirem, cai no modo normal.
+if /usr/sbin/getcap /usr/bin/nmap 2>/dev/null | grep -q cap_net_raw; then exec /usr/bin/nmap --privileged "$@"; fi
+exec /usr/bin/nmap "$@"

@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/RedesBrasil/netops/main/install.sh | sudo bash
 #
 # O que faz, de ponta a ponta:
-#   1. instala os pacotes do sistema (Python, nmap, cron, ping/traceroute/mtr, ssh, git, gh...);
+#   1. instala os pacotes do sistema (Python, nmap, cron, ping/traceroute/mtr/tcpdump, ssh, git, gh...);
 #   2. baixa o pacote da última release do GitHub (netops-X.Y.Z.tar.gz), confere o SHA256 e o
 #      manifesto (hash e permissão de cada arquivo) e extrai em /opt/netops;
 #   3. cria o .venv e instala requirements.txt;
@@ -13,6 +13,8 @@
 #   5. instala o .venv e o agente `claude` COMO `netops`; pede a senha-mestra do cofre;
 #   6. serviço systemd DO USUÁRIO netops-console@<slug> (linger = sobe no boot sem login);
 #   7. administração Local: conta `netops-admin` (senha aleatória só no cofre) + host Local protegido;
+#   7b. permissões da conta: rede sem root (ping/nmap/tcpdump...) e, com o cofre destrancado, root por
+#       `sudo` ou direto (apt/systemctl/nft... — "sudo automático"). Ver scripts/engine/privileges/SKILL.md;
 #   8. testa tudo e mostra o endereço: http://<IP>:<porta>/
 #
 # Root só PROVISIONA (pacotes, contas, serviço, firewall). Instalação antiga (console como root,
@@ -163,11 +165,12 @@ install_system_packages() {
     apt)
       pkg_install python3 python3-venv python3-pip ca-certificates curl tar gzip iproute2 util-linux \
         procps hostname cron nmap iputils-ping openssh-client git zip unzip sudo dbus-user-session \
-        -- traceroute mtr-tiny python-is-python3 gh openssh-sftp-server ;;
+        -- traceroute mtr-tiny python-is-python3 gh openssh-sftp-server libcap2-bin tcpdump iputils-arping \
+           iputils-tracepath fping iperf3 whois snmp ethtool socat arp-scan bind9-dnsutils ;;
     dnf|yum)
       pkg_install python3 python3-pip ca-certificates curl tar gzip iproute util-linux procps-ng \
         hostname cronie nmap iputils openssh-clients git zip unzip sudo dbus \
-        -- traceroute mtr openssh-server
+        -- traceroute mtr openssh-server libcap tcpdump fping iperf3 whois net-snmp-utils ethtool socat bind-utils
       # gh não vem no RHEL/Rocky/Alma: usa o repositório oficial do GitHub CLI
       if ! have gh && ! run "$PM" install -y gh; then
         curl -fsSL https://cli.github.com/packages/rpm/gh-cli.repo -o /etc/yum.repos.d/gh-cli.repo 2>>"$LOG" \
@@ -176,11 +179,11 @@ install_system_packages() {
     zypper)
       pkg_install python3 python3-pip ca-certificates curl tar gzip iproute2 util-linux procps \
         hostname cron nmap iputils openssh-clients git zip unzip sudo dbus-1 \
-        -- traceroute mtr gh openssh-server ;;
+        -- traceroute mtr gh openssh-server libcap-progs tcpdump fping iperf whois net-snmp ethtool socat bind-utils ;;
     pacman)
       pkg_install python python-pip ca-certificates curl tar gzip iproute2 util-linux procps-ng \
         inetutils cronie nmap iputils openssh git zip unzip sudo dbus \
-        -- traceroute mtr github-cli ;;
+        -- traceroute mtr github-cli libcap tcpdump fping iperf3 whois net-snmp ethtool socat bind arp-scan ;;
   esac
   # cron: as Tarefas agendadas do console usam /etc/cron.d (precisa do daemon ativo)
   if [ -d /run/systemd/system ]; then
@@ -494,7 +497,7 @@ setup_account() {
   else
     run useradd --system --home-dir "$OP_HOME" --create-home --shell /bin/bash --comment "NetOps" "$OP_USER" \
       || die "não consegui criar a conta $OP_USER."
-    ok "conta $OP_USER criada (HOME $OP_HOME, sem senha, sem sudo)"
+    ok "conta $OP_USER criada (HOME $OP_HOME, sem senha; sudo só com o cofre destrancado)"
   fi
   install -d -m 700 -o "$OP_USER" -g "$OP_USER" "$OP_HOME"
   chown "$OP_USER:$OP_USER" "$OP_HOME"; chmod 700 "$OP_HOME"
@@ -668,6 +671,29 @@ setup_localadmin() {
   fi
   if [ "$rc" = 0 ]; then ok "host Local pronto: destranque o cofre quando precisar de root neste servidor"
   else warn "administração Local incompleta (veja $LOG). Depois: sudo python3 -I $NETOPS_DIR/scripts/engine/localadmin/provision.py install"; fi
+}
+
+# ----------------------------------------------------------------------------- 7b. permissões da conta
+# Rede sem root + sudo só com o cofre destrancado + "sudo automático" no shell da conta operacional.
+setup_privileges() {
+  step "Permissões da conta $OP_USER (rede sem root; root só com o cofre destrancado)"
+  if [ "${NETOPS_NO_PRIVILEGES:-0}" = 1 ]; then warn "permissões não instaladas (NETOPS_NO_PRIVILEGES=1)"; return 0; fi
+  local prov="$NETOPS_DIR/scripts/engine/privileges/provision.py" extra=()
+  if [ ! -f "$prov" ]; then
+    warn "v${INSTALLED_VERSION:-?} não traz scripts/engine/privileges: ping/nmap sem root e sudo pelo cofre ficam para a próxima atualização (depois: sudo python3 -I -B $prov install --root $NETOPS_DIR)"
+    return 0
+  fi
+  # instalação NOVA: o cofre acabou de ser criado por este instalador -> pode confiar no verificador dele
+  if [ "${FRESH:-0}" = 1 ]; then extra=(--trust-creds); fi
+  local out rc=0
+  out=$(python3 -I -B "$prov" install --root "$NETOPS_DIR" "${extra[@]}" 2>&1) || rc=$?
+  printf '%s\n' "$out" >>"$LOG"
+  local l; while IFS= read -r l; do warn "$l"; done < <(printf '%s\n' "$out" | sed -n 's/^ *! //p')
+  if [ "$rc" = 0 ]; then
+    ok "permissões prontas: rede sem root; root por sudo/direto só com o cofre destrancado"
+  else
+    warn "permissões da conta incompletas (veja $LOG). Depois: sudo python3 -I -B $prov install --root $NETOPS_DIR"
+  fi
 }
 
 # ----------------------------------------------------------------------------- 7. cofre = login
@@ -967,7 +993,9 @@ summary() {
   echo "   Reiniciar o console: $NETOPS_DIR/scripts/engine/ui/start.sh --yes"
   if [ "${LAYOUT:-1}" = 2 ]; then
     echo "   Conta operacional: $OP_USER (HOME $OP_HOME) — console, IA e terminal rodam como ela, nunca como root."
-    echo "   Root neste servidor: host Local (Hosts) + cofre destrancado. Sem SSH. Ver scripts/engine/localadmin/SKILL.md"
+    echo "   Rede (ping, traceroute, mtr, nmap, tcpdump...): direto, sem root e sem cofre."
+    echo "   Root neste servidor: com o cofre destrancado, \`sudo <cmd>\` ou direto (apt, systemctl, nft...)."
+    echo "   Cofre trancado = sem root. Ver scripts/engine/privileges/SKILL.md"
   else
     echo "   ⚠ Instalação no modelo antigo (console como root). Migre: sudo python3 -I $NETOPS_DIR/scripts/engine/identity/migrate.py plan"
   fi
@@ -997,6 +1025,7 @@ main() {
     write_identity
     setup_user_service
     setup_localadmin
+    setup_privileges
   else
     setup_venv
     setup_user
