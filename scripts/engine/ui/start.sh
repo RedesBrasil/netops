@@ -94,6 +94,17 @@ if [ -f "$IDENT_FILE" ]; then
 fi
 
 # Pré-validação comum aos dois layouts: nada é parado se o novo console não tiver como subir.
+# Porta ocupada NO ENDEREÇO do console (ou em curinga). Um serviço alheio em outro endereço
+# (ex.: 127.0.0.1:PORT) não conflita com HOST:PORT e não pode barrar a subida.
+port_busy() {  # $1=host $2=port
+  local h="$1" p="$2"
+  ss -ltnH "sport = :$p" 2>/dev/null | awk -v h="$h" -v p="$p" '
+    BEGIN { wild = (h == "0.0.0.0" || h == "::" || h == "*" || h == "") }
+    { a = $4; sub(":" p "$", "", a); gsub(/^\[|\]$/, "", a); sub(/%.*$/, "", a)
+      if (wild || a == h || a == "0.0.0.0" || a == "*" || a == "::") found = 1 }
+    END { exit found ? 0 : 1 }'
+}
+
 preflight_checks() {  # stdout = motivo da falha; exit != 0 se falhou
   [ -x "$ROOT/.venv/bin/python3" ] || [ -f "$ROOT/.netops-update/journal.json" ] || { echo "venv ausente"; return 1; }
   [ -f "$ROOT/scripts/engine/update/supervisor.py" ] || { echo "supervisor.py ausente"; return 1; }
@@ -163,7 +174,7 @@ if [ "$USER_MODE" = 1 ] && [ "${1:-}" != "--foreground" ]; then
   OLD_ROOT_SUP=$(pgrep -u 0 -of "update/supervisor.py --root $ROOT --" || true)
   [ -z "$OLD_ROOT_SUP" ] || { log "PRÉ-VALIDAÇÃO FALHOU: um console ROOT antigo desta pasta está rodando (pid $OLD_ROOT_SUP) — migração pendente; nada foi tocado"; exit 1; }
   if ! why=$(preflight_checks); then log "PRÉ-VALIDAÇÃO FALHOU: $why — console atual NÃO foi tocado"; exit 1; fi
-  if [ "$ACTIVE" != active ] && ss -ltn "sport = :$PORT" 2>/dev/null | grep -q LISTEN; then
+  if [ "$ACTIVE" != active ] && port_busy "$HOST" "$PORT"; then
     log "PRÉ-VALIDAÇÃO FALHOU: porta $PORT ocupada por outro processo"; exit 1
   fi
   log "pré-validação OK ($UNIT, conta $RT_USER, http://$URLH:$PORT/)"
@@ -254,7 +265,7 @@ if [ "${1:-}" != "--foreground" ]; then
   # 1b) PRÉ-VALIDAÇÃO: nada é parado se o novo console não tiver como subir (acesso web nunca pode cair)
   preflight_fail() { log "PRÉ-VALIDAÇÃO FALHOU: $1 — console atual NÃO foi tocado"; exit 1; }
   why=$(preflight_checks) || preflight_fail "$why"
-  if [ -z "$SUP" ] && ss -ltn "sport = :$PORT" 2>/dev/null | grep -q LISTEN; then preflight_fail "porta $PORT ocupada por outro processo"; fi
+  if [ -z "$SUP" ] && port_busy "$HOST" "$PORT"; then preflight_fail "porta $PORT ocupada por outro processo"; fi
   log "pré-validação OK"
 
   # 2) para: SIGTERM no supervisor, espera ele (e o filho) sumirem; KILL após 30 s.
