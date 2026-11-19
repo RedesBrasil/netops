@@ -1186,3 +1186,6 @@ tr.ib-row-pending td { background: var(--warn-weak); }
   .ib-bell { width: 40px; height: 40px; }
   .ib-pop { position: fixed; top: calc(48px + env(safe-area-inset-top)); right: 8px; left: 8px; width: auto; }
 }
+/* sino: no desktop ao lado do "Sair" (dentro das ações); no celular fora da folha ⋯, sempre visível */
+.ib-slot { align-items: center; }
+.ib-slot.desk-only { display: flex; }

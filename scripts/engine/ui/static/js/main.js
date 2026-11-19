@@ -216,7 +216,7 @@ function Shell({ onLogout, showLogout }) {
         : html`<span class="brand">NetOps Console</span><span class="net">· ${meta.network_name}</span>`}
       <div id="topbar-slot" class="topbar-slot"></div>
       ${isChat && html`<${ClaudeStatusDot} />`}
-      <${InboxBell} />
+      <div class="mob-only ib-slot"><${InboxBell} /></div>
       <button class="sm mob-only more-toggle" aria-label="Ações" onClick=${() => { setNavOpen(false); setMoreOpen(!moreOpen); }}>⋯</button>
       <div class=${"topbar-actions" + (moreOpen ? " open" : "")}
         onClick=${(e) => { if (e.target.closest("button") && !e.target.closest(".keep-open")) setMoreOpen(false); }}>
@@ -225,6 +225,7 @@ function Shell({ onLogout, showLogout }) {
         <button class="sm" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}>
           ${theme === "light" ? "🌙 escuro" : "☀ claro"}</button>
         ${me && showLogout && html`<a class="user-chip" href="#account" title=${"Minha conta — " + (me.email || me.username) + " — grupos: " + (me.groups || []).join(", ")}>👤 ${me.display_name || me.username}</a>`}
+        <div class="desk-only ib-slot"><${InboxBell} /></div>
         ${showLogout && html`<button class="sm" onClick=${doLogout}>Sair</button>`}
       </div>
     </div>
