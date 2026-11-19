@@ -14,6 +14,8 @@ import { ScriptsPage } from "./pages/scripts.js";
 import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
 import { BackupsPage } from "./pages/backups.js";
 import { SchedulesPage } from "./pages/schedules.js";
+import { InboxPage } from "./pages/inbox.js";
+import { InboxBell, useInboxSummary } from "./inbox.js";
 import { UpdatesControl } from "./pages/updates.js";
 import { TerminalPage } from "./pages/terminal.js";
 import { HostTermPage } from "./pages/host-term.js";
@@ -38,6 +40,8 @@ const ROUTES = {
   workflows: { label: "Workflows", comp: WorkflowsPage, group: "Conhecimento", perm: "knowledge.view" },
   agents: { label: "Agentes", comp: AgentsPage, group: "Conhecimento", perm: "knowledge.view" },
   scripts: { label: "Scripts / Skills", comp: ScriptsPage, group: "Conhecimento", perm: "scripts.view" },
+  // Central de Avisos: alertas/avisos/pedidos de aprovação (tarefas agendadas, scripts, agentes). Também no sino do topo.
+  inbox: { label: "Central de Avisos", comp: InboxPage, group: "Saída", badge: "inbox", perm: "inbox.view" },
   reports: { label: "Relatórios", comp: ReportsPage, group: "Saída", perm: "knowledge.view" },
   runs: { label: "Execuções", comp: RunsPage, group: "Saída", perm: "knowledge.view" },
   backups: { label: "Backups", comp: BackupsPage, group: "Saída", perm: "backups.view" },
@@ -85,7 +89,14 @@ function useScheduleBadge(enabled) {
     addEventListener("netops:schedules", load); addEventListener("focus", load);
     return () => { alive = false; clearInterval(t); removeEventListener("netops:schedules", load); removeEventListener("focus", load); };
   }, [enabled]);
-  return { schedules: n };
+  return n;
+}
+
+// Contadores dos itens do menu (badge vermelho): tarefas agendadas + Central de Avisos.
+function useNavBadges(me) {
+  const schedules = useScheduleBadge(can("schedules.view", me));
+  const inbox = useInboxSummary(can("inbox.view", me)).badge || 0;
+  return { schedules, inbox };
 }
 
 // Menu: some o que o servidor não liga (flag) e o que o grupo do usuário não permite (perm).
@@ -97,7 +108,7 @@ function firstAllowed(meta, me) {
 
 function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
   const visible = ([, r]) => routeVisible(r, meta, me);
-  const badges = useScheduleBadge(can("schedules.view", me));
+  const badges = useNavBadges(me);
   const showProjects = !!meta.claude_enabled && can("claude.use", me);   // grupo Projetos = quem usa o Claude
   const allProjects = useProjects(showProjects);
   const projects = allProjects.filter((p) => !p.archived);          // arquivados: só em #projects?arquivados=1
@@ -119,6 +130,11 @@ function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
       <button type="button" class="group-label group-toggle" aria-expanded=${openGroups.includes(g)}
         onClick=${() => toggleGroup(g)}>
         <span class="group-chevron">${openGroups.includes(g) ? "▾" : "▸"}</span>${g}
+        ${(() => {   // grupo recolhido: mostra a soma dos contadores dos itens dele (não some da vista)
+          if (openGroups.includes(g)) return "";
+          const n = Object.values(ROUTES).filter((r) => r.group === g && r.badge && routeVisible(r, meta, me)).reduce((a, r) => a + (badges[r.badge] || 0), 0);
+          return n > 0 ? html`<span class="nav-badge">${n}</span>` : "";
+        })()}
       </button>
       ${openGroups.includes(g) && html`<div class="nav-children">
       ${g === "Projetos" && html`
@@ -128,7 +144,7 @@ function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
         ${nArchived > 0 && html`<a href="#projects?arquivados=1" class="nav-sub">🗄 Arquivados (${nArchived})</a>`}`}
       ${openGroups.includes(g) && Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
         <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${r.label}${r.badge && badges[r.badge] > 0
-          ? html`<span class="nav-badge" title="execuções com resultado não lido">${badges[r.badge]}</span>` : ""}</a>`)}
+          ? html`<span class="nav-badge" title=${r.badge === "inbox" ? "não lidas + aguardando aprovação" : "execuções com resultado não lido"}>${badges[r.badge]}</span>` : ""}</a>`)}
       </div>`}
     </div>`)}
   </nav>`;
@@ -161,7 +177,10 @@ function Shell({ onLogout, showLogout }) {
     const missing = (me?.catalog || []).map((p) => p.key).filter((k) => !can(k, me));
     st.textContent = missing.map((k) => `.needs-${k.replace(/\./g, "-")}{display:none!important}`).join("\n");
   }, [me]);
-  useEffect(() => { document.title = meta.network_name ? `NetOps · ${meta.network_name}` : "NetOps"; }, [meta.network_name]);
+  const inboxN = useInboxSummary(can("inbox.view", me)).badge || 0;
+  useEffect(() => {   // (N) no título da aba do navegador = avisos pendentes da Central
+    document.title = (inboxN ? `(${inboxN}) ` : "") + (meta.network_name ? `NetOps · ${meta.network_name}` : "NetOps");
+  }, [meta.network_name, inboxN]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme; localStorage.setItem("netops_theme", theme);
     // PWA: cor da barra de título/status acompanha o tema (--surface).
@@ -197,6 +216,7 @@ function Shell({ onLogout, showLogout }) {
         : html`<span class="brand">NetOps Console</span><span class="net">· ${meta.network_name}</span>`}
       <div id="topbar-slot" class="topbar-slot"></div>
       ${isChat && html`<${ClaudeStatusDot} />`}
+      <${InboxBell} />
       <button class="sm mob-only more-toggle" aria-label="Ações" onClick=${() => { setNavOpen(false); setMoreOpen(!moreOpen); }}>⋯</button>
       <div class=${"topbar-actions" + (moreOpen ? " open" : "")}
         onClick=${(e) => { if (e.target.closest("button") && !e.target.closest(".keep-open")) setMoreOpen(false); }}>

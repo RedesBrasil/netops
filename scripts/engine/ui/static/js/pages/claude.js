@@ -15,7 +15,7 @@ import { autoOpenFromText } from "../term-link.js";
 import { authToken } from "../api.js";
 import { buildCatalog, findMentionToken, searchMentions, applyMention, expandMentions, addQuoteNote, stripMentionNote } from "../mentions.js";
 import { classifyClaudeError, claudeErrorDetail, friendlyClaudeError } from "../claude-errors.js";
-import { validSessionId, validProjectId, claudeSessionHash, claudeNewHash, readClaudeRoute, lastClaudeSession,
+import { takeClaudePrefill, validSessionId, validProjectId, claudeSessionHash, claudeNewHash, readClaudeRoute, lastClaudeSession,
   rememberClaudeSession, forgetClaudeSession, replaceClaudeHash, claudePrefsOpen, setClaudePrefsHash, claudeSessionsOpen, setClaudeSessionsHash, stripClaudeModal, copyClaudeSessionLink } from "../claude-sessions.js";
 
 // `?project=<id>` (ou `&project=`) quando a conversa é de um Projeto; vazio = aba Claude Code (pasta do NetOps).
@@ -184,6 +184,12 @@ function useClaudeSession() {
   const [prefs, setPrefs] = useState({ default_model: "", default_mode: "default", default_netperms: NETPERMS_ALL });
   const [showPrefs, setShowPrefsState] = useState(() => claudePrefsOpen());
   const setShowPrefs = useCallback((v) => { setClaudePrefsHash(!!v); }, []);
+  // Prefill pedido com a conversa-alvo já aberta (activateSession não roda de novo): ex. Central de Avisos → #claude/new.
+  useEffect(() => {
+    const on = () => { const pre = takeClaudePrefill(selectionRef.current || ""); if (pre != null) setInput(pre); };
+    addEventListener("netops:claude-prefill", on);
+    return () => removeEventListener("netops:claude-prefill", on);
+  }, []);
   useEffect(() => {
     const on = () => { setShowPrefsState(claudePrefsOpen()); setShowSessionsState(claudeSessionsOpen()); };
     addEventListener("hashchange", on); on();
@@ -215,11 +221,8 @@ function useClaudeSession() {
     resumeIdRef.current = id || "";
     sessionIdRef.current = id || "";
     activeRef.current = true;
-    let pre = "";
-    try {   // fork: repõe o prompt de origem no campo de digitação da conversa aberta
-      const f = JSON.parse(localStorage.getItem("cc-fork-prefill") || "null");
-      if (f && f.id === target && Date.now() - (f.t || 0) < 120000) { pre = String(f.text || ""); localStorage.removeItem("cc-fork-prefill"); }
-    } catch (_) { /* sem prefill */ }
+    // fork / Central de Avisos: repõe o prompt no campo de digitação da conversa aberta
+    const pre = takeClaudePrefill(target) || "";
     setInput(pre); setAttachments([]); setShowSessions(false);
     setShowModelPick(false); setShowRateLimit(false);
     if (!id) {   // conversa NOVA: começa nos padrões das configurações (não herda a anterior)

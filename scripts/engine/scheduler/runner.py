@@ -38,6 +38,15 @@ Regras desta execução:
 - Se não houver NADA relevante a reportar, responda exatamente: [SILENT]
 - Se a tarefa falhou, comece a resposta com a linha: [FALHA]"""
 
+
+def _agent_hint() -> str:
+    """Regras fixas + como publicar alertas/pedidos de aprovação na Central de Avisos."""
+    try:
+        from inbox import actions as inbox_actions  # noqa: PLC0415
+        return AGENT_HINT + "\n\n" + inbox_actions.AGENT_HINT
+    except Exception:  # noqa: BLE001
+        return AGENT_HINT
+
 RESTRICTED_TOOLS = ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "TodoWrite"]
 ALWAYS_DENIED = ["CronCreate", "CronDelete", "CronList", "RemoteTrigger", "AskUserQuestion", "PushNotification"]
 
@@ -218,7 +227,7 @@ def claude_bin() -> str | None:
 def agent_command(task: dict, prompt: str) -> list[str]:
     agent = task.get("agent") or {}
     cmd = [claude_bin() or "claude", "-p", prompt, "--output-format", "json",
-           "--append-system-prompt", AGENT_HINT, "--disallowedTools", *ALWAYS_DENIED]
+           "--append-system-prompt", _agent_hint(), "--disallowedTools", *ALWAYS_DENIED]
     if agent.get("permissions") == "full":
         cmd += ["--dangerously-skip-permissions"]
     else:
@@ -398,6 +407,8 @@ def run(task_id: str, run_id: str, trigger: str = "manual", root=None) -> dict:
                 meta = {}
             rec.update(agent_output=text.strip(), session_id=meta.get("session_id"),
                        cost_usd=meta.get("total_cost_usd"))
+            if code == 0 and not tout and text.strip():
+                text = _ingest_inbox(task, rec, text, root)
             if tout:
                 rec.update(status="timeout", error=f"agente passou do tempo limite ({timeout // 60} min)")
             elif code != 0 or meta.get("is_error"):
@@ -410,12 +421,18 @@ def run(task_id: str, run_id: str, trigger: str = "manual", root=None) -> dict:
             elif text.strip().startswith("[FALHA]"):
                 rec.update(status="error", error="o agente reportou falha")
             else:
-                rec.update(status="ok", silent=is_silent(text))
+                rec.update(status="ok", silent=is_silent(text) or bool(rec.get("inbox_only")))
     except Exception as e:  # noqa: BLE001
         rec.update(status="error", error=f"{type(e).__name__}: {e}")
     rec.update(state="done", finished_at=time.time())
     rec["notified"] = should_notify(task, rec["status"], rec["silent"])
     _write_run(root, rec)
+    if rec["notified"]:
+        try:   # a notificação também vai para a Central de Avisos (sino do console)
+            from inbox import actions as inbox_actions  # noqa: PLC0415
+            inbox_actions.post_schedule_run(task, rec, root)
+        except Exception:  # noqa: BLE001 — Central nunca derruba a execução
+            pass
     _finish_state(task, rec, root, notify=rec["notified"])
     if rec.get("auth_failure"):
         try:
@@ -426,6 +443,26 @@ def run(task_id: str, run_id: str, trigger: str = "manual", root=None) -> dict:
     fcntl.flock(fh, fcntl.LOCK_UN)
     fh.close()
     return rec
+
+
+def _ingest_inbox(task: dict, rec: dict, text: str, root) -> str:
+    """Blocos ```netops-inbox``` da resposta viram avisos/pedidos na Central. Devolve o texto restante.
+
+    Se o agente publicou algo, a execução em si não gera outra notificação (o aviso já está lá),
+    salvo se sobrou texto relevante fora dos blocos."""
+    try:
+        from inbox import actions as inbox_actions  # noqa: PLC0415
+        created, rest = inbox_actions.ingest_agent_output(text, task=task, run_id=rec["run_id"],
+                                                          session_id=rec.get("session_id"), root=root)
+    except Exception as e:  # noqa: BLE001
+        rec["inbox_error"] = f"{type(e).__name__}: {e}"
+        return text
+    if created:
+        rec["inbox_ids"] = [c["id"] for c in created]
+        rec["agent_output"] = rest
+        if is_silent(rest) or all(ln.startswith("→ enviado à Central") for ln in rest.splitlines() if ln.strip()):
+            rec["inbox_only"] = True
+    return rest if created else text
 
 
 def _finish_state(task: dict, rec: dict, root, notify: bool) -> None:
@@ -448,7 +485,7 @@ def _finish_state(task: dict, rec: dict, root, notify: bool) -> None:
 # --------------------------------------------------------------------------- #
 def _summary(rec: dict) -> dict:
     keep = ("run_id", "task_id", "task_name", "kind", "trigger", "state", "status", "started_at",
-            "finished_at", "silent", "notified", "error", "agent_skipped", "session_id", "cost_usd")
+            "finished_at", "silent", "notified", "error", "agent_skipped", "session_id", "cost_usd", "inbox_ids")
     out = {k: rec.get(k) for k in keep}
     text = rec.get("agent_output") or rec.get("script_output") or ""
     out["excerpt"] = text.strip()[:240]
@@ -492,7 +529,13 @@ def mark_read(keys: list[str] | None, root=None) -> int:
     """keys=None marca tudo. Devolve quantas continuam não lidas."""
     with store.edit_state(root) as st:
         st["unread"] = [] if keys is None else [u for u in st["unread"] if u not in set(keys)]
-        return len(st["unread"])
+        left = len(st["unread"])
+    try:   # lida aqui = lida também na Central de Avisos
+        from inbox import store as inbox_store  # noqa: PLC0415
+        inbox_store.mark_read_runs(keys, root)
+    except Exception:  # noqa: BLE001
+        pass
+    return left
 
 
 def overview(root=None) -> dict:

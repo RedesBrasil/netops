@@ -34,6 +34,10 @@ No `hybrid`, saída vazia do script (ou última linha `{"wakeAgent": false}`) **
 - **Notificação** (`notify`): `auto` (padrão: falha sempre; agente avisa salvo `[SILENT]`; script só em
   falha), `always`, `failure`, `never`. Não lidas aparecem como contador vermelho no menu e na aba
   **Execuções**.
+- **Central de Avisos** (`scripts/engine/inbox/SKILL.md`): toda notificação vira mensagem no sino 🔔 do topo
+  (falha = alerta; falhas repetidas agrupam). O agente publica alertas/pedidos de aprovação com bloco
+  ```` ```netops-inbox {json}``` ```` na resposta (funciona em `restricted`); aprovar retoma a sessão dele.
+  Script: `python3 scripts/engine/inbox/cli.py add --kind approval ...` + `wait <id>`.
 - **Acesso a equipamentos:** tarefa agendada usa **chave SSH dedicada**, não o cofre (que só fica destrancado com humano
   digitando a senha). Uma vez, com o cofre aberto: `python3 scripts/tools/access/task_key.py provision --task <id> --hosts 16,35 --mode ro`.
   Depois a tarefa/agente acessam com `python3 scripts/tools/access/task_exec.py --task <id> --host-id N --command "..."`.

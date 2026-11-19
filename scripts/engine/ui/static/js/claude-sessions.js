@@ -115,3 +115,16 @@ export async function copyClaudeSessionLink(id, project = "") {
     if (previous && previous.focus) previous.focus();
   }
 }
+
+
+// Prompt pré-preenchido (fork de conversa, botão "Abrir no Claude" da Central de Avisos).
+// Grava {id: "<uuid>"|"new", text, t} em localStorage; a conversa-alvo ("proj|id") consome uma vez (2 min de validade).
+export function takeClaudePrefill(target) {
+  try {
+    const f = JSON.parse(localStorage.getItem("cc-fork-prefill") || "null");
+    if (!f || Date.now() - (f.t || 0) > 120000) return null;
+    if (f.id !== target && !String(target).endsWith("|" + f.id)) return null;
+    localStorage.removeItem("cc-fork-prefill");
+    return String(f.text || "");
+  } catch (_) { return null; }
+}

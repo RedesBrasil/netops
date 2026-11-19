@@ -265,6 +265,14 @@ do humano (ele cadastrou o comando/prompt e o horário). O agente agendado vem c
 `restricted` por padrão e nunca cria outras tarefas. O contador de não lidas no menu faz polling
 de `GET /api/schedules/notifications` a cada 30 s. Detalhes em `scripts/engine/scheduler/SKILL.md`.
 
+**Central de Avisos** (`#inbox`, sino 🔔 no topo, `routers/inbox.py`, `static/js/inbox.js` + `pages/inbox.js`).
+Lê `runs/inbox.db`; as mensagens nascem fora do console (tarefas agendadas, scripts e agentes via
+`scripts/engine/inbox/cli.py`) — **não há rota de criação**. Aprovar/reprovar um pedido com ação dispara essa ação
+(comando ou agente retomando a sessão) em processo destacado; só admin decide pedido com ação. O contador
+(`GET /api/inbox/summary`, polling único de 30 s compartilhado por sino, menu e título da aba) soma não lidas +
+pedidos pendentes. "Discutir no Claude" grava o prefill em `localStorage["cc-fork-prefill"]` e abre `#claude/<sid>`
+ou `#claude/new` (evento `netops:claude-prefill` se a conversa já estiver aberta). Detalhes em `scripts/engine/inbox/SKILL.md`.
+
 ## Estrutura
 
 ```

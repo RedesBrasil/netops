@@ -65,6 +65,8 @@ PERMISSIONS: list[dict] = [
     {"key": "schedules.view", "label": "Ver tarefas agendadas", "area": "Operação"},
     {"key": "schedules.run", "label": "Rodar agora uma tarefa agendada existente", "area": "Operação"},
     {"key": "schedules.edit", "label": "Criar/editar tarefas agendadas (rodam como root no servidor)", "area": "Administração", "admin_only": True},
+    {"key": "inbox.view", "label": "Ver a Central de Avisos (alertas, avisos e pedidos de aprovação)", "area": "Operação"},
+    {"key": "inbox.decide", "label": "Aprovar/reprovar pedidos e arquivar avisos (pedido que roda ação no servidor = só admin)", "area": "Operação"},
     {"key": "dashboard.view", "label": "Ver o Painel (servidor e uso de IA)", "area": "Operação"},
     {"key": "host.terminal", "label": "Terminal SSH/Telnet dos hosts", "area": "Acesso a equipamento"},
     {"key": "host.files", "label": "Arquivos (SFTP) dos hosts", "area": "Acesso a equipamento"},
@@ -90,12 +92,12 @@ DEFAULT_GROUPS = [
     {"name": "operador", "description": "Operação de rede: acessa equipamentos, roda backups e usa a IA.",
      "builtin": False, "net_perms": ["read", "create", "edit"],
      "permissions": ["hosts.view", "credentials.view", "knowledge.view", "knowledge.edit", "scripts.view",
-                     "backups.view", "backups.run", "schedules.view", "schedules.run", "dashboard.view",
+                     "backups.view", "backups.run", "schedules.view", "schedules.run", "inbox.view", "inbox.decide", "dashboard.view",
                      "host.terminal", "host.files", "host.web", "claude.use"]},
     {"name": "leitura", "description": "Somente consulta: inventário, conhecimento, backups e tarefas.",
      "builtin": False, "net_perms": ["read"],
      "permissions": ["hosts.view", "knowledge.view", "scripts.view", "backups.view", "schedules.view",
-                     "dashboard.view"]},
+                     "inbox.view", "dashboard.view"]},
 ]
 
 # Throttle de login: a partir de THROTTLE_FREE falhas seguidas, espera crescente (cap THROTTLE_MAX s).

@@ -61,6 +61,10 @@ RULES: list[tuple[frozenset, re.Pattern, str | None]] = [
     (WRITE, _R(r"^/schedules/(timezone|cron/install)$"), "config"),
     (WRITE, _R(r"^/schedules/tasks/[^/]+/run$"), "schedules.run"),
     (WRITE, _R(r"^/schedules/tasks(/|$)"), "schedules.edit"),          # executa como root = só admin
+    # Central de Avisos: ver/ler = inbox.view; arquivar/decidir = inbox.decide (pedido COM ação = só admin, no router)
+    (GET, _R(r"^/inbox(/|$)"), "inbox.view"),
+    (WRITE, _R(r"^/inbox/(read|[^/]+/unread)$"), "inbox.view"),
+    (WRITE, _R(r"^/inbox/(archive|[^/]+/decision)$"), "inbox.decide"),
     # sistema
     (GET, _R(r"^/dashboard/"), "dashboard.view"),
     (ALL, _R(r"^/config$"), "config"),

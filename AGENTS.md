@@ -61,6 +61,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Usuários, grupos de acesso, auditoria do console (SQLite `runs/netops.db`) | `scripts/engine/users/` (`SKILL.md`; console: **Usuários / Grupos de acesso / Auditoria**) |
 | Projetos do console (nome + pasta; sessões do Claude Code por pasta; menu **Projetos**) | `scripts/engine/ui/` (`routers/projects.py`, `services/projects_svc.py`, `static/js/pages/projects.js`; ver `SKILL.md`) |
 | Tarefas agendadas (script / agente de IA / script + agente) | `scripts/engine/scheduler/` (`SKILL.md`; console: menu **Tarefas agendadas**) |
+| **Central de Avisos**: alertas, avisos e pedidos de aprovação (sino 🔔 no topo + menu **Saída → Central de Avisos**) | `scripts/engine/inbox/` (`SKILL.md`; `inbox/cli.py add`) |
 | Descobrir CTs/VMs de um Proxmox, cadastrar e organizar no mapa | `scripts/tools/inventory/` (`SKILL.md`; `map_place.py register` / `place`) |
 | Modelos de planejamento | `planning-examples/` |
 | O que o framework já aprendeu | `memory/` |
@@ -158,7 +159,9 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   `python3 scripts/...` funciona sem ativar nada. Use `python3` nos comandos (existe em todo Debian/Ubuntu).
 - **Agendar tarefa ("todo dia…", "a cada N min…", "me avise quando…"):** use **sempre**
   `scripts/engine/scheduler/cli.py add` (ver `scripts/engine/scheduler/SKILL.md`) — a tarefa vai para o cron do
-  sistema e aparece no menu **Tarefas agendadas** para editar. Escolha o tipo: `script` (determinística),
+  sistema e aparece no menu **Tarefas agendadas** para editar. Algo que precise de atenção ou da **aprovação** do
+  usuário (alerta, "posso apagar estes arquivos?") vai para a **Central de Avisos**: `scripts/engine/inbox/cli.py add`
+  (script/chat) ou bloco ```netops-inbox``` na resposta do agente da tarefa — nunca execute a ação antes da aprovação. Escolha o tipo: `script` (determinística),
   `agent` (agente de IA) ou `hybrid` (script coleta + agente analisa). **Nunca** `crontab -e`, arquivo em
   `/etc/cron.d` à mão nem a ferramenta `CronCreate` (morre com a sessão). Responda com `id`, tipo e próximos horários.
 - **Tarefa agendada que acessa equipamento = chave dedicada, nunca o cofre (INEGOCIÁVEL):** o cofre só fica

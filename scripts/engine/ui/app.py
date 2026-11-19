@@ -83,6 +83,7 @@ from routers import (
     host_term,
     web_launch,
     hosts,
+    inbox,
     knowledge,
     memory,
     maps,
@@ -109,7 +110,8 @@ AUTH_TICKET_PREFIX = "/api/files/dl/"
 PASSWORD_CHANGE_OPEN = {"/api/config/meta", "/api/vault/status", "/api/updates/status", "/api/meta/enums",
                         "/api/meta/icons"}
 # Escritas que NÃO vão p/ a auditoria (ruído sem efeito: login/logout se auditam sozinhos).
-AUDIT_SKIP = {"/api/auth/login", "/api/auth/logout", "/api/schedules/notifications/read", "/api/audio/transcribe"}
+AUDIT_SKIP = {"/api/auth/login", "/api/auth/logout", "/api/schedules/notifications/read", "/api/audio/transcribe",
+              "/api/inbox/read"}
 
 
 def _audit_request(request, status: int) -> None:
@@ -214,7 +216,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (audio, auth, meta, dashboard, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, terminal, host_term, files, web_launch, claude, projects, updates, web_access, users, audit):
+    for mod in (audio, auth, meta, dashboard, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, inbox, terminal, host_term, files, web_launch, claude, projects, updates, web_access, users, audit):
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("startup")
