@@ -5,7 +5,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const BASE = process.env.NETOPS_E2E_URL || 'http://127.0.0.1:8771';
 if (!(await (await fetch(BASE + '/api/config/meta')).json()).isolated_data) throw Error('Teste recusa dados reais. Use NETOPS_UI_DATA_ROOT.');
 // [hash, tableId]: telas sem dados no ambiente isolado só exibem o vazio (aceito, informado no log)
-const PAGES = [['#hosts', 'hosts'], ['#groups', 'groups'], ['#credentials', 'credentials'], ['#practices', 'best-practices'],
+const PAGES = [['#hosts', 'hosts'], ['#groups', 'groups'], ['#credentials', 'credentials'], ['#vault/templates', 'vault-templates'], ['#vault/fields', 'vault-fields'], ['#practices', 'best-practices'],
   ['#configs', 'config-examples'], ['#workflows', 'workflows'], ['#agents', 'agents'], ['#reports', 'reports'], ['#runs', 'runs'],
   ['#memory/notas', 'memory-notes'], ['#scripts', 'skills'], ['#scripts?tab=scripts', 'scripts'],
   ['#schedules/runs', 'schedule-runs'], ['#backups/storage', 'backup-storage']];

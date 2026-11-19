@@ -22,6 +22,20 @@ sessão, depois de destrancar com a **senha-mestra**.
 - **Modo terminal-puro (`--env`):** opcional; a chave vai numa variável de ambiente e morre
   ao fechar o terminal — mas não é compartilhada com os scripts executados pela IA.
 
+## Cofre de senhas (`network/vault.yaml`)
+
+O mesmo cofre (senha-mestra e chave da sessão) protege também o **Cofre de senhas** do console
+(**Inventário → Cofre de senhas**, `#vault`): segredos que não são de host, como login de portal, chave de API ou token.
+- **Estrutura:** `fields` é o catálogo de campos reutilizáveis (`kind: secret|text`). `templates` traz os campos de cada
+  template, com `required`/`visible` por template. `items` traz os valores; o tipo `secret` vira `enc.v1:` e o `text` fica em claro.
+- **Código:** `scripts/engine/lib/pwvault.py` (formato, padrões, `reencrypt_file`) e
+  `scripts/engine/ui/services/vault_items_svc.py` (CRUD, validação de obrigatório, revelar).
+- **API:** `/api/vault/catalog`, `/api/vault/fields`, `/api/vault/templates`, `/api/vault/items`,
+  `POST /api/vault/items/<id>/reveal` (só com o cofre destrancado e a permissão `vault.reveal`).
+- `change-password` recifra o `vault.yaml` junto com o `credentials.yaml`.
+- **INEGOCIÁVEL:** a IA nunca lê nem decifra os segredos do `vault.yaml`, nem chama o endpoint `/reveal`.
+  Quem consulta é o humano, pela tela.
+
 ## Quando usar
 
 - Uma vez, para migrar `credentials.yaml` de texto puro para criptografado (`init` + `encrypt`).

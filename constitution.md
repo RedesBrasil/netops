@@ -83,7 +83,9 @@ O agente só conhece a rede pelo que está em `network/`.
 
 - **DEVE:** `network/hosts.yaml` lista todo host acessível.
 - **DEVE:** `network/topology.yaml` descreve como os hosts se interligam.
-- **DEVE:** Credenciais ficam só em `network/credentials.yaml` (git-ignorado).
+- **DEVE:** Credenciais de host ficam só em `network/credentials.yaml` (git-ignorado). Segredos que não são de
+  host (portais, APIs, tokens, para pessoas) ficam no Cofre de senhas, `network/vault.yaml` (git-ignorado, mesma
+  chave do cofre). A IA nunca lê nem decifra os segredos de nenhum dos dois (§V).
 
 ### VII. Sem Runtime Próprio (DEVE)
 

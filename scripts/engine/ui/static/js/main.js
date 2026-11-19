@@ -6,6 +6,7 @@ import { LoginScreen } from "./components.js";
 import { authToken, setOnAuthChange, setOnUnauthorized, clearAuthToken } from "./api.js";
 import { HostsPage, GroupsPage } from "./pages/hosts.js";
 import { CredentialsPage } from "./pages/credentials.js";
+import { VaultPage } from "./pages/vault.js";
 import { MapsPage } from "./pages/maps.js";
 import { MemoryPage } from "./pages/memory.js";
 import { BestPracticesPage, ConfigsPage } from "./pages/knowledge.js";
@@ -32,7 +33,9 @@ import { isClaudeChatHash } from "./claude-sessions.js";
 const ROUTES = {
   hosts: { label: "Hosts", comp: HostsPage, group: "Inventário", perm: "hosts.view" },
   groups: { label: "Grupos", comp: GroupsPage, group: "Inventário", perm: "hosts.view" },
-  credentials: { label: "Credenciais", comp: CredentialsPage, group: "Inventário", perm: "credentials.view" },
+  credentials: { label: "Credenciais de hosts", comp: CredentialsPage, group: "Inventário", perm: "credentials.view" },
+  // Cofre de senhas: segredos que não são de host (portais, APIs, tokens) — network/vault.yaml
+  vault: { label: "Cofre de senhas", comp: VaultPage, group: "Inventário", perm: "vault.view" },
   maps: { label: "Mapas", comp: MapsPage, group: "Inventário", perm: "hosts.view" },
   memory: { label: "Memória", comp: MemoryPage, group: "Conhecimento", perm: "knowledge.view" },
   practices: { label: "Boas práticas", comp: BestPracticesPage, group: "Conhecimento", perm: "knowledge.view" },

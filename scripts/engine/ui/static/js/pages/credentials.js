@@ -35,7 +35,7 @@ export function CredentialsPage() {
   ];
 
   return html`<div>
-    <div class="page-title"><h1>Credenciais</h1><span class="spacer"></span>
+    <div class="page-title"><h1>Credenciais de hosts</h1><span class="spacer"></span>
       <button class="primary needs-credentials-edit" onClick=${() => setEditing({ __new: true })}>+ Nova credencial</button></div>
     ${!vault_initialized && html`<div class="card"><b>Cofre não inicializado.</b> Para guardar senhas cifradas,
       rode no terminal: <code>python3 scripts/engine/vault/cli.py init</code> e depois <code>encrypt</code>.</div>`}

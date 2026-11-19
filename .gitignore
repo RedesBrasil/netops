@@ -3,6 +3,8 @@
 # >>> SEGREDOS — credenciais (cofre 'enc.v1:' ou texto puro). NUNCA commitar. <<<
 # (atenção: o .gitignore NÃO aceita comentário na mesma linha do padrão — sempre em linha própria)
 network/credentials.yaml
+# Cofre de senhas (segredos que não são de host; enc.v1:) — NUNCA commitar
+network/vault.yaml
 # temporário de escrita atômica do cofre (scripts/vault/cli.py + scripts/ui)
 network/*.tmp
 # backups da UI (credentials.yaml.bak.* pode conter segredos) — nunca commitar

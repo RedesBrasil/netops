@@ -182,6 +182,10 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
   vale também para a CLI e os agentes. Há também **"Trancar"** (`POST /api/vault/lock`).
   ⚠ Em bind **não-loopback** sobre HTTP, a senha-mestra trafega em **texto puro** na rede — use só
   atrás de túnel SSH/VPN. Para exigir o terminal e desabilitar o unlock web: `--no-vault-unlock`.
+- **Cofre de senhas (`#vault`, `pages/vault.js`, `routers/vault_items.py`, `services/vault_items_svc.py`):** segredos que
+  não são de host, gravados em `network/vault.yaml` (0600). Abas Itens, Templates e Campos (`#vault`, `#vault/<id>[/edit]`,
+  `#vault/templates[/<id>]`, `#vault/fields[/<nome>]`). Texto puro aparece sempre; segredo só com o cofre destrancado
+  (`423`). Permissões `vault.view|reveal|edit|templates`. Teste de navegador: `tests/vault.browser.mjs` (precisa de `NETOPS_E2E_VAULT`).
 - **Integridade:** escrita atômica (tmp + replace), `credentials.yaml` em modo `0600`,
   comentários preservados (ruamel round-trip), concorrência otimista por hash (`409` em conflito),
   validação de schema antes de gravar host/grupo. Renames que tocam **dois arquivos**

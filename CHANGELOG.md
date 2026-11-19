@@ -2,6 +2,16 @@
 
 ## [Não lançado]
 
+### Novidades
+
+- **Cofre de senhas (Inventário → Cofre de senhas, `#vault`).** Guarda segredos que **não são de host**, como login de portal, URL com chave de API ou token, para as pessoas consultarem pelo console. O menu antigo vira **Credenciais de hosts** e continua sendo o acesso dos scripts aos equipamentos.
+  - **Campos reutilizáveis:** cada campo tem nome e tipo, segredo ou texto puro. Um campo digitado num template vai para o catálogo e fica disponível para escolher nos outros.
+  - **Templates:** definem os campos de um item e, em cada um, se é obrigatório (conferido no servidor) e se aparece na lista. Vêm dois prontos, Login e API.
+  - **Itens:** são criados a partir de um template, com campos avulsos do catálogo e notas.
+  - **Cofre trancado ou aberto:** texto puro aparece sempre. Segredo é cifrado (`enc.v1:`, a mesma chave do cofre) e só se revela, copia ou grava com o cofre destrancado. Revelar fica na auditoria.
+  - **Permissões novas:** `vault.view`, `vault.reveal`, `vault.edit` e `vault.templates`. Em instalações novas, o grupo `operador` vem com ver e revelar. Nas existentes, conceda em **Grupos de acesso**.
+  - **Onde fica:** `network/vault.yaml` (0600, git-ignorado e preservado pelo atualizador). `vault/cli.py change-password` recifra o arquivo junto com as credenciais.
+
 ## [2.5.0] - 2026-11-19
 
 ### Novidades

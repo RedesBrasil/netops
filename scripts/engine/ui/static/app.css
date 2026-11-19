@@ -1224,3 +1224,27 @@ span.vault-icon { cursor: default; border-radius: var(--radius); height: 28px; }
 .cc-send.stop:hover { animation-play-state: paused; }
 @keyframes cc-stop-blink { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(192,57,43,.55); } 50% { opacity: .55; box-shadow: 0 0 0 5px rgba(192,57,43,0); } }
 @media (prefers-reduced-motion: reduce) { .cc-send.stop { animation: none; } }
+
+/* Cofre de senhas (pages/vault.js) */
+.vault-kv { display: inline-block; margin-right: 12px; white-space: nowrap; }
+.vault-chip { display: inline-block; padding: 1px 8px; margin: 1px 4px 1px 0; border-radius: 10px; background: var(--border); font-size: 12px; }
+.vault-fields { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.vault-row { display: grid; grid-template-columns: minmax(110px, 180px) 1fr auto; gap: 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+.vault-row-label { font-weight: 600; }
+.vault-row-value code { word-break: break-all; white-space: pre-wrap; }
+.vault-row-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.vault-notes { white-space: pre-wrap; }
+.vault-form-row { display: flex; gap: 8px; align-items: flex-end; }
+.vault-form-row > :first-child { flex: 1; }
+.vault-add { display: flex; gap: 8px; margin: 6px 0 12px; }
+.vault-add input { flex: 1; }
+.vault-tpl-head, .vault-tpl-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px 120px 130px 150px; gap: 8px; align-items: center; }
+.vault-tpl-head { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+.vault-tpl-row { margin-bottom: 6px; }
+.vault-tpl-btns { display: flex; gap: 4px; align-items: center; }
+@media (max-width: 700px) {
+  .vault-row { grid-template-columns: 1fr; }
+  .vault-row-actions { justify-content: flex-start; }
+  .vault-tpl-head { display: none; }
+  .vault-tpl-row { grid-template-columns: 1fr 1fr; }
+}

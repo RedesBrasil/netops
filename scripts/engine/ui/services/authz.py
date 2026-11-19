@@ -47,6 +47,11 @@ RULES: list[tuple[frozenset, re.Pattern, str | None]] = [
     (WRITE, _R(r"^/(hosts|groups)(/|$)"), "hosts.edit"),
     (GET, _R(r"^/(topology|maps)(/|$)"), "hosts.view"),
     (WRITE, _R(r"^/(topology|maps)(/|$)"), "hosts.edit"),
+    # Cofre de senhas (network/vault.yaml) — segredos que não são de host
+    (GET, _R(r"^/vault/(catalog|items)(/|$)"), "vault.view"),
+    (WRITE, _R(r"^/vault/items/[^/]+/reveal$"), "vault.reveal"),
+    (WRITE, _R(r"^/vault/items(/|$)"), "vault.edit"),
+    (WRITE, _R(r"^/vault/(fields|templates)(/|$)"), "vault.templates"),
     (GET, _R(r"^/credentials(/|$)"), "credentials.view"),
     (WRITE, _R(r"^/credentials(/|$)"), "credentials.edit"),
     # conhecimento / saída

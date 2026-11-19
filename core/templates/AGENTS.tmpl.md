@@ -53,8 +53,9 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Preciso de... | Está em... |
 |---------------|------------|
 | Lista de equipamentos e como acessá-los | `network/hosts.yaml` |
-| Credenciais (cofre `enc.v1:` ou texto puro, git-ignorado) | `network/credentials.yaml` |
+| Credenciais de hosts (acesso a equipamento; cofre `enc.v1:` ou texto puro, git-ignorado) | `network/credentials.yaml` |
 | Cofre de credenciais (criptografia + unlock) | `scripts/engine/vault/` (`SKILL.md`) |
+| **Cofre de senhas**: segredos que NÃO são de host (portais, APIs, tokens) com templates e campos reutilizáveis (console: **Inventário → Cofre de senhas**) | `network/vault.yaml` (git-ignorado, `enc.v1:`); `scripts/engine/lib/pwvault.py`, `ui/services/vault_items_svc.py` (ver `scripts/engine/vault/SKILL.md`) |
 | Mapa de como a rede se interliga | `network/topology.yaml` + `network/topology.md` |
 | Boas práticas (texto) | `best-practices/<vendor>/` ou `best-practices/general/` |
 | Exemplos de configuração reais | `config-examples/<vendor>/` |
@@ -162,7 +163,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   **destrancado** antes de qualquer acesso — o humano roda `python3 scripts/engine/vault/cli.py unlock`
   (a IA não digita a senha-mestra). Se trancado, os scripts falham com instrução clara.
 - **Segredos (INEGOCIÁVEL):** a IA **nunca** lê, descriptografa, imprime ou copia o valor de
-  `password`/`secret` — nem com o cofre destrancado, nem "por transparência". Para acessar um
+  `password`/`secret` nem os segredos do Cofre de senhas (`network/vault.yaml`) — nem com o cofre destrancado, nem "por transparência". Para acessar um
   equipamento, invoque os scripts de `scripts/tools/access/` com `--host <nome>` (eles resolvem a
   credencial internamente); nunca chame `resolve_host(decrypt=True)`/`resolve_secret`/`decrypt_value`.
   Ver `constitution.md` §V e `core/rules/connection-safety.md`.

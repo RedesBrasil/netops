@@ -401,9 +401,16 @@ def cmd_change_password(args) -> int:
             dec = vault.decrypt_value(old_key, plain)
             lines[i] = _emit(m.group("indent"), m.group("key"), vault.encrypt_value(new_key, dec))
             count += 1
+    # Cofre de senhas (network/vault.yaml, mesma chave): re-cifra junto, ANTES de gravar qualquer coisa.
+    from lib import pwvault  # noqa: PLC0415
+    pw_path = path.parent / pwvault.FILE_NAME
+    pw_text, pw_count = pwvault.reencrypt_file(pw_path, old_key, new_key)
     _atomic_write(path, _set_vault_block("\n".join(lines) + "\n", new_meta))
+    if pw_text is not None:
+        _atomic_write(pw_path, pw_text)
     vault_session.clear_session()
-    print(f"OK — senha mestra trocada; {count} segredo(s) re-criptografado(s). Sessão re-trancada.")
+    print(f"OK — senha mestra trocada; {count + pw_count} segredo(s) re-criptografado(s) "
+          f"({pw_count} do Cofre de senhas). Sessão re-trancada.")
     return 0
 
 

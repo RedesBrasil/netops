@@ -189,6 +189,58 @@ class PasswordSet(BaseModel):
     field: Literal["password", "secret"] = "password"
 
 
+# --------------------------------------------------------------------------- #
+# Cofre de senhas (network/vault.yaml)
+# --------------------------------------------------------------------------- #
+VaultKind = Literal["secret", "text"]
+
+
+class VaultFieldCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: str = Field(min_length=1, max_length=60)
+    kind: VaultKind = "secret"
+
+
+class VaultFieldUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    kind: Optional[VaultKind] = None
+
+
+class VaultTemplateField(BaseModel):
+    model_config = {"extra": "forbid"}
+    field: str = Field(min_length=1, max_length=60)
+    kind: Optional[VaultKind] = None      # só usado ao criar campo novo / mudar o tipo do campo
+    required: bool = False
+    visible: bool = False
+
+
+class VaultTemplateBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    label: str = Field(min_length=1, max_length=80)
+    description: Optional[str] = Field(default="", max_length=500)
+    fields: list[VaultTemplateField] = Field(default_factory=list, max_length=50)
+
+
+class VaultItemValue(BaseModel):
+    model_config = {"extra": "forbid"}
+    field: str = Field(min_length=1, max_length=60)
+    value: Optional[str] = Field(default=None, max_length=20000)   # None = mantém o segredo atual
+
+
+class VaultItemBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    title: str = Field(min_length=1, max_length=120)
+    template: Optional[str] = None
+    notes: Optional[str] = Field(default="", max_length=5000)
+    values: list[VaultItemValue] = Field(default_factory=list, max_length=60)
+
+
+class VaultReveal(BaseModel):
+    model_config = {"extra": "forbid"}
+    field: Optional[str] = None           # None = todos os segredos do item
+
+
 class RenameBody(BaseModel):
     """Novo ID/nome de um recurso de mapa (host/grupo/credencial). O mesmo padrão de
     slug de HostCreate/GroupCreate/CredentialCreate; a unicidade é checada no serviço."""
