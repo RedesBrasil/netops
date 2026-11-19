@@ -138,7 +138,11 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   pedido direto sem workflow, começa com `python3 scripts/tools/backup/change.py begin --host-id <ID>` (backup "pré"; falhou =
   não altere) e termina com `... change.py end --host-id <ID>` (backup "pós" + diff; 1 par por host por sessão). Padrão ligado
   p/ mikrotik/cisco/huawei/linux/proxmox; `backup_before_change: false` no host/grupo desliga. Retenção: `backups.keep_versions`
-  (10). O hook `guard-netops.sh` bloqueia o `session.py` de alteração sem o `begin` — pode ir encadeado na mesma linha: `change.py begin --host-id N && session.py run ... ; change.py end --host-id N` (o `&&` é exigido; `;` não vale).
+  (10). **CT/VM de Proxmox = snapshot, não backup de config:** `change.py begin --host-id <CT>` sai com código 4 e manda
+  **perguntar ao usuário com `AskUserQuestion`** ("Fazer snapshot antes?"). Sim → `change.py begin --host-id <CT> --mode snapshot [--tag x]`
+  (`scripts/tools/backup/snapshot.py`: confere storage/espaço do pool, roda fstrim, relê o espaço, bloqueia se o pool passar de 90 %, cria
+  `netops-pre-AAAAMMDD-HHMM`); Não → `--mode none`. No fim, `change.py end` NÃO apaga nada: avise que concluiu e **pergunte** se apaga
+  (`snapshot.py delete --host-id <CT>`, só após o "sim"; `snapshot.py pending` lista os esquecidos). O hook `guard-netops.sh` bloqueia o `session.py` de alteração sem o `begin` — pode ir encadeado na mesma linha: `change.py begin --host-id N && session.py run ... ; change.py end --host-id N` (o `&&` é exigido; `;` não vale).
 - **Nada pesado em `/tmp` (INEGOCIÁVEL):** venv de teste, Node portátil, Playwright/Chromium, `pytest --basetemp`,
   worktree e build de release vão para `/var/tmp/netops-<tarefa>/` (disco) e são **apagados no fim da tarefa**. O
   `/tmp` pode ser tmpfs (RAM) e contar na memória do container: sobras de testes acumulam e derrubam o host por OOM.

@@ -161,14 +161,19 @@ def main():
     ap.add_argument("action", choices=["begin", "end", "check"])
     ap.add_argument("--host-id", type=int, required=True)
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--mode", choices=["snapshot", "none"], help="só CT/VM de Proxmox: snapshot pré-mudança ou sem backup")
+    ap.add_argument("--tag", default="", help="CT/VM: rótulo curto no nome do snapshot")
+    ap.add_argument("--force-space", action="store_true", help="CT/VM: ignora o bloqueio de espaço do pool")
     a = ap.parse_args()
     hid = a.host_id
     h = host_info(hid)
     STATE.mkdir(parents=True, exist_ok=True)
     marker = STATE / f"{hid}.json"
     flag = h.get("backup_before_change")
+    import snapshot as SN  # noqa: PLC0415 — CT/VM de Proxmox usam snapshot, não backup de config
+    guest = SN.guest_of(h)
     if flag is None:   # padrão: ligado p/ equipamentos de rede e Linux/Proxmox; false explícito desliga
-        flag = collector(h.get("vendor") or "") is not None
+        flag = guest is not None or collector(h.get("vendor") or "") is not None
     if a.action == "check":   # usado pelo hook: exit 3 = falta rodar `begin` antes de alterar
         if flag and not marker.exists():
             print(f"FALTA BACKUP: rode `python3 scripts/tools/backup/change.py begin --host-id {hid}` antes de alterar o host {hid}.")
@@ -176,6 +181,31 @@ def main():
         return
     if not flag and not a.force:
         print(f"SKIP: host {hid} com backup_before_change desligado (use --force para forçar)")
+        return
+    if guest and a.action == "begin":
+        if not a.mode:   # a IA NÃO decide sozinha: precisa perguntar ao usuário (AskUserQuestion)
+            print(f"PERGUNTE AO USUÁRIO: o host {hid} é {guest[0].upper().replace('LXC','CT')} {guest[1]} do Proxmox (host {guest[2]}). "
+                  "Fazer snapshot antes da mudança? Sim → `change.py begin --host-id %d --mode snapshot [--tag x]`; "
+                  "Não → `... --mode none`." % hid)
+            sys.exit(4)
+        if a.mode == "snapshot":
+            snap = SN.create(hid, h, a.tag, force_space=a.force_space)
+            marker.write_text(json.dumps({"snapshot": snap, "started": int(time.time())}))
+        else:
+            marker.write_text(json.dumps({"skipped": True, "started": int(time.time())}))
+            print("OK: sem backup (usuário recusou o snapshot)")
+        return
+    if guest and a.action == "end":
+        if not marker.exists():
+            raise SystemExit("sessão não iniciada (rode begin antes)")
+        m = json.loads(marker.read_text())
+        marker.unlink()
+        if m.get("snapshot"):
+            print(f"OK: mudança encerrada. Snapshot {m['snapshot']} continua no Proxmox.")
+            print(f"AÇÃO: avise o usuário que concluiu e PERGUNTE (AskUserQuestion) se apaga o snapshot: "
+                  f"`python3 scripts/tools/backup/snapshot.py delete --host-id {hid}` (só após o 'sim').")
+        else:
+            print("OK: mudança encerrada (sem snapshot).")
         return
     if a.action == "begin":
         name = save(hid, "pre", collect(hid, h))

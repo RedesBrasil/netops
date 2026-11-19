@@ -51,6 +51,8 @@ com rollback: nunca aplica nada sem ter como desfazer.
       `python3 scripts/tools/backup/change.py begin --host-id <ID>` (falhou = **não altere nada**), faça todas
       as alterações da sessão e, ao concluir, `... change.py end --host-id <ID>` (backup pós + diff + retenção
       `backups.keep_versions`, padrão 10). Um `begin`/`end` por host por sessão, não por comando.
+      **CT/VM de Proxmox:** o `begin` pede para perguntar ao usuário (AskUserQuestion) se faz snapshot; use `--mode snapshot` ou `--mode none`
+      conforme a resposta. No `end`, pergunte se apaga o snapshot (`scripts/tools/backup/snapshot.py delete --host-id <ID>`).
    a. Capturar baseline da área afetada → `runs/<id>/collected/<host>.before.txt`.
    b. Aplicar a config de `runs/<id>/proposals/<host>.change.txt`.
    c. Capturar o estado pós-mudança → `<host>.after.txt`.
