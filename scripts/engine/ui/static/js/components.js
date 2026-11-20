@@ -411,7 +411,7 @@ export function LoginScreen({ onAuthed, multiuser = false }) {
 /* ---------------------------- UnlockModal ------------------------------- */
 // Destranca o cofre digitando a senha-mestra. A senha vai só nesta request (POST
 // /vault/unlock), deriva a chave no servidor e é descartada — nunca volta ao browser.
-export function UnlockModal({ onClose, reason }) {
+export function UnlockModal({ onClose, onUnlocked, reason }) {
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -426,6 +426,7 @@ export function UnlockModal({ onClose, reason }) {
       await refreshVault();
       toast.ok(t("components.vault_unlocked_toast"));
       onClose && onClose();
+      onUnlocked && onUnlocked();
     } catch (e2) {
       if (e2.status === 401) setErr(t("components.master_password_wrong"));
       else if (e2.status === 409) setErr(e2.payload?.detail || t("components.vault_not_initialized"));

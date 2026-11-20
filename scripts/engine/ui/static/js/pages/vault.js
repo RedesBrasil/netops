@@ -6,7 +6,7 @@
 //   #vault/fields     #vault/fields/new     #vault/fields/<nome>
 import { html, useState, api, useResource, useStore, vaultStore, Spinner, Badge, toast, handleError, can, Modal, ConfirmDialog, t } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
-import { FilterBar, DataTable, Field, PasswordInput, VaultBanner } from "../components.js";
+import { FilterBar, DataTable, Field, VaultBanner, UnlockModal } from "../components.js";
 
 const KIND_LABEL = { secret: "vault.kind_secret", text: "vault.kind_text" };   // i18n keys, translated at render time
 const kindLabel = (kind) => (KIND_LABEL[kind] ? t(KIND_LABEL[kind]) : kind);
@@ -67,7 +67,7 @@ function ItemsTab({ data, reload, r, unlocked }) {
   const items = all.filter((it) => (!tplLabel || (it.template_label || "—") === tplLabel)
     && matchText(q, it.title, it.template_label, it.notes, ...textOf(it)));
   const tplOptions = [...new Set(all.map((it) => it.template_label || "—"))].sort();
-  const [seg, sub] = r.segments;
+  const [seg] = r.segments;
   // ID numérico (estável); o slug antigo (apelido) também abre o item.
   const found = seg && seg !== "new" ? all.find((it) => String(it.id) === seg || (it.aliases || []).includes(seg)) : null;
 
@@ -95,14 +95,10 @@ function ItemsTab({ data, reload, r, unlocked }) {
     <${DataTable} tableId="vault-items" urlSort columns=${cols} rows=${items.map((it) => ({ ...it, _key: it.id }))}
       onRowClick=${(it) => r.open(it.id)}
       actions=${(it) => html`
-        <button class="sm" onClick=${() => r.open(it.id)}>${t("common.open")}</button>
-        <button class="sm needs-vault-edit" onClick=${() => r.open([it.id, "edit"])}>${t("common.edit")}</button>
         <button class="sm danger needs-vault-edit" onClick=${() => setConfirm(it)}>${t("common.delete")}</button>`}
       empty=${t("vault.items_empty")} />
-    ${found && sub !== "edit" && html`<${ItemView} key=${found.id} item=${found} tpl=${tplById[found.template]} unlocked=${unlocked}
-        onEdit=${() => r.open([found.id, "edit"])} onClose=${() => r.close()} />`}
-    ${(seg === "new" || (found && sub === "edit")) && html`<${ItemForm} key=${seg + (sub || "")} item=${found}
-        data=${data} unlocked=${unlocked} onClose=${() => (found ? r.open(found.id) : r.close())}
+    ${(seg === "new" || found) && html`<${ItemForm} key=${seg} item=${found}
+        data=${data} unlocked=${unlocked} onClose=${() => r.close()}
         onSaved=${(saved) => { reload(); r.open(saved.id); }} />`}
     ${confirm && html`<${ConfirmDialog} title=${t("vault.delete_item_title")} danger=${true}
         message=${t("vault.delete_item_confirm", { title: confirm.title, id: confirm.id })} onClose=${() => setConfirm(null)}
@@ -110,59 +106,6 @@ function ItemsTab({ data, reload, r, unlocked }) {
           try { await api.del(`/vault/items/${encodeURIComponent(confirm.id)}`, rev); toast.ok(t("vault.item_removed")); if (found && found.id === confirm.id) r.close(); reload(); }
           catch (e) { handleError(e); } }} />`}
   </div>`;
-}
-
-function ItemView({ item, tpl, unlocked, onEdit, onClose }) {
-  const [shown, setShown] = useState({});           // campo -> valor revelado (só nesta janela)
-  const mayReveal = can("vault.reveal");
-  const order = (tpl?.fields || []).map((f) => f.field);
-  const vals = [...item.values].sort((a, b) => {
-    const ia = order.indexOf(a.field), ib = order.indexOf(b.field);
-    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
-  });
-  async function reveal(field) {
-    if (shown[field] != null) return shown[field];
-    const res = await api.post(`/vault/items/${encodeURIComponent(item.id)}/reveal`, { field });
-    const value = res.values[field] ?? Object.values(res.values)[0] ?? "";
-    setShown((s) => ({ ...s, [field]: value }));
-    return value;
-  }
-  const toggle = async (field) => {
-    if (shown[field] != null) { setShown((s) => { const n = { ...s }; delete n[field]; return n; }); return; }
-    try { await reveal(field); } catch (e) { handleError(e); }
-  };
-  const copyField = async (x) => {
-    try {
-      const value = x.kind === "text" ? x.value : (shown[x.field] ?? (await api.post(`/vault/items/${encodeURIComponent(item.id)}/reveal`, { field: x.field })).values[x.field]);
-      if (await copy(value)) toast.ok(t("vault.field_copied", { field: x.field })); else toast.err(t("vault.copy_failed"));
-    } catch (e) { handleError(e); }
-  };
-  const secretBtns = (x) => !unlocked ? html`<span class="muted">${t("vault.unlock_to_reveal")}</span>`
-    : !mayReveal ? html`<span class="muted">${t("vault.no_reveal_permission")}</span>`
-    : html`<button class="sm" onClick=${() => toggle(x.field)}>${shown[x.field] != null ? t("vault.hide") : t("vault.reveal")}</button>
-        <button class="sm" onClick=${() => copyField(x)}>${t("vault.copy_btn")}</button>`;
-  return html`<${Modal} title=${`${item.title} (ID ${item.id})`} onClose=${onClose} wide=${true}>
-    <div class="help">${item.template_label ? html`${t("vault.template_prefix")} <${Badge}>${item.template_label}<//> · ` : ""}
-      ${t("vault.updated_by", { when: (item.updated_at || "").replace("T", " ").slice(0, 16), who: item.updated_by || "—" })}</div>
-    <div class="vault-fields">
-      ${vals.length === 0 && html`<div class="muted">${t("vault.no_fields")}</div>`}
-      ${vals.map((x) => html`<div class="vault-row" key=${x.field}>
-        <div class="vault-row-label">${x.field}${x.kind === "secret" ? " 🔒" : ""}</div>
-        <div class="vault-row-value"><code>${x.kind === "text" ? x.value : (shown[x.field] ?? MASK)}</code>
-          <div class="vault-ref" title=${t("vault.ref_title")}>
-            <code>${vaultRef(item.id, x.field)}</code>
-            <button class="sm link-btn" onClick=${async () => { if (await copy(vaultRef(item.id, x.field))) toast.ok(t("vault.ref_copied")); }}>${t("vault.copy_ref")}</button></div></div>
-        <div class="vault-row-actions">${x.kind === "text"
-          ? html`<button class="sm" onClick=${() => copyField(x)}>${t("vault.copy_btn")}</button>` : secretBtns(x)}</div>
-      </div>`)}
-    </div>
-    <div class="help">${t("vault.usage_1")} <code>.env</code> ${t("vault.usage_2")}
-      (${t("vault.usage_eg")} <code>API_KEY=${vaultRef(item.id, vals.find((v) => v.kind === "secret")?.field || t("vault.usage_default_field"))}</code>) ${t("vault.usage_3")}
-      <code>nvault run -- &lt;${t("vault.usage_command")}&gt;</code> ${t("vault.usage_4")}</div>
-    ${item.notes && html`<${Field} label=${t("vault.notes")}><div class="vault-notes">${item.notes}</div><//>`}
-    <div class="modal-actions"><button onClick=${onClose}>${t("common.close")}</button>
-      <button class="primary needs-vault-edit" onClick=${onEdit}>${t("common.edit")}</button></div>
-  <//>`;
 }
 
 function ItemForm({ item, data, unlocked, onClose, onSaved }) {
@@ -182,7 +125,6 @@ function ItemForm({ item, data, unlocked, onClose, onSaved }) {
   const [names, setNames] = useState(() => rowsFor(item ? item.template : templates[0]?.id, Object.keys(existing)));
   const [vals, setVals] = useState(() => Object.fromEntries(Object.entries(existing)
     .filter(([, x]) => x.kind === "text").map(([k, x]) => [k, x.value])));
-  const [addName, setAddName] = useState("");
   const [busy, setBusy] = useState(false);
   const req = new Set((tplById[template]?.fields || []).filter((f) => f.required).map((f) => f.field));
   const inTpl = new Set((tplById[template]?.fields || []).map((f) => f.field));
@@ -191,12 +133,6 @@ function ItemForm({ item, data, unlocked, onClose, onSaved }) {
     setTemplate(tid);
     // Troca de template: entram os campos do novo; ficam os avulsos que já têm valor.
     setNames(rowsFor(tid, names.filter((n) => vals[n] || existing[n])));
-  };
-  const addField = () => {
-    const real = fields.find((f) => f.name.toLowerCase() === addName.trim().toLowerCase());
-    if (!real) { toast.err(t("vault.field_unknown")); return; }
-    if (!names.includes(real.name)) setNames([...names, real.name]);
-    setAddName("");
   };
   const missing = [...req].filter((n) => !(vals[n] || (existing[n]?.kind === "secret" && existing[n].set && vals[n] === undefined)));
   const needsUnlock = names.some((n) => kindOf(n) === "secret" && vals[n]);
@@ -217,38 +153,88 @@ function ItemForm({ item, data, unlocked, onClose, onSaved }) {
       toast.ok(isNew ? t("vault.item_created") : t("vault.item_updated")); onSaved(saved);
     } catch (e) { handleError(e); } finally { setBusy(false); }
   }
+  const mayReveal = can("vault.reveal");
+  const canReveal = !isNew && unlocked && mayReveal;
+  const [revealed, setRevealed] = useState(false);       // mostra TODOS os segredos de uma vez
+  const secretNames = names.filter((n) => kindOf(n) === "secret");
+  // Busca os segredos gravados que ainda não estão na tela (os já digitados/carregados não são sobrescritos).
+  async function loadSecrets() {
+    const res = await api.post(`/vault/items/${encodeURIComponent(item.id)}/reveal`, { field: null });
+    const got = {};
+    for (const n of secretNames) if (existing[n]?.set && vals[n] === undefined && res.values[n] != null) got[n] = res.values[n];
+    const merged = { ...got, ...vals };
+    setVals(merged);
+    return merged;
+  }
+  const [askUnlock, setAskUnlock] = useState(false);
+  async function toggleAll() {
+    if (revealed) { setRevealed(false); return; }
+    try { await loadSecrets(); setRevealed(true); } catch (e) { handleError(e); }
+  }
+  async function valueOf(n, cur) {
+    if (kindOf(n) !== "secret" || cur[n] !== undefined || !existing[n]?.set) return cur[n] || "";
+    return (await loadSecrets())[n] || "";
+  }
+  async function copyOne(n) {
+    try {
+      if (await copy(await valueOf(n, vals))) toast.ok(t("vault.field_copied", { field: n })); else toast.err(t("vault.copy_failed"));
+    } catch (e) { handleError(e); }
+  }
+  async function copyAll() {
+    try {
+      const cur = secretNames.some((n) => existing[n]?.set && vals[n] === undefined) ? await loadSecrets() : vals;
+      const lines = names.filter((n) => cur[n]).map((n) => `${n}: ${cur[n]}`);
+      if (await copy(lines.join("\n"))) toast.ok(t("vault.all_copied")); else toast.err(t("vault.copy_failed"));
+    } catch (e) { handleError(e); }
+  }
+  const hasSecretToShow = secretNames.some((n) => existing[n]?.set || vals[n]);
   return html`<${Modal} title=${isNew ? t("vault.new_item_title") : t("vault.edit_item_title", { title: item.title, id: item.id })} onClose=${onClose} wide=${true}>
-    <${Field} label=${t("vault.field_title")}><input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder=${t("vault.title_placeholder")} /><//>
-    <${Field} label=${t("vault.col_template")} hint=${t("vault.template_hint")}>
+    <div class="vault-topbar">
+      <span class=${"vault-state " + (unlocked ? "ok" : "locked")}>${unlocked ? t("vault.state_unlocked") : t("vault.state_locked")}</span>
+      ${!isNew && item.updated_at && html`<span class="muted vault-updated">${t("vault.updated_by", { when: (item.updated_at || "").replace("T", " ").slice(0, 16), who: item.updated_by || "—" })}</span>`}
+      <span class="spacer"></span>
+      ${!isNew && !unlocked && mayReveal && html`<button class="sm primary" onClick=${() => setAskUnlock(true)}>${t("vault.reveal_all")}</button>`}
+      ${!isNew && unlocked && !mayReveal && html`<span class="muted">${t("vault.no_reveal_permission")}</span>`}
+      ${canReveal && hasSecretToShow && html`<button class="sm" onClick=${toggleAll}>${revealed ? t("vault.hide_all") : t("vault.reveal_all")}</button>`}
+      ${canReveal && html`<button class="sm" onClick=${copyAll}>${t("vault.copy_all")}</button>`}
+    </div>
+    ${askUnlock && html`<${UnlockModal} reason=${t("vault.unlock_reason")} onClose=${() => setAskUnlock(false)}
+        onUnlocked=${() => { setTimeout(() => { loadSecrets().then(() => setRevealed(true)).catch((e) => handleError(e)); }, 0); }} />`}
+    <div class="vault-head-row">
+      <${Field} label=${t("vault.field_title")}><input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder=${t("vault.title_placeholder")} /><//>
+  <${Field} label=${t("vault.col_template")} hint=${t("vault.template_hint")}>
       <select value=${template} onChange=${(e) => changeTemplate(e.target.value)}>
         <option value="">${t("vault.no_template")}</option>
         ${templates.map((tp) => html`<option key=${tp.id} value=${tp.id}>${tp.label}</option>`)}
       </select><//>
-    ${!unlocked && html`<div class="vault-banner locked">${t("vault.locked_banner")}</div>`}
+    </div>
+    <div class="vault-fields">
     ${names.map((n) => {
       const secret = kindOf(n) === "secret";
       const label = `${n}${req.has(n) ? " *" : ""}${secret ? " 🔒" : ""}`;
       const keep = secret && existing[n]?.set;
-      return html`<div class="vault-form-row" key=${n}>
-        <${Field} label=${label} hint=${keep ? t("vault.secret_keep_hint") : null}>
+      const canCopy = !isNew && (!secret || canReveal);
+      return html`<div class="vault-row vault-edit-row" key=${n}>
+        <div class="vault-row-label">${label}</div>
+        <div class="vault-row-value">
           ${secret
-            ? html`<${PasswordInput} autocomplete="new-password" disabled=${!unlocked} value=${vals[n] || ""}
-                placeholder=${keep ? t("vault.secret_kept") : ""} onInput=${(e) => setVals({ ...vals, [n]: e.target.value })} />`
+            ? html`<input type=${revealed ? "text" : "password"} autocomplete="new-password" disabled=${!unlocked} value=${vals[n] || ""}
+                placeholder=${keep ? MASK : (unlocked ? "" : "🔒")} onInput=${(e) => setVals({ ...vals, [n]: e.target.value })} />`
             : html`<input value=${vals[n] || ""} onInput=${(e) => setVals({ ...vals, [n]: e.target.value })} />`}
-        <//>
-        ${!inTpl.has(n) && html`<button class="sm" title=${t("vault.remove_field_title")} onClick=${() => {
-          setNames(names.filter((x) => x !== n)); const nv = { ...vals }; delete nv[n]; setVals(nv); }}>✕</button>`}
+          ${!isNew && html`<div class="vault-ref" title=${t("vault.ref_title")}>
+            <code>${vaultRef(item.id, n)}</code>
+            <button class="sm link-btn" onClick=${async () => { if (await copy(vaultRef(item.id, n))) toast.ok(t("vault.ref_copied")); }}>${t("vault.copy_ref")}</button></div>`}</div>
+        <div class="vault-row-actions">
+          ${canCopy && html`<button class="sm" onClick=${() => copyOne(n)}>${t("vault.copy_btn")}</button>`}
+          ${!inTpl.has(n) && html`<button class="sm" title=${t("vault.remove_field_title")} onClick=${() => {
+            setNames(names.filter((x) => x !== n)); const nv = { ...vals }; delete nv[n]; setVals(nv); }}>✕</button>`}
+        </div>
       </div>`;
     })}
-    <div class="vault-add">
-      <input list="vault-fields-dl" placeholder=${t("vault.add_field_placeholder")} value=${addName}
-        onInput=${(e) => setAddName(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addField(); } }} />
-      <datalist id="vault-fields-dl">${fields.filter((f) => !names.includes(f.name)).map((f) => html`<option key=${f.name} value=${f.name} />`)}</datalist>
-      <button class="sm" onClick=${addField} disabled=${!addName.trim()}>${t("common.add")}</button>
     </div>
     <${Field} label=${t("vault.notes")}><textarea rows="3" value=${notes} onInput=${(e) => setNotes(e.target.value)} /><//>
     <div class="modal-actions"><button onClick=${onClose}>${t("common.cancel")}</button>
-      <button class="primary" disabled=${busy} onClick=${save}>${isNew ? t("common.create") : t("common.save")}</button></div>
+      <button class="primary needs-vault-edit" disabled=${busy} onClick=${save}>${isNew ? t("common.create") : t("common.save")}</button></div>
   <//>`;
 }
 

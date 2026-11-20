@@ -110,5 +110,11 @@
   "usage_command": "command",
   "usage_default_field": "password",
   "usage_eg": "e.g.:",
-  "visible_check": "visible"
+  "visible_check": "visible",
+  "reveal_all": "👁 Reveal all",
+  "hide_all": "🙈 Hide all",
+  "copy_all": "📋 Copy all",
+  "all_copied": "All fields copied",
+  "unlock_and_reveal": "🔓 Unlock and reveal",
+  "unlock_reason": "Vault locked — enter the master password to reveal the secrets."
 }

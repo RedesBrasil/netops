@@ -110,5 +110,11 @@
   "usage_command": "comando",
   "usage_default_field": "senha",
   "usage_eg": "ex.:",
-  "visible_check": "visível"
+  "visible_check": "visível",
+  "reveal_all": "👁 Mostrar tudo",
+  "hide_all": "🙈 Ocultar tudo",
+  "copy_all": "📋 Copiar tudo",
+  "all_copied": "Todos os campos copiados",
+  "unlock_and_reveal": "🔓 Destrancar e mostrar",
+  "unlock_reason": "Cofre trancado — digite a senha-mestra para mostrar os segredos."
 }
