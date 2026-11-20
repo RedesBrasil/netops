@@ -16,7 +16,7 @@ operacional (ela não pode trocar a própria identidade nem apontar o serviço p
     NETOPS_RUNTIME_USER=netops
     NETOPS_RUNTIME_HOME=/var/lib/netops
     NETOPS_INSTANCE_ID=<uuid4>            identificador persistente desta instalação (vínculo do host Local)
-    NETOPS_UI_HOST=10.0.0.5               opcional (vazio = 1º IP da máquina)
+    NETOPS_UI_HOST=0.0.0.0                todos os IPs da máquina (padrão do instalador; vazio = 0.0.0.0)
     NETOPS_UI_PORT=8765
     NETOPS_UI_TERMINAL=1 / NETOPS_UI_CLAUDE=1 / NETOPS_UI_CLAUDE_PERSIST=1   opcionais
 

@@ -101,6 +101,7 @@ nome e o e-mail dele. Código: `scripts/engine/lib/github_identity.py`, `ui/serv
 python3 scripts/engine/users/cli.py list                       # usuários, grupos, último login, sessões
 python3 scripts/engine/users/cli.py groups
 python3 scripts/engine/users/cli.py reset-admin [--email a@b.com]   # RECUPERAÇÃO: cria/reativa admin + senha nova
+sudo -u netops python3 scripts/engine/users/cli.py setup-link [--hours 24]   # instalação nova: (re)gera o link do PRIMEIRO ACESSO
 python3 scripts/engine/users/cli.py add joao@empresa.com --groups operador --name "João" --temp
 python3 scripts/engine/users/cli.py passwd joao@empresa.com --temp         # senha provisória, derruba as sessões
 python3 scripts/engine/users/cli.py disable joao | enable joao | delete joao

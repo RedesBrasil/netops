@@ -6,9 +6,10 @@
   .venv/bin/python3 scripts/engine/ui/server.py --port 8765 --no-browser
   .venv/bin/python3 scripts/engine/ui/server.py --read-only
 
-Segurança: bind em loopback (127.0.0.1) por padrão; recusa 0.0.0.0. O acesso é protegido
-pelo LOGIN com a senha-mestra do cofre (quando o cofre está inicializado) + checagem de
-Host/Origin (anti DNS-rebinding/CSRF). O cofre pode ser destrancado pela web (senha-mestra
+Segurança: bind em loopback (127.0.0.1) por padrão. O `start.sh` sobe com 0.0.0.0 = TODOS os IPs da
+máquina (IPv4 e, se houver, IPv6 em `::`). Fora do loopback o acesso é protegido pelo LOGIN; sem cofre e
+sem usuário, o console fica no modo de PRIMEIRO ACESSO (só o assistente #setup, com token de uso único)
+em vez de ficar aberto. Mais a checagem de Host/Origin (anti DNS-rebinding/CSRF). O cofre pode ser destrancado pela web (senha-mestra
 digitada na UI -> derive_key -> sessão); use --no-vault-unlock para exigir o terminal
 (`python3 scripts/engine/vault/cli.py unlock`).
 """
@@ -29,6 +30,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import deps  # noqa: E402
 
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+WILDCARD = {"0.0.0.0", "::", "*", ""}
+
+
+def _bind_v4(host: str) -> str:
+    """Endereço IPv4 de bind (curinga -> 0.0.0.0)."""
+    return "0.0.0.0" if host in WILDCARD else host
+
+
+def _listen_sockets(host: str, port: int) -> list[socket.socket] | None:
+    """Curinga: um socket IPv4 em 0.0.0.0 e, se a máquina tiver IPv6, outro em :: (IPV6_V6ONLY,
+    para o IP do cliente IPv4 não virar ::ffff:x — a allowlist de acesso web e a auditoria usam ele).
+    Endereço específico: None (o uvicorn faz o bind)."""
+    if host not in WILDCARD:
+        return None
+    socks = []
+    s4 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s4.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s4.bind(("0.0.0.0", port))
+    socks.append(s4)
+    if socket.has_ipv6:
+        try:
+            s6 = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+            s6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            s6.bind(("::", port))
+            socks.append(s6)
+        except OSError:
+            try:
+                s6.close()
+            except Exception:  # noqa: BLE001
+                pass
+    for s in socks:
+        s.listen(2048)
+        s.set_inheritable(True)
+    return socks
+
+
+def _display_hosts(host: str) -> list[str]:
+    """Endereços para mostrar nas URLs (curinga = cada IP da máquina, sem gravar a lista)."""
+    if host not in WILDCARD:
+        return [host]
+    ips = sorted(deps.local_ips() - {"::1"}, key=lambda x: (":" in x, x != "127.0.0.1", x))
+    return [f"[{i}]" if ":" in i else i for i in ips] or ["127.0.0.1"]
 
 
 def _free_port(host: str, preferred: int) -> int:
@@ -54,9 +98,10 @@ def _prepare_tls(host: str, https_port: int):
         from services import tls_svc  # noqa: PLC0415
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind((host, https_port))
+            s.bind((_bind_v4(host), https_port))
         cert, key = tls_svc.ensure_cert(deps.DATA_ROOT / "runs" / "tls", host)
-        print(f"\n  🔐 HTTPS (autoassinado) -> https://{host}:{https_port}/  (permite microfone/ditado por IP)")
+        shown = ", ".join(f"https://{h}:{https_port}/" for h in _display_hosts(host))
+        print(f"\n  🔐 HTTPS (autoassinado) -> {shown}  (permite microfone/ditado por IP)")
         print(f"     SHA-256 do certificado: {tls_svc.fingerprint(cert)}")
         return cert, key
     except Exception as exc:  # noqa: BLE001
@@ -66,7 +111,8 @@ def _prepare_tls(host: str, https_port: int):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="NetOps Console — CRUD web local.")
-    parser.add_argument("--host", default="127.0.0.1", help="Bind (só loopback; default 127.0.0.1)")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Bind (default 127.0.0.1; 0.0.0.0 = todos os IPs da máquina, IPv4 + IPv6)")
     parser.add_argument("--port", type=int, default=8765, help="Porta preferida (default 8765; cai p/ livre)")
     parser.add_argument("--no-browser", action="store_true", help="Não abrir o navegador")
     parser.add_argument("--read-only", action="store_true", help="Desliga toda escrita (só CRUD de leitura)")
@@ -92,8 +138,9 @@ def main() -> int:
     args = parser.parse_args()
 
     is_loopback = args.host in LOOPBACK
-    if args.host == "0.0.0.0":
-        sys.exit("ERRO: 0.0.0.0 recusado. Faça bind num IP específico (ex.: --host 192.0.2.10) ou 127.0.0.1.")
+    is_wildcard = args.host in WILDCARD
+    if is_wildcard:
+        args.host = "0.0.0.0"
 
     try:
         import uvicorn  # noqa: PLC0415
@@ -109,12 +156,18 @@ def main() -> int:
     deps.STATE.claude_detach_grace = max(1, args.claude_detach_grace)
     deps.STATE.claude_ask_timeout = max(1, args.claude_ask_timeout)
     # O Host header precisa bater com o IP de bind (anti DNS-rebinding). Mantém loopback + o IP escolhido.
-    deps.STATE.allowed_hosts = tuple({"127.0.0.1", "localhost", "::1", args.host})
+    deps.STATE.allowed_hosts = tuple({"127.0.0.1", "localhost", "::1", args.host} - {"0.0.0.0"})
+    deps.STATE.bind_loopback = is_loopback
+    deps.STATE.bind_wildcard = is_wildcard
 
     if deps.vault_initialized():
         print("\n  🔒 LOGIN EXIGIDO: o console pede a senha-mestra do cofre antes de liberar o acesso.")
         if not deps.STATE.allow_vault_unlock:
             print("    (--no-vault-unlock: o login autentica o console mas NÃO destranca o cofre.)")
+    elif deps.setup_mode():
+        print("\n  🔑 PRIMEIRO ACESSO PENDENTE: o console só mostra o assistente de configuração (idioma,")
+        print("    admin e senha), que exige o link com token. Gere/reimprima o link no servidor:")
+        print("    python3 scripts/engine/users/cli.py setup-link")
     else:
         print("\n  ⚠ SEM COFRE INICIALIZADO: não há senha-mestra, então NÃO há login — o console fica")
         print("    aberto a qualquer um que alcance este endereço. Inicialize o cofre")
@@ -152,11 +205,13 @@ def main() -> int:
     from app import create_app  # noqa: PLC0415  (importa depois de setar STATE)
     application = create_app()
 
-    port = args.port if os.environ.get("NETOPS_UPDATE_MANAGED") == "1" else _free_port(args.host, args.port)
-    url = f"http://{args.host}:{port}/"
+    port = args.port if os.environ.get("NETOPS_UPDATE_MANAGED") == "1" else _free_port(_bind_v4(args.host), args.port)
+    urls = [f"http://{h}:{port}/" for h in _display_hosts(args.host)]
+    url = f"http://127.0.0.1:{port}/" if is_wildcard else urls[0]
 
-    print("\n  NetOps Console")
-    print(f"  -> {url}")
+    print("\n  NetOps Console" + ("  (todos os IPs da máquina: 0.0.0.0)" if is_wildcard else ""))
+    for u in urls:
+        print(f"  -> {u}")
     if args.read_only:
         print("  (modo somente-leitura)")
     print("  Ctrl+C para encerrar.\n")
@@ -182,6 +237,15 @@ def main() -> int:
             import contextlib  # noqa: PLC0415
             return contextlib.nullcontext()
 
+    main_socks = _listen_sockets(args.host, port)
+    sec_socks = None
+    if tls and is_wildcard:
+        try:
+            sec_socks = _listen_sockets(args.host, https_port)
+        except OSError as exc:      # HTTPS nunca derruba o console
+            print(f"  ⚠ HTTPS por IP DESLIGADO (porta {https_port}: {exc}) — o console HTTP segue normal.")
+            tls = None
+
     async def _run() -> None:
         main_srv = uvicorn.Server(uvicorn.Config(application, host=args.host, port=port, log_level="info",
                                                  access_log=False, proxy_headers=False))
@@ -196,12 +260,12 @@ def main() -> int:
 
             async def _sec() -> None:
                 try:
-                    await sec_srv.serve()
+                    await sec_srv.serve(sockets=sec_socks)
                 except BaseException as exc:  # noqa: BLE001  (uvicorn faz sys.exit(1) se não conseguir bind)
                     print(f"  ⚠ listener HTTPS encerrou: {exc!r} — HTTP segue normal")
             sec_task = asyncio.create_task(_sec())
         try:
-            await main_srv.serve()
+            await main_srv.serve(sockets=main_socks)
         finally:
             if sec_srv is not None:
                 sec_srv.should_exit = True

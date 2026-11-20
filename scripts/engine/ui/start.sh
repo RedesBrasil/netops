@@ -11,7 +11,7 @@
 #   - liga o TERMINAL WEB e a página CLAUDE CODE por padrão (são opt-in — sem o script, as
 #     abas "Terminal"/"Claude Code" não aparecem). Desligue com NETOPS_UI_TERMINAL=0 / NETOPS_UI_CLAUDE=0;
 #   - garante o PATH do agente `claude` (~/.local/bin) para a página Claude funcionar de fato;
-#   - faz bind no IP da máquina (acesso pela rede) e garante UMA instância só.
+#   - escuta em TODOS os IPs da máquina (0.0.0.0 + :: se houver IPv6) e garante UMA instância só.
 # Acesso protegido pelo LOGIN com a senha-mestra do cofre (ver server.py).
 #
 # ATENÇÃO: reiniciar encerra as sessões vivas da aba Claude (a persistência cobre F5/standby,
@@ -22,7 +22,7 @@
 #   scripts/engine/ui/start.sh                          # sobe, ou reinicia se já estiver rodando
 #   scripts/engine/ui/start.sh --yes                    # idem, sem pedir confirmação
 #   scripts/engine/ui/start.sh --foreground             # roda em primeiro plano (debug), sem desacoplar
-#   NETOPS_UI_HOST=127.0.0.1 scripts/engine/ui/start.sh # força loopback (só local)
+#   NETOPS_UI_HOST=127.0.0.1 scripts/engine/ui/start.sh # força loopback (só local); padrão = 0.0.0.0 (todos os IPs)
 #   NETOPS_UI_PORT=9000      scripts/engine/ui/start.sh # outra porta
 #   NETOPS_UI_TERMINAL=0     scripts/engine/ui/start.sh # sobe SEM o terminal web
 #   NETOPS_UI_CLAUDE=0       scripts/engine/ui/start.sh # sobe SEM a página Claude Code
@@ -30,6 +30,16 @@
 #   NETOPS_UI_HOME=/root     scripts/engine/ui/start.sh # fixa o store do agente Claude (ver abaixo)
 #   scripts/engine/ui/start.sh --read-only --no-vault-unlock   # flags extras (passthrough)
 set -euo pipefail
+
+# Endereço para CONECTAR (curl de conferência) a partir do de escuta: curinga = loopback.
+connect_host() {
+  case "${1:-}" in
+    ""|0.0.0.0|\*) echo 127.0.0.1 ;;
+    ::) echo "[::1]" ;;
+    *:*) echo "[$1]" ;;
+    *) echo "$1" ;;
+  esac
+}
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
@@ -152,9 +162,9 @@ if [ "$USER_MODE" = 1 ] && [ "${1:-}" != "--foreground" ]; then
     echo "ERRO: flags extras (${PASS[*]}) só valem com --foreground (depuração). A configuração do serviço fica em $IDENT_FILE." >&2
     exit 2
   fi
-  HOST="${ID_NETOPS_UI_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"; HOST="${HOST:-127.0.0.1}"
+  HOST="${ID_NETOPS_UI_HOST:-0.0.0.0}"
   PORT="${ID_NETOPS_UI_PORT:-8765}"
-  URLH="$HOST"; case "$HOST" in *:*) URLH="[$HOST]";; esac
+  URLH=$(connect_host "$HOST")
   ACTIVE=$(systemctl --user is-active "$UNIT" 2>/dev/null || true)
   if [ "$NO_DETACH" = 0 ]; then
     if [ "$ACTIVE" = active ] && [ "$ASSUME_YES" = 0 ] && [ -t 0 ] && [ -t 1 ]; then
@@ -254,7 +264,7 @@ if [ "${1:-}" != "--foreground" ]; then
   else
     log "console não está rodando — subindo"
   fi
-  HOST="${NETOPS_UI_HOST:-${HOST:-$(hostname -I | awk '{print $1}')}}"
+  HOST="${NETOPS_UI_HOST:-${HOST:-0.0.0.0}}"
   PORT="${NETOPS_UI_PORT:-$PORT}"
   export NETOPS_UI_HOST="$HOST" NETOPS_UI_PORT="$PORT"
   export NETOPS_UI_TERMINAL="${NETOPS_UI_TERMINAL:-$TERM_ON}" NETOPS_UI_CLAUDE="${NETOPS_UI_CLAUDE:-$CLAUDE_ON}"
@@ -304,7 +314,8 @@ if [ "${1:-}" != "--foreground" ]; then
   }
 
   # 4) sobe com até 3 tentativas; 5) valida HTTP (responde e continua respondendo após 8 s)
-  http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://$HOST:$PORT/" 2>/dev/null || true; }
+  CH=$(connect_host "$HOST")
+  http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://$CH:$PORT/" 2>/dev/null || true; }
   for try in 1 2 3; do
     log "subindo (tentativa $try)"
     launch_console || true
@@ -363,9 +374,8 @@ if [ ! -x "$PY" ] && [ ! -f "$ROOT/.netops-update/journal.json" ]; then
   exit 1
 fi
 
-# Host: env > IP privado auto-detectado > loopback.
-HOST="${NETOPS_UI_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
-HOST="${HOST:-127.0.0.1}"
+# Host: env > 0.0.0.0 (todos os IPs da máquina; a configuração guarda só o curinga, nunca a lista).
+HOST="${NETOPS_UI_HOST:-0.0.0.0}"
 PORT="${NETOPS_UI_PORT:-8765}"
 
 # Terminal web ligado por padrão (NETOPS_UI_TERMINAL=0 desliga).
@@ -394,7 +404,11 @@ if ! flock -n 9; then
   exit 1
 fi
 
-echo "NetOps Console -> http://${HOST}:${PORT}/"
+if [ "$HOST" = 0.0.0.0 ] || [ "$HOST" = "::" ]; then
+  echo "NetOps Console -> todos os IPs da máquina, porta ${PORT} ($(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^$' | sed "s|.*|http://&:${PORT}/|" | tr '\n' ' '))"
+else
+  echo "NetOps Console -> http://${HOST}:${PORT}/"
+fi
 [ -n "$CLAUDE_FLAG" ] && echo "Claude Code     -> store ${HOME}/.claude (login e conversas da aba)"
 [ -n "$PERSIST_FLAG" ] && echo "Persistência    -> ON (a aba Claude sobrevive a standby)"
 # Supervisor só usa stdlib. Continua recuperável mesmo se a troca de venv for interrompida.

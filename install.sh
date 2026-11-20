@@ -10,12 +10,13 @@
 #   3. cria o .venv e instala requirements.txt;
 #   4. cria a conta operacional `netops` (HOME /var/lib/netops). TODO o NetOps roda como ela:
 #      console, supervisor, IA, terminal, agendador e atualizador — nunca como root;
-#   5. instala o .venv e o agente `claude` COMO `netops`; pede a senha-mestra do cofre;
+#   5. instala o .venv e o agente `claude` COMO `netops`. NÃO pergunta nada: senha, e-mail do admin e
+#      idioma ficam para o PRIMEIRO ACESSO no console (link com token de uso único no fim da instalação);
 #   6. serviço systemd DO USUÁRIO netops-console@<slug> (linger = sobe no boot sem login);
 #   7. administração Local: conta `netops-admin` (senha aleatória só no cofre) + host Local protegido;
 #   7b. permissões da conta: rede sem root (ping/nmap/tcpdump...) e, com o cofre destrancado, root por
 #       `sudo` ou direto (apt/systemctl/nft... — "sudo automático"). Ver scripts/engine/privileges/SKILL.md;
-#   8. testa tudo e mostra o endereço: http://<IP>:<porta>/
+#   8. testa tudo e mostra o link do primeiro acesso em cada IP da máquina (o console escuta em 0.0.0.0).
 #
 # Root só PROVISIONA (pacotes, contas, serviço, firewall). Instalação antiga (console como root,
 # "layout 1") é detectada e NÃO é migrada sozinha: o instalador repara e mostra o comando de migração
@@ -28,14 +29,15 @@
 #   NETOPS_DIR=/opt/netops        pasta de instalação
 #   NETOPS_VERSION=2.4.0          versão específica (padrão: última release estável)
 #   NETOPS_PORT=8765              porta do console
-#   NETOPS_HOST=10.0.0.5          IP de bind (padrão: o 1º IP da máquina)
+#   NETOPS_HOST=10.0.0.5          restringe a escuta a um IP (padrão: 0.0.0.0 = TODOS os IPs da máquina)
 #   GITHUB_TOKEN=ghp_...          token, se o repositório for privado
 #   NETOPS_SSH_KEY=/root/.ssh/netops_deploy   repositório privado por chave SSH (deploy key somente leitura):
 #                                 clona a tag da release via git+SSH e monta o pacote localmente
 #   NETOPS_PACKAGE=/tmp/x.tar.gz  instala de um pacote local (offline/teste), sem baixar
 #   NETOPS_SKIP_CLAUDE=1          não instala o agente `claude`
 #   NETOPS_NO_SERVICE=1           não registra o serviço de boot (systemd)
-#   NETOPS_MASTER_PASSWORD=...    senha-mestra sem pergunta (instalação automatizada)
+#   NETOPS_MASTER_PASSWORD=...    instalação automatizada: cria o cofre já (sem o assistente do 1º acesso)
+#   NETOPS_LANG=en|pt-BR          idioma da instalação (automatizada; senão é escolhido no 1º acesso)
 #
 # Tudo fica registrado em /var/log/netops-install.log.
 
@@ -67,6 +69,7 @@ die()  {
 }
 run()  { log "\$ $*"; "$@" >>"$LOG" 2>&1; }          # comando com saída só no log
 WARNINGS=()
+SETUP_URLS=()
 trap 'die "falha inesperada na linha $LINENO (comando: $BASH_COMMAND)"' ERR
 
 # ----------------------------------------------------------------------------- utilitários
@@ -397,6 +400,41 @@ install_code() {
   ok "NetOps v$PKG_VERSION instalado em $NETOPS_DIR"
 }
 
+# Pacote com primeiro acesso no console + escuta em 0.0.0.0 (>= 2.6). Pacote antigo: comportamento antigo
+# (senha-mestra perguntada aqui e bind no 1º IP), porque o server.py antigo recusa 0.0.0.0.
+detect_features() {
+  NEW_FLOW=0
+  if [ -f "$NETOPS_DIR/scripts/engine/lib/setup_token.py" ] && grep -q 'WILDCARD' "$NETOPS_DIR/scripts/engine/ui/server.py" 2>/dev/null; then
+    NEW_FLOW=1
+  fi
+}
+
+# Endereço para conectar (testes) a partir do de escuta: curinga = loopback.
+connect_host() {
+  case "${1:-}" in ""|0.0.0.0|\*) echo 127.0.0.1 ;; ::) echo "[::1]" ;; *:*) echo "[$1]" ;; *) echo "$1" ;; esac
+}
+
+# URLs do console em cada IP da máquina (sem gravar a lista em lugar nenhum).
+all_urls() {  # all_urls [sufixo]
+  local ip out=() suf="${1:-}"
+  for ip in $(hostname -I 2>/dev/null); do
+    case "$ip" in fe80:*) continue ;; *:*) out+=("http://[$ip]:$PORT/$suf") ;; *) out+=("http://$ip:$PORT/$suf") ;; esac
+  done
+  [ ${#out[@]} -gt 0 ] || out+=("http://$(primary_ip):$PORT/$suf")
+  printf '%s\n' "${out[@]}"
+}
+
+# IPv4 público (fora de 10/8, 172.16/12, 192.168/16, 100.64/10, 127/8, 169.254/16) nesta máquina?
+public_ipv4() {
+  local ip
+  for ip in $(hostname -I 2>/dev/null); do
+    case "$ip" in *:*|10.*|127.*|192.168.*|169.254.*) continue ;; esac
+    case "$ip" in 172.1[6-9].*|172.2[0-9].*|172.3[01].*) continue ;; esac
+    case "$ip" in 100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*) continue ;; esac
+    printf '%s\n' "$ip"
+  done
+}
+
 # ----------------------------------------------------------------------------- 5. venv
 setup_venv() {
   step "Instalando as dependências Python (.venv${OP_USER:+ como $OP_USER})"
@@ -568,6 +606,8 @@ meta, _key = vault.build_meta(pw)
 cli._atomic_write(path, cli._set_vault_block(text, meta))
 ' "$creds") >>"$LOG" 2>&1 || die "não consegui inicializar o cofre."
     ok "cofre inicializado com NETOPS_MASTER_PASSWORD"
+  elif [ "${NEW_FLOW:-0}" = 1 ]; then
+    ok "senha, e-mail do admin e idioma: no PRIMEIRO ACESSO pelo navegador (link no fim da instalação)"
   elif has_tty; then
     info "Crie a senha-mestra. Ela é o LOGIN do console e protege as senhas dos equipamentos."
     info "Guarde-a bem: não há como recuperá-la."
@@ -582,7 +622,19 @@ cli._atomic_write(path, cli._set_vault_block(text, meta))
     warn "sem terminal para definir a senha-mestra: o console vai escutar só em 127.0.0.1. Rode o instalador de novo num terminal para liberar o acesso pela rede."
   fi
   if [ -f "$creds" ]; then chown "$OP_USER:$OP_USER" "$creds"; chmod 600 "$creds"; fi
+  set_instance_language
   return 0
+}
+
+# Idioma da instalação (automatizada: NETOPS_LANG). Sem a variável, quem escolhe é o 1º acesso.
+set_instance_language() {
+  [ -n "${NETOPS_LANG:-}" ] || return 0
+  case "$NETOPS_LANG" in en|pt-BR) ;; *) warn "NETOPS_LANG inválido ($NETOPS_LANG): use en ou pt-BR; o idioma fica para o 1º acesso"; return 0 ;; esac
+  local cfg="$NETOPS_DIR/core/config/project-config.yaml"
+  [ -f "$cfg" ] || return 0
+  if grep -qE '^instance:' "$cfg"; then ok "idioma já definido em project-config.yaml (mantido)"; return 0; fi
+  printf '\n# Idioma da instalação (en | pt-BR), escolhido no primeiro acesso.\ninstance:\n  language: %s\n' "$NETOPS_LANG" >>"$cfg"
+  ok "idioma da instalação: $NETOPS_LANG"
 }
 
 setup_projects_base() {
@@ -593,13 +645,24 @@ setup_projects_base() {
 }
 
 write_identity() {
-  # bind: NETOPS_HOST > 127.0.0.1 (sem senha-mestra) > vazio (start.sh usa o 1º IP)
+  # bind: NETOPS_HOST > 0.0.0.0 = todos os IPs (pacote novo; a config guarda só o curinga, nunca a lista).
+  # Pacote antigo: 127.0.0.1 (sem senha-mestra) > vazio (start.sh antigo usa o 1º IP).
   local host="${NETOPS_HOST:-}"
-  [ "${NO_LOGIN:-0}" = "1" ] && host=127.0.0.1
-  hostname -I >/dev/null 2>&1 || host="${host:-$(primary_ip)}"
+  if [ "${NEW_FLOW:-0}" = 1 ]; then
+    host="${host:-0.0.0.0}"
+  else
+    [ "${NO_LOGIN:-0}" = "1" ] && host=127.0.0.1
+    hostname -I >/dev/null 2>&1 || host="${host:-$(primary_ip)}"
+  fi
   [[ "$host" =~ ^[A-Za-z0-9_.:%-]*$ ]] || die "NETOPS_HOST inválido"
-  local id=""
+  local id="" k extra=()
   [ -f "$IDENT_FILE" ] && id=$(sed -nE 's/^NETOPS_INSTANCE_ID=(.*)$/\1/p' "$IDENT_FILE")
+  # preferências gravadas por outras ferramentas (terminal/Claude/persistência) sobrevivem ao reparo
+  if [ -f "$IDENT_FILE" ]; then
+    for k in NETOPS_UI_TERMINAL NETOPS_UI_CLAUDE NETOPS_UI_CLAUDE_PERSIST; do
+      grep -qE "^$k=[01]\$" "$IDENT_FILE" && extra+=("$(grep -E "^$k=[01]\$" "$IDENT_FILE" | tail -1)")
+    done
+  fi
   [ -n "$id" ] || id=$(cat /proc/sys/kernel/random/uuid)
   install -d -m 755 -o root -g root /etc/netops /etc/netops/instances
   local tmp="$IDENT_FILE.tmp"
@@ -613,6 +676,7 @@ write_identity() {
     echo "NETOPS_INSTANCE_ID=$id"
     echo "NETOPS_UI_PORT=$PORT"
     if [ -n "$host" ]; then echo "NETOPS_UI_HOST=$host"; fi
+    for k in "${extra[@]}"; do echo "$k"; done
   } >"$tmp"
   chmod 644 "$tmp"; chown root:root "$tmp"; mv -f "$tmp" "$IDENT_FILE"
   ok "identidade: $IDENT_FILE (conta $OP_USER, instância $id)"
@@ -636,10 +700,18 @@ setup_user_service() {
   ok "$UNIT habilitado (sobe no boot pelo linger, sem login)"
   open_firewall
   local h; h=$(sed -nE 's/^NETOPS_UI_HOST=(.*)$/\1/p' "$IDENT_FILE"); BIND_HOST="${h:-$(primary_ip)}"; BIND_HOST="${BIND_HOST:-127.0.0.1}"
-  URL="http://$BIND_HOST:$PORT/"
+  URL="http://$(connect_host "$BIND_HOST"):$PORT/"
   if as_op systemctl --user is-active --quiet "$UNIT"; then
+    local sup run_host=""
+    sup=$(pgrep -u "$OP_USER" -of "update/supervisor.py --root $NETOPS_DIR --" || true)
+    [ -n "$sup" ] && run_host=$(tr '\0' '\n' <"/proc/$sup/cmdline" 2>/dev/null | sed -n '/^--host$/{n;p;q}')
+    if [ -n "$run_host" ] && [ "$run_host" != "$BIND_HOST" ]; then
+      warn "o console em execução escuta em $run_host; passa para $BIND_HOST no próximo reinício ($NETOPS_DIR/scripts/engine/ui/start.sh --yes)"
+      BIND_HOST="$run_host"     # testes e resumo usam o endereço em que ele está agora
+      URL="http://$(connect_host "$run_host"):$PORT/"
+    fi
     case "$(http_code "$URL")" in
-      200|301|302|303|401|403) ok "console já está rodando em $URL (não reiniciado, para não derrubar sessões)"; return ;;
+      200|301|302|303|401|403) ok "console já está rodando (não reiniciado, para não derrubar sessões)"; return ;;
     esac
   fi
   info "subindo o console (scripts/engine/ui/start.sh, delegado a $OP_USER)..."
@@ -654,7 +726,7 @@ setup_user_service() {
       pid=$(as_op systemctl --user show -p MainPID --value "$UNIT" 2>/dev/null || true)
       owner=$(stat -c %U "/proc/${pid:-0}" 2>/dev/null || true)
       [ "$owner" = "$OP_USER" ] || die "algo responde em $URL, mas o serviço $UNIT não é dono dele (pid ${pid:-?}, conta ${owner:-?})."
-      ok "console respondendo em $URL (processo de $OP_USER)" ;;
+      ok "console respondendo (processo de $OP_USER; escuta em $BIND_HOST)" ;;
     *) die "o console não respondeu em $URL. Veja: sudo -u $OP_USER XDG_RUNTIME_DIR=/run/user/$(id -u "$OP_USER") journalctl --user -u $UNIT -n 50" ;;
   esac
 }
@@ -708,6 +780,55 @@ setup_privileges() {
   fi
 }
 
+# ----------------------------------------------------------------------------- 7c. primeiro acesso
+# Sem cofre e sem usuário (instalação nova, pacote novo): o console fica no modo de primeiro acesso.
+#   - /etc/netops/instances/<slug>.setup-pending (root): a etapa root ainda não rodou;
+#   - netops-setup-finish-<slug>.path (root, sistema): quando o assistente termina ele escreve
+#     runs/setup/finish-request e esta unidade roda /usr/local/sbin/netops-setup-finish UMA vez
+#     (fixa o cofre no sudo + senha do host Local). Script de root fora da árvore da conta operacional;
+#   - token de uso único (users/cli.py setup-link): o link impresso no resumo.
+setup_first_access() {
+  SETUP_URLS=()
+  [ "${NEW_FLOW:-0}" = 1 ] || return 0
+  if vault_ready; then return 0; fi
+  step "Primeiro acesso (idioma, admin e senha pelo navegador)"
+  local runs="$NETOPS_DIR/runs" finish=/usr/local/sbin/netops-setup-finish
+  if [ "${LAYOUT:-1}" = 2 ] && [ -x "$finish" ]; then
+    local pend="/etc/netops/instances/$SLUG.setup-pending" unit="netops-setup-finish-$SLUG"
+    install -d -m 755 -o root -g root /etc/netops/instances
+    printf '# NetOps: etapa root do primeiro acesso pendente (apagado por %s)\n' "$finish" >"$pend"
+    chown root:root "$pend"; chmod 644 "$pend"
+    rm -f "/etc/netops/instances/$SLUG.setup-done"
+    printf '%s\n' \
+      "# netops-install — etapa root do primeiro acesso (uso único). Ver scripts/engine/privileges/files/netops-setup-finish" \
+      "[Unit]" "Description=NetOps: finaliza o primeiro acesso ($SLUG): sudo pelo cofre + senha do host Local" "" \
+      "[Service]" "Type=oneshot" "ExecStart=$finish $SLUG" >"/etc/systemd/system/$unit.service"
+    printf '%s\n' \
+      "# netops-install — dispara a etapa root quando o assistente do console termina" \
+      "[Unit]" "Description=NetOps: aguarda o primeiro acesso ($SLUG)" "" \
+      "[Path]" "PathExists=$runs/setup/finish-request" "Unit=$unit.service" "" \
+      "[Install]" "WantedBy=paths.target" >"/etc/systemd/system/$unit.path"
+    chmod 644 "/etc/systemd/system/$unit.service" "/etc/systemd/system/$unit.path"
+    run systemctl daemon-reload || true
+    if run systemctl enable --now "$unit.path"; then ok "etapa root do primeiro acesso armada ($unit.path)"
+    else warn "não liguei $unit.path: depois do primeiro acesso rode: sudo $finish $SLUG"; fi
+  elif [ "${LAYOUT:-1}" = 2 ]; then
+    warn "$finish ausente: depois do primeiro acesso rode sudo python3 -I -B $NETOPS_DIR/scripts/engine/privileges/provision.py install --root $NETOPS_DIR"
+  fi
+  local out=""
+  if [ "${LAYOUT:-1}" = 2 ]; then
+    out=$(cd "$NETOPS_DIR" && as_op "$NETOPS_DIR/.venv/bin/python3" scripts/engine/users/cli.py setup-link --quiet --port "$PORT" 2>>"$LOG") || out=""
+  else
+    out=$(cd "$NETOPS_DIR" && "$NETOPS_DIR/.venv/bin/python3" scripts/engine/users/cli.py setup-link --quiet --port "$PORT" 2>>"$LOG") || out=""
+  fi
+  if [ -n "$out" ]; then
+    mapfile -t SETUP_URLS <<<"$out"
+    ok "link do primeiro acesso gerado (vale 24 h; reimprimir: sudo -u $OP_USER python3 $NETOPS_DIR/scripts/engine/users/cli.py setup-link)"
+  else
+    warn "não gerei o link do primeiro acesso (veja $LOG). Gere com: sudo -u $OP_USER python3 $NETOPS_DIR/scripts/engine/users/cli.py setup-link"
+  fi
+}
+
 # ----------------------------------------------------------------------------- 7. cofre = login
 vault_ready() {
   [ -f "$NETOPS_DIR/network/credentials.yaml" ] && grep -qE '^vault:' "$NETOPS_DIR/network/credentials.yaml"
@@ -733,6 +854,8 @@ meta, _key = vault.build_meta(os.environ["NETOPS_MASTER_PASSWORD"])
 cli._atomic_write(path, cli._set_vault_block(text, meta))
 PYEOF
     ok "cofre inicializado com NETOPS_MASTER_PASSWORD"
+  elif [ "${NEW_FLOW:-0}" = 1 ]; then
+    ok "senha, e-mail do admin e idioma: no PRIMEIRO ACESSO pelo navegador (link no fim da instalação)"
   elif has_tty; then
     info "Crie a senha-mestra. Ela é o LOGIN do console e protege as senhas dos equipamentos."
     info "Guarde-a bem: não há como recuperá-la."
@@ -754,9 +877,10 @@ PYEOF
 # ----------------------------------------------------------------------------- 8. serviço + console
 setup_service() {
   step "Serviço de boot e console web"
-  # Endereço: NETOPS_HOST > 127.0.0.1 (sem senha-mestra) > o 1º IP da máquina (o mesmo do start.sh)
+  # Endereço: NETOPS_HOST > 0.0.0.0 (pacote novo) > 127.0.0.1 (pacote antigo sem senha-mestra) > 1º IP
   BIND_HOST="${NETOPS_HOST:-}"
   local fixed_host="$BIND_HOST"
+  if [ "${NEW_FLOW:-0}" = 1 ] && [ -z "$BIND_HOST" ]; then BIND_HOST=0.0.0.0; fixed_host=0.0.0.0; fi
   if [ "${NO_LOGIN:-0}" = "1" ]; then BIND_HOST=127.0.0.1; fixed_host=127.0.0.1; fi
   if [ -z "$BIND_HOST" ]; then
     BIND_HOST=$(primary_ip)
@@ -828,7 +952,7 @@ EOF
 
   open_firewall
 
-  URL="http://$BIND_HOST:$PORT/"
+  URL="http://$(connect_host "$BIND_HOST"):$PORT/"
   local sup
   sup=$(pgrep -of "update/supervisor.py --root $NETOPS_DIR --" || true)
   if [ -n "$sup" ]; then
@@ -838,7 +962,7 @@ EOF
     for i in "${!args[@]}"; do
       case "${args[$i]}" in --host) h="${args[$((i+1))]:-}" ;; --port) p="${args[$((i+1))]:-}" ;; esac
     done
-    BIND_HOST="${h:-$BIND_HOST}"; PORT="${p:-$PORT}"; URL="http://$BIND_HOST:$PORT/"
+    BIND_HOST="${h:-$BIND_HOST}"; PORT="${p:-$PORT}"; URL="http://$(connect_host "$BIND_HOST"):$PORT/"
     case "$(http_code "$URL")" in
       200|301|302|303|401|403) ok "console já está rodando em $URL (não reiniciado, para não derrubar sessões)" ;;
       *) warn "console já roda nesta pasta, mas não respondeu em $URL; não mexi nele (reinicie com start.sh --yes)" ;;
@@ -877,7 +1001,7 @@ $(tail -15 /tmp/netops-restart.log 2>/dev/null || true)" ;;
 }
 
 open_firewall() {
-  [ "${NO_LOGIN:-0}" = "1" ] && return 0
+  [ "${NO_LOGIN:-0}" = "1" ] && return 0      # só pacote antigo sem senha-mestra
   if have ufw && ufw status 2>/dev/null | grep -q "Status: active"; then
     run ufw allow "$PORT/tcp" && ok "firewall (ufw): porta $PORT/tcp liberada" || warn "não liberei a porta $PORT no ufw"
   elif have firewall-cmd && firewall-cmd --state >/dev/null 2>&1; then
@@ -948,8 +1072,14 @@ PYEOF
     else ok "nenhum arquivo de root em $NETOPS_DIR"; fi
     if [ -x "$OP_HOME/.local/bin/claude" ]; then ok "agente claude $(as_op "$OP_HOME/.local/bin/claude" --version 2>/dev/null | head -1) (perfil em $OP_HOME/.claude)"
     elif [ "${NETOPS_SKIP_CLAUDE:-0}" != "1" ]; then printf '    %s!%s agente claude ausente (aba Claude Code indisponível)\n' "$Y" "$N"; fi
-    if id -nG "$OP_USER" | tr ' ' '\n' | grep -qxE 'sudo|wheel|docker|lxd|disk|root' || sudo -l -n -U "$OP_USER" 2>/dev/null | grep -q 'may run'; then
+    # sudo da conta: só o de /etc/sudoers.d/netops-cofre (sem NOPASSWD; quem libera é o PAM conferindo o
+    # cofre a cada chamada). Grupo administrativo, NOPASSWD ou regra sem o netops-cofre = falha.
+    local sl; sl=$(sudo -l -n -U "$OP_USER" 2>/dev/null || true)
+    if id -nG "$OP_USER" | tr ' ' '\n' | grep -qxE 'sudo|wheel|docker|lxd|disk|root' \
+       || printf '%s' "$sl" | grep -q 'NOPASSWD' \
+       || { printf '%s' "$sl" | grep -q 'may run' && [ ! -f /etc/sudoers.d/netops-cofre ]; }; then
       printf '    %s✗%s %s tem sudo/grupo administrativo\n' "$R" "$N" "$OP_USER"; fails=$((fails + 1))
+    elif printf '%s' "$sl" | grep -q 'may run'; then ok "$OP_USER sem grupos administrativos; sudo só com o cofre destrancado (PAM)"
     else ok "$OP_USER sem sudo e sem grupos administrativos"; fi
     if [ -f "/etc/netops/instances/$SLUG.local" ]; then
       local la; la=$(as_op systemctl --user is-active "netops-localadmin@$SLUG.service" 2>/dev/null || true)
@@ -961,7 +1091,9 @@ PYEOF
     elif [ "${NETOPS_SKIP_CLAUDE:-0}" != "1" ]; then printf '    %s!%s agente claude ausente (aba Claude Code indisponível)\n' "$Y" "$N"; fi
   fi
 
-  if vault_ready; then ok "cofre inicializado (login exigido no console)"; else warn "cofre sem senha-mestra"; fi
+  if vault_ready; then ok "cofre inicializado (login exigido no console)"
+  elif [ ${#SETUP_URLS[@]} -gt 0 ]; then ok "primeiro acesso pendente: só o assistente com o link (token) responde"
+  else warn "cofre sem senha-mestra"; fi
 
   if [ -f "$NETOPS_DIR/scripts/engine/hooks/install_claude_hooks.py" ]; then
     if "${X[@]}" python3 "$NETOPS_DIR/scripts/engine/hooks/install_claude_hooks.py" --root "$NETOPS_DIR" --check >>"$LOG" 2>&1; then
@@ -973,6 +1105,18 @@ PYEOF
   st=$(curl -s --max-time 5 "${URL}api/auth/status" 2>/dev/null || true)
   if printf '%s' "$st" | grep -q '"auth_required"'; then ok "API do console respondendo ($st)"
   else printf '    %s✗%s API do console não respondeu em %sapi/auth/status\n' "$R" "$N" "$URL"; fails=$((fails + 1)); fi
+
+  # escuta em todos os IPs (0.0.0.0): o console precisa responder em cada um
+  if [ "${NEW_FLOW:-0}" = 1 ] && [ "${BIND_HOST:-}" = 0.0.0.0 ]; then
+    local ipu bad_ips=() n_ips=0
+    while IFS= read -r ipu; do
+      [ -n "$ipu" ] || continue
+      n_ips=$((n_ips + 1))
+      curl -s --max-time 5 "${ipu}api/auth/status" 2>/dev/null | grep -q '"auth_required"' || bad_ips+=("$ipu")
+    done < <(all_urls)
+    if [ ${#bad_ips[@]} -eq 0 ]; then ok "console responde em todos os $n_ips IP(s) da máquina (escuta em 0.0.0.0)"
+    else printf '    %s✗%s console não respondeu em: %s\n' "$R" "$N" "${bad_ips[*]}"; fails=$((fails + 1)); fi
+  fi
 
   have gh || warn "GitHub CLI (gh) ausente: o botão de atualizar do console precisa dele (instale e rode: gh auth login)"
   HEALTH_FAILS=$fails
@@ -990,13 +1134,25 @@ summary() {
     printf ' %s✅ NetOps v%s está pronto!%s\n' "$G$B" "${INSTALLED_VERSION:-?}" "$N"
   fi
   echo
-  printf '   Acesse:  %s%s%s\n' "$B$C" "$URL" "$N"
+  local u
+  if [ ${#SETUP_URLS[@]} -gt 0 ]; then
+    echo "   Primeiro acesso — abra um destes links no navegador (vale 24 h; escolha idioma, e-mail e senha):"
+    for u in "${SETUP_URLS[@]}"; do printf '     %s%s%s\n' "$B$C" "$u" "$N"; done
+    echo "   Perdeu o link? sudo -u $OP_USER python3 $NETOPS_DIR/scripts/engine/users/cli.py setup-link"
+  elif [ "${NEW_FLOW:-0}" = 1 ] && [ "${BIND_HOST:-}" = 0.0.0.0 ]; then
+    echo "   Acesse (o console escuta em todos os IPs desta máquina):"
+    while IFS= read -r u; do printf '     %s%s%s\n' "$B$C" "$u" "$N"; done < <(all_urls)
+  else
+    printf '   Acesse:  %s%s%s\n' "$B$C" "$URL" "$N"
+  fi
   echo
   if [ "${NO_LOGIN:-0}" = "1" ]; then
     echo "   Escutando só nesta máquina (sem senha-mestra). Para liberar na rede, rode de novo"
     echo "   num terminal:  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | sudo bash"
+  elif [ ${#SETUP_URLS[@]} -gt 0 ]; then
+    echo "   1. No primeiro acesso, escolha o idioma e crie o admin (a senha também protege o cofre)."
   else
-    echo "   1. Entre com a senha-mestra que você acabou de criar."
+    echo "   1. Entre com seu e-mail e senha (ou a senha-mestra, se ainda não há usuários)."
   fi
   echo "   2. Cadastre seus equipamentos em Hosts (e as credenciais em Credenciais)."
   echo "   3. Na aba Claude Code, digite /login uma vez e peça o que precisar."
@@ -1010,6 +1166,12 @@ summary() {
     echo "   Cofre trancado = sem root. Ver scripts/engine/privileges/SKILL.md"
   else
     echo "   ⚠ Instalação no modelo antigo (console como root). Migre: sudo python3 -I $NETOPS_DIR/scripts/engine/identity/migrate.py plan"
+  fi
+  local pub; pub=$(public_ipv4 | tr '\n' ' ')
+  if [ -n "$pub" ] && [ "${BIND_HOST:-}" = 0.0.0.0 ]; then
+    echo
+    printf '   %s⚠ IP público nesta máquina (%s): o console fica acessível pela internet.%s\n' "$Y" "${pub% }" "$N"
+    echo "     Ligue Configuração → Acesso web (só as suas redes) logo após o primeiro acesso."
   fi
   if [ ${#WARNINGS[@]} -gt 0 ]; then
     echo
@@ -1027,6 +1189,7 @@ main() {
   install_system_packages
   pick_python
   install_code
+  detect_features
   if [ "$LAYOUT" = 2 ]; then
     setup_account
     own_tree
@@ -1039,12 +1202,14 @@ main() {
     setup_user_service
     setup_localadmin
     setup_privileges
+    setup_first_access
   else
     setup_venv
     setup_user
     setup_agents_md
     setup_vault
     setup_service
+    setup_first_access
   fi
   health_check
   summary

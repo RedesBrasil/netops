@@ -16,10 +16,19 @@ curl -fsSL https://raw.githubusercontent.com/RedesBrasil/netops/main/install.sh 
 O instalador ([`install.sh`](install.sh)) faz tudo sozinho. Root só **prepara o sistema**: pacotes
 (Python, nmap, cron, ping, traceroute, mtr, ssh, git, gh, sudo), a conta operacional `netops` (HOME
 `/var/lib/netops`, sem sudo) e o serviço. Depois baixa a última release, confere o SHA256 e extrai em
-`/opt/netops`. O `.venv`, o agente `claude` e o cofre são criados **como `netops`**. Pede a
-**senha-mestra**, que é o login do console. Registra o serviço systemd do usuário
-`netops-console@opt-netops` (sobe no boot, sem login), sobe o console, testa tudo e mostra o endereço
-`http://IP:porta/`.
+`/opt/netops`. O `.venv` e o agente `claude` são criados **como `netops`**. **Não pergunta nada:**
+registra o serviço systemd do usuário `netops-console@opt-netops` (sobe no boot, sem login), sobe o
+console escutando em **todos os IPs da máquina** (`0.0.0.0`, e `::` se houver IPv6; a configuração guarda
+só o curinga, nunca a lista), testa tudo e mostra o **link do primeiro acesso** em cada IP
+(`http://IP:porta/#setup?token=...`, vale 24 h).
+
+**Primeiro acesso:** no navegador você escolhe o idioma (English/Português) e cria o admin (nome, e-mail,
+senha e confirmação). Essa senha é o login e também a senha-mestra do cofre. Ao concluir, uma etapa de
+root de uso único (`/usr/local/sbin/netops-setup-finish`) libera o `sudo` pelo cofre e gera a senha do
+host Local, sem você digitar nada. Até concluir, o console só mostra o assistente, que exige o link com
+token. Perdeu o link? `sudo -u netops python3 /opt/netops/scripts/engine/users/cli.py setup-link`.
+Instalação automatizada: `NETOPS_MASTER_PASSWORD=... NETOPS_LANG=en|pt-BR` cria o cofre já na instalação.
+Servidor com IP público: ligue **Configuração → Acesso web** logo após o primeiro acesso.
 
 **O NetOps nunca roda como root:** console, IA, subagentes, terminal web, tarefas agendadas e
 atualizações usam a conta `netops`. Para administrar **este** servidor como root (ex.: "instale o

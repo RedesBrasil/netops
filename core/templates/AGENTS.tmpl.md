@@ -212,7 +212,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
     turno; ao ser retomado depois de um restart que você disparou, só confirme o HTTP e conclua — **não reinicie de novo**.
   - Liga o **terminal web** e a **página Claude Code** por padrão (sem o script as abas somem), injeta o `claude` no PATH,
     faz bind no IP da máquina e garante uma instância só. Variáveis: `NETOPS_UI_HOST`, `NETOPS_UI_PORT`, `NETOPS_UI_TERMINAL=0`,
-    `NETOPS_UI_CLAUDE=0`, `NETOPS_UI_CLAUDE_PERSIST=0`. Acesso protegido pelo **login por e-mail e senha** (sem usuários: e-mail do admin + senha-mestra; sem token na URL).
+    `NETOPS_UI_CLAUDE=0`, `NETOPS_UI_CLAUDE_PERSIST=0`. Acesso protegido pelo **login por e-mail e senha** (instalação nova: assistente de **primeiro acesso** `#setup?token=...`, que cria o admin + cofre + idioma; reimprimir o link: `users/cli.py setup-link`). O console escuta em todos os IPs (`0.0.0.0`).
     Aba nova que não aparece após atualizar = cache: **hard refresh** (`Ctrl+Shift+R`). Ver `scripts/engine/ui/SKILL.md`.
 - **Console NUNCA pode ficar parado (INEGOCIÁVEL):** antes de qualquer start/restart ou mudança em `start.sh`/supervisor,
   valide que o console volta (sintaxe, venv, porta) e **nunca** teste contra o ROOT real "em outra porta". Depois,

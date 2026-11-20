@@ -20,8 +20,11 @@ RENEW_BEFORE_DAYS = 30
 
 
 def local_ips(bind_host: str) -> list[str]:
-    """IPs que precisam constar no certificado: bind + loopback + todos os IPv4 da máquina."""
-    ips = {"127.0.0.1", bind_host}
+    """IPs que precisam constar no certificado: bind + loopback + todos os IPs da máquina (`hostname -I`).
+    Bind curinga (0.0.0.0/::) não entra: o certificado cobre cada IP real, e se o conjunto mudar ele é refeito no próximo arranque do console."""
+    ips = {"127.0.0.1"}
+    if bind_host not in ("0.0.0.0", "::", "*", ""):
+        ips.add(bind_host)
     try:
         out = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=3).stdout
         ips.update(out.split())

@@ -1,0 +1,157 @@
+#!/usr/bin/python3 -I
+"""NetOps — etapa ROOT do primeiro acesso (uso único; só stdlib; nada da árvore da instalação roda como root).
+
+Instalado em /usr/local/sbin/netops-setup-finish por scripts/engine/privileges/provision.py.
+Disparado pela unidade netops-setup-finish-<slug>.path quando o assistente do console (#setup) termina
+(gatilho: <instalação>/runs/setup/finish-request). Também pode ser rodado à mão (recuperação):
+
+    sudo /usr/local/sbin/netops-setup-finish <slug>          # ex.: opt-netops
+
+O instalador não pede senha nenhuma. Por isso duas coisas que exigem root ficam para depois do
+primeiro acesso, quando o cofre já existe e está destrancado:
+  1. fixar o verificador do cofre para o `sudo` da conta operacional (netops-sudo-cofre --pin): só
+     fixa o que a sessão destrancada abre, então ninguém fixa um cofre que não destrancou;
+  2. gerar a senha do `netops-admin` (host Local): root gera, a CONTA OPERACIONAL grava no cofre
+     (localadmin/cli.py store-credential, rodando como ela) e só então root aplica no sistema.
+     O valor nunca é exibido nem escrito fora do cofre.
+
+Só age com /etc/netops/instances/<slug>.setup-pending (criado pelo instalador, de root). Concluído:
+apaga o marcador, grava /etc/netops/instances/<slug>.setup-done (estado, sem segredos) e desliga a unidade.
+Falhou: grava o motivo e mantém o marcador (dá para tentar de novo pelo console ou à mão).
+"""
+import json, os, pwd, re, secrets, stat, subprocess, sys, time
+
+IDENT_DIR = "/etc/netops/instances"
+SUDO_COFRE = "/usr/local/sbin/netops-sudo-cofre"
+ADMIN_USER = "netops-admin"
+SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,120}$")
+VALUE_RE = re.compile(r"^[A-Za-z0-9_./:@%+,-]*$")
+PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def root_owned(path):
+    st = os.lstat(path)
+    if stat.S_ISLNK(st.st_mode) or st.st_uid != 0 or stat.S_IMODE(st.st_mode) & 0o022:
+        raise SystemExit(f"ERRO: {path} inseguro (precisa ser do root, sem escrita de grupo/outros)")
+
+
+def load_ident(slug):
+    path = f"{IDENT_DIR}/{slug}.env"
+    root_owned(IDENT_DIR)
+    root_owned(path)
+    env = {}
+    for line in open(path, encoding="utf-8"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        k, _, v = line.partition("=")
+        if VALUE_RE.match(v):
+            env[k] = v
+    root = os.path.realpath(env.get("NETOPS_DIR", ""))
+    user = env.get("NETOPS_RUNTIME_USER", "")
+    if not root or not os.path.isdir(root) or not re.match(r"^[a-z_][a-z0-9_-]{0,31}$", user) or user == "root":
+        raise SystemExit(f"ERRO: identidade inválida em {path}")
+    pw = pwd.getpwnam(user)
+    if pw.pw_uid == 0:
+        raise SystemExit("ERRO: conta operacional com UID 0")
+    return {"root": root, "user": user, "uid": pw.pw_uid, "home": pw.pw_dir}
+
+
+def write_root(path, body, mode=0o644):
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(body)
+    os.chown(tmp, 0, 0)
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+
+
+def sh(*cmd, input_text=None, env=None):
+    return subprocess.run(list(cmd), input=input_text, text=True, capture_output=True,
+                          env=env or {"PATH": PATH, "LANG": "C.UTF-8"})
+
+
+def as_op(ident, argv, input_text=None):
+    env = {"PATH": PATH, "HOME": ident["home"], "USER": ident["user"], "LOGNAME": ident["user"], "LANG": "C.UTF-8",
+           "XDG_RUNTIME_DIR": f"/run/user/{ident['uid']}",
+           "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{ident['uid']}/bus"}
+    return subprocess.run(["runuser", "-u", ident["user"], "--", *argv], input=input_text, text=True,
+                          capture_output=True, env=env, cwd=ident["root"])
+
+
+def remove_request(ident):
+    """O gatilho mora na árvore da conta operacional: só apaga se for arquivo comum (sem seguir link)."""
+    p = os.path.join(ident["root"], "runs", "setup", "finish-request")
+    try:
+        if stat.S_ISREG(os.lstat(p).st_mode):
+            os.unlink(p)
+    except FileNotFoundError:
+        pass
+
+
+def step_pin(ident):
+    if not os.path.exists(SUDO_COFRE):
+        return "skipped", "netops-sudo-cofre ausente (permissões não instaladas)"
+    r = sh(SUDO_COFRE, "--pin", ident["root"])
+    if r.returncode:
+        return "failed", (r.stderr or r.stdout).strip()[-300:] or "não fixou (cofre trancado?)"
+    return "ok", "verificador do cofre fixado: sudo pelo cofre liberado"
+
+
+def step_localadmin(ident, slug):
+    if not os.path.exists(f"{IDENT_DIR}/{slug}.local"):
+        return "skipped", "administração Local não instalada"
+    try:
+        pwd.getpwnam(ADMIN_USER)
+    except KeyError:
+        return "skipped", f"conta {ADMIN_USER} ausente"
+    st = sh("passwd", "-S", ADMIN_USER).stdout.split()
+    if len(st) > 1 and st[1] not in ("L", "NP", "LK"):
+        return "ok", "senha já definida (nada a fazer)"
+    pw = secrets.token_urlsafe(32)
+    py = os.path.join(ident["root"], ".venv", "bin", "python3")
+    cli = os.path.join(ident["root"], "scripts", "engine", "localadmin", "cli.py")
+    r = as_op(ident, [py, cli, "store-credential", "--stdin"], input_text=pw + "\n")
+    if r.returncode:
+        return "failed", "não gravei a credencial no cofre: " + ((r.stderr or r.stdout).strip()[-300:] or "?")
+    r = sh("chpasswd", input_text=f"{ADMIN_USER}:{pw}\n")
+    del pw
+    if r.returncode:
+        return "failed", "chpasswd falhou: " + (r.stderr or r.stdout).strip()[-200:]
+    sh("passwd", "-u", ADMIN_USER)
+    as_op(ident, ["systemctl", "--user", "restart", f"netops-localadmin@{slug}.service"])
+    return "ok", "senha do host Local gerada, gravada no cofre e aplicada (não exibida)"
+
+
+def main():
+    if os.geteuid() != 0:
+        raise SystemExit("ERRO: rode como root: sudo /usr/local/sbin/netops-setup-finish <slug>")
+    if len(sys.argv) != 2 or not SLUG_RE.match(sys.argv[1]):
+        raise SystemExit("uso: netops-setup-finish <slug>   (ex.: opt-netops)")
+    slug = sys.argv[1]
+    ident = load_ident(slug)
+    pending = f"{IDENT_DIR}/{slug}.setup-pending"
+    done = f"{IDENT_DIR}/{slug}.setup-done"
+    if not os.path.exists(pending):
+        remove_request(ident)
+        print("nada pendente: o primeiro acesso já foi finalizado")
+        return 0
+    root_owned(pending)
+    pin_state, pin_msg = step_pin(ident)
+    la_state, la_msg = ("skipped", "aguardando o cofre") if pin_state == "failed" else step_localadmin(ident, slug)
+    failed = "failed" in (pin_state, la_state)
+    result = {"state": "failed" if failed else "done", "ts": int(time.time()),
+              "pin": pin_state, "localadmin": la_state, "detail": f"{pin_msg}; {la_msg}"}
+    write_root(done, json.dumps(result, ensure_ascii=False) + "\n")
+    remove_request(ident)
+    print(json.dumps(result, ensure_ascii=False))
+    if failed:
+        return 1
+    os.unlink(pending)
+    sh("systemctl", "disable", "--now", "--no-block", f"netops-setup-finish-{slug}.path")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

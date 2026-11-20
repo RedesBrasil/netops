@@ -32,6 +32,12 @@ Peças (todas root-owned, criadas por `provision.py install`, chamado pelo `inst
 - `/usr/local/share/netops/auto-sudo.bash`, carregado no **topo** do `~/.bashrc` da conta (antes do teste de
   shell interativo, para o Claude Code também carregar). Scripts não interativos não carregam: neles use `sudo`.
 - `/etc/netops/privileges.conf` — qual é a conta operacional (lido pelo `netops-sudo-cofre`).
+- `/usr/local/sbin/netops-setup-finish <slug>` — etapa root do **primeiro acesso** (uso único). A instalação nova não
+  tem cofre, então o pin acima e a senha do host Local ficam para depois do assistente `#setup`: a unidade
+  `netops-setup-finish-<slug>.path` (vigia `runs/setup/finish-request`) roda o script, que só age com
+  `/etc/netops/instances/<slug>.setup-pending` (root), fixa o pin via `netops-sudo-cofre --pin` (só o que a sessão
+  destrancada abre) e gera a senha do `netops-admin` (a conta operacional grava no cofre; root aplica). Resultado em
+  `<slug>.setup-done`; concluído, apaga o marcador e desliga a unidade. Recuperação: rodar o mesmo comando com `sudo`.
 
 ## Uso (root)
 

@@ -15,6 +15,7 @@ Subcomandos:
     sessions [--user u] | logout <id|e-mail>|--all
     audit [--user u] [--action a] [--limit 50]
     snapshot <destino.db>        cópia consistente do banco (segura com o console no ar)
+    setup-link [--port N] [--hours 24]   gera (de novo) o link do PRIMEIRO ACESSO (#setup?token=...)
 
 --data-root: raiz de dados (padrão: NETOPS_UI_DATA_ROOT ou a raiz do projeto).
 """
@@ -178,6 +179,49 @@ def cmd_snapshot(args):
     print(accessdb.snapshot(_db(args), args.dest))
 
 
+def _ident_port() -> str:
+    """Porta do console na identidade da instalação (/etc/netops/instances/<slug>.env), senão 8765."""
+    try:
+        from lib import runtime_identity as rid  # noqa: PLC0415
+        for line in rid.config_path(NETOPS_ROOT).read_text(encoding="utf-8").splitlines():
+            if line.startswith("NETOPS_UI_PORT="):
+                return line.split("=", 1)[1].strip() or "8765"
+    except Exception:  # noqa: BLE001
+        pass
+    return "8765"
+
+
+def cmd_setup_link(args):
+    """Link de uso único do primeiro acesso. Recusa se o console já tem cofre ou usuário."""
+    import re  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    from lib import setup_token  # noqa: PLC0415
+    db = _db(args)
+    root = db.parents[1]
+    creds = root / "network" / "credentials.yaml"
+    has_vault = creds.exists() and re.search(r"^vault:", creds.read_text(encoding="utf-8"), re.M)
+    if has_vault or (db.exists() and accessdb.has_users(db)):
+        sys.exit("O primeiro acesso já foi concluído (há cofre/usuário). Para recuperar o admin: reset-admin")
+    token = setup_token.issue(root, ttl=max(1, int(args.hours)) * 3600)
+    if os.geteuid() == 0:   # rodado com sudo: o arquivo é da conta operacional (dona de runs/), não de root
+        st = (root / "runs").stat()
+        for p in (setup_token.token_path(root).parent, setup_token.token_path(root)):
+            os.chown(p, st.st_uid, st.st_gid)
+    port = str(args.port or _ident_port())
+    try:
+        ips = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=3).stdout.split()
+    except Exception:  # noqa: BLE001
+        ips = []
+    ips = [i for i in ips if not i.startswith("fe80:")] or ["127.0.0.1"]
+    if args.quiet:
+        for ip in ips:
+            print(f"http://{'[' + ip + ']' if ':' in ip else ip}:{port}/#setup?token={token}")
+        return
+    print(f"Primeiro acesso: abra um dos links abaixo (vale {int(args.hours)} h; gerar de novo invalida este):")
+    for ip in ips:
+        print(f"  http://{'[' + ip + ']' if ':' in ip else ip}:{port}/#setup?token={token}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data-root")
@@ -225,6 +269,11 @@ def main(argv=None):
     p = sub.add_parser("snapshot")
     p.add_argument("dest")
     p.set_defaults(fn=cmd_snapshot)
+    p = sub.add_parser("setup-link")
+    p.add_argument("--port", type=int)
+    p.add_argument("--hours", type=int, default=24)
+    p.add_argument("--quiet", action="store_true", help="só as URLs, uma por linha (para o instalador)")
+    p.set_defaults(fn=cmd_setup_link)
     args = ap.parse_args(argv)
     if args.cmd == "logout" and not args.all and not args.user:
         ap.error("logout <id|e-mail> ou --all")

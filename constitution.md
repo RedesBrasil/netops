@@ -98,7 +98,9 @@ scripts Python. Sem banco de dados, sem Docker, sem servidor (princípio do Open
 - **PODE:** Existir uma **ferramenta de operador efêmera** — o console web CRUD em
   `scripts/engine/ui/` — desde que: (a) seja *stateless* (cada request lê/escreve só os arquivos
   canônicos; sem cache de estado, sem banco, sem segundo cofre); (b) faça bind em loopback
-  por padrão (`127.0.0.1`); (c) o framework funcione 100% com ela desligada (as IDEs de IA
+  por padrão (`127.0.0.1`) quando rodada direto; o launcher oficial (`start.sh`) pode escutar em todos os
+  IPs (`0.0.0.0`) **desde que** nada abra sem login (sem cofre/usuário = só o assistente de primeiro
+  acesso, com token de uso único); (c) o framework funcione 100% com ela desligada (as IDEs de IA
   seguem sendo a interface primária). Ela é uma *ferramenta sobre os arquivos*, no mesmo
   espírito de `scripts/tools/docs/topology_render.py` — **não** é um runtime do framework.
 - **NÃO DEVE:** A ferramenta de operador, **por funcionalidade própria de UI** (botões,

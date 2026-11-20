@@ -66,6 +66,7 @@ PAM_LINE = f"auth [success=done default=ignore] pam_exec.so quiet {SBIN}/netops-
 INSTALLED = {  # origem em files/ -> destino, modo
     "netops-netcaps": (SBIN / "netops-netcaps", 0o755),
     "netops-sudo-cofre": (SBIN / "netops-sudo-cofre", 0o755),
+    "netops-setup-finish": (SBIN / "netops-setup-finish", 0o755),   # etapa root do primeiro acesso
     "auto-sudo.bash": (SHARE / "auto-sudo.bash", 0o644),
     "nmap": (Path("/usr/local/bin/nmap"), 0o755),
     "nping": (Path("/usr/local/bin/nping"), 0o755),
@@ -200,7 +201,7 @@ def step_files() -> None:
             continue
         write_root(dst, body, mode)
     SHARE.chmod(0o755)
-    ok("scripts do sistema em /usr/local (netcaps, sudo-cofre, auto-sudo, wrappers nmap/nping)")
+    ok("scripts do sistema em /usr/local (netcaps, sudo-cofre, setup-finish, auto-sudo, wrappers nmap/nping)")
 
 
 def step_netcaps() -> None:
@@ -294,8 +295,8 @@ def step_pin(root: Path, user: str, trust_creds: bool) -> None:
         OLD_PIN.unlink()
     try:
         value = mod.verifier_from_creds(str(root))
-    except SystemExit:
-        warn("cofre ainda não inicializado: o sudo fica negado até fixar o verificador (provision.py pin)")
+    except (SystemExit, OSError):       # sem credentials.yaml (instalação nova: cofre nasce no 1º acesso)
+        ok("sudo pelo cofre: fica pronto ao concluir o primeiro acesso no console (cofre ainda não criado)")
         return
     if dst.exists() and dst.read_text().strip() == value:
         ok(f"verificador do cofre fixado ({dst})")

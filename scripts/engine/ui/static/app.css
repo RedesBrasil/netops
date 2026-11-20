@@ -25,6 +25,11 @@ a { color: var(--accent); text-decoration: none; }
 .login-brand { font-size: 18px; font-weight: 700; letter-spacing: .3px; margin-bottom: 4px; }
 .login-card .help { margin: 0 0 16px; }
 .login-card button.primary { width: 100%; }
+.login-card.setup-card { max-width: 420px; }
+.setup-langs { display: flex; gap: 8px; }
+.setup-langs button { flex: 1; }
+.setup-cmd { display: flex; gap: 6px; align-items: flex-start; margin: 6px 0 12px; }
+.setup-cmd code { flex: 1; word-break: break-all; font-size: 12px; padding: 6px; background: var(--surface-2, rgba(0,0,0,.05)); border-radius: 4px; }
 code, .mono { font-family: var(--mono); }
 
 /* layout */

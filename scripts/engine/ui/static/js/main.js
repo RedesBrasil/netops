@@ -3,6 +3,7 @@ import { render } from "preact";
 import { html, useState, useEffect, api } from "./ui.js";
 import { ToastHost, startVaultPolling, refreshMe, useMe, can, permLabel, meStore } from "./ui.js";
 import { LoginScreen } from "./components.js";
+import { SetupScreen } from "./pages/setup.js";
 import { authToken, setOnAuthChange, setOnUnauthorized, clearAuthToken } from "./api.js";
 import { HostsPage, GroupsPage } from "./pages/hosts.js";
 import { CredentialsPage } from "./pages/credentials.js";
@@ -262,7 +263,7 @@ function ReportHost() {
 }
 
 function Root() {
-  const [gate, setGate] = useState("loading");   // "loading" | "login" | "app"
+  const [gate, setGate] = useState("loading");   // "loading" | "setup" | "login" | "app"
   const [authRequired, setAuthRequired] = useState(false);
   const [multiuser, setMultiuser] = useState(false);
   const [migration, setMigration] = useState(null);
@@ -286,6 +287,7 @@ function Root() {
         const s = await api.get("/auth/status");
         if (current !== generation) return;
         if (sentAuth !== authToken()) return check();
+        if (s.setup_required) { meStore.set(null); setGate("setup"); return; }   // primeiro acesso pendente
         setAuthRequired(!!s.auth_required);
         setMultiuser(!!s.multiuser);
         const needLogin = s.auth_required && !s.authenticated;
@@ -313,6 +315,8 @@ function Root() {
     <button onClick=${() => location.reload()}>Verificar novamente</button>
   </section></div>`;
   if (gate === "loading") return html`<div class="boot">Carregando NetOps Console…</div>`;
+  if (gate === "setup") return html`<${SetupScreen}
+    onDone=${async () => { setAuthRequired(true); setMultiuser(true); await refreshMe(); location.hash = "#dashboard"; setGate("app"); }} />`;
   if (gate === "login") return html`<${LoginScreen} multiuser=${multiuser}
     onAuthed=${async () => { setAuthRequired(true); await refreshMe(); setMultiuser(true); setGate("app"); }} />`;
   return html`<${App} onLogout=${() => setGate("login")} showLogout=${authRequired} />`;

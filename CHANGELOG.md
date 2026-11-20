@@ -4,6 +4,25 @@
 
 ### Novidades
 
+- **Instalação sem perguntas + primeiro acesso no navegador.** O `install.sh` não pede mais senha: no fim mostra o link
+  `http://IP:porta/#setup?token=...` (uso único, 24 h). No primeiro acesso você escolhe o idioma (English/Português,
+  gravado em `instance.language`) e cria o admin (nome, e-mail, senha e confirmação; a senha também é a senha-mestra do
+  cofre). Uma etapa de root de uso único (`/usr/local/sbin/netops-setup-finish`, disparada por
+  `netops-setup-finish-<slug>.path`) libera o `sudo` pelo cofre e gera a senha do host Local. Até concluir, o console
+  só responde ao assistente (`setup_required`). Link perdido: `users/cli.py setup-link`. Automatizado:
+  `NETOPS_MASTER_PASSWORD` + `NETOPS_LANG`.
+- **Console em todos os IPs da máquina.** O instalador e o `start.sh` usam `0.0.0.0` (IPv4) + `::` (IPv6, `V6ONLY`); a
+  configuração guarda só o curinga. IP novo na máquina responde sem reconfigurar. Supervisor, `start.sh` e instalador
+  conferem pelo loopback; o certificado HTTPS cobre todos os IPs. Instalação existente: rode o instalador de novo
+  (grava `0.0.0.0`) e reinicie o console (`start.sh --yes`). Servidor com IP público: o resumo avisa para ligar o
+  **Acesso web**.
+
+### Correções
+
+- Instalador: o teste "netops tem sudo" reprovava sempre desde o sudo pelo cofre (agora só reprova grupo
+  administrativo, `NOPASSWD` ou regra fora do `netops-cofre`).
+- Permissões (`privileges/provision.py`): não quebra mais quando ainda não existe `credentials.yaml`.
+
 - **Cofre de senhas (Inventário → Cofre de senhas, `#vault`).** Guarda segredos que **não são de host**, como login de portal, URL com chave de API ou token, para as pessoas consultarem pelo console. O menu antigo vira **Credenciais de hosts** e continua sendo o acesso dos scripts aos equipamentos.
   - **Campos reutilizáveis:** cada campo tem nome e tipo, segredo ou texto puro. Um campo digitado num template vai para o catálogo e fica disponível para escolher nos outros.
   - **Templates:** definem os campos de um item e, em cada um, se é obrigatório (conferido no servidor) e se aparece na lista. Vêm dois prontos, Login e API.

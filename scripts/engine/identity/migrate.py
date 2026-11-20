@@ -479,7 +479,10 @@ def start_console(root: Path, j: dict) -> None:
     r = sh(str(root / "scripts" / "engine" / "ui" / "start.sh"), "--yes", check=False)
     say("    " + (r.stdout.strip().splitlines() or [""])[-1])
     ident = rid.load(root)
-    host = ident["ui"].get("NETOPS_UI_HOST") or sh("hostname", "-I", check=False).stdout.split()[0]
+    host = ident["ui"].get("NETOPS_UI_HOST") or "0.0.0.0"
+    shown = host
+    if host in ("0.0.0.0", "::", "*"):      # escuta em todos os IPs: confere pelo loopback
+        host, shown = "127.0.0.1", "todos os IPs (0.0.0.0)"
     port = ident["ui"].get("NETOPS_UI_PORT", "8765")
     ok = False
     for _ in range(90):
@@ -492,7 +495,7 @@ def start_console(root: Path, j: dict) -> None:
     owner_ok = bool(sups) and all(s["uid"] == pwd.getpwnam(OP_USER).pw_uid for s in sups)
     if not (ok and owner_ok):
         raise SystemExit(f"ERRO: console não confirmou (HTTP={ok}, dono netops={owner_ok}). Rode `rollback`.")
-    step(j, f"console no ar como {OP_USER} em http://{host}:{port}/")
+    step(j, f"console no ar como {OP_USER} em {shown}, porta {port}")
 
 
 def scheduler_and_claude(root: Path, j: dict) -> None:

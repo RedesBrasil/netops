@@ -103,9 +103,11 @@ def auth_status(request: Request) -> dict:
     """Estado do gate de login — alcançável sem sessão (allow-list do middleware)."""
     return {
         "auth_required": deps.auth_required(),
-        "authenticated": deps.auth_session_valid(request.headers.get(SESSION_HEADER)) or not deps.auth_required(),
+        "authenticated": deps.auth_session_valid(request.headers.get(SESSION_HEADER)) or (
+            not deps.auth_required() and not deps.setup_mode()),
         "vault_initialized": deps.vault_initialized(),
         "multiuser": deps.has_users(),
+        "setup_required": deps.setup_mode(),
     }
 
 

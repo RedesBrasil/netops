@@ -27,10 +27,10 @@ quando o operador precisa e ser encerrada depois. O framework funciona 100% com 
 ## Como subir
 
 **SEMPRE** pelo script (nunca `python3 scripts/engine/ui/server.py` direto). Ele liga o terminal web
-e faz bind no IP da máquina, com instância única:
+e escuta em **todos os IPs da máquina** (`0.0.0.0` + `::` se houver IPv6), com instância única:
 
 ```bash
-scripts/engine/ui/start.sh                          # IP da máquina, porta 8765, terminal + Claude Code ON
+scripts/engine/ui/start.sh                          # todos os IPs (0.0.0.0), porta 8765, terminal + Claude Code ON
 NETOPS_UI_HOST=127.0.0.1 scripts/engine/ui/start.sh # força loopback (só local)
 NETOPS_UI_PORT=9000      scripts/engine/ui/start.sh # outra porta
 NETOPS_UI_TERMINAL=0     scripts/engine/ui/start.sh # sobe SEM o terminal web
@@ -135,8 +135,17 @@ bash scripts/engine/ui/vendor_deps.sh     # baixa preact/htm/marked/js-yaml/xter
 
 ## Segurança (resumo)
 
-- **Bind em loopback por padrão.** `--host <ip-privado>` expõe na rede e imprime um AVISO;
-  use só em rede confiável. `0.0.0.0` é recusado.
+- **Escuta:** o `server.py` direto faz bind em loopback; o `start.sh`/instalador usa **`0.0.0.0`** = todos os IPs
+  (um socket IPv4 + um IPv6 `::` com `IPV6_V6ONLY`, para o IP do cliente não virar `::ffff:x`). A configuração guarda só
+  o curinga. As conferências (supervisor, `start.sh`, instalador) conectam pelo `127.0.0.1`. Restringir a um IP:
+  `NETOPS_UI_HOST=<ip>` na identidade (`/etc/netops/instances/<slug>.env`) ou `NETOPS_HOST=<ip>` no instalador.
+- **Primeiro acesso (#setup):** fora do loopback, sem cofre e sem usuário (instalação nova), o console NÃO fica aberto:
+  toda a `/api` responde `setup_required`, exceto `/api/setup/status|complete`, `/api/auth/status` e `/api/config/meta`.
+  `POST /api/setup/complete` exige o token de uso único (`lib/setup_token.py`, `runs/setup/token.json` = só o hash,
+  24 h; gerar de novo: `users/cli.py setup-link`) e cria cofre + admin + `instance.language` (`project-config.yaml`), faz
+  o login e escreve `runs/setup/finish-request`. A unidade root `netops-setup-finish-<slug>.path` roda então
+  `/usr/local/sbin/netops-setup-finish <slug>` UMA vez: fixa o verificador do cofre no sudo e gera a senha do host Local.
+  Estado em `GET /api/setup/finish` (`services/setup_svc.py`). Loopback sem token (dev/testes) segue aberto como antes.
 - **Host/Origin checados** em toda a `/api` e nos WebSockets (anti DNS-rebinding e anti CSRF/CSWSH) — política única em
   `deps.host_origin_allowed`. **Proxy reverso / qualquer domínio:** com login ativo (cofre inicializado) aceita qualquer
   Host/Origin, pois o gate é a sessão (token em header/query, nunca cookie). Sem login o console está aberto e Host/Origin

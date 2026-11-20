@@ -167,7 +167,8 @@ def cmd_install(root: Path, a) -> int:
     write_policy(root, host_id, enabled=True)
     pol = common.load_policy(root)
     if a.no_credential:
-        print("  ! credencial não gravada (--no-credential): rode `provision.py rotate` com o cofre destrancado")
+        print("  ! senha do host Local fica para o primeiro acesso no console (sem cofre ainda; "
+              "ou depois: `provision.py rotate` com o cofre destrancado)")
     else:
         status = sh("passwd", "-S", ADMIN_USER, check=False).stdout.split()
         need = created or len(status) < 2 or status[1] in ("L", "NP") or a.force_rotate

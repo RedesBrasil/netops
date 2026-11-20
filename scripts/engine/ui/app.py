@@ -71,6 +71,7 @@ class _NoCacheStatic(StaticFiles):
 
 import deps
 from routers import (
+    setup,
     audio,
     auth,
     backups,
@@ -105,7 +106,10 @@ from routers import (
 
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 # Endpoints de bootstrap do login — alcançáveis sem sessão (a própria tela de login os chama).
-AUTH_OPEN_PATHS = {"/api/auth/login", "/api/auth/status", "/api/auth/logout", "/api/config/meta"}
+AUTH_OPEN_PATHS = {"/api/auth/login", "/api/auth/status", "/api/auth/logout", "/api/config/meta",
+                   "/api/setup/status", "/api/setup/complete"}
+# Primeiro acesso pendente (deps.setup_mode): só isto responde; o resto devolve setup_required.
+SETUP_OPEN_PATHS = {"/api/auth/status", "/api/config/meta", "/api/setup/status", "/api/setup/complete"}
 # Download por link de uso único (routers/files.py): o ticket, emitido só p/ quem está logado, é a autorização.
 AUTH_TICKET_PREFIX = "/api/files/dl/"
 # Com senha provisória (must_change_password) a tela ainda precisa disto p/ abrir.
@@ -163,6 +167,12 @@ def create_app() -> FastAPI:
                 migration = host_migration_svc.status()
                 return JSONResponse({"error": "host_migration", "detail": migration["detail"],
                                      "migration": migration}, status_code=503)
+            # Primeiro acesso pendente: o console escuta na rede sem cofre nem usuário. Nada abre além do
+            # assistente (/api/setup/complete exige o token de uso único gerado pelo instalador).
+            if deps.setup_mode() and path not in SETUP_OPEN_PATHS:
+                return JSONResponse({"error": "setup_required", "detail":
+                    "Primeiro acesso pendente: conclua a configuração inicial pelo link que o instalador mostrou "
+                    "(ou gere outro: python3 scripts/engine/users/cli.py setup-link)."}, status_code=403)
             # Gate de login: com cofre inicializado ou usuários cadastrados, todo /api exige sessão,
             # exceto a allow-list de bootstrap (login/status/logout/meta) e o download por ticket.
             from services import authz  # noqa: PLC0415
@@ -218,7 +228,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (audio, auth, meta, dashboard, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, inbox, terminal, host_term, files, web_launch, claude, projects, updates, web_access, users, github, audit, vault_items):
+    for mod in (setup, audio, auth, meta, dashboard, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, inbox, terminal, host_term, files, web_launch, claude, projects, updates, web_access, users, github, audit, vault_items):
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("startup")

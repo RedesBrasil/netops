@@ -93,6 +93,11 @@ class ServerState:
     claude_detach_grace: int = 300    # seg que uma sessão desanexada e OCIOSA sobrevive
     claude_ask_timeout: int = 180     # seg que uma pergunta sem resposta espera (desanexado) -> nega
     allowed_hosts: tuple[str, ...] = field(default_factory=lambda: ("127.0.0.1", "localhost"))
+    # Endereço de escuta (server.py). Curinga (0.0.0.0/::) = todos os IPs da máquina: o Host aceito
+    # sem login passa a ser qualquer IP local. Fora do loopback, sem cofre e sem usuário, o console
+    # entra no modo de PRIMEIRO ACESSO (só o assistente #setup, com token) em vez de ficar aberto.
+    bind_loopback: bool = True
+    bind_wildcard: bool = False
     # LEGADO: as sessões de login agora vivem no SQLite (lib/accessdb.py); campo mantido p/ compat.
     auth_sessions: dict = field(default_factory=dict)
 
@@ -232,6 +237,39 @@ def auth_required() -> bool:
     return vault_initialized() or has_users()
 
 
+def setup_mode() -> bool:
+    """Primeiro acesso pendente: sem cofre e sem usuário, escutando na rede (ou com token gerado).
+
+    Nesse modo NADA abre sem login: só o assistente (/api/setup/*, que exige o token de uso único),
+    o status e a meta. Loopback sem token (dev/testes) mantém o comportamento antigo (aberto).
+    """
+    if auth_required():
+        return False
+    from lib import setup_token  # noqa: PLC0415
+    return (not STATE.bind_loopback) or setup_token.exists(DATA_ROOT)
+
+
+_local_ips_cache: dict = {}
+
+
+def local_ips() -> frozenset[str]:
+    """IPs desta máquina (todas as interfaces), cacheado por 30 s. Usado com bind curinga."""
+    now = time.monotonic()
+    hit = _local_ips_cache.get("v")
+    if hit and now - hit[0] < 30:
+        return hit[1]
+    ips = {"127.0.0.1", "::1"}
+    try:
+        import subprocess  # noqa: PLC0415
+        out = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=3).stdout
+        ips.update(x.strip().lower() for x in out.split() if x.strip())
+    except Exception:  # noqa: BLE001
+        pass
+    val = frozenset(ips)
+    _local_ips_cache["v"] = (now, val)
+    return val
+
+
 # --------------------------------------------------------------------------- #
 # Política de Host/Origin (anti DNS-rebinding / CSRF) — compatível com proxy reverso
 # --------------------------------------------------------------------------- #
@@ -253,6 +291,8 @@ def _hostname_allowed(hostname: str) -> bool:
     if not hostname:
         return False
     if hostname in STATE.allowed_hosts:
+        return True
+    if STATE.bind_wildcard and hostname in local_ips():
         return True
     for pat in _extra_allowed_hosts():
         if pat == "*" or hostname == pat or (pat.startswith(".") and hostname.endswith(pat)):

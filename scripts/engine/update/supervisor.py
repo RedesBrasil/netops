@@ -59,7 +59,9 @@ def wait_ready(root: Path, child, nonce: str, version: str, args: list[str], tim
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     bind, _ = parser.parse_known_args(args)
-    host = f"[{bind.host}]" if ":" in bind.host else bind.host
+    # bind curinga (0.0.0.0/::) escuta em todos os IPs: a conferência conecta pelo loopback
+    h = {"0.0.0.0": "127.0.0.1", "::": "::1", "*": "127.0.0.1", "": "127.0.0.1"}.get(bind.host, bind.host)
+    host = f"[{h}]" if ":" in h else h
     url = f"http://{host}:{bind.port}/api/config/meta"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     deadline = time.monotonic() + timeout

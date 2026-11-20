@@ -33,6 +33,10 @@ ALL = GET | WRITE
 RULES: list[tuple[frozenset, re.Pattern, str | None]] = [
     # sessão / identidade / bootstrap da UI
     (ALL, _R(r"^/auth/"), ANY),
+    # primeiro acesso: status e conclusão (exige o token de uso único); etapa root = só admin
+    (GET, _R(r"^/setup/status$"), ANY),
+    (WRITE, _R(r"^/setup/complete$"), ANY),
+    (ALL, _R(r"^/setup/finish$"), "server.admin"),
     (GET, _R(r"^/config/meta$"), ANY),
     (GET, _R(r"^/meta/(enums|icons)$"), ANY),
     (GET, _R(r"^/vault/status$"), ANY),
@@ -166,7 +170,8 @@ def principal_for_user(username: str | None) -> Principal | None:
 def principal_for_sid(sid: str | None) -> Principal | None:
     """Usuário do sid. Sem login exigido = administrador local (instalação sem cofre e sem usuários)."""
     if not deps.auth_required():
-        return _admin(LOCAL_ADMIN_NAME)
+        # Primeiro acesso pendente (na rede, sem cofre/usuário): ninguém vira admin sem o assistente.
+        return None if deps.setup_mode() else _admin(LOCAL_ADMIN_NAME)
     return principal_for_user(deps.auth_session_user(sid))
 
 
