@@ -27,6 +27,7 @@ if str(ENGINE) not in sys.path:
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 
+from lib import i18n  # noqa: E402
 from scheduler import runner, store  # noqa: E402
 
 
@@ -37,7 +38,7 @@ def _out(obj) -> None:
 def _schedule(a) -> dict | None:
     given = [x for x in (a.cron, a.every, a.at) if x not in (None, "")]
     if len(given) > 1:
-        raise store.TaskError([{"loc": "schedule", "msg": "use só um de --cron, --every, --at"}])
+        raise store.TaskError([{"loc": "schedule", "msg": i18n.t("cli_scheduler.one_schedule_only")}])
     if a.cron:
         return {"type": "cron", "expr": a.cron}
     if a.every:
@@ -72,24 +73,24 @@ def _fields(a, creating: bool) -> dict:
 def _add_fields(p) -> None:
     p.add_argument("--name")
     p.add_argument("--kind", choices=store.KINDS)
-    p.add_argument("--cron", help='expressão de 5 campos, ex.: "0 9 * * 1-5" (fuso da tarefa)')
-    p.add_argument("--every", type=int, help="a cada N minutos")
-    p.add_argument("--at", help="uma vez: AAAA-MM-DDTHH:MM (fuso da tarefa)")
-    p.add_argument("--script", help="comando/script (roda com bash, cwd = raiz do NetOps)")
-    p.add_argument("--prompt", help="o que o agente deve fazer")
+    p.add_argument("--cron", help=i18n.t("cli_scheduler.help_cron"))
+    p.add_argument("--every", type=int, help=i18n.t("cli_scheduler.help_every"))
+    p.add_argument("--at", help=i18n.t("cli_scheduler.help_at"))
+    p.add_argument("--script", help=i18n.t("cli_scheduler.help_script"))
+    p.add_argument("--prompt", help=i18n.t("cli_scheduler.help_prompt"))
     p.add_argument("--notify", choices=store.NOTIFY)
     p.add_argument("--permissions", choices=store.PERMISSIONS)
     p.add_argument("--model")
     p.add_argument("--github-as", dest="github_as",
-                   help="ID do usuário do console cuja conta do GitHub o agente usa (padrão: gh do servidor)")
-    p.add_argument("--timeout", type=int, help="minutos (padrão 15)")
+                   help=i18n.t("cli_scheduler.help_github_as"))
+    p.add_argument("--timeout", type=int, help=i18n.t("cli_scheduler.help_timeout"))
     p.add_argument("--description")
     p.add_argument("--disabled", action="store_true")
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Tarefas agendadas do NetOps")
-    ap.add_argument("--data-root", help="raiz de dados (padrão: a instalação)")
+    ap = argparse.ArgumentParser(description=i18n.t("cli_scheduler.description"))
+    ap.add_argument("--data-root", help=i18n.t("cli_scheduler.help_data_root"))
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
     p = sub.add_parser("show"); p.add_argument("ref")
@@ -115,8 +116,8 @@ def main(argv=None) -> int:
         if a.cmd == "tick":
             due = runner.tick(root)
             if due:
-                print(f"{runner._now(store.load(root)['config'].get('timezone')).isoformat(timespec='seconds')} "
-                      f"disparadas: {', '.join(due)}")
+                print(i18n.t("cli_scheduler.tick_fired", ts=runner._now(store.load(root)['config'].get('timezone')).isoformat(timespec='seconds'),
+                             ids=", ".join(due)))
             return 0
         if a.cmd == "list":
             ov = runner.overview(root)
@@ -138,7 +139,7 @@ def main(argv=None) -> int:
             if a.id:
                 f["id"] = a.id
             if "schedule" not in f:
-                raise store.TaskError([{"loc": "schedule", "msg": "informe --cron, --every ou --at"}])
+                raise store.TaskError([{"loc": "schedule", "msg": i18n.t("cli_scheduler.schedule_required")}])
             r = store.create_task(f, root=root, created_by=a.created_by)
             tz = store.load(root)["config"]["timezone"]
             _out({"ok": True, "task": r["task"], "next_runs": store.preview(r["task"], tz),
@@ -169,7 +170,7 @@ def main(argv=None) -> int:
                 print(f"[{rec['status']}] {rec.get('error') or ''}".strip())
                 return 0
             if os.environ.get("NETOPS_SCHEDULED_RUN") == "1":
-                raise store.TaskError([{"loc": "run", "msg": "uma tarefa agendada não dispara outra"}])
+                raise store.TaskError([{"loc": "run", "msg": i18n.t("cli_scheduler.no_nested_run")}])
             _out({"ok": True, "run_id": runner.run_now(t["id"], root)})
             return 0
         if a.cmd == "runs":

@@ -1,0 +1,10 @@
+{
+  "gh_failed": "Falha ao executar gh: {error}",
+  "gh_missing": "GitHub CLI (gh) não está instalado no servidor.",
+  "invalid_email": "Escolha um dos e-mails verificados da sua conta do GitHub.",
+  "invalid_token": "Token inválido.",
+  "invalid_username": "Usuário inválido: {username}",
+  "login_failed": "O GitHub recusou o token (confira validade e permissões).",
+  "not_connected": "Conecte o GitHub antes.",
+  "not_logged": "O GitHub não confirmou o login (token inválido ou sem acesso)."
+}

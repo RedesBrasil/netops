@@ -1,0 +1,18 @@
+{
+  "all_notes": "todas as notas",
+  "back": "Voltar à memória",
+  "col_note": "Nota",
+  "col_title": "Título",
+  "help_agents": "— instruções do projeto, a primeira coisa que toda IA (Claude Code, Codex, Cursor) lê. Regras aqui valem para todas as sessões.",
+  "help_memory": "— índice da memória: preferências, fatos da rede e lições aprendidas (uma linha por nota).",
+  "load_error": "Erro ao carregar '{name}': {message}",
+  "no_notes": "Nenhuma nota.",
+  "not_found": "'{name}' não encontrado.",
+  "note": "Nota",
+  "notes_help_1": "Notas detalhadas em",
+  "notes_help_2": "— o índice MEMORY.md aponta para elas.",
+  "saved": "Salvo",
+  "search_note": "Buscar nota",
+  "tab_notes": "Notas",
+  "title": "Memória"
+}

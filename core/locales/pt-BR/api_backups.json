@@ -1,0 +1,17 @@
+{
+  "binary_no_diff": "arquivo binario nao pode ser comparado",
+  "file_not_found": "arquivo nao encontrado",
+  "file_not_found_path": "arquivo nao encontrado: {path}",
+  "group_not_in_inventory": "grupo inexistente no inventário",
+  "host_id_int": "ID de host deve ser inteiro positivo",
+  "host_not_in_inventory": "host inexistente no inventário",
+  "invalid_path": "caminho invalido",
+  "invalid_run_id": "run_id invalido",
+  "legacy_immutable": "associações do histórico são internas e imutáveis",
+  "none_selected": "nenhum backup selecionado",
+  "outside_dir": "fora do diretorio de backups",
+  "pilot_note": "Piloto: coleta apenas MikroTik via SSH.",
+  "run_not_found": "run '{run_id}' não encontrado",
+  "service_not_exists": "serviço '{id}' não existe",
+  "services_missing": "lista de serviços ausente"
+}

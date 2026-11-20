@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
 
-from lib import taskkeys  # noqa: E402
+from lib import i18n, taskkeys  # noqa: E402
 import task_exec  # noqa: E402
 
 PY = sys.executable
@@ -46,7 +46,7 @@ def sess(host_id: int, cmd: str, timeout: int = 60) -> str:
                        capture_output=True, text=True, cwd=ROOT)
     out = p.stdout + p.stderr
     if "exit=0" not in out:
-        raise SystemExit(f"falha no host {host_id}: {out[-400:]}")
+        raise SystemExit(i18n.t("cli_access.task_key_host_failed", host_id=host_id, output=out[-400:]))
     return out
 
 
@@ -71,7 +71,7 @@ def install_wrapper(host_id: int) -> None:
 def with_backup(host_id: int, fn):
     b = subprocess.run(CHANGE + ["begin", "--host-id", str(host_id)], capture_output=True, text=True, cwd=ROOT)
     if b.returncode != 0:
-        raise SystemExit(f"backup pré falhou no host {host_id} — nada foi alterado:\n{(b.stdout + b.stderr)[-400:]}")
+        raise SystemExit(i18n.t("cli_access.task_key_backup_failed", host_id=host_id, output=(b.stdout + b.stderr)[-400:]))
     try:
         return fn()
     finally:
@@ -110,8 +110,10 @@ def cmd_test(a) -> int:
         c.close()
         good = c1 == 0 and (h["mode"] != "ro" or (c2 != 0 and c3 != 0))
         ok &= good
-        print(f"host {h['host_id']} [{h['mode']}] leitura={'OK' if c1 == 0 else 'FALHOU'} "
-              f"escrita={'NEGADA' if c2 != 0 else 'PERMITIDA'} -> {'OK' if good else 'PROBLEMA'}")
+        print(i18n.t("cli_access.task_key_test_line", host_id=h["host_id"], mode=h["mode"],
+                     read=i18n.t("cli_access.task_key_ok") if c1 == 0 else i18n.t("cli_access.task_key_failed"),
+                     write=i18n.t("cli_access.task_key_denied") if c2 != 0 else i18n.t("cli_access.task_key_allowed"),
+                     result=i18n.t("cli_access.task_key_ok") if good else i18n.t("cli_access.task_key_problem")))
     return 0 if ok else 1
 
 
@@ -121,7 +123,7 @@ def cmd_list(a) -> int:
         if d.is_dir():
             acc = taskkeys.load_access(ROOT, d.name)
             print(d.name, [(h["host_id"], h["mode"]) for h in acc.get("hosts", [])])
-    print("revogação pendente:", taskkeys.pending_revocations(ROOT) or "nenhuma")
+    print(i18n.t("cli_access.task_key_pending_revocations"), taskkeys.pending_revocations(ROOT) or i18n.t("cli_access.task_key_none"))
     return 0
 
 
@@ -133,7 +135,7 @@ def cmd_revoke(a) -> int:
             try:
                 with_backup(h, lambda: print(f"host {h}:", run_ak(h, taskkeys.MARK + item["task_id"]).splitlines()[0]))
             except SystemExit as e:
-                print(f"host {h}: pendente ({str(e)[:120]})"); rest.append(h)
+                print(i18n.t("cli_access.task_key_revoke_pending", host_id=h, error=str(e)[:120])); rest.append(h)
         if rest:
             left.append({"task_id": item["task_id"], "hosts": rest})
     taskkeys.save_revocations(ROOT, left)
@@ -141,7 +143,7 @@ def cmd_revoke(a) -> int:
 
 
 def cmd_delete(a) -> int:
-    print("apagada" if taskkeys.delete(ROOT, a.task) else "não existe")
+    print(i18n.t("cli_access.task_key_deleted") if taskkeys.delete(ROOT, a.task) else i18n.t("cli_access.task_key_not_found"))
     return 0
 
 

@@ -1,17 +1,17 @@
-# Modelo de pasta de exemplos de configuração
+# Configuration examples folder template
 
-Copie esta pasta para `config-examples/<vendor>/` ao adicionar um fabricante novo.
+Copy this folder to `config-examples/<vendor>/` when adding a new vendor.
 
-Cada exemplo é um arquivo na sintaxe nativa do fabricante, com cabeçalho comentado:
+Each example is a file in the vendor's native syntax, with a commented header:
 
 ```
 # ============================================================
-# Exemplo: <o que configura>
-# Testado em: <versão do SO/firmware>
-# Ajuste antes de aplicar: <interfaces, IPs, sub-redes>
-# Boa prática relacionada: best-practices/<vendor>/<guia>.md
+# Example: <what it configures>
+# Tested on: <OS/firmware version>
+# Adjust before applying: <interfaces, IPs, subnets>
+# Related best practice: best-practices/<vendor>/<guide>.md
 # ============================================================
 ```
 
-Depois de criar o exemplo, registre-o em `config-examples/_index.yaml`.
-Veja `config-examples/PADRAO.md` para o padrão completo.
+After creating the example, register it in `config-examples/_index.yaml`.
+See `config-examples/PADRAO.md` for the full standard.

@@ -1,10 +1,10 @@
-# Editor de mapas do console
+# Console map editor
 
-Editor React Flow integrado à SPA Preact do NetOps. Fontes em `maps/`, assets finais em
-`../static/vendor/map-editor.js` e `map-editor.css`. O operador não precisa de Node nem npm.
-O build serve apenas à manutenção do editor; não compila ou substitui o restante do console.
+React Flow editor integrated into the NetOps Preact SPA. Sources in `maps/`, final assets in
+`../static/vendor/map-editor.js` and `map-editor.css`. The operator needs neither Node nor npm.
+The build only serves editor maintenance; it does not compile or replace the rest of the console.
 
-## Manutenção
+## Maintenance
 
 ```bash
 npm --prefix scripts/engine/ui/maps ci --include=dev
@@ -12,59 +12,59 @@ npm --prefix scripts/engine/ui/maps run build
 npm --prefix scripts/engine/ui/maps test
 ```
 
-Dependências pinadas: React Flow `12.12.1`, Preact `10.27.2`, esbuild `0.28.2`.
-O build empacota React Flow e suas dependências, mas externaliza Preact e seus hooks.
-Um shim ESM adapta imports de React para o `preact/compat` local do console, sem runtime
-React e sem uma segunda cópia de Preact. `build.mjs` verifica isso pelo metafile.
+Pinned dependencies: React Flow `12.12.1`, Preact `10.27.2`, esbuild `0.28.2`.
+The build bundles React Flow and its dependencies, but externalizes Preact and its hooks.
+An ESM shim adapts React imports to the console's local `preact/compat`, with no React
+runtime and no second copy of Preact. `build.mjs` checks this through the metafile.
 
-Depois de reconstruir, atualizar `static/vendor/VERSIONS.txt` com os hashes dos assets.
-Licenças das dependências estão em `static/vendor/map-editor.LICENSE.txt`.
+After rebuilding, update `static/vendor/VERSIONS.txt` with the asset hashes.
+Dependency licenses are in `static/vendor/map-editor.LICENSE.txt`.
 
-## Estrutura e comportamento
+## Structure and behavior
 
-- `editor.jsx`: componente `MapEditor`, sem mount global e sem armazenamento próprio.
-- `node-state.js`: reconcilia nós preservando medidas e seleção do React Flow.
-- `parallel-edges.js`: faixas independentes e âncoras de linhas retas.
-- `orthogonal-route.js`: dobras unitárias e saída perpendicular nas bordas.
-- `straight-edges.jsx`: gestos com mouse/toque e controles de enlaces.
-- `editor.css`: estilos limitados a `.netops-maps`, com temas do console.
-- `test-geometry.mjs`: contagem de dobras, orientação e preservação das rotas.
-- `../static/js/pages/maps.js`: controlador de API, revisão, fila de salvamento e forms reais.
+- `editor.jsx`: `MapEditor` component, with no global mount and no storage of its own.
+- `node-state.js`: reconciles nodes while preserving React Flow measurements and selection.
+- `parallel-edges.js`: independent lanes and anchors for straight lines.
+- `orthogonal-route.js`: unit bends and perpendicular exit at the edges.
+- `straight-edges.jsx`: mouse/touch gestures and link controls.
+- `editor.css`: styles scoped to `.netops-maps`, with the console themes.
+- `test-geometry.mjs`: bend count, orientation and route preservation.
+- `../static/js/pages/maps.js`: API controller, revision, save queue and real forms.
 
-Os dados ficam em YAML no servidor, compartilhados entre navegadores. Host no mapa é
-referência ao inventário, nunca uma cópia do cadastro. As conexões entre hosts usam enlaces
-reais, com interfaces opcionais. Referências entre mapas são objetos visuais, não hosts fictícios.
+Data is stored as YAML on the server and shared across browsers. A host on the map is a
+reference to the inventory, never a copy of the record. Connections between hosts use real
+links, with optional interfaces. References between maps are visual objects, not fake hosts.
 
-### Identidade inteira e formato v2
+### Integer identity and v2 format
 
-Os IDs dos hosts são inteiros internos, automáticos e imutáveis. O cadastro pede somente o
-nome editável e os demais dados; seletores de host mostram nome/IP. As APIs usam inteiros
-em `members`, `host_ids` e `topology.links[].a.host`/`b.host`. O snapshot fornece `hosts` como
-lista de registros com `id`, e as posições são uma lista de `{host_id, x, y, z_index?}`.
-As pontas de `visual_links` usam `{kind: host, host_id: 42}` ou
-`{kind: object, object_id: forma}`. `maps.yaml` e `topology.yaml` usam `version: 2`.
+Host IDs are internal, automatic, immutable integers. The form asks only for the editable
+name and the other data; host selectors show name/IP. The APIs use integers in `members`,
+`host_ids` and `topology.links[].a.host`/`b.host`. The snapshot provides `hosts` as a list of
+records with `id`, and positions are a list of `{host_id, x, y, z_index?}`.
+The ends of `visual_links` use `{kind: host, host_id: 42}` or
+`{kind: object, object_id: forma}`. `maps.yaml` and `topology.yaml` use `version: 2`.
 
-`static/js/host-identity.js` adapta essa representação para o editor: índices de posição
-efêmeros e IDs de nós React Flow como `host:42` existem só na apresentação. Toda gravação
-e exportação v2 reconverte para listas e referências tipadas com IDs inteiros. O backend
-recusa identidade textual/booleana, posição de host duplicada e host fora do inventário.
-Inventário v1 continua visível em modo somente leitura, sem migração implícita por GET.
+`static/js/host-identity.js` adapts this representation for the editor: ephemeral position
+indexes and React Flow node IDs such as `host:42` exist only in the presentation. Every save
+and v2 export converts back to lists and typed references with integer IDs. The backend
+rejects textual/boolean identity, duplicate host positions and hosts outside the inventory.
+A v1 inventory stays visible in read-only mode, with no implicit migration on GET.
 
-`node --test scripts/engine/ui/tests/host-identity.test.mjs` verifica essa fronteira;
-`tests/test_maps_identity.py` cobre validação estrita e leitura legada sem escrita.
-`tests/integer-hosts.browser.mjs` valida desktop/toque: cadastro por Hosts/Mapas sem campo
-de ID, seletores nome/IP, enlace inteiro, ligação visual tipada e edição do nome preservando
-ID, ícone, posição e enlace. Usa as mesmas variáveis Playwright e a exigência de fixture
-isolada dos cenários abaixo. O cenário principal `tests/maps.browser.mjs` também usa o v2.
+`node --test scripts/engine/ui/tests/host-identity.test.mjs` checks this boundary;
+`tests/test_maps_identity.py` covers strict validation and legacy reading without writes.
+`tests/integer-hosts.browser.mjs` validates desktop/touch: creating hosts from Hosts/Maps with no
+ID field, name/IP selectors, integer link, typed visual connection and name editing that preserves
+ID, icon, position and link. It uses the same Playwright variables and the same isolated-fixture
+requirement as the scenarios below. The main scenario `tests/maps.browser.mjs` also uses v2.
 
-Não restaurar o afastamento automático ou outra alteração de movimento livre removida
-na avaliação da demo. Os quatro handles do React Flow existem internamente, mas são invisíveis.
+Do not restore the automatic spacing or any other free-movement change removed during the
+demo review. The four React Flow handles exist internally, but are invisible.
 
-## Teste no navegador
+## Browser test
 
-O teste integrado reside em `../tests/maps.browser.mjs`. Usa Playwright e Chromium já
-instalados pelo operador; não baixa ferramentas automaticamente. Apontar somente para um
-console com dados fictícios, iniciado pelo launcher com `NETOPS_UI_DATA_ROOT`.
+The integrated test lives in `../tests/maps.browser.mjs`. It uses Playwright and Chromium already
+installed by the operator; it does not download tools automatically. Point it only at a
+console with fake data, started by the launcher with `NETOPS_UI_DATA_ROOT`.
 
 ```bash
 NETOPS_E2E_URL=http://127.0.0.1:8771 \
@@ -73,140 +73,140 @@ CHROMIUM_EXECUTABLE=/caminho/chrome \
 node scripts/engine/ui/tests/maps.browser.mjs
 ```
 
-O teste exige um diretório de dados alternativo, comunicado nos metadados do console.
-Ele cria hosts e mapas de teste, portanto recusa uma instância de produção.
+The test requires an alternate data directory, reported in the console metadata.
+It creates test hosts and maps, so it refuses a production instance.
 
-Depois do cenário integrado de cadastro, `tests/maps-endpoints.browser.mjs` valida as duas
-pontas nos quatro lados, com as mesmas variáveis de ambiente. Ele usa apenas os hosts de
-teste criados pelo cenário anterior e também recusa uma instância com dados reais.
-
-
-## Visão principal sem duplicação
-
-Quando todos os hosts têm o mesmo Site, o seletor exibe somente **Rede geral** como mapa
-automático. Mapas adicionais continuam disponíveis. A leitura calcula a unificação sem
-escrever; a próxima gravação persiste o resultado com revisão e backup. Posições e trajetos
-do geral têm precedência, anotações e demais ajustes exclusivos do mapa de localidade são
-incorporados, e referências antigas passam a apontar para `all`.
-
-`tests/maps-single-site.browser.mjs` valida desktop e toque com um diretório de teste contendo
-os exemplos `hosts.example.yaml`/`topology.example.yaml` e uma fixture `maps.yaml`: geral com
-posições salvas, mapa de `matriz` com a nota “Anotação preservada da matriz” e um mapa adicional
-com referência à antiga matriz. Usar as mesmas variáveis Playwright dos testes anteriores.
+After the integrated host-creation scenario, `tests/maps-endpoints.browser.mjs` validates both
+ends on all four sides, with the same environment variables. It uses only the test hosts
+created by the previous scenario and also refuses an instance with real data.
 
 
-## Arraste estável
+## Main view without duplication
 
-A confirmação do autosave e o polling não recriam nós já medidos. `reconcileNodes` mantém
-`measured`, seleção e estado transitório, aplicando apenas as mudanças do layout/cadastro.
-Arraste e redimensionamento usam o estado atual por referência; o YAML só é salvo ao terminar
-o gesto. Respostas de leitura iniciadas antes de uma edição são descartadas, e uma confirmação
-de gravação anterior não muda a posição de um host ainda em movimento.
+When all hosts have the same Site, the selector shows only **Rede geral** (general network) as the
+automatic map. Additional maps remain available. Reading computes the merge without writing; the next
+save persists the result with revision and backup. Positions and paths of the general map take
+precedence, annotations and other adjustments exclusive to the site map are merged in, and old
+references start pointing to `all`.
 
-`tests/maps-drag.browser.mjs` simula GET/PUT atrasados, arrastes seguidos e atualização sem
-mudanças em desktop e toque, monitorando a visibilidade dos nós por MutationObserver e frame.
-Requer console isolado com os hosts dos exemplos e aceita as variáveis Playwright dos demais
-testes. `npm test` no editor também executa os testes de preservação de estado dos nós.
-
-
-## Ícones locais de hosts
-
-O editor renderiza o campo `icon` do host com miniaturas em `static/icons/network/thumbnails/`.
-O catálogo é embutido no build somente para resolver IDs locais permitidos; o cadastro fica
-no inventário, não no layout. Uma imagem inválida/indisponível retorna ao símbolo anterior,
-e seu tamanho reservado evita alterar a posição do host durante a carga.
-Ao atualizar a biblioteca, reconstruir o editor após `vendor_icons.py`.
+`tests/maps-single-site.browser.mjs` validates desktop and touch with a test directory containing
+the examples `hosts.example.yaml`/`topology.example.yaml` and a `maps.yaml` fixture: general map with
+saved positions, a `matriz` map with the note “Anotação preservada da matriz” and an additional map
+with a reference to the old `matriz`. Use the same Playwright variables as the previous tests.
 
 
-## Controles compactos e menus contextuais
+## Stable dragging
 
-O mapa ocupa toda a área disponível abaixo de uma única linha: mapa atual, **+** para novo
-mapa e exportação. As ações de edição foram movidas para o botão direito no fundo, nos nós,
-no traço/rótulo dos enlaces e nos cantos. A seleção normal mantém os controles de geometria
-A/B e cantos arrastáveis, sem abrir uma segunda barra de ações.
+The autosave confirmation and polling do not recreate nodes that are already measured. `reconcileNodes`
+keeps `measured`, selection and transient state, applying only the layout/inventory changes.
+Dragging and resizing use the current state by reference; the YAML is saved only when the gesture
+ends. Read responses started before an edit are discarded, and an earlier save confirmation does
+not change the position of a host that is still moving.
 
-No toque, **⋯** usa o item selecionado ou o fundo quando não há seleção. **Shift+F10** abre
-o menu do item focado/selecionado; setas navegam e Escape fecha. Menus são limitados ao
-viewport, com rolagem em paisagem. O menu não inclui velocidade, lista de hosts, exportação,
-legenda/ajuda ou novo mapa. Novo mapa e exportação ficam só no topo; velocidade permanece
-no formulário de enlace.
-
-`tests/maps-context.browser.mjs` cobre a remoção dos itens antigos, a linha única, criação e
-edição por menu, dobras, exportação, atalhos e recuperação de conflito em mouse e toque.
-`tests/maps-actions.mjs` é o helper de gestos dos cenários do navegador, não código da UI.
-Os arquivos de inventário/layout e o fluxo de autosave permanecem os mesmos.
+`tests/maps-drag.browser.mjs` simulates delayed GET/PUT, consecutive drags and refreshes with no
+changes on desktop and touch, monitoring node visibility through MutationObserver and per frame.
+It requires an isolated console with the example hosts and accepts the Playwright variables of the
+other tests. `npm test` in the editor also runs the node-state preservation tests.
 
 
-## Formas conectáveis e grupos
+## Local host icons
 
-`Shape` usa os mesmos `NodeHandles` invisíveis dos hosts. O fluxo único de conexão aceita
-formas como origem/destino e reutiliza `visual_links`; não cria hosts sem IP. O catálogo de
-ícones é validado em `MapObject`, enquanto o `IconPicker` compartilhado é recebido da SPA
-como prop, sem duplicar componentes/API/Preact no bundle.
+The editor renders the host's `icon` field with thumbnails from `static/icons/network/thumbnails/`.
+The catalog is embedded in the build only to resolve allowed local IDs; the setting lives in
+the inventory, not in the layout. An invalid/unavailable image falls back to the previous symbol,
+and its reserved size keeps the host from moving while it loads.
+When updating the library, rebuild the editor after `vendor_icons.py`.
 
-A seleção múltipla usa `node.selected` do React Flow, seus modificadores Ctrl/Meta e seleção
-por retângulo com botão esquerdo no fundo, sem modificadores (Shift também funciona).
-O retângulo seleciona itens inteiramente contidos; o botão central ou Espaço permitem mover
-o mapa, e o gesto de arraste com toque continua navegando. O menu de grupo e a alternativa por toque chamam `alignNodes` em
-`node-state.js`, função pura que retorna posições por ID, ordenadas no eixo e separadas por
-24 unidades entre bordas. O editor aplica posições de hosts e objetos numa única gravação.
-A reconciliação mantém medidas/seleção e nenhuma rota é reiniciada pelo alinhamento.
 
-`tests/shapes-align.browser.mjs` cobre conexões nos dois sentidos, ícones, persistência,
-seleção de quatro hosts, grupo misto, espaçamento igual e dispositivos não selecionados
-intactos. Executar em uma fixture isolada exclusiva, sem cenários concorrentes alterando
-o mesmo arquivo de mapas.
+## Compact controls and context menus
 
-## Texto opcional, cores e camadas
+The map fills all the available area below a single row: current map, **+** for a new
+map, and export. Editing actions moved to the right-click menu on the background, on nodes,
+on the line/label of links and on corners. Normal selection keeps the A/B geometry controls
+and draggable corners, without opening a second action bar.
 
-Enlaces reais exibem somente `desc`, editável no cadastro do enlace. Ligações visuais usam
-`label` e nascem com texto vazio; nem velocidade nem nomes genéricos geram rótulos. Formas
-também podem ter texto vazio. O traço continua selecionável para ajustar/editar a ligação.
+On touch, **⋯** uses the selected item, or the background when nothing is selected. **Shift+F10** opens
+the menu of the focused/selected item; arrows navigate and Escape closes. Menus are confined to the
+viewport, with scrolling in landscape. The menu does not include speed, host list, export,
+legend/help or new map. New map and export stay only at the top; speed remains
+in the link form.
 
-O formulário de forma oferece seletores nativos de preenchimento e contorno, campos HEX
-editáveis/copiáveis e prévia. `color` e `stroke` opcionais usam `#RRGGBB` em `maps.yaml`.
-O texto da forma e da prévia usa preto ou branco conforme a luminância do preenchimento,
-conservando contraste independentemente do tema do console.
-Objetos antigos sem esses campos conservam as cores do tema até serem editados.
+`tests/maps-context.browser.mjs` covers the removal of the old items, the single row, creation and
+editing through the menu, bends, export, shortcuts and conflict recovery with mouse and touch.
+`tests/maps-actions.mjs` is the gesture helper for the browser scenarios, not UI code.
+The inventory/layout files and the autosave flow remain the same.
 
-Hosts, objetos (formas, notas, referências) e links (enlaces físicos e ligações visuais)
-compartilham UMA pilha de camadas, salva em `positions[].z_index` (associada pelo inteiro
-`positions[].host_id`), `objects[].z_index`, `edges.<id>.z_index` e `visual_links[].z_index`.
-O React Flow roda com `zIndexMode="manual"` e sem elevar na seleção, então a camada exibida é
-exatamente a salva. Menu de nó e de link: Trazer para o topo / Enviar para frente / Enviar
-para trás / Enviar para o fundo. Frente/trás pulam até depois do próximo item que se
-**sobrepõe** geometricamente ao alvo (retângulo dos nós; segmento centro-a-centro dos links,
-ou caixa envolvente se houver dobras); sem sobreposição, anda uma camada. Sem `z_index`,
-formas ficam no fundo e links logo abaixo do dispositivo mais baixo. Rótulos de link ficam
-sempre por cima (camada própria do React Flow). A seleção não altera a camada.
-Mover/alinha um host preserva sua camada. Duplicar cria outra forma com ID próprio, mesmas
-cores/ícone/tamanho/texto, deslocada 32 unidades e uma camada acima da original.
 
-Ctrl+Z desfaz e Ctrl+Shift+Z / Ctrl+Y refazem (botões ↶ ↷ na barra) até 10 alterações de
-layout por mapa: mover/redimensionar (1 passo por gesto), camadas, criar/editar/duplicar/
-remover formas, notas e ligações visuais, remover host de mapa adicional, alinhar, renomear.
-O estado restaurado é reconciliado com o inventário/topologia atuais (`reconcileLayout`).
-Exclusões canônicas (host do inventário, enlace da topologia) NÃO entram no histórico.
-O histórico zera ao trocar de mapa e é ignorado em campos de texto e no terminal.
+## Connectable shapes and groups
 
-Delete remove objetos selecionados e suas ligações visuais. Em mapas adicionais, hosts
-selecionados são apenas removidos do mapa. Em mapas automáticos, a seleção com hosts abre
-confirmação explícita de exclusão do inventário e dos enlaces/referências em todos os mapas.
-A operação usa revisões por exclusão e interrompe na primeira falha, informando quantos
-hosts já foram removidos; não é uma transação única para todo o grupo. O mapa fica somente
-leitura durante a sequência. Delete em campos de texto mantém a edição normal.
+`Shape` uses the same invisible `NodeHandles` as hosts. The single connection flow accepts
+shapes as source/target and reuses `visual_links`; it does not create hosts without an IP. The icon
+catalog is validated in `MapObject`, while the shared `IconPicker` is received from the SPA
+as a prop, without duplicating components/API/Preact in the bundle.
 
-`node-state.test.mjs` cobre a pilha mista, limites, duplicação e limpeza de grupos sem mutar
-o snapshot anterior. `tests/maps-editing.browser.mjs` verifica os recursos no navegador
-com dados fictícios isolados.
+Multiple selection uses React Flow's `node.selected`, its Ctrl/Meta modifiers and rectangle
+selection with the left button on the background, without modifiers (Shift also works).
+The rectangle selects items that are fully contained; the middle button or Space pans
+the map, and the touch drag gesture keeps navigating. The group menu and the touch alternative call `alignNodes` in
+`node-state.js`, a pure function that returns positions by ID, sorted along the axis and separated by
+24 units between edges. The editor applies host and object positions in a single save.
+Reconciliation keeps measurements/selection and no route is reset by alignment.
 
-O React Flow omite `onPaneClick` no toque quando `selectionOnDrag` está ativo. O canvas
-reconhece um toque curto no fundo por `pointerId` e deslocamento máximo de 6px para limpar
-a seleção; arrastes continuam sendo pan e a seleção por mouse permanece disponível também
-em dispositivos híbridos. Seleção múltipla, conexão e duplicação devolvem o foco ao canvas,
-permitindo Escape/Delete imediatamente após fechar o menu.
+`tests/shapes-align.browser.mjs` covers connections in both directions, icons, persistence,
+selection of four hosts, mixed group, equal spacing and unselected devices left
+intact. Run it on an exclusive isolated fixture, with no concurrent scenarios changing
+the same maps file.
 
-Escolher uma ligação por clique, botão direito ou Shift+F10 limpa a seleção anterior de
-nós antes de disponibilizar Delete. Assim a exclusão atua somente na ligação escolhida
-(enlace físico com confirmação), preservando as formas/hosts anteriormente selecionados.
-O menu aberto num nó que integra uma seleção múltipla mantém o grupo selecionado.
+## Optional text, colors and layers
+
+Real links show only `desc`, editable in the link form. Visual connections use
+`label` and start with empty text; neither speed nor generic names generate labels. Shapes
+can also have empty text. The line remains selectable to adjust/edit the connection.
+
+The shape form offers native fill and outline pickers, editable/copyable HEX fields
+and a preview. Optional `color` and `stroke` use `#RRGGBB` in `maps.yaml`.
+The text of the shape and of the preview uses black or white according to the fill luminance,
+keeping contrast regardless of the console theme.
+Old objects without these fields keep the theme colors until they are edited.
+
+Hosts, objects (shapes, notes, references) and links (physical links and visual connections)
+share ONE layer stack, saved in `positions[].z_index` (matched by the integer
+`positions[].host_id`), `objects[].z_index`, `edges.<id>.z_index` and `visual_links[].z_index`.
+React Flow runs with `zIndexMode="manual"` and without raising on selection, so the displayed layer is
+exactly the saved one. Node and link menu: Bring to top / Bring forward / Send
+backward / Send to bottom. Forward/backward jump past the next item that geometrically
+**overlaps** the target (node rectangle; center-to-center segment for links,
+or bounding box if there are bends); with no overlap, it moves one layer. Without `z_index`,
+shapes sit at the bottom and links just below the lowest device. Link labels are
+always on top (React Flow's own layer). Selection does not change the layer.
+Moving/aligning a host preserves its layer. Duplicate creates another shape with its own ID, same
+colors/icon/size/text, offset by 32 units and one layer above the original.
+
+Ctrl+Z undoes and Ctrl+Shift+Z / Ctrl+Y redo (↶ ↷ buttons in the bar) up to 10 layout
+changes per map: move/resize (1 step per gesture), layers, create/edit/duplicate/
+remove shapes, notes and visual connections, remove a host from an additional map, align, rename.
+The restored state is reconciled with the current inventory/topology (`reconcileLayout`).
+Canonical deletions (inventory host, topology link) do NOT go into the history.
+The history resets when switching maps and is ignored in text fields and in the terminal.
+
+Delete removes the selected objects and their visual connections. In additional maps, selected
+hosts are only removed from the map. In automatic maps, a selection containing hosts opens an
+explicit confirmation to delete them from the inventory and their links/references in all maps.
+The operation uses one revision per deletion and stops at the first failure, reporting how many
+hosts were already removed; it is not a single transaction for the whole group. The map is read-only
+during the sequence. Delete inside text fields keeps normal editing.
+
+`node-state.test.mjs` covers the mixed stack, limits, duplication and group cleanup without mutating
+the previous snapshot. `tests/maps-editing.browser.mjs` checks these features in the browser
+with isolated fake data.
+
+React Flow omits `onPaneClick` on touch when `selectionOnDrag` is active. The canvas
+recognizes a short tap on the background by `pointerId` and a maximum movement of 6px to clear
+the selection; drags remain panning and mouse selection stays available on
+hybrid devices too. Multiple selection, connection and duplication return focus to the canvas,
+allowing Escape/Delete right after the menu closes.
+
+Choosing a connection by click, right-click or Shift+F10 clears the previous node selection
+before enabling Delete. This way the deletion acts only on the chosen connection
+(physical link with confirmation), preserving the previously selected shapes/hosts.
+A menu opened on a node that is part of a multiple selection keeps the group selected.

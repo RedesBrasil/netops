@@ -1,4 +1,5 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
+import { createContext } from 'preact';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useContext } from 'preact/hooks';
 import { ReactFlow, ReactFlowProvider, Handle, Position, ConnectionMode, Background, Controls, MiniMap, NodeResizer, applyNodeChanges, useReactFlow } from '@xyflow/react';
 import { createPortal } from 'react-dom';
 import '@xyflow/react/dist/style.css';
@@ -14,7 +15,14 @@ const iconFiles = new Map(iconCatalog.map(icon => [icon.id, '/icons/network/thum
 const uid = () => globalThis.crypto?.randomUUID?.() || `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const hostId = id => 'host:' + id;
 const objectId = id => 'object:' + id;
-const roleLabel = { core: 'Core', distribution: 'Distribuição', access: 'Acesso', firewall: 'Firewall', wireless: 'Wireless', server: 'Servidor', other: 'Dispositivo' };
+// Translation comes from the console (pages/maps.js passes t/fmtTime); the fallback keeps the editor usable on its own.
+const fallbackT = (key, vars) => (globalThis.netopsT ? globalThis.netopsT(key, vars) : key);
+const fallbackTime = (date, opts) => date.toLocaleTimeString(globalThis.netopsLang || undefined, opts);
+const I18n = createContext({ t: fallbackT, fmtTime: fallbackTime });
+const useT = () => useContext(I18n).t;
+// i18n keys, translated at render time
+const roleLabel = { core: 'map_editor.role_core', distribution: 'map_editor.role_distribution', access: 'map_editor.role_access', firewall: 'map_editor.role_firewall', wireless: 'map_editor.role_wireless', server: 'map_editor.role_server', other: 'map_editor.role_other' };
+const STATUS_LABEL = { saved: 'map_editor.status_saved', saving: 'map_editor.status_saving', conflict: 'map_editor.status_conflict', failed: 'map_editor.status_failed' };
 export const speeds = {
   '10M': { color: 'var(--map-10m)', dash: '3 3' },
   '100M': { color: 'var(--map-100m)', dash: '3 3' },
@@ -31,16 +39,17 @@ function NodeHandles() {
 }
 const connectable = node => !!(node?.data.hostId || node?.data.mapId || node?.type === 'shape');
 function Device({ data, selected }) {
+  const t = useT();
   const [imageFailed, setImageFailed] = useState(false);
   const image = !data.mapId && iconFiles.get(data.icon);
   useEffect(() => setImageFailed(false), [image]);
   const extras = data.extraIps || [];
-  const ipTitle = extras.length ? [`${data.ip} (gerência)`, ...extras.map(x => `${x.ip}${x.role ? ` (${x.role})` : ''}${x.description ? ` — ${x.description}` : ''}`)].join('\n') : undefined;
+  const ipTitle = extras.length ? [t('map_editor.ip_mgmt', { ip: data.ip }), ...extras.map(x => `${x.ip}${x.role ? ` (${x.role})` : ''}${x.description ? ` — ${x.description}` : ''}`)].join('\n') : undefined;
   return <div className={`device ${selected ? 'chosen' : ''} ${data.mapId ? 'map-ref' : ''}`} title={ipTitle}>
     {image && !imageFailed
       ? <img className="device-icon-image" src={image} alt="" width={44} height={44} draggable={false} decoding="async" onError={() => setImageFailed(true)} />
       : <span className="device-icon" aria-hidden="true">{data.mapId ? '▧' : data.role === 'server' ? '▥' : '▤'}</span>}
-    <div><strong>{data.label}</strong><small>{data.ip}{extras.length > 0 && <span className="ip-more"> +{extras.length}</span>}</small><span className="role">{data.mapId ? 'Outro mapa' : roleLabel[data.role] || data.role || 'Dispositivo'}</span></div>
+    <div><strong>{data.label}</strong><small>{data.type === 'reference' ? t('map_editor.tap_to_open') : data.ip}{extras.length > 0 && <span className="ip-more"> +{extras.length}</span>}</small><span className="role">{data.mapId ? t('map_editor.other_map') : roleLabel[data.role] ? t(roleLabel[data.role]) : data.role || t('map_editor.role_other')}</span></div>
     <NodeHandles />
   </div>;
 }
@@ -49,10 +58,10 @@ function Note({ data, selected }) {
   const box = useRef(null), text = useRef(null);
   useEffect(() => {
     const fit = () => {
-      const b = box.current, t = text.current; if (!b || !t) return;
+      const b = box.current, el = text.current; if (!b || !el) return;
       let lo = 4, hi = 600;
-      while (hi - lo > 0.5) { const mid = (lo + hi) / 2; t.style.fontSize = mid + 'px'; if (t.scrollHeight <= b.clientHeight && t.scrollWidth <= b.clientWidth) lo = mid; else hi = mid; }
-      t.style.fontSize = lo + 'px';
+      while (hi - lo > 0.5) { const mid = (lo + hi) / 2; el.style.fontSize = mid + 'px'; if (el.scrollHeight <= b.clientHeight && el.scrollWidth <= b.clientWidth) lo = mid; else hi = mid; }
+      el.style.fontSize = lo + 'px';
     };
     fit();
     const ro = new ResizeObserver(fit); ro.observe(box.current);
@@ -84,7 +93,7 @@ function makeNodes(map, hosts, readOnly, links) {
     data: { hostId: id, label: hosts[id]?.hostname || id, ip: hosts[id]?.mgmt_ip || '', role: hosts[id]?.role, icon: hosts[id]?.icon, extraIps: hosts[id]?.extra_ips || [] } }));
   for (const o of map.objects) nodes.push({ id: objectId(o.id), type: o.type === 'reference' ? 'device' : o.type,
     position: o.position, zIndex: layers.get(objectId(o.id)), ...(o.type === 'shape' || o.type === 'note' ? { style: { width: o.width, height: o.height } } : {}),
-    data: { ...o, mapId: o.map_id, ip: o.type === 'reference' ? 'Toque para abrir' : '', readOnly } });
+    data: { ...o, mapId: o.map_id, ip: '', readOnly } });
   return nodes;
 }
 function makeEdges(map, links) {
@@ -104,6 +113,7 @@ function makeEdges(map, links) {
   return separateEdges([...physical, ...visual]).map(e => ({ ...e, zIndex: layers.get(e.data.visual ? e.id : edgeLayerId(e.id)) }));
 }
 function ColorField({ name, label, value, onChange, onError }) {
+  const t = useT();
   const valid = /^#[0-9a-f]{6}$/i.test(value), input = useRef(null);
   const [copied, setCopied] = useState(false);
   useEffect(() => setCopied(false), [value]);
@@ -111,18 +121,19 @@ function ColorField({ name, label, value, onChange, onError }) {
     if (!valid) { input.current?.focus(); return; }
     try {
       if (navigator.clipboard?.writeText && globalThis.isSecureContext) await navigator.clipboard.writeText(value);
-      else { input.current.select(); if (!document.execCommand('copy')) throw new Error('Selecione o código HEX e use Ctrl+C para copiar.'); }
+      else { input.current.select(); if (!document.execCommand('copy')) throw new Error(t('map_editor.copy_hex_hint')); }
       setCopied(true);
-    } catch (error) { onError(error.message || 'Selecione o código HEX e use Ctrl+C para copiar.'); }
+    } catch (error) { onError(error.message || t('map_editor.copy_hex_hint')); }
   }
-  const description = { color: 'cor de preenchimento', stroke: 'cor do contorno', text_color: 'cor do texto' }[name];
+  const description = t({ color: 'map_editor.color_desc_fill', stroke: 'map_editor.color_desc_stroke', text_color: 'map_editor.color_desc_text' }[name]);
   return <div className="map-color-field"><label htmlFor={'shape-' + name}>{label} (HEX)</label><div className="map-color-controls">
-    <input type="color" aria-label={'Selecionar ' + description} value={valid ? value : '#000000'} onInput={e => onChange(e.currentTarget.value)} />
+    <input type="color" aria-label={t('map_editor.select_color', { what: description })} value={valid ? value : '#000000'} onInput={e => onChange(e.currentTarget.value)} />
     <input ref={input} id={'shape-' + name} name={name} value={value} onInput={e => onChange(e.currentTarget.value)} pattern="#[0-9a-fA-F]{6}" required maxLength={7} spellCheck={false} aria-label={label + ' (HEX)'} />
-    <button type="button" aria-label={'Copiar ' + description} onClick={copy}>{copied ? 'Copiado' : 'Copiar'}</button>
+    <button type="button" aria-label={t('map_editor.copy_color', { what: description })} onClick={copy}>{copied ? t('map_editor.copied') : t('common.copy')}</button>
   </div></div>;
 }
 function MapContextMenu({ menu, onClose, children }) {
+  const t = useT();
   const ref = useRef(null);
   const previousFocus = useRef(document.activeElement);
   useLayoutEffect(() => {
@@ -153,37 +164,43 @@ function MapContextMenu({ menu, onClose, children }) {
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length;
     items[next]?.focus();
   }
-  return <div ref={ref} className="map-context nodrag nopan" role="menu" aria-label={menu.kind === 'pane' ? 'Ações do mapa' : 'Ações do item'}
+  return <div ref={ref} className="map-context nodrag nopan" role="menu" aria-label={menu.kind === 'pane' ? t('map_editor.map_actions') : t('map_editor.item_actions')}
     style={{ left: menu.x, top: menu.y }} onKeyDown={keyboard} onContextMenu={event => event.preventDefault()}>{children}</div>;
 }
 // Indicador de salvamento visível no topo: salvando, salvo (com horário) ou erro.
 function SaveBadge({ readOnly, saving, status, saveError, onRetry, onReload }) {
+  const { t, fmtTime } = useContext(I18n);
   const [savedAt, setSavedAt] = useState(null), [flash, setFlash] = useState(false);
   const previous = useRef(status);
   useEffect(() => {
     const before = previous.current; previous.current = status;
-    if (status !== 'Salvo no servidor' || before === status) return;
+    if (status !== 'saved' || before === status) return;
     setSavedAt(new Date()); setFlash(true);
-    const t = setTimeout(() => setFlash(false), 3000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setFlash(false), 3000);
+    return () => clearTimeout(timer);
   }, [status]);
-  if (readOnly) return <span className="map-save-badge muted">Somente leitura</span>;
-  if (status === 'Falha ao salvar' || status === 'Conflito de versão') {
-    const conflict = status === 'Conflito de versão';
-    return <button type="button" className="map-save-badge error" title={saveError || (conflict ? 'O mapa mudou no servidor. Recarregue.' : 'Clique para tentar salvar de novo.')}
-      onClick={conflict ? onReload : onRetry}>⚠ {conflict ? 'Conflito — recarregar' : 'Erro ao salvar — tentar de novo'}</button>;
+  if (readOnly) return <span className="map-save-badge muted">{t('map_editor.read_only')}</span>;
+  if (status === 'failed' || status === 'conflict') {
+    const conflict = status === 'conflict';
+    return <button type="button" className="map-save-badge error" title={saveError || (conflict ? t('map_editor.conflict_title') : t('map_editor.retry_title'))}
+      onClick={conflict ? onReload : onRetry}>⚠ {conflict ? t('map_editor.conflict_reload') : t('map_editor.save_error_retry')}</button>;
   }
-  if (saving || status === 'Salvando…') return <span className="map-save-badge saving"><span className="map-save-spin" aria-hidden="true" />Salvando…</span>;
-  const time = savedAt && savedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  return <span className={'map-save-badge ' + (flash ? 'ok flash' : 'ok')} title={time ? `Último salvamento às ${time}` : 'Tudo salvo no servidor'}>
-    ✓ {time ? `Salvo às ${time}` : 'Salvo'}</span>;
+  if (saving || status === 'saving') return <span className="map-save-badge saving"><span className="map-save-spin" aria-hidden="true" />{t('map_editor.status_saving')}</span>;
+  const time = savedAt && fmtTime(savedAt, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return <span className={'map-save-badge ' + (flash ? 'ok flash' : 'ok')} title={time ? t('map_editor.last_saved_at', { time }) : t('map_editor.all_saved')}>
+    ✓ {time ? t('map_editor.saved_at', { time }) : t('map_editor.saved')}</span>;
 }
 const vpKey = id => 'netops_map_viewport_' + id;
 function savedViewport(id) {
   try { const v = JSON.parse(localStorage.getItem(vpKey(id)) || 'null'); return v && [v.x, v.y, v.zoom].every(Number.isFinite) ? v : null; } catch { return null; }
 }
-export function MapEditor(props) { return <ReactFlowProvider><Editor {...props} /></ReactFlowProvider>; }
+export function MapEditor(props) {
+  const i18n = useMemo(() => ({ t: props.t || fallbackT, fmtTime: props.fmtTime || fallbackTime }), [props.t, props.fmtTime]);
+  return <ReactFlowProvider><I18n.Provider value={i18n}><Editor {...props} /></I18n.Provider></ReactFlowProvider>;
+}
 function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, onSave, onHost, onLink, onSwitch, onAccess, onChat, onNewMap, onDeleteMap, onDeleteSelection, onError, onRetry, onReload, onBusy, IconPicker }) {
+  const t = useT();
+  const statusText = value => (STATUS_LABEL[value] ? t(STATUS_LABEL[value]) : value);
   const [layout, setLayout] = useState(map), [nodes, setNodes] = useState(() => makeNodes(map, hosts, readOnly, links));
   const layoutRef = useRef(map), nodesRef = useRef(nodes), gesture = useRef(false), ignoreDoubleClick = useRef(0);
   function visualNodes(value) { nodesRef.current = value; setNodes(value); }
@@ -211,7 +228,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     const desired = makeNodes(map, hosts, readOnly, links);
     visualNodes(changedMap ? desired : reconcileNodes(nodesRef.current, desired));
   }, [map, hosts, readOnly, links]);
-  useEffect(() => { undoStack.current = []; redoStack.current = []; syncHistory(); setSelected(null); setFocus(null); setMenu(null); setLinkMode(false); setMultiSelect(false); const t = setTimeout(() => { const v = savedViewport(map.id); if (v) flow.setViewport(v); else flow.fitView({ padding: .2, maxZoom: 1.05 }); }, 80); return () => clearTimeout(t); }, [map.id]);
+  useEffect(() => { undoStack.current = []; redoStack.current = []; syncHistory(); setSelected(null); setFocus(null); setMenu(null); setLinkMode(false); setMultiSelect(false); const timer = setTimeout(() => { const v = savedViewport(map.id); if (v) flow.setViewport(v); else flow.fitView({ padding: .2, maxZoom: 1.05 }); }, 80); return () => clearTimeout(timer); }, [map.id]);
   // Desfazer/refazer: até 10 estados de layout por mapa (posições, formas, notas, camadas,
   // ligações visuais, remoções do mapa). Cada arraste/redimensionamento conta como 1 passo.
   const undoStack = useRef([]), redoStack = useRef([]);
@@ -271,7 +288,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
     const route = edge.data.route ? orientRoute(base, edge.data.route) : null;
     const corner = focus?.id === id ? focus.corner : undefined;
     const patch = action === 'add' ? addBend(base, route, corner) : action === 'remove' ? removeBend(base, route, corner) : { anchors: base.anchors, route: null };
-    if (!patch) return onError('Para formar um L com uma dobra e saídas a 90°, desloque um dos hosts na horizontal e na vertical.');
+    if (!patch) return onError(t('map_editor.bend_impossible'));
     saveLine(id, patch); setFocus(null);
   }
   function resetLine(id = selected) {
@@ -425,39 +442,39 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       const node = flow.getInternalNode(layer); return node && { rect: nodeRect(node) };
     }
     const edge = edges.find(e => e.id === (layer.startsWith('edge:') ? layer.slice(5) : layer));
-    const s = edge && flow.getInternalNode(edge.source), t = edge && flow.getInternalNode(edge.target);
-    if (!s || !t) return null;
-    const a = nodeRect(s), b = nodeRect(t);
+    const s = edge && flow.getInternalNode(edge.source), tgt = edge && flow.getInternalNode(edge.target);
+    if (!s || !tgt) return null;
+    const a = nodeRect(s), b = nodeRect(tgt);
     if (!edge.data.route) return { segment: [{ x: a.cx, y: a.cy }, { x: b.cx, y: b.cy }] };
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
     return { rect: { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y } };
   }
   const overlaps = (a, b) => shapesOverlap(layerShape(a), layerShape(b));
   const layerActions = id => <>
-    {action('Trazer para o topo', () => update(m => moveLayer(m, id, 'front', mapLinkIds(m, links))))}
-    {action('Enviar para frente', () => update(m => moveLayer(m, id, 'forward', mapLinkIds(m, links), overlaps)))}
-    {action('Enviar para trás', () => update(m => moveLayer(m, id, 'backward', mapLinkIds(m, links), overlaps)))}
-    {action('Enviar para o fundo', () => update(m => moveLayer(m, id, 'back', mapLinkIds(m, links))))}
+    {action(t('map_editor.bring_to_front'), () => update(m => moveLayer(m, id, 'front', mapLinkIds(m, links))))}
+    {action(t('map_editor.bring_forward'), () => update(m => moveLayer(m, id, 'forward', mapLinkIds(m, links), overlaps)))}
+    {action(t('map_editor.send_backward'), () => update(m => moveLayer(m, id, 'backward', mapLinkIds(m, links), overlaps)))}
+    {action(t('map_editor.send_to_back'), () => update(m => moveLayer(m, id, 'back', mapLinkIds(m, links))))}
   </>;
   // A barra do mapa vai para a faixa superior do app (slot #topbar-slot), liberando altura
   // para o desenho. Sem o slot (embed isolado/testes), fica no topo do próprio editor.
   const [slot, setSlot] = useState(null);
   useLayoutEffect(() => { setSlot(document.getElementById('topbar-slot')); }, []);
   const toolbar = <>
-    <div className="map-toolbar"><div className="map-picker"><label htmlFor="map-select">Mapa</label><select id="map-select" value={layout.id} disabled={saving} onChange={e => onSwitch(e.currentTarget.value)}>{maps.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
-        {!readOnly && <button aria-label="Novo mapa" onClick={onNewMap}>+</button>}{!readOnly && layout.kind !== 'all' && <button aria-label="Excluir mapa" title="Excluir mapa" disabled={saving} onClick={onDeleteMap}>🗑</button>}</div>
+    <div className="map-toolbar"><div className="map-picker"><label htmlFor="map-select">{t('map_editor.map_label')}</label><select id="map-select" value={layout.id} disabled={saving} onChange={e => onSwitch(e.currentTarget.value)}>{maps.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+        {!readOnly && <button aria-label={t('map_editor.new_map')} onClick={onNewMap}>+</button>}{!readOnly && layout.kind !== 'all' && <button aria-label={t('map_editor.delete_map')} title={t('map_editor.delete_map')} disabled={saving} onClick={onDeleteMap}>🗑</button>}</div>
         <SaveBadge readOnly={readOnly} saving={saving} status={status} saveError={saveError} onRetry={onRetry} onReload={onReload} />
-        <span className="map-counts" title="Hosts e conexões deste mapa">{layout.host_ids.length} hosts / {edges.length} conexões</span>
-        <div className="map-tools">{!readOnly && <><button aria-label="Desfazer (Ctrl+Z)" title={`Desfazer (Ctrl+Z) — ${history.undo} de 10`} disabled={!history.undo} onClick={undo}>↶</button>
-          <button aria-label="Refazer (Ctrl+Shift+Z)" title="Refazer (Ctrl+Shift+Z ou Ctrl+Y)" disabled={!history.redo} onClick={redo}>↷</button></>}
-          {!readOnly && <button className={`map-lock ${locked ? 'locked' : ''}`} aria-pressed={locked} aria-label={locked ? 'Destravar edição do mapa' : 'Travar edição do mapa'} title={locked ? 'Mapa travado — clique para destravar' : 'Mapa destravado — clique para travar'} onClick={() => { setLocked(!locked); clearSelection(); }}>{locked ? '🔒' : '🔓'}</button>}
-          <button onClick={exportMap}>Exportar JSON</button>
-          <button className="map-touch-actions" aria-label="Ações do mapa" aria-haspopup="menu" aria-expanded={!!menu} onClick={menuFromButton}>⋯</button>
+        <span className="map-counts" title={t('map_editor.counts_title')}>{t('map_editor.counts', { hosts: layout.host_ids.length, links: edges.length })}</span>
+        <div className="map-tools">{!readOnly && <><button aria-label={t('map_editor.undo_aria')} title={t('map_editor.undo_title', { n: history.undo })} disabled={!history.undo} onClick={undo}>↶</button>
+          <button aria-label={t('map_editor.redo_aria')} title={t('map_editor.redo_title')} disabled={!history.redo} onClick={redo}>↷</button></>}
+          {!readOnly && <button className={`map-lock ${locked ? 'locked' : ''}`} aria-pressed={locked} aria-label={locked ? t('map_editor.unlock_aria') : t('map_editor.lock_aria')} title={locked ? t('map_editor.locked_title') : t('map_editor.unlocked_title')} onClick={() => { setLocked(!locked); clearSelection(); }}>{locked ? '🔒' : '🔓'}</button>}
+          <button onClick={exportMap}>{t('map_editor.export_json')}</button>
+          <button className="map-touch-actions" aria-label={t('map_editor.map_actions')} aria-haspopup="menu" aria-expanded={!!menu} onClick={menuFromButton}>⋯</button>
         </div>
-        <span className="map-sr-only" role="status" aria-live="polite">{readOnly ? 'Somente leitura' : status}</span>
+        <span className="map-sr-only" role="status" aria-live="polite">{readOnly ? t('map_editor.read_only') : statusText(status)}</span>
       </div>
   </>;
-  return <section className="netops-maps" aria-label="Mapa de rede" onKeyDown={event => {
+  return <section className="netops-maps" aria-label={t('map_editor.network_map')} onKeyDown={event => {
     if (event.key === 'Delete' && !dialog && !readOnly && !event.target.closest('input, textarea, select, [contenteditable="true"]')) {
       event.preventDefault(); event.stopPropagation(); removeSelection(); return;
     }
@@ -490,7 +507,7 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
       }} onPointerCancelCapture={() => { paneTouch.current = null; }} onPointerDown={event => {
       if (!event.target.closest('input, textarea, select, button, .react-flow__node')) event.currentTarget.focus({ preventScroll: true });
     }}>
-      <LineEditing.Provider value={{ selected, select: selectLine, save: saveLine, disabled: readOnly || linkMode || locked, busy: onBusy, contextMenu: (event, id, corner) => context(event, 'edge', id, corner), focus, focusCorner: (id, corner) => setFocus({ id, corner }) }}>
+      <LineEditing.Provider value={{ t, selected, select: selectLine, save: saveLine, disabled: readOnly || linkMode || locked, busy: onBusy, contextMenu: (event, id, corner) => context(event, 'edge', id, corner), focus, focusCorner: (id, corner) => setFocus({ id, corner }) }}>
         <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={changes} nodesDraggable={!readOnly && !locked && !multiSelect && !linkMode} selectNodesOnDrag={!multiSelect && !linkMode} elementsSelectable={!multiSelect && !linkMode} nodesConnectable={false} connectionMode={ConnectionMode.Loose}
           onNodeClick={nodeClick} onNodeDoubleClick={(e, n) => { if (!multiSelect && !linkMode && Date.now() > ignoreDoubleClick.current) { if (n.data.mapId) onSwitch(n.data.mapId); else if (!readOnly) edit(n); } }}
           onEdgeClick={(e, edge) => { setMenu(null); selectLine(edge.id); }} onEdgeContextMenu={(event, edge) => context(event, 'edge', edge.id)} onPaneClick={() => { clearSelection(); setMenu(null); setMultiSelect(false); }}
@@ -502,75 +519,75 @@ function Editor({ map, maps, hosts, links, readOnly, saving, status, saveError, 
           <Background gap={24} size={1} color="var(--border)" /><Controls showInteractive={false} /><MiniMap className="map-overview" pannable zoomable />
         </ReactFlow>
       </LineEditing.Provider>
-      {linkMode && <div className="connect-banner">{origin ? 'Toque no host ou forma de destino' : 'Toque no host ou forma de origem e depois no destino'}<button onClick={() => setLinkMode(false)}>Cancelar</button></div>}
-      {multiSelect && <div className="connect-banner">Toque nos dispositivos para selecionar ({selectedDevices().length}). Use ⋯ para alinhar.<button onClick={() => { setMultiSelect(false); clearSelection(); }}>Cancelar</button></div>}
-      {!nodes.length && <div className="map-empty">{layout.kind === 'custom' ? 'Adicione um host existente ou cadastre um novo dispositivo.' : 'Os dispositivos cadastrados em Hosts aparecem aqui automaticamente.'}</div>}
+      {linkMode && <div className="connect-banner">{origin ? t('map_editor.connect_target') : t('map_editor.connect_source')}<button onClick={() => setLinkMode(false)}>{t('common.cancel')}</button></div>}
+      {multiSelect && <div className="connect-banner">{t('map_editor.multi_select_hint', { n: selectedDevices().length })}<button onClick={() => { setMultiSelect(false); clearSelection(); }}>{t('common.cancel')}</button></div>}
+      {!nodes.length && <div className="map-empty">{layout.kind === 'custom' ? t('map_editor.empty_custom') : t('map_editor.empty_auto')}</div>}
     </div>
     </div>
-    {(status === 'Falha ao salvar' || status === 'Conflito de versão') && <div className="map-save-error" role="alert">
-      <span>{saveError || `${status}. Seus ajustes ainda não foram salvos.`}</span>
-      <button onClick={status === 'Conflito de versão' ? onReload : onRetry}>{status === 'Conflito de versão' ? 'Recarregar' : 'Tentar novamente'}</button>
+    {(status === 'failed' || status === 'conflict') && <div className="map-save-error" role="alert">
+      <span>{saveError || t('map_editor.unsaved_changes', { status: statusText(status) })}</span>
+      <button onClick={status === 'conflict' ? onReload : onRetry}>{status === 'conflict' ? t('common.reload') : t('map_editor.retry')}</button>
     </div>}
     {menu && <MapContextMenu menu={menu} onClose={() => setMenu(null)}>
       {menu.kind === 'selection' ? <>
-        {onChat && selectedDevices().some(n => n.data.hostId) && action(`Chat (${selectedDevices().filter(n => n.data.hostId).length} hosts)`, () => onChat(selectedDevices().filter(n => n.data.hostId).map(n => n.data.hostId)))}
-        {!readOnly && <>{action('Alinhar horizontalmente', () => align('horizontal'))}{action('Alinhar verticalmente', () => align('vertical'))}
-          {action('Remover seleção do mapa', removeSelection, true)}</>}
-        {action('Limpar seleção', () => { clearSelection(); setMultiSelect(false); })}
+        {onChat && selectedDevices().some(n => n.data.hostId) && action(t('map_editor.chat_hosts', { n: selectedDevices().filter(n => n.data.hostId).length }), () => onChat(selectedDevices().filter(n => n.data.hostId).map(n => n.data.hostId)))}
+        {!readOnly && <>{action(t('map_editor.align_horizontal'), () => align('horizontal'))}{action(t('map_editor.align_vertical'), () => align('vertical'))}
+          {action(t('map_editor.remove_selection'), removeSelection, true)}</>}
+        {action(t('map_editor.clear_selection'), () => { clearSelection(); setMultiSelect(false); })}
       </> : menu.kind === 'pane' ? <>
         {!readOnly && <>
-          {action('Adicionar host', () => onHost({ point: menu.point, site: layout.site || '' }))}
-          {action('Host existente', () => open('existing', null, menu.point))}
-          {action('Ligar hosts', () => startConnection())}
-          {action('Selecionar vários', startMultiSelection)}
-          {action('Adicionar texto', () => open('note', null, menu.point))}
-          {action('Adicionar forma', () => open('shape', null, menu.point))}
-          {action('Referenciar mapa', () => open('reference', null, menu.point))}
-          {layout.kind === 'custom' && <><div role="separator" />{action('Nome do mapa', () => open('rename'))}</>}{layout.kind !== 'all' && <><div role="separator" />{action('Excluir mapa', onDeleteMap, true)}</>}
+          {action(t('map_editor.add_host'), () => onHost({ point: menu.point, site: layout.site || '' }))}
+          {action(t('map_editor.existing_host'), () => open('existing', null, menu.point))}
+          {action(t('map_editor.connect_hosts'), () => startConnection())}
+          {action(t('map_editor.select_multiple'), startMultiSelection)}
+          {action(t('map_editor.add_text'), () => open('note', null, menu.point))}
+          {action(t('map_editor.add_shape'), () => open('shape', null, menu.point))}
+          {action(t('map_editor.reference_map'), () => open('reference', null, menu.point))}
+          {layout.kind === 'custom' && <><div role="separator" />{action(t('map_editor.map_name'), () => open('rename'))}</>}{layout.kind !== 'all' && <><div role="separator" />{action(t('map_editor.delete_map'), onDeleteMap, true)}</>}
         </>}
-        {action('Enquadrar mapa', () => flow.fitView({ padding: .2, maxZoom: 1.05 }))}
+        {action(t('map_editor.fit_map'), () => flow.fitView({ padding: .2, maxZoom: 1.05 }))}
       </> : menuNode ? <>
-        {menuNode.data.mapId && action('Abrir mapa', () => onSwitch(menuNode.data.mapId))}
-        {menuNode.data.hostId && onAccess && action('Acessar', () => onAccess(menuNode.data.hostId))}
-        {menuNode.data.hostId && onChat && action('Chat', () => onChat([menuNode.data.hostId]))}
+        {menuNode.data.mapId && action(t('map_editor.open_map'), () => onSwitch(menuNode.data.mapId))}
+        {menuNode.data.hostId && onAccess && action(t('map_editor.access'), () => onAccess(menuNode.data.hostId))}
+        {menuNode.data.hostId && onChat && action(t('map_editor.chat'), () => onChat([menuNode.data.hostId]))}
         {!readOnly && <>
-          {action('Editar', () => edit(menuNode))}
-          {connectable(menuNode) && action('Ligar a outro dispositivo', () => startConnection(menuNode.id))}
+          {action(t('common.edit'), () => edit(menuNode))}
+          {connectable(menuNode) && action(t('map_editor.connect_to_other'), () => startConnection(menuNode.id))}
           {layerActions(menuNode.id)}
-          {menuNode.type === 'shape' && action('Duplicar', () => duplicate(menuNode.id))}
-          {action('Remover do mapa', () => removeVisual(menuNode.id), true)}
+          {menuNode.type === 'shape' && action(t('map_editor.duplicate'), () => duplicate(menuNode.id))}
+          {action(t('map_editor.remove_from_map'), () => removeVisual(menuNode.id), true)}
         </>}
-        {menuNode.data.hostId && action('Abrir inventário de hosts', () => { location.hash = 'hosts'; })}
+        {menuNode.data.hostId && action(t('map_editor.open_hosts_inventory'), () => { location.hash = 'hosts'; })}
       </> : menuEdge ? <>
         {!readOnly && <>
-          {action('+ Dobra', () => bend('add', menuEdge.id))}
-          {menuEdge.data.route && <>{action('Remover dobra', () => bend('remove', menuEdge.id))}{action('Linha reta', () => bend('straight', menuEdge.id))}</>}
-          {action('Posição automática', () => resetLine(menuEdge.id))}
-          {menuEdge.data.label_offset && action('Centralizar descrição', () => saveLine(menuEdge.id, { label_offset: null }))}
+          {action(t('map_editor.add_bend'), () => bend('add', menuEdge.id))}
+          {menuEdge.data.route && <>{action(t('map_editor.remove_bend'), () => bend('remove', menuEdge.id))}{action(t('map_editor.straight_line'), () => bend('straight', menuEdge.id))}</>}
+          {action(t('map_editor.auto_position'), () => resetLine(menuEdge.id))}
+          {menuEdge.data.label_offset && action(t('map_editor.center_label'), () => saveLine(menuEdge.id, { label_offset: null }))}
           <div role="separator" />
-          {action('Editar', () => editEdge(menuEdge))}
+          {action(t('common.edit'), () => editEdge(menuEdge))}
           {layerActions(menuEdge.data.visual ? menuEdge.id : edgeLayerId(menuEdge.id))}
-          {action(menuEdge.data.visual ? 'Remover do mapa' : 'Excluir enlace', () => removeVisual(menuEdge.id), true)}
+          {action(menuEdge.data.visual ? t('map_editor.remove_from_map') : t('map_editor.delete_link'), () => removeVisual(menuEdge.id), true)}
         </>}
-        {readOnly && action('Enquadrar mapa', () => flow.fitView({ padding: .2, maxZoom: 1.05 }))}
-      </> : action('Enquadrar mapa', () => flow.fitView({ padding: .2, maxZoom: 1.05 }))}
+        {readOnly && action(t('map_editor.fit_map'), () => flow.fitView({ padding: .2, maxZoom: 1.05 }))}
+      </> : action(t('map_editor.fit_map'), () => flow.fitView({ padding: .2, maxZoom: 1.05 }))}
     </MapContextMenu>}
-    {dialog && <div className="map-modal-bg"><section className="map-modal" role="dialog" aria-label="Editar mapa">
-      <button className="map-close" aria-label="Fechar" onClick={() => setDialog(null)}>×</button>
-      {dialog.kind === 'rename' ? <form onSubmit={e => { e.preventDefault(); const name = new FormData(e.currentTarget).get('name'); update(m => ({ ...m, name })); setDialog(null); }}><label>Nome do mapa<input name="name" defaultValue={layout.name} required maxLength={100} /></label><button className="primary">Salvar</button></form> : dialog.kind === 'visual' ? <form onSubmit={e => { e.preventDefault(); const label = new FormData(e.currentTarget).get('label'); update(m => ({ ...m, visual_links: m.visual_links.map(v => 'visual:' + v.id === dialog.object.id ? { ...v, label } : v) })); setDialog(null); }}><label>Descrição da referência<input name="label" defaultValue={dialog.object.label} maxLength={200} /></label><button className="primary">Salvar</button></form> : <form onSubmit={saveObject}>
-        <h2>{{ note: 'Texto', shape: 'Forma', reference: 'Referência a mapa', existing: 'Adicionar host existente' }[dialog.kind]}</h2>
-        {dialog.kind === 'existing' ? (availableHosts.length ? <label>Host<select name="host" required><option value="">Selecione</option>{availableHosts.map(host => <option value={host.id}>{hostLabel(host)}</option>)}</select></label> : <p className="map-modal-hint">Todos os hosts já estão neste mapa. Use "Remover do mapa" num host para remover do mapa ou adicione um novo host.</p>) : <label>{dialog.kind === 'reference' ? 'Rótulo (opcional)' : dialog.kind === 'shape' ? 'Texto (opcional)' : 'Texto'}<textarea name="label" required={dialog.kind === 'note'} maxLength={4000} defaultValue={dialog.object?.data.label || ''} /></label>}
-        {dialog.kind === 'reference' && <label>Mapa de destino<select name="map_id" required defaultValue={dialog.object?.data.map_id || ''}><option value="">Selecione</option>{maps.filter(m => m.id !== layout.id).map(m => <option value={m.id}>{m.name}</option>)}</select></label>}
-        {dialog.kind === 'shape' && <><IconPicker title="Ícone da forma" defaultLabel="Sem ícone" defaultHint="Sem ícone: manter somente o formato e o texto." value={shapeIcon} onChange={setShapeIcon} /><label>Formato<select name="form" defaultValue={dialog.object?.data.form || 'rect'}><option value="rect">Retângulo</option><option value="ellipse">Elipse</option></select></label>
-          <ColorField name="color" label="Preenchimento" value={shapeColor} onChange={setShapeColor} onError={onError} />
-          <ColorField name="stroke" label="Contorno" value={shapeStroke} onChange={setShapeStroke} onError={onError} />
-          <div className="map-color-preview" aria-label="Prévia das cores" style={{ background: shapeColor, borderColor: shapeStroke, color: contrastingText(shapeColor) }}>Prévia</div></>}
+    {dialog && <div className="map-modal-bg"><section className="map-modal" role="dialog" aria-label={t('map_editor.edit_map')}>
+      <button className="map-close" aria-label={t('common.close')} onClick={() => setDialog(null)}>×</button>
+      {dialog.kind === 'rename' ? <form onSubmit={e => { e.preventDefault(); const name = new FormData(e.currentTarget).get('name'); update(m => ({ ...m, name })); setDialog(null); }}><label>{t('map_editor.map_name')}<input name="name" defaultValue={layout.name} required maxLength={100} /></label><button className="primary">{t('common.save')}</button></form> : dialog.kind === 'visual' ? <form onSubmit={e => { e.preventDefault(); const label = new FormData(e.currentTarget).get('label'); update(m => ({ ...m, visual_links: m.visual_links.map(v => 'visual:' + v.id === dialog.object.id ? { ...v, label } : v) })); setDialog(null); }}><label>{t('map_editor.reference_description')}<input name="label" defaultValue={dialog.object.label} maxLength={200} /></label><button className="primary">{t('common.save')}</button></form> : <form onSubmit={saveObject}>
+        <h2>{t({ note: 'map_editor.dialog_note', shape: 'map_editor.dialog_shape', reference: 'map_editor.dialog_reference', existing: 'map_editor.dialog_existing' }[dialog.kind])}</h2>
+        {dialog.kind === 'existing' ? (availableHosts.length ? <label>{t('map_editor.host')}<select name="host" required><option value="">{t('map_editor.select_placeholder')}</option>{availableHosts.map(host => <option value={host.id}>{hostLabel(host)}</option>)}</select></label> : <p className="map-modal-hint">{t('map_editor.all_hosts_present')}</p>) : <label>{dialog.kind === 'reference' ? t('map_editor.label_optional') : dialog.kind === 'shape' ? t('map_editor.text_optional') : t('map_editor.dialog_note')}<textarea name="label" required={dialog.kind === 'note'} maxLength={4000} defaultValue={dialog.object?.data.label || ''} /></label>}
+        {dialog.kind === 'reference' && <label>{t('map_editor.target_map')}<select name="map_id" required defaultValue={dialog.object?.data.map_id || ''}><option value="">{t('map_editor.select_placeholder')}</option>{maps.filter(m => m.id !== layout.id).map(m => <option value={m.id}>{m.name}</option>)}</select></label>}
+        {dialog.kind === 'shape' && <><IconPicker title={t('map_editor.shape_icon')} defaultLabel={t('map_editor.no_icon')} defaultHint={t('map_editor.no_icon_hint')} value={shapeIcon} onChange={setShapeIcon} /><label>{t('map_editor.form')}<select name="form" defaultValue={dialog.object?.data.form || 'rect'}><option value="rect">{t('map_editor.rectangle')}</option><option value="ellipse">{t('map_editor.ellipse')}</option></select></label>
+          <ColorField name="color" label={t('map_editor.fill')} value={shapeColor} onChange={setShapeColor} onError={onError} />
+          <ColorField name="stroke" label={t('map_editor.stroke')} value={shapeStroke} onChange={setShapeStroke} onError={onError} />
+          <div className="map-color-preview" aria-label={t('map_editor.color_preview_aria')} style={{ background: shapeColor, borderColor: shapeStroke, color: contrastingText(shapeColor) }}>{t('map_editor.preview')}</div></>}
         {dialog.kind === 'note' && <>
-          <ColorField name="text_color" label="Cor do texto" value={noteText} onChange={setNoteText} onError={onError} />
-          {[['color', 'Fundo', noteFill, setNoteFill, '#fef3c7'], ['stroke', 'Borda', noteStroke, setNoteStroke, '#2563eb']].map(([name, label, value, set, init]) => value
-            ? <div><ColorField name={name} label={label} value={value} onChange={set} onError={onError} /><button type="button" onClick={() => set('')}>Remover {label.toLowerCase()}</button></div>
-            : <div><button type="button" onClick={() => set(init)}>Adicionar {label.toLowerCase()}</button></div>)}</>}
-        <div className="modal-actions"><button type="button" onClick={() => setDialog(null)}>Cancelar</button>{!(dialog.kind === 'existing' && !availableHosts.length) && <button className="primary">Salvar</button>}</div>
+          <ColorField name="text_color" label={t('map_editor.text_color')} value={noteText} onChange={setNoteText} onError={onError} />
+          {[['color', t('map_editor.background'), noteFill, setNoteFill, '#fef3c7'], ['stroke', t('map_editor.border'), noteStroke, setNoteStroke, '#2563eb']].map(([name, label, value, set, init]) => value
+            ? <div><ColorField name={name} label={label} value={value} onChange={set} onError={onError} /><button type="button" onClick={() => set('')}>{t('map_editor.remove_x', { what: label.toLowerCase() })}</button></div>
+            : <div><button type="button" onClick={() => set(init)}>{t('map_editor.add_x', { what: label.toLowerCase() })}</button></div>)}</>}
+        <div className="modal-actions"><button type="button" onClick={() => setDialog(null)}>{t('common.cancel')}</button>{!(dialog.kind === 'existing' && !availableHosts.length) && <button className="primary">{t('common.save')}</button>}</div>
       </form>}
     </section></div>}
   </section>;

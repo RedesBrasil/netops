@@ -1,0 +1,5 @@
+{
+  "not_exists": "script '{path}' does not exist",
+  "only_py_sh": "only Python/Shell: {exts}",
+  "only_py_sh_or_skill": "only Python/Shell ({exts}) or <skill>/SKILL.md"
+}

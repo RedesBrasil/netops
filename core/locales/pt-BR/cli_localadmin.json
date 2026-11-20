@@ -1,0 +1,12 @@
+{
+  "credential_missing": "ERRO: credencial não encontrada após criar",
+  "credential_stored": "OK — {cred} gravada no cofre (valor não exibido).",
+  "description": "Administração Local do NetOps (conta operacional)",
+  "error": "ERRO: {error}",
+  "exec_usage": "ERRO: informe -- <comando> ou --script-file",
+  "legacy_layout": "ERRO: instalação legada (layout 1)",
+  "prompt_master": "Senha-mestra do cofre (para gravar a credencial do admin local): ",
+  "short_password": "ERRO: senha ausente/curta no stdin",
+  "use_stdin": "ERRO: use --stdin (a senha nunca vai em argumento)",
+  "vault_locked_no_tty": "cofre trancado e sem terminal para a senha-mestra"
+}

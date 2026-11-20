@@ -27,6 +27,7 @@ BACKUPS_RUNS = NETOPS_ROOT / "runs" / "backups"
 HOSTS_FILE = NETOPS_ROOT / "network" / "hosts.yaml"
 
 import yaml  # noqa: E402
+from lib import i18n  # noqa: E402
 from lib.inventory import resolve_host  # noqa: E402
 from lib.host_identity import require_host_id  # noqa: E402
 from lib.inventory_lock import ensure_migration_complete, inventory_lock  # noqa: E402
@@ -91,11 +92,11 @@ def _run(run_id: str) -> None:
             vendor = (host0.get("vendor") or "").lower()
             method = (host0.get("access") or {}).get("method", "ssh")
             if vendor != "mikrotik":
-                set_host(hid, state="skip", detail=f"piloto: só MikroTik (vendor={vendor or '?'})")
+                set_host(hid, state="skip", detail=i18n.t("api_backup_runner.only_mikrotik", vendor=vendor or "?"))
                 continue
             if method not in ("ssh", "telnet"):
                 set_host(hid, state="skip",
-                         detail=f"MikroTik via {method} não exporta config — cadastre acesso SSH")
+                         detail=i18n.t("api_backup_runner.method_no_export", method=method))
                 continue
 
             # 2) o script de acesso resolve a credencial apenas ao abrir a conexão.
@@ -119,7 +120,7 @@ def main() -> None:
     global HOSTS_FILE, BACKUPS_STORE, BACKUPS_RUNS
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-id", required=True)
-    ap.add_argument("--data-root", type=Path, help="Instalação que contém network/, backups/ e runs/")
+    ap.add_argument("--data-root", type=Path, help=i18n.t("api_backup_runner.help_data_root"))
     args = ap.parse_args()
     data_root = args.data_root or os.environ.get("NETOPS_UI_DATA_ROOT")
     if data_root:

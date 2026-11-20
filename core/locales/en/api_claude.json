@@ -1,0 +1,18 @@
+{
+  "auth_status_failed": "failed to run `claude auth status`",
+  "cancelled_by_user": "Response cancelled by the user.",
+  "cli_missing": "`claude` binary not found in PATH",
+  "cli_missing_server": "`claude` binary not found in the server PATH",
+  "compact_summary": "📋 Summary of the previous conversation (compacted)",
+  "login_timeout": "login timed out",
+  "model_default": "Claude Code default",
+  "no_output": "(no output)",
+  "other_users_session": "This conversation belongs to another user.",
+  "prompt_not_in_history": "prompt not found in the saved history",
+  "prompt_not_in_transcript": "prompt not found in the transcript",
+  "queue_full": "Queue full ({max} messages).",
+  "recent_stderr": "recent agent stderr",
+  "sdk_unavailable": "Claude SDK unavailable",
+  "unintelligible": "unintelligible answer",
+  "untitled": "(untitled)"
+}

@@ -1,0 +1,13 @@
+{
+  "all_map_id": "the overview map uses the ID all",
+  "all_map_kind": "the overview map cannot change type",
+  "duplicate_excluded": "duplicate excluded hosts",
+  "duplicate_ip": "IP {address} repeated (already the management IP or another additional IP)",
+  "duplicate_members": "duplicate host members",
+  "duplicate_positions": "duplicate host positions",
+  "invalid_history_dir": "invalid history directory",
+  "invalid_ip": "Invalid IP (use IPv4/IPv6, with optional mask: 200.1.2.3/29)",
+  "reference_needs_map": "a reference needs a target map",
+  "site_map_needs_site": "a site map needs a site",
+  "unknown_icon": "icon does not exist in the local library"
+}

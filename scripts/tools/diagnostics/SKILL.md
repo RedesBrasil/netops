@@ -1,30 +1,30 @@
 ---
 id: diagnostics
-name: Diagnóstico de Rede
+name: Network Diagnostics
 type: script
 runtime: python
-description: Testes de conectividade — scan de portas, ping avançado e traceroute.
+description: Connectivity tests — port scan, advanced ping and traceroute.
 env: []
 ---
 
-## O que faz
+## What it does
 
-Scripts de diagnóstico que o agente `tester` usa para validar conectividade e mapear
-exposição de serviços — sem precisar logar no equipamento.
+Diagnostic scripts the `tester` agent uses to validate connectivity and map
+service exposure — without having to log into the equipment.
 
-| Script | O que mede |
+| Script | What it measures |
 |--------|-----------|
-| `portscan.py` | Portas TCP abertas / serviços expostos (nmap, fallback socket) |
-| `ping_advanced.py` | Perda de pacotes e latência (RTT min/avg/max) |
-| `traceroute_advanced.py` | Caminho de rede salto a salto |
+| `portscan.py` | Open TCP ports / exposed services (nmap, socket fallback) |
+| `ping_advanced.py` | Packet loss and latency (RTT min/avg/max) |
+| `traceroute_advanced.py` | Network path hop by hop |
 
-## Quando usar
+## When to use
 
-- Auditoria de segurança: `portscan.py` revela Telnet/SNMP/HTTP expostos.
-- Troubleshooting: `ping_advanced.py` e `traceroute_advanced.py` localizam onde está a perda.
-- Verificação pós-mudança: confirmar que um serviço subiu/caiu como esperado.
+- Security audit: `portscan.py` reveals exposed Telnet/SNMP/HTTP.
+- Troubleshooting: `ping_advanced.py` and `traceroute_advanced.py` locate where the loss is.
+- Post-change verification: confirm that a service came up/went down as expected.
 
-## Como usar
+## How to use
 
 ```bash
 python3 scripts/tools/diagnostics/portscan.py --host-id 1
@@ -32,18 +32,18 @@ python3 scripts/tools/diagnostics/ping_advanced.py --target 8.8.8.8 --count 20
 python3 scripts/tools/diagnostics/traceroute_advanced.py --host-id 3
 ```
 
-Todos aceitam uma opção exclusiva: `--host-id` (ID inteiro), `--host` (nome único ou
-alias legado) ou `--target` (IP/nome direto). Resolver o cadastro para obter o IP não lê
-credenciais nem precisa destrancar o cofre.
+All accept one mutually exclusive option: `--host-id` (integer ID), `--host` (unique name or
+legacy alias) or `--target` (direct IP/name). Resolving the inventory entry to get the IP does not read
+credentials nor require unlocking the vault.
 
 ## Setup
 
-`ping` já vem no sistema. Para o melhor resultado instale:
+`ping` already comes with the system. For the best results install:
 `sudo apt install nmap traceroute`.
 
-## Exemplos
+## Examples
 
-Checar se um MikroTik tem Telnet (23) ou API sem TLS (8728) expostos:
+Check whether a MikroTik has Telnet (23) or API without TLS (8728) exposed:
 ```bash
 python3 scripts/tools/diagnostics/portscan.py --host rt-core-01 --ports 22,23,8728,8729
 ```

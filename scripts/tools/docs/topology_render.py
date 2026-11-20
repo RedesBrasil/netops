@@ -19,6 +19,7 @@ from html import escape
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
+from lib import i18n  # noqa: E402
 from lib.host_identity import host_index, resolve_reference  # noqa: E402
 from lib.inventory import resolve_host  # noqa: E402
 from lib.inventory_lock import ensure_migration_complete, inventory_lock  # noqa: E402
@@ -45,10 +46,11 @@ def render(hosts_data: dict, topo_data: dict) -> str:
     node_ids = {hid: f"host_{hid}" if isinstance(hid, int) else f"legacy_{str(hid).encode().hex()}"
                 for hid in hosts}
 
+    lang = i18n.default_lang()   # generated file: instance language, not the requester's
     lines = [
-        "# Topologia da Rede",
+        "# " + i18n.t("cli_docs.title", lang),
         "",
-        "> Arquivo **gerado** por `scripts/tools/docs/topology_render.py`. Não edite à mão.",
+        "> " + i18n.t("cli_docs.generated_notice", lang),
         "",
         "```mermaid",
         "graph TD",
@@ -72,7 +74,7 @@ def render(hosts_data: dict, topo_data: dict) -> str:
             node_id = "missing_" + f"{type(reference).__name__}:{reference}".encode().hex()
             if node_id not in missing:
                 label = escape(str(reference if reference is not None else "?"), quote=True)
-                lines.append(f'    {node_id}["{label}<br/>host ausente"]')
+                lines.append(f'    {node_id}["{label}<br/>{escape(i18n.t("cli_docs.missing_host", lang), quote=True)}"]')
                 missing.add(node_id)
             return node_id
 
@@ -89,29 +91,31 @@ def render(hosts_data: dict, topo_data: dict) -> str:
 
     # Segmentos lógicos
     if segments:
-        lines += ["## Segmentos lógicos", "", "| Segmento | VLAN | Sub-rede |", "|----------|------|----------|"]
+        lines += ["## " + i18n.t("cli_docs.segments", lang), "",
+                  f"| {i18n.t('cli_docs.col_segment', lang)} | VLAN | {i18n.t('cli_docs.col_subnet', lang)} |",
+                  "|----------|------|----------|"]
         for seg in segments:
             lines.append(f"| {seg.get('name','')} | {seg.get('vlan','')} | {seg.get('subnet','')} |")
         lines.append("")
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    lines.append(f"_Gerado em: {ts} — {len(hosts)} host(s), {len(links)} enlace(s)._")
+    lines.append("_" + i18n.t("cli_docs.generated_at", lang, ts=ts, hosts=len(hosts), links=len(links)) + "_")
     return "\n".join(lines) + "\n"
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Gera o diagrama de topologia em Mermaid.")
-    parser.add_argument("--stdout", action="store_true", help="Imprime no terminal, não grava o arquivo")
+    parser = argparse.ArgumentParser(description=i18n.t("cli_docs.description"))
+    parser.add_argument("--stdout", action="store_true", help=i18n.t("cli_docs.help_stdout"))
     args = parser.parse_args()
 
     try:
         import yaml
     except ImportError:
-        print("ERRO: PyYAML não instalado. Rode: pip install -r requirements.txt", file=sys.stderr)
+        print(i18n.t("cli_docs.no_pyyaml"), file=sys.stderr)
         return 1
 
     if not HOSTS_FILE.exists() or not TOPO_FILE.exists():
-        print("ERRO: network/hosts.yaml e/ou network/topology.yaml não encontrados.", file=sys.stderr)
+        print(i18n.t("cli_docs.files_missing"), file=sys.stderr)
         return 1
 
     with inventory_lock(HOSTS_FILE.parent):
@@ -124,7 +128,7 @@ def main() -> int:
         print(content)
     else:
         OUT_FILE.write_text(content, encoding="utf-8")
-        print(f"[gerado] {OUT_FILE}")
+        print(i18n.t("cli_docs.written", path=OUT_FILE))
     return 0
 
 

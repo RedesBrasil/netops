@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, Query, Request
 
 import deps
+from lib import i18n
 from scheduler import runner, store
 
 router = APIRouter(tags=["schedules"])
@@ -25,8 +26,7 @@ def _call(fn, *a, **kw):
     except store.TaskError as e:
         raise deps.ValidationFailed(e.errors)
     except store.RevConflict as e:
-        raise deps.ConflictError(e.current,
-                                 "o cadastro de tarefas mudou (outro operador ou o agente) — recarregue")
+        raise deps.ConflictError(e.current, i18n.t("api_schedules.conflict"))
 
 
 @router.get("/schedules")

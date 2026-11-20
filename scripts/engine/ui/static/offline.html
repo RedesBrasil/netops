@@ -19,11 +19,20 @@
 <body>
   <main>
     <img src="/icons/pwa/icon-192.png" alt="" />
-    <h1>Sem conexão com o NetOps</h1>
-    <p>O console não respondeu. Pode ser sua rede ou um reinício do servidor (leva ~15 s).</p>
-    <button onclick="location.reload()">Tentar de novo</button>
+    <h1 id="t">Sem conexão com o NetOps</h1>
+    <p id="d">O console não respondeu. Pode ser sua rede ou um reinício do servidor (leva ~15 s).</p>
+    <button id="b" onclick="location.reload()">Tentar de novo</button>
   </main>
   <script>
+    // Language: last choice in this browser (netops_lang, see js/i18n.js); Portuguese is the default.
+    try {
+      if (/^en/i.test(localStorage.getItem("netops_lang") || "")) {
+        document.documentElement.lang = "en"; document.title = "NetOps · offline";
+        document.getElementById("t").textContent = "No connection to NetOps";
+        document.getElementById("d").textContent = "The console did not respond. It may be your network or a server restart (takes ~15 s).";
+        document.getElementById("b").textContent = "Try again";
+      }
+    } catch (e) {}
     // Volta sozinho quando o servidor responder de novo.
     setInterval(() => { fetch("/", { cache: "no-store" }).then((r) => { if (r.ok) location.reload(); }).catch(() => {}); }, 5000);
   </script>

@@ -1,11 +1,17 @@
 // Terminal web (xterm.js) ligado a um PTY no backend via WebSocket (/api/term).
 // Quadros: teclas -> binário; saída do PTY -> binário; resize -> texto JSON {resize:[cols,rows]}.
-import { html, useRef, useEffect, useState } from "../ui.js";
+import { html, useRef, useEffect, useState, t } from "../ui.js";
 import { VaultBanner } from "../components.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { authToken } from "../api.js";
 import { registerTermLinks } from "../term-links.js";
+
+// Status values are internal (also compared below); only the label is translated.
+const STATUS_KEYS = {
+  conectado: "terminal.status_connected", conectando: "terminal.status_connecting",
+  desconectado: "terminal.status_disconnected", desabilitado: "terminal.status_disabled", erro: "terminal.status_error",
+};
 
 const THEME = {
   background: "#11161c", foreground: "#e6ebf1", cursor: "#4aa3e0",
@@ -43,8 +49,8 @@ export function TerminalPage() {
     ws.onclose = (e) => {
       setStatus(e.code === 4403 ? "desabilitado" : "desconectado");
       if (e.code === 4403)
-        term.write("\r\n\x1b[33mTerminal desabilitado no servidor. Suba com --enable-terminal (e sem --read-only).\x1b[0m\r\n");
-      else term.write("\r\n\x1b[31m— sessão encerrada —\x1b[0m\r\n");
+        term.write(`\r\n\x1b[33m${t("terminal.disabled_on_server")}\x1b[0m\r\n`);
+      else term.write(`\r\n\x1b[31m${t("terminal.session_ended")}\x1b[0m\r\n`);
     };
     ws.onerror = () => setStatus("erro");
 
@@ -64,14 +70,15 @@ export function TerminalPage() {
   }, [gen]);
 
   const badge = { conectado: "ok", conectando: "", desconectado: "warn", desabilitado: "danger", erro: "danger" }[status] || "";
+  const statusLabel = STATUS_KEYS[status] ? t(STATUS_KEYS[status]) : status;
   return html`<div class="term-page">
     <div class="page-title">
-      <h1>Terminal</h1>
-      <span class="badge ${badge}">${status}</span>
+      <h1>${t("terminal.title")}</h1>
+      <span class="badge ${badge}">${statusLabel}</span>
       <span class="spacer"></span>
-      <span class="help mono">shell real em /opt/netops · execução de comandos</span>
+      <span class="help mono">${t("terminal.help_shell")}</span>
       ${(status === "desconectado" || status === "erro") &&
-        html`<button class="sm" onClick=${() => setGen((g) => g + 1)}>Reconectar</button>`}
+        html`<button class="sm" onClick=${() => setGen((g) => g + 1)}>${t("terminal.reconnect")}</button>`}
     </div>
     <${VaultBanner} />
     <div class="term-host" ref=${hostRef}></div>

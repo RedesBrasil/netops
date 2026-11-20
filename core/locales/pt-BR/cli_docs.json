@@ -1,0 +1,14 @@
+{
+  "title": "Topologia da Rede",
+  "generated_notice": "Arquivo **gerado** por `scripts/tools/docs/topology_render.py`. Não edite à mão.",
+  "missing_host": "host ausente",
+  "segments": "Segmentos lógicos",
+  "col_segment": "Segmento",
+  "col_subnet": "Sub-rede",
+  "generated_at": "Gerado em: {ts} — {hosts} host(s), {links} enlace(s).",
+  "description": "Gera o diagrama de topologia em Mermaid.",
+  "help_stdout": "Imprime no terminal, não grava o arquivo",
+  "no_pyyaml": "ERRO: PyYAML não instalado. Rode: pip install -r requirements.txt",
+  "files_missing": "ERRO: network/hosts.yaml e/ou network/topology.yaml não encontrados.",
+  "written": "[gerado] {path}"
+}

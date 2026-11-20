@@ -32,12 +32,18 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
+from lib import i18n
 from scheduler.cronexpr import CronError, CronExpr
 
 NETOPS_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_TZ = "America/Sao_Paulo"
 KINDS = ("script", "agent", "hybrid")
-KIND_LABELS = {"script": "Determinística / script", "agent": "Agente de IA", "hybrid": "Script + agente"}
+KIND_LABELS = {"script": "lib_scheduler.kind_script", "agent": "lib_scheduler.kind_agent", "hybrid": "lib_scheduler.kind_hybrid"}   # catalog keys
+
+
+def kind_label(kind: str | None) -> str:
+    key = KIND_LABELS.get(kind or "")
+    return i18n.t(key) if key else str(kind)
 NOTIFY = ("auto", "always", "failure", "never")
 PERMISSIONS = ("restricted", "full")
 SCHEDULE_TYPES = ("cron", "interval", "once")
@@ -221,9 +227,9 @@ def describe_schedule(task: dict) -> str:
     t = sch.get("type", "cron")
     if t == "interval":
         m = int(sch.get("minutes") or 0)
-        return f"a cada {m // 60} h" if m % 60 == 0 and m >= 60 else f"a cada {m} min"
+        return i18n.t("lib_scheduler.every_hours", hours=m // 60) if m % 60 == 0 and m >= 60 else i18n.t("lib_scheduler.every_minutes", minutes=m)
     if t == "once":
-        return "uma vez em " + str(sch.get("at"))
+        return i18n.t("lib_scheduler.once_at", at=sch.get("at"))
     return "cron " + str(sch.get("expr"))
 
 
@@ -254,16 +260,16 @@ def _clean(task: dict, tz_name: str) -> dict:
     errs = []
     name = str(task.get("name") or "").strip()
     if not name:
-        errs.append({"loc": "name", "msg": "dê um nome à tarefa"})
+        errs.append({"loc": "name", "msg": i18n.t("lib_scheduler.name_required")})
     kind = task.get("kind")
     if kind not in KINDS:
-        errs.append({"loc": "kind", "msg": "tipo deve ser script, agent ou hybrid"})
+        errs.append({"loc": "kind", "msg": i18n.t("lib_scheduler.invalid_kind")})
     script = str(task.get("script") or "").strip()
     prompt = str(task.get("prompt") or "").strip()
     if kind in ("script", "hybrid") and not script:
-        errs.append({"loc": "script", "msg": "informe o comando/script a executar"})
+        errs.append({"loc": "script", "msg": i18n.t("lib_scheduler.script_required")})
     if kind in ("agent", "hybrid") and not prompt:
-        errs.append({"loc": "prompt", "msg": "descreva o que o agente deve fazer"})
+        errs.append({"loc": "prompt", "msg": i18n.t("lib_scheduler.prompt_required")})
     sch = dict(task.get("schedule") or {})
     st = sch.get("type", "cron")
     clean_sch: dict = {"type": st}
@@ -280,32 +286,32 @@ def _clean(task: dict, tz_name: str) -> dict:
                 raise ValueError
             clean_sch["minutes"] = m
         except (TypeError, ValueError):
-            errs.append({"loc": "schedule/minutes", "msg": "intervalo em minutos (1 a 44640)"})
+            errs.append({"loc": "schedule/minutes", "msg": i18n.t("lib_scheduler.invalid_interval")})
     elif st == "once":
         try:
             at = _parse_at(sch.get("at"), tzinfo(tz_name))
             clean_sch["at"] = at.astimezone(tzinfo(tz_name)).isoformat(timespec="minutes")
         except (TypeError, ValueError):
-            errs.append({"loc": "schedule/at", "msg": "data/hora inválida (use AAAA-MM-DDTHH:MM)"})
+            errs.append({"loc": "schedule/at", "msg": i18n.t("lib_scheduler.invalid_at")})
     else:
-        errs.append({"loc": "schedule/type", "msg": "tipo de agendamento deve ser cron, interval ou once"})
+        errs.append({"loc": "schedule/type", "msg": i18n.t("lib_scheduler.invalid_schedule_type")})
     notify = task.get("notify") or "auto"
     if notify not in NOTIFY:
-        errs.append({"loc": "notify", "msg": "notificação deve ser auto, always, failure ou never"})
+        errs.append({"loc": "notify", "msg": i18n.t("lib_scheduler.invalid_notify")})
     agent = dict(task.get("agent") or {})
     perm = agent.get("permissions") or "restricted"
     if perm not in PERMISSIONS:
-        errs.append({"loc": "agent/permissions", "msg": "permissões devem ser restricted ou full"})
+        errs.append({"loc": "agent/permissions", "msg": i18n.t("lib_scheduler.invalid_permissions")})
     # GitHub POR USUÁRIO: o agente da tarefa usa a conta conectada por esse usuário do console (vazio = gh do servidor).
     github_as = str(agent.get("github_as") or "").strip().lower()
     if github_as and not re.match(r"^[a-z0-9][a-z0-9._-]{1,31}$", github_as):
-        errs.append({"loc": "agent/github_as", "msg": "github_as deve ser o ID de um usuário do console"})
+        errs.append({"loc": "agent/github_as", "msg": i18n.t("lib_scheduler.invalid_github_as")})
     try:
         timeout = int(task.get("timeout_min") or 15)
         if not 1 <= timeout <= 24 * 60:
             raise ValueError
     except (TypeError, ValueError):
-        errs.append({"loc": "timeout_min", "msg": "tempo limite em minutos (1 a 1440)"})
+        errs.append({"loc": "timeout_min", "msg": i18n.t("lib_scheduler.invalid_timeout")})
         timeout = 15
     if errs:
         raise TaskError(errs)
@@ -340,7 +346,7 @@ def get_task(task_id: str, root=None) -> dict:
     for t in load(root)["config"]["tasks"]:
         if t.get("id") == task_id:
             return t
-    raise KeyError(f"tarefa '{task_id}' não existe")
+    raise KeyError(i18n.t("lib_scheduler.task_not_found", id=task_id))
 
 
 def resolve(ref: str, root=None) -> dict:
@@ -353,20 +359,20 @@ def resolve(ref: str, root=None) -> dict:
     if len(hits) == 1:
         return hits[0]
     if hits:
-        raise TaskError([{"loc": "id", "msg": f"nome '{ref}' é ambíguo — use o id"}])
-    raise KeyError(f"tarefa '{ref}' não existe")
+        raise TaskError([{"loc": "id", "msg": i18n.t("lib_scheduler.name_ambiguous", name=ref)}])
+    raise KeyError(i18n.t("lib_scheduler.task_not_found", id=ref))
 
 
 def create_task(task: dict, rev: str | None = None, root=None, created_by: str = "ui") -> dict:
     if os.environ.get("NETOPS_SCHEDULED_RUN") == "1":
-        raise TaskError([{"loc": "id", "msg": "uma tarefa agendada não pode criar outras tarefas"}])
+        raise TaskError([{"loc": "id", "msg": i18n.t("lib_scheduler.no_nested_tasks")}])
     with _lock(root):
         data = load(root)
         cfg = data["config"]
         ids = {t.get("id") for t in cfg["tasks"]}
         tid = str(task.get("id") or "").strip() or slugify(task.get("name", ""))
         if not ID_RE.match(tid):
-            raise TaskError([{"loc": "id", "msg": "id: minúsculas, números e hífen"}])
+            raise TaskError([{"loc": "id", "msg": i18n.t("lib_scheduler.invalid_id")}])
         base, i = tid, 2
         while tid in ids:
             tid, i = f"{base}-{i}", i + 1
@@ -393,7 +399,7 @@ def update_task(task_id: str, patch: dict, rev: str | None = None, root=None) ->
                 new_rev = _save(cfg, rev, root)
                 break
         else:
-            raise KeyError(f"tarefa '{task_id}' não existe")
+            raise KeyError(i18n.t("lib_scheduler.task_not_found", id=task_id))
     install_cron(root)
     return {"task": clean, "rev": new_rev}
 
@@ -404,7 +410,7 @@ def delete_task(task_id: str, rev: str | None = None, root=None) -> dict:
         n = len(cfg["tasks"])
         cfg["tasks"] = [t for t in cfg["tasks"] if t.get("id") != task_id]
         if len(cfg["tasks"]) == n:
-            raise KeyError(f"tarefa '{task_id}' não existe")
+            raise KeyError(i18n.t("lib_scheduler.task_not_found", id=task_id))
         new_rev = _save(cfg, rev, root)
     with edit_state(root) as st:
         st["tasks"].pop(task_id, None)
@@ -427,7 +433,7 @@ def set_timezone(name: str, rev: str | None = None, root=None) -> dict:
     try:
         ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError):
-        raise TaskError([{"loc": "timezone", "msg": f"fuso desconhecido: {name}"}])
+        raise TaskError([{"loc": "timezone", "msg": i18n.t("lib_scheduler.unknown_timezone", name=name)}])
     with _lock(root):
         cfg = load(root)["config"]
         cfg["timezone"] = name
@@ -517,25 +523,24 @@ def install_cron(root=None) -> dict:
                 # Outra instalação do NetOps nesta máquina (cópia de validação, /opt/NetOps-X) é dona do
                 # /etc/cron.d/netops-scheduler: NUNCA sobrescrever — desligaria o agendador dela.
                 return {"installed": False, "mode": "file", "file": str(p),
-                        "error": f"o cron do agendador pertence a outra instalação do NetOps ({owner}); "
-                                 "esta não o sobrescreve — as tarefas daqui não disparam sozinhas"}
+                        "error": i18n.t("lib_scheduler.cron_other_install", owner=owner)}
             if not p.exists() or p.read_text(encoding="utf-8") != want:
                 _atomic_write(p, want, 0o644)
             return {"installed": True, "mode": "file", "file": str(p)}
         import shutil  # noqa: PLC0415
         import subprocess  # noqa: PLC0415
         if not shutil.which("crontab"):
-            return {"installed": False, "mode": "user", "file": "crontab do usuário",
-                    "error": "cron não instalado nesta máquina (apt install cron)"}
+            return {"installed": False, "mode": "user", "file": i18n.t("lib_scheduler.user_crontab"),
+                    "error": i18n.t("lib_scheduler.cron_missing")}
         cur = _read_user_crontab()
         want = _strip_block(cur).rstrip("\n")
         want = (want + "\n" if want else "") + _user_block(root)
         if cur != want:
             r = subprocess.run(["crontab", "-"], input=want, capture_output=True, text=True, timeout=10)
             if r.returncode != 0:
-                return {"installed": False, "mode": "user", "file": "crontab do usuário",
-                        "error": (r.stderr or "crontab recusou").strip()}
-        return {"installed": True, "mode": "user", "file": "crontab do usuário"}
+                return {"installed": False, "mode": "user", "file": i18n.t("lib_scheduler.user_crontab"),
+                        "error": (r.stderr or i18n.t("lib_scheduler.crontab_refused")).strip()}
+        return {"installed": True, "mode": "user", "file": i18n.t("lib_scheduler.user_crontab")}
     except (OSError, ValueError) as e:
         return {"installed": False, "file": str(cron_file(root)), "error": str(e)}
 
@@ -580,7 +585,7 @@ def cron_status(root=None, check_daemon: bool = True) -> dict:
             installed = _user_block(root) in _read_user_crontab()
         except (OSError, ValueError):
             installed = False
-        where = "crontab do usuário"
+        where = i18n.t("lib_scheduler.user_crontab")
     daemon = _daemon_state() if check_daemon and cron_file(root).parent == Path("/etc/cron.d") else None
     last_tick = st.get("last_tick")
     return {

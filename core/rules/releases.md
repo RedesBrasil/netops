@@ -1,42 +1,42 @@
-# Regra permanente: releases do NetOps
+# Permanent rule: NetOps releases
 
-Todo agente deve ler esta regra antes de preparar ou publicar uma release.
+Every agent must read this rule before preparing or publishing a release.
 
-## Antes de escolher a versão
+## Before choosing the version
 
-1. Consulte o GitHub oficial: `gh release list --repo RedesBrasil/netops --limit 100` e, havendo releases, veja a última estável com `gh release view <tag> --repo RedesBrasil/netops`.
-2. Erro de autenticação, conexão ou permissão não significa ausência de releases. Resolva a consulta antes de continuar. O repositório pode ser privado.
-3. Compare a última estável com `metadata.version` em `core/config/core-config.yaml`. Essa é a única versão manual do produto. A versão da constituição é independente.
-4. Escolha SemVer `X.Y.Z` superior à última estável: PATCH para correções compatíveis, MINOR para recursos compatíveis, MAJOR para incompatibilidades. Nunca mova nem reutilize uma tag publicada.
+1. Check the official GitHub: `gh release list --repo RedesBrasil/netops --limit 100` and, if there are releases, look at the latest stable one with `gh release view <tag> --repo RedesBrasil/netops`.
+2. An authentication, connection or permission error does not mean there are no releases. Resolve the query before continuing. The repository may be private.
+3. Compare the latest stable release with `metadata.version` in `core/config/core-config.yaml`. This is the only manual version of the product. The constitution version is independent.
+4. Choose a SemVer `X.Y.Z` higher than the latest stable: PATCH for compatible fixes, MINOR for compatible features, MAJOR for incompatibilities. Never move or reuse a published tag.
 
-## Preparação
+## Preparation
 
-- Revise commits e mudanças desde a última tag publicada. Na primeira release, descreva o conjunto inicial honestamente.
-- Atualize a versão central e `CHANGELOG.md` com `## [X.Y.Z] - AAAA-MM-DD`, novidades, correções e notas de compatibilidade/preservação de dados. Não inclua dados de clientes, IPs privados, credenciais ou histórico pessoal.
-- Execute testes Python/JS e valide a extração do pacote em diretório temporário.
-- Verifique explicitamente o diff e a lista de arquivos distribuídos. O pacote inclui somente caminhos autorizados e objetos de `HEAD`; arquivos ignorados e conteúdo local não podem entrar por uma varredura indiscriminada do disco.
-- Assets do frontend devem estar prontos no repositório. O operador não precisa de npm para atualizar.
-- Não publique uma migração destrutiva de dados. Alterações de formato precisam de compatibilidade comprovada ou protocolo específico com backup e rollback antes de serem aceitas pelo atualizador.
+- Review the commits and changes since the last published tag. On the first release, describe the initial set honestly.
+- Update the central version and `CHANGELOG.md` with `## [X.Y.Z] - YYYY-MM-DD`, new features, fixes and compatibility/data-preservation notes. Do not include customer data, private IPs, credentials or personal history.
+- Run the Python/JS tests and validate the extraction of the package in a temporary directory.
+- Explicitly check the diff and the list of distributed files. The package includes only authorized paths and objects from `HEAD`; ignored files and local content must not get in through an indiscriminate disk scan.
+- Frontend assets must be ready in the repository. The operator does not need npm to update.
+- Do not publish a destructive data migration. Format changes need proven compatibility or a specific protocol with backup and rollback before they are accepted by the updater.
 
-## Publicação autorizada
+## Authorized publication
 
-Implementar código não autoriza automaticamente commit, push, criação de tag ou publicação externa. Confirme essa etapa quando ela não tiver sido explicitamente solicitada.
+Implementing code does not automatically authorize a commit, push, tag creation or external publication. Confirm this stage when it was not explicitly requested.
 
-Depois do código aprovado, commitado e integrado em `main`, execute manualmente o workflow **NetOps release** no GitHub Actions, informando `X.Y.Z`. O workflow:
+After the code is approved, committed and integrated into `main`, manually run the **NetOps release** workflow in GitHub Actions, passing `X.Y.Z`. The workflow:
 
-1. Confere branch e versão, roda testes e consulta novamente as releases existentes.
-2. Gera `netops-X.Y.Z.tar.gz` com manifesto, hashes e permissões, além de `SHA256SUMS` e notas.
-3. Cria um draft com a tag e o changelog da versão, sem substituir release existente.
-4. Confere o digest devolvido pelo GitHub e só então publica a release estável.
+1. Checks the branch and version, runs the tests and queries the existing releases again.
+2. Generates `netops-X.Y.Z.tar.gz` with manifest, hashes and permissions, plus `SHA256SUMS` and notes.
+3. Creates a draft with the tag and the version changelog, without replacing an existing release.
+4. Checks the digest returned by GitHub and only then publishes the stable release.
 
-Se falhar depois de criar o draft, mantenha-o privado e investigue. Não crie automaticamente outra tag nem publique um pacote parcial para contornar a falha. Releases sem pacote verificável não são instaláveis pelo console.
+If it fails after creating the draft, keep it private and investigate. Do not automatically create another tag or publish a partial package to work around the failure. Releases without a verifiable package cannot be installed by the console.
 
-O workflow pode retomar um draft da **mesma revisão**, substituindo seus assets privados e
-conferindo novamente os dois digests. Draft de outra revisão exige investigação e ajuste
-explícito do destino antes da nova execução; uma tag já publicada nunca é movida.
-A conferência usa `gh release view`, pois `/releases/tags/<tag>` retorna 404 para drafts
-cuja tag ainda não existe. Release publicada ou assets desconhecidos bloqueiam a retomada.
+The workflow can resume a draft of the **same revision**, replacing its private assets and
+checking both digests again. A draft of another revision requires investigation and an explicit
+adjustment of the target before the new run; a tag that has already been published is never moved.
+The check uses `gh release view`, because `/releases/tags/<tag>` returns 404 for drafts
+whose tag does not exist yet. A published release or unknown assets block the resume.
 
-## Validação final
+## Final validation
 
-Consulte a release publicada, confira tag, changelog e assets. Verifique no console a listagem de todas as versões superiores e faça um teste de atualização em cópia isolada, comparando dados antes/depois. Informe claramente o que foi publicado, o que foi apenas preparado e quais testes realmente rodaram.
+Query the published release, check the tag, changelog and assets. Check in the console the listing of all higher versions and run an update test on an isolated copy, comparing data before/after. Clearly report what was published, what was only prepared and which tests actually ran.

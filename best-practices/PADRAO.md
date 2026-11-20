@@ -1,48 +1,50 @@
-# PADRÃO — `best-practices/`
+# STANDARD — `best-practices/`
 
-Boas práticas em **texto descritivo** — o "porquê" e o "o quê". Pouca ou nenhuma
-configuração (config detalhada vive em `config-examples/`). O agente lê estes guias antes
-de planejar ou auditar.
+Best practices as **descriptive text** — the "why" and the "what". Little or no
+configuration (detailed config lives in `config-examples/`). The agent reads these guides before
+planning or auditing.
 
-## Organização
+## Organization
 
-- `general/` — boas práticas cross-vendor (valem para qualquer fabricante).
-- `<vendor>/` — boas práticas específicas de um fabricante (`mikrotik/`, `linux/`, ...).
-- `_catalog.yaml` — índice de todos os guias; o agente lê o catálogo primeiro e só abre
-  o guia relevante.
+- `general/` — cross-vendor best practices (valid for any vendor).
+- `<vendor>/` — best practices specific to one vendor (`mikrotik/`, `linux/`, ...).
+- `_catalog.yaml` — index of all guides; the agent reads the catalog first and only opens
+  the relevant guide.
 
-## Formato de um guia (`<topico>.md`)
+## Format of a guide (`<topic>.md`)
 
-Front-matter YAML + corpo:
+YAML front-matter + body (the front-matter keys and the `severidade` values stay as they are: the console reads them):
 
 ```markdown
 ---
-id: identificador-unico
-titulo: Título legível
+id: unique-identifier
+titulo: Readable title
 vendor: general | mikrotik | linux | ...
 tags: [security, ssh, ...]
 severidade: alta | media | baixa
 ---
 
-## Resumo
-Para que serve este guia, em 1-2 parágrafos.
+## Summary
+What this guide is for, in 1-2 paragraphs.
 
 ## Checklist
-- [ ] Item verificável 1
-- [ ] Item verificável 2
+- [ ] Verifiable item 1
+- [ ] Verifiable item 2
 
-## Detalhamento
-Explicação de cada ponto.
+## Details
+Explanation of each point.
 
-## Configuração relacionada
-Aponta para os arquivos de `config-examples/<vendor>/` que implementam isto.
+## Related configuration
+Points to the files in `config-examples/<vendor>/` that implement this.
 
-## Referências
-Links e documentação oficial.
+## References
+Links and official documentation.
 ```
 
-## Como adicionar um guia
+`severidade`: `alta` = high, `media` = medium, `baixa` = low.
 
-Copie `_TEMPLATE.md`, escreva o conteúdo, e registre o guia em `_catalog.yaml`.
-Conteúdo seed completo: `general/`, `mikrotik/`, `linux/`. Demais vendors: preencher
-conforme o projeto vivo evolui (ver `PADRAO.md` raiz, §5).
+## How to add a guide
+
+Copy `_TEMPLATE.md`, write the content, and register the guide in `_catalog.yaml`.
+Full seed content: `general/`, `mikrotik/`, `linux/`. Other vendors: fill in
+as the living project evolves (see the root `PADRAO.md`, §5).

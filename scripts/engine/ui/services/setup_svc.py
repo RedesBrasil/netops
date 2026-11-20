@@ -22,8 +22,16 @@ from pathlib import Path
 import deps
 from lib import accessdb, setup_token
 
-LANGUAGES = [{"code": "en", "name": "English"}, {"code": "pt-BR", "name": "Português"}]
-LANGUAGE_CODES = {x["code"] for x in LANGUAGES}
+from lib import i18n
+
+
+def _languages() -> list[dict]:
+    """Idiomas oferecidos no assistente (core/locales/_languages.yaml)."""
+    return [{"code": x["code"], "name": x["name"]} for x in i18n.languages()]
+
+
+def _language_codes() -> set[str]:
+    return set(i18n.codes())
 IDENT_DIR = Path(os.environ.get("NETOPS_IDENTITY_DIR") or "/etc/netops/instances")
 
 
@@ -48,7 +56,7 @@ def instance_language() -> str | None:
     except (OSError, ValueError):
         return None
     lang = (cfg.get("instance") or {}).get("language") if isinstance(cfg, dict) else None
-    return lang if lang in LANGUAGE_CODES else None
+    return lang if lang in _language_codes() else None
 
 
 def _write_language(lang: str) -> None:
@@ -77,7 +85,7 @@ def _create_vault(password: str) -> bytes:
     path: Path = deps.CREDS_FILE
     text = path.read_text(encoding="utf-8") if path.exists() else "version: 1\n\ncredentials: {}\n"
     if deps.vault_initialized():
-        raise SetupError("already_configured", "O cofre já foi inicializado.", 409)
+        raise SetupError("already_configured", i18n.t("setup.err_vault_exists"), 409)
     meta, key = vault.build_meta(password)
     path.parent.mkdir(parents=True, exist_ok=True)
     vcli._atomic_write(path, vcli._set_vault_block(text, meta))
@@ -121,7 +129,7 @@ def status() -> dict:
     return {
         "setup_required": deps.setup_mode(),
         "token": setup_token.state(deps.DATA_ROOT),
-        "languages": LANGUAGES,
+        "languages": _languages(),
         "language": instance_language(),
         "password_min": accessdb.PASSWORD_MIN,
     }
@@ -130,20 +138,19 @@ def status() -> dict:
 def complete(*, token: str, language: str, name: str, email: str, password: str, ip: str = "",
              user_agent: str = "") -> dict:
     if not deps.setup_mode():
-        raise SetupError("already_configured", "O primeiro acesso já foi concluído. Entre com seu e-mail e senha.", 409)
-    if language not in LANGUAGE_CODES:
-        raise SetupError("invalid_language", "Escolha o idioma: English ou Português.", 422)
+        raise SetupError("already_configured", i18n.t("setup.err_done_login"), 409)
+    if language not in _language_codes():
+        raise SetupError("invalid_language", i18n.t("setup.err_language", languages=" / ".join(x["name"] for x in _languages())), 422)
     db = deps.db_file()
     lock_path = setup_token.token_path(deps.DATA_ROOT).with_name(".complete.lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with open(lock_path, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)          # dois navegadores ao mesmo tempo: só um conclui
         if not deps.setup_mode():
-            raise SetupError("already_configured", "O primeiro acesso já foi concluído.", 409)
+            raise SetupError("already_configured", i18n.t("setup.err_done"), 409)
         if not setup_token.check(deps.DATA_ROOT, token):
             accessdb.audit(db, "setup_denied", ip=ip, detail="token inválido ou expirado")
-            raise SetupError("bad_token", "Link de configuração inválido ou expirado. Gere outro no servidor: "
-                             "python3 scripts/engine/users/cli.py setup-link", 403)
+            raise SetupError("bad_token", i18n.t("setup.err_bad_token"), 403)
         accessdb.check_password_policy(password)
         email_n = accessdb.norm_email(email, required=True)
         key = _create_vault(password)
@@ -162,6 +169,13 @@ def complete(*, token: str, language: str, name: str, email: str, password: str,
             raise
         _write_language(language)
         setup_token.consume(deps.DATA_ROOT)
+    i18n.set_context_lang(language)               # the rest of this answer already in the chosen language
+    try:
+        from lib import local_files  # noqa: PLC0415
+        local_files.sync_language(deps.NETOPS_ROOT, deps.DATA_ROOT, language,           # AGENTS.md + memory/MEMORY.md
+                                  agents=deps.DATA_ROOT == deps.NETOPS_ROOT)
+    except Exception:  # noqa: BLE001 - a template problem never blocks the first access
+        pass
     from lib import vault_session  # noqa: PLC0415
     if deps.STATE.allow_vault_unlock:
         vault_session.set_session_key(key, vault_session.default_ttl())

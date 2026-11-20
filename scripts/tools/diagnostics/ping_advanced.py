@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # script
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
+from lib import i18n  # noqa: E402
 
 
 def resolve_target(host: int | str | None, target: str | None) -> str:
@@ -32,7 +33,7 @@ def resolve_target(host: int | str | None, target: str | None) -> str:
         hosts_data, _ = load_inventory(include_credentials=False)
         resolved, _ = resolve_host(host, hosts_data, {}, decrypt=False)
         return resolved.get("mgmt_ip") or resolved.get("hostname")
-    raise SystemExit("informe --host-id, --host ou --target")
+    raise SystemExit(i18n.t("cli_diagnostics.target_required"))
 
 
 def ping(target: str, count: int, interval: float, size: int) -> dict:
@@ -58,23 +59,23 @@ def ping(target: str, count: int, interval: float, size: int) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Ping avançado com resumo de perda/latência.")
+    parser = argparse.ArgumentParser(description=i18n.t("cli_diagnostics.ping_description"))
     selection = parser.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--host-id", type=int, help="ID inteiro do host no inventário")
-    selection.add_argument("--host", help="Nome único ou alias legado do host")
-    selection.add_argument("--target", help="IP ou nome direto")
-    parser.add_argument("--count", type=int, default=10, help="Número de pacotes (padrão 10)")
-    parser.add_argument("--interval", type=float, default=0.5, help="Intervalo em s (padrão 0.5)")
-    parser.add_argument("--size", type=int, default=56, help="Tamanho do payload (padrão 56)")
+    selection.add_argument("--host-id", type=int, help=i18n.t("cli_diagnostics.help_host_id"))
+    selection.add_argument("--host", help=i18n.t("cli_diagnostics.help_host"))
+    selection.add_argument("--target", help=i18n.t("cli_diagnostics.help_target"))
+    parser.add_argument("--count", type=int, default=10, help=i18n.t("cli_diagnostics.help_count"))
+    parser.add_argument("--interval", type=float, default=0.5, help=i18n.t("cli_diagnostics.help_interval"))
+    parser.add_argument("--size", type=int, default=56, help=i18n.t("cli_diagnostics.help_size"))
     args = parser.parse_args()
 
     target = resolve_target(args.host_id if args.host_id is not None else args.host, args.target)
     try:
         result = ping(target, args.count, args.interval, args.size)
     except FileNotFoundError:
-        return print("ERRO: comando 'ping' não encontrado no sistema.", file=sys.stderr) or 1
+        return print(i18n.t("cli_diagnostics.ping_not_found"), file=sys.stderr) or 1
     except subprocess.TimeoutExpired:
-        return print(f"ERRO: ping a {target} excedeu o tempo.", file=sys.stderr) or 1
+        return print(i18n.t("cli_diagnostics.ping_timeout", target=target), file=sys.stderr) or 1
 
     print(json.dumps({k: v for k, v in result.items() if k != "raw"}, indent=2, ensure_ascii=False))
     return 0 if result["reachable"] else 1

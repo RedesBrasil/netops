@@ -23,6 +23,7 @@ from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import change as C  # noqa: E402  (também faz ensure_venv e carrega yaml)
+from lib import i18n  # noqa: E402
 
 PREFIX = "netops-pre-"
 OK_STORAGE = {"lvmthin", "zfspool", "rbd", "btrfs"}
@@ -71,7 +72,7 @@ def storages_of(run, kind, vmid):
     """Storages usados pelos discos do guest (ignora bind mounts)."""
     cfg = run(f"{_tool(kind)} config {vmid}")
     if "does not exist" in cfg or "not exist" in cfg.lower() and "unable" in cfg.lower():
-        raise SystemExit(f"{_tool(kind)} {vmid} não existe nesse Proxmox:\n{cfg.strip()[:300]}")
+        raise SystemExit(i18n.t("cli_backup.guest_not_found", tool=_tool(kind), vmid=vmid, output=cfg.strip()[:300]))
     stores = {}
     for line in cfg.splitlines():
         m = re.match(r"^(rootfs|mp\d+|scsi\d+|virtio\d+|sata\d+|ide\d+|efidisk\d+|tpmstate\d+):\s*([A-Za-z0-9_.-]+):", line.strip())
@@ -85,7 +86,7 @@ def pool_state(run, store):
     out = run(f"pvesm status --storage {store}")
     row = [l.split() for l in out.splitlines() if l.split()[:1] == [store]]
     if not row or len(row[0]) < 7:
-        raise SystemExit(f"não consegui ler `pvesm status` de {store}:\n{out.strip()[:300]}")
+        raise SystemExit(i18n.t("cli_backup.pvesm_unreadable", store=store, output=out.strip()[:300]))
     r = row[0]
     st = {"type": r[1], "avail_gb": float(r[5]) / 1024 / 1024, "used_pct": float(r[6].rstrip('%')), "meta_pct": None}
     if st["type"] == "lvmthin":
@@ -104,44 +105,43 @@ def pool_state(run, store):
 
 
 def fmt_pool(s):
-    meta = f", metadados {s['meta_pct']:.1f}%" if s["meta_pct"] is not None else ""
-    return f"{s['type']}: {s['used_pct']:.1f}% usado, {s['avail_gb']:.1f} GiB livres{meta}"
+    meta = i18n.t("cli_backup.pool_meta", pct=f"{s['meta_pct']:.1f}") if s["meta_pct"] is not None else ""
+    return i18n.t("cli_backup.pool_state", type=s["type"], used=f"{s['used_pct']:.1f}", free=f"{s['avail_gb']:.1f}", meta=meta)
 
 
 def create(hid, h, tag="", max_pool_pct=90.0, min_free_gb=2.0, trim=True, force_space=False):
     g = guest_of(h)
     if not g:
-        raise SystemExit(f"host {hid} não é CT/VM de Proxmox (precisa de runs_on + 'CT N' nas notas ou vmid:)")
+        raise SystemExit(i18n.t("cli_backup.not_guest_detail", host_id=hid))
     kind, vmid, pve_id = g
     run = _pve(pve_id)
     stores, _ = storages_of(run, kind, vmid)
     if not stores:
-        raise SystemExit(f"nenhum disco gerenciado achado na config do {_tool(kind)} {vmid}")
+        raise SystemExit(i18n.t("cli_backup.no_managed_disk", tool=_tool(kind), vmid=vmid))
     pools = {}
     for s in stores:
         p = pool_state(run, s)
         if p["type"] not in OK_STORAGE:
-            raise SystemExit(f"storage '{s}' ({p['type']}) não suporta snapshot de {'CT' if kind == 'lxc' else 'VM'}. "
-                             "Alternativa: vzdump (modo stop/snapshot) ou backup de config (change.py begin --mode config).")
+            raise SystemExit(i18n.t("cli_backup.storage_no_snapshot", store=s, type=p["type"],
+                                    kind="CT" if kind == "lxc" else "VM"))
         pools[s] = p
-        print(f"ESPAÇO antes do trim — {s} → {fmt_pool(p)}")
+        print(i18n.t("cli_backup.space_before_trim", store=s, state=fmt_pool(p)))
     if trim:
         cmd = f"pct fstrim {vmid} 2>&1" if kind == "lxc" else f"qm guest cmd {vmid} fstrim 2>&1"
         try:
             out = run(cmd).strip()
         except BaseException as exc:  # noqa: BLE001
-            out = f"(fstrim falhou: {exc})"
+            out = i18n.t("cli_backup.fstrim_failed", error=exc)
         print(f"FSTRIM: {out[:300] or 'ok'}")
         pools = {s: pool_state(run, s) for s in stores}
         for s, p in pools.items():
-            print(f"ESPAÇO depois do trim — {s} → {fmt_pool(p)}")
+            print(i18n.t("cli_backup.space_after_trim", store=s, state=fmt_pool(p)))
     for s, p in pools.items():
-        bad = [m for m, c in (("dados", p["used_pct"] >= max_pool_pct),
-                              ("metadados", (p["meta_pct"] or 0) >= max_pool_pct),
-                              (f"livre < {min_free_gb} GiB", p["avail_gb"] < min_free_gb)) if c]
+        bad = [m for m, c in ((i18n.t("cli_backup.pool_data"), p["used_pct"] >= max_pool_pct),
+                              (i18n.t("cli_backup.pool_metadata"), (p["meta_pct"] or 0) >= max_pool_pct),
+                              (i18n.t("cli_backup.pool_free_below", gb=min_free_gb), p["avail_gb"] < min_free_gb)) if c]
         if bad and not force_space:
-            raise SystemExit(f"BLOQUEADO: pool '{s}' sem folga ({', '.join(bad)}; limite {max_pool_pct:.0f}%). "
-                             "Nada foi criado. Libere espaço ou, se o usuário aceitar o risco, repita com --force-space.")
+            raise SystemExit(i18n.t("cli_backup.pool_blocked", store=s, reasons=", ".join(bad), limit=f"{max_pool_pct:.0f}"))
     name = PREFIX + time.strftime("%Y%m%d-%H%M")
     t = re.sub(r"[^A-Za-z0-9_-]+", "-", tag).strip("-")[:12]
     if t:
@@ -150,54 +150,55 @@ def create(hid, h, tag="", max_pool_pct=90.0, min_free_gb=2.0, trim=True, force_
     out = run(f"{_tool(kind)} snapshot {vmid} {name} --description '{desc}' 2>&1").strip()
     lst = run(f"{_tool(kind)} listsnapshot {vmid}")
     if name not in lst:
-        raise SystemExit(f"snapshot NÃO apareceu na lista — abortando a mudança:\n{out[:400]}")
+        raise SystemExit(i18n.t("cli_backup.snapshot_missing", output=out[:400]))
     items = _load()
     items.append({"host_id": hid, "pve_id": pve_id, "vmid": vmid, "kind": kind, "name": name,
                   "created": int(time.time()), "status": "active"})
     _save(items)
     stale = [l.split()[1] for l in lst.splitlines() if PREFIX in l and name not in l and len(l.split()) > 1]
-    print(f"OK snapshot: {_tool(kind)} {vmid} @ {name}  (rollback: {_tool(kind)} rollback {vmid} {name})")
+    print(i18n.t("cli_backup.snapshot_ok", tool=_tool(kind), vmid=vmid, name=name))
     if stale:
-        print(f"AVISO: já existiam snapshots netops-pre- antigos neste guest: {', '.join(stale)} — ofereça apagá-los.")
+        print(i18n.t("cli_backup.stale_snapshots", names=", ".join(stale)))
     return name
 
 
 def listing(hid, h):
-    kind, vmid, pve_id = guest_of(h) or (_ for _ in ()).throw(SystemExit(f"host {hid} não é CT/VM"))
+    kind, vmid, pve_id = guest_of(h) or (_ for _ in ()).throw(SystemExit(i18n.t("cli_backup.not_guest", host_id=hid)))
     print(_pve(pve_id)(f"{_tool(kind)} listsnapshot {vmid}").strip())
 
 
 def delete(hid, h, name=None):
-    kind, vmid, pve_id = guest_of(h) or (_ for _ in ()).throw(SystemExit(f"host {hid} não é CT/VM"))
+    kind, vmid, pve_id = guest_of(h) or (_ for _ in ()).throw(SystemExit(i18n.t("cli_backup.not_guest", host_id=hid)))
     items = _load()
     if not name:
         act = [i for i in items if i["host_id"] == hid and i["status"] == "active"]
         if not act:
-            raise SystemExit("nenhum snapshot pendente deste host (informe --name)")
+            raise SystemExit(i18n.t("cli_backup.no_pending_host"))
         name = act[-1]["name"]
     if not name.startswith(PREFIX):
-        raise SystemExit(f"recuso apagar '{name}': só snapshots {PREFIX}* criados pelo NetOps")
+        raise SystemExit(i18n.t("cli_backup.refuse_delete", name=name, prefix=PREFIX))
     out = _pve(pve_id)(f"{_tool(kind)} delsnapshot {vmid} {name} 2>&1").strip()
     if name in _pve(pve_id)(f"{_tool(kind)} listsnapshot {vmid}"):
-        raise SystemExit(f"snapshot ainda existe após delsnapshot:\n{out[:400]}")
+        raise SystemExit(i18n.t("cli_backup.still_exists", output=out[:400]))
     for i in items:
         if i["host_id"] == hid and i["name"] == name:
             i["status"] = "deleted"
     _save(items)
-    print(f"OK apagado: {_tool(kind)} {vmid} @ {name}")
+    print(i18n.t("cli_backup.deleted", tool=_tool(kind), vmid=vmid, name=name))
 
 
 def pending():
     act = [i for i in _load() if i["status"] == "active"]
     if not act:
-        print("nenhum snapshot pendente")
+        print(i18n.t("cli_backup.no_pending"))
     for i in act:
         age = (time.time() - i["created"]) / 86400
-        print(f"host {i['host_id']} ({i['kind']} {i['vmid']} no Proxmox host {i['pve_id']}): {i['name']} — {age:.1f} dia(s)")
+        print(i18n.t("cli_backup.pending_line", host_id=i["host_id"], kind=i["kind"], vmid=i["vmid"], pve_id=i["pve_id"],
+                     name=i["name"], days=f"{age:.1f}"))
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description=i18n.t("cli_backup.snapshot_description"))
     ap.add_argument("action", choices=["create", "list", "delete", "pending"])
     ap.add_argument("--host-id", type=int)
     ap.add_argument("--tag", default="")
@@ -210,7 +211,7 @@ def main():
     if a.action == "pending":
         return pending()
     if not a.host_id:
-        raise SystemExit("--host-id obrigatório")
+        raise SystemExit(i18n.t("cli_backup.host_id_required"))
     h = C.host_info(a.host_id)
     if a.action == "create":
         create(a.host_id, h, a.tag, a.max_pool_pct, a.min_free_gb, not a.no_trim, a.force_space)

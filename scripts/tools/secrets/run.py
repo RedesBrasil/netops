@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # script
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
+from lib import i18n  # noqa: E402
 
 PROJECT = Path(__file__).resolve().parents[3]
 DATA_ROOT = Path(os.environ.get("NETOPS_UI_DATA_ROOT") or PROJECT)
@@ -76,22 +77,21 @@ class Vault:
                 key = vault_session.get_session_key()
                 vault.verify_key(key, meta)
             except vault.VaultError as exc:
-                raise Fail(3, f"Cofre trancado ou não iniciado ({exc.__class__.__name__}). "
-                              "Destranque no console (cadeado no topo) e rode de novo.") from exc
+                raise Fail(3, i18n.t("cli_secrets.vault_locked", kind=exc.__class__.__name__)) from exc
             self._key = key
         return self._key
 
     def item(self, ref) -> tuple[int, dict]:
         k = self.pw.find_item(self.data, ref)
         if k is None:
-            raise Fail(2, f"item '{ref}' não existe no Cofre de senhas (veja: nvault list)")
+            raise Fail(2, i18n.t("cli_secrets.item_not_found", ref=ref))
         return k, self.data["items"][k]
 
     def field_name(self, item_id: str, ref_field: str) -> tuple[dict, str]:
         k, item = self.item(item_id)
         name = self.pw.find_value_name(self.data, item, ref_field)
         if not name:
-            raise Fail(2, f"campo '{ref_field}' sem valor no item {k} ({item.get('title', '')}) (veja: nvault list)")
+            raise Fail(2, i18n.t("cli_secrets.field_empty", field=ref_field, item_id=k, title=item.get("title", "")))
         return item, name
 
     def value(self, item_id: str, ref_field: str) -> tuple[str, bool]:
@@ -118,7 +118,7 @@ def check_permission() -> str:
     except Exception:
         return user
     if not eff or not (eff["is_admin"] or "vault.use" in eff["permissions"]):
-        raise Fail(4, f"o usuário '{user}' não tem a permissão vault.use (Grupos de acesso).")
+        raise Fail(4, i18n.t("cli_secrets.no_permission", user=user))
     return user
 
 
@@ -169,7 +169,7 @@ def build_env(args, vault: Vault) -> tuple[dict, list[str], list[str]]:
         [Path(".env")] if not args.no_dotenv and Path(".env").is_file() else [])
     for f in files:
         if not f.is_file():
-            raise Fail(2, f"arquivo não encontrado: {f}")
+            raise Fail(2, i18n.t("cli_secrets.file_not_found", path=f))
         for k, v in parse_env_file(f).items():
             if has_ref(v) or k not in env:      # referência do .env vence; valor comum não sobrescreve o ambiente
                 env[k] = v
@@ -180,7 +180,7 @@ def build_env(args, vault: Vault) -> tuple[dict, list[str], list[str]]:
             env[var] = f"{SCHEME}{item_id}/{vault.pw.slugify(name)}"
     for s in args.set or []:
         if "=" not in s:
-            raise Fail(2, f"--set precisa de VAR=REFERENCIA: {s}")
+            raise Fail(2, i18n.t("cli_secrets.set_needs_ref", value=s))
         k, v = s.split("=", 1)
         if not v.startswith(SCHEME) and "{{" not in v and "/" in v:
             v = SCHEME + v                       # atalho: --set TOKEN=item/campo
@@ -274,34 +274,33 @@ def cmd_run(args) -> int:
     if cmd and cmd[0] == "--":
         cmd = cmd[1:]
     if not cmd:
-        raise Fail(2, "informe o comando depois de --  (ex.: run.py run -- npx wrangler deploy)")
+        raise Fail(2, i18n.t("cli_secrets.no_command"))
     user = check_permission()
     vault = Vault()
     env, secrets, names = build_env(args, vault)
     if not names:
-        print("aviso: nenhuma referência nvault:// encontrada; rodando o comando sem segredos.", file=sys.stderr)
+        print(i18n.t("cli_secrets.no_refs"), file=sys.stderr)
     else:
-        print(f"[nvault] {len(names)} variável(is) do cofre: {', '.join(sorted(names))} (valores mascarados na saída)",
-              file=sys.stderr)
+        print(i18n.t("cli_secrets.vars_injected", count=len(names), names=", ".join(sorted(names))), file=sys.stderr)
         audit(user, ",".join(sorted(vault.used)), f"vars={','.join(sorted(names))} cmd={Path(cmd[0]).name}")
     try:
         return run_masked(cmd, env, secrets)
     except FileNotFoundError:
-        raise Fail(2, f"comando não encontrado: {cmd[0]}")
+        raise Fail(2, i18n.t("cli_secrets.command_not_found", command=cmd[0]))
 
 
 def cmd_list(args) -> int:
     vault = Vault()
     items = vault.data["items"]
     if not items:
-        print("Cofre de senhas vazio. Cadastre em Inventário → Cofre de senhas.")
+        print(i18n.t("cli_secrets.vault_empty"))
         return 0
     for iid, it in sorted(items.items()):
         extra = (f"  [{it['template_label']}]" if it.get("template_label") else "") + \
-                (f"  (apelidos: {', '.join(it['aliases'])})" if it.get("aliases") else "")
+                ("  " + i18n.t("cli_secrets.aliases", aliases=", ".join(it["aliases"])) if it.get("aliases") else "")
         print(f"{iid}  —  {it.get('title', '')}{extra}")
         for name, raw in (it.get("values") or {}).items():
-            kind = "segredo" if str(raw).startswith("enc.v1:") else "texto"
+            kind = i18n.t("cli_secrets.kind_secret") if str(raw).startswith("enc.v1:") else i18n.t("cli_secrets.kind_text")
             print(f"    {SCHEME}{iid}/{vault.pw.slugify(name):<28} {name} ({kind})")
     return 0
 
@@ -312,7 +311,7 @@ def cmd_check(args) -> int:
     bad = 0
     for f in files:
         if not f.is_file():
-            print(f"{f}: não encontrado"); bad += 1
+            print(i18n.t("cli_secrets.check_file_missing", path=f)); bad += 1
             continue
         for k, v in parse_env_file(f).items():
             if not has_ref(v):
@@ -322,30 +321,30 @@ def cmd_check(args) -> int:
             for item_id, field in refs:
                 try:
                     vault.field_name(item_id, field.strip())
-                    print(f"OK    {k} -> {SCHEME}{item_id}/{field.strip()}")
+                    print(i18n.t("cli_secrets.check_ok", var=k, ref=f"{SCHEME}{item_id}/{field.strip()}"))
                 except Fail as e:
-                    print(f"ERRO  {k}: {e}"); bad += 1
+                    print(i18n.t("cli_secrets.check_error", var=k, error=e)); bad += 1
     return 2 if bad else 0
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Segredos do Cofre de senhas em variáveis de ambiente (sem arquivo, saída mascarada).")
+    p = argparse.ArgumentParser(description=i18n.t("cli_secrets.description"))
     sub = p.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("run", help="Roda um comando com as referências nvault:// resolvidas")
-    r.add_argument("--env-file", action="append", help="Arquivo .env com referências (padrão: ./.env se existir)")
-    r.add_argument("--no-dotenv", action="store_true", help="Não ler ./.env automaticamente")
-    r.add_argument("--set", action="append", metavar="VAR=REF", help="VAR=nvault://item/campo (ou VAR=item/campo)")
-    r.add_argument("--item", action="append", help="Exporta todos os campos do item (API key -> API_KEY)")
-    r.add_argument("--prefix", default="", help="Prefixo das variáveis do --item (ex.: COOLIFY_)")
-    r.add_argument("command", nargs=argparse.REMAINDER, help="-- comando e argumentos")
-    sub.add_parser("list", help="Itens e referências disponíveis (nunca mostra valores)")
-    c = sub.add_parser("check", help="Confere as referências de um .env (não decifra)")
+    r = sub.add_parser("run", help=i18n.t("cli_secrets.help_run"))
+    r.add_argument("--env-file", action="append", help=i18n.t("cli_secrets.help_env_file"))
+    r.add_argument("--no-dotenv", action="store_true", help=i18n.t("cli_secrets.help_no_dotenv"))
+    r.add_argument("--set", action="append", metavar="VAR=REF", help=i18n.t("cli_secrets.help_set"))
+    r.add_argument("--item", action="append", help=i18n.t("cli_secrets.help_item"))
+    r.add_argument("--prefix", default="", help=i18n.t("cli_secrets.help_prefix"))
+    r.add_argument("command", nargs=argparse.REMAINDER, help=i18n.t("cli_secrets.help_command"))
+    sub.add_parser("list", help=i18n.t("cli_secrets.help_list"))
+    c = sub.add_parser("check", help=i18n.t("cli_secrets.help_check"))
     c.add_argument("--env-file", action="append")
     args = p.parse_args()
     try:
         return {"run": cmd_run, "list": cmd_list, "check": cmd_check}[args.cmd](args)
     except Fail as e:
-        print(f"[nvault] ERRO: {e}", file=sys.stderr)
+        print(i18n.t("cli_secrets.error", error=e), file=sys.stderr)
         return e.code
 
 

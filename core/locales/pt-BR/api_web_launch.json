@@ -1,0 +1,6 @@
+{
+  "disabled": "acesso web desligado (precisa do terminal ligado e fora de --read-only)",
+  "no_autologin": "app sem login automático: entre manualmente",
+  "no_credential": "sem usuário/senha cadastrados: entre manualmente",
+  "vault_locked": "cofre trancado: destranque para o login automático"
+}

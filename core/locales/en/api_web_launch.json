@@ -1,0 +1,6 @@
+{
+  "disabled": "web access disabled (requires the terminal enabled and not --read-only)",
+  "no_autologin": "app without automatic login: sign in manually",
+  "no_credential": "no username/password registered: sign in manually",
+  "vault_locked": "vault locked: unlock it for automatic login"
+}

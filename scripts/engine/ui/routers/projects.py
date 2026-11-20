@@ -16,6 +16,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 import deps
+from lib import i18n
 from routers.claude import _visible   # mesma regra de dono da aba Claude Code: não-admin só vê as suas conversas
 from services import claude_models, claude_svc, projects_svc
 
@@ -31,7 +32,7 @@ def _err(exc: projects_svc.ProjectError) -> JSONResponse:
 
 
 def _not_found() -> JSONResponse:
-    return JSONResponse({"error": "project_not_found", "detail": "Projeto não encontrado."}, status_code=404)
+    return JSONResponse({"error": "project_not_found", "detail": i18n.t("api_common.project_not_found")}, status_code=404)
 
 
 def _user(request: Request) -> str:
@@ -114,7 +115,7 @@ def projects_update(pid: str, body: dict):
         if "trusted" in body:
             out = projects_svc.set_trusted(pid, bool(body.get("trusted")))
         if out is None:
-            return JSONResponse({"error": "nothing_to_update", "detail": "Nada para alterar."}, status_code=400)
+            return JSONResponse({"error": "nothing_to_update", "detail": i18n.t("api_common.nothing_to_update")}, status_code=400)
         return out
     except projects_svc.ProjectError as e:
         return _err(e)

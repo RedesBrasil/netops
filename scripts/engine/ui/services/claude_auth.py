@@ -54,6 +54,7 @@ import termios
 from fastapi import WebSocket, WebSocketDisconnect
 
 import deps
+from lib import i18n
 from services import claude_svc
 
 # Limpeza de ANSI. A URL vem embrulhada num hyperlink OSC-8 (`ESC ] 8 ; ; <url> BEL`),
@@ -153,15 +154,15 @@ def status() -> dict:
     """Estado da autenticação do `claude` que a aba usa. Nunca devolve token/segredo."""
     if not claude_svc.claude_path():
         return {"available": False, "loggedIn": False,
-                "detail": "binário `claude` não encontrado no PATH do servidor"}
+                "detail": i18n.t("api_claude.cli_missing_server")}
     proc = _run(["auth", "status", "--json"], extra_env=_settings_auth_env())
     if proc is None:
         return {"available": True, "loggedIn": False, "store": _store(),
-                "detail": "falha ao executar `claude auth status`"}
+                "detail": i18n.t("api_claude.auth_status_failed")}
     data = _first_json(proc.stdout) or _first_json(proc.stderr)
     if data is None:
         return {"available": True, "loggedIn": False, "store": _store(),
-                "detail": _clean(proc.stderr or proc.stdout).strip()[:300] or "resposta ininteligível"}
+                "detail": _clean(proc.stderr or proc.stdout).strip()[:300] or i18n.t("api_claude.unintelligible")}
     data["available"] = True
     data["store"] = _store()
     return data
@@ -235,7 +236,7 @@ class ClaudeLoginSession:
     async def _spawn(self, mode: str | None) -> None:
         cli = claude_svc.claude_path()
         if not cli:
-            await self._send({"type": "error", "detail": "binário `claude` não encontrado no PATH"})
+            await self._send({"type": "error", "detail": i18n.t("api_claude.cli_missing")})
             return
         argv = [cli, "auth", "login", "--console" if mode == "console" else "--claudeai"]
         env, cwd = _env(), str(deps.NETOPS_ROOT)
@@ -334,7 +335,7 @@ class ClaudeLoginSession:
         try:
             await asyncio.wait_for(self._exited.wait(), timeout=_LOGIN_TIMEOUT)
         except asyncio.TimeoutError:
-            await self._send({"type": "error", "detail": "tempo esgotado no login"})
+            await self._send({"type": "error", "detail": i18n.t("api_claude.login_timeout")})
         await asyncio.sleep(0.5)   # deixa o CLI gravar ~/.claude/.credentials.json
         self._kill()
         st = status()

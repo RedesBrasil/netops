@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 import deps
+from lib import i18n
 
 log = logging.getLogger("netops.web_access")
 
@@ -83,7 +84,7 @@ def _norm_list(items: Iterable, field: str, errors: list[dict]) -> list[str]:
         try:
             net = parse_network(str(raw))
         except ValueError:
-            errors.append({"loc": f"web_access.{field}", "msg": f"'{raw}' não é IP nem rede válida (use 10.0.0.0/8, 192.0.2.7, 2001:db8::/32)"})
+            errors.append({"loc": f"web_access.{field}", "msg": i18n.t("api_web_access.bad_network", value=raw)})
             continue
         s = str(net)
         if s not in out:
@@ -161,11 +162,11 @@ def validate_patch(patch: dict, client_ip: str | None) -> dict:
     enabled = out.get("enabled", cur.enabled)
     if enabled and not nets:
         raise deps.ValidationFailed([{"loc": "web_access.allowed_networks",
-                                      "msg": "Com o acesso restrito ligado, cadastre ao menos uma rede."}])
+                                      "msg": i18n.t("api_web_access.need_network")}])
     ip = parse_ip(client_ip)
     if enabled and (ip is None or not (_in(ip, _LOOPBACK) or _in(ip, nets))):
         raise deps.ValidationFailed([{"loc": "web_access.allowed_networks",
-                                      "msg": f"Seu IP atual ({client_ip or 'desconhecido'}) ficaria bloqueado. Inclua-o (ou a rede dele) na lista."}])
+                                      "msg": i18n.t("api_web_access.self_lockout", ip=client_ip or i18n.t("api_app.unknown_ip"))}])
     return out
 
 

@@ -1,46 +1,46 @@
-# SKILL — Central de Avisos (inbox)
+# SKILL — Notification center (inbox)
 
-## O que é
+## What it is
 
-Caixa única de **alertas, avisos e pedidos de aprovação** do NetOps. Quem publica: tarefas agendadas
-(script, agente, script + agente), scripts avulsos e agentes. Quem lê e decide: o humano, no console.
+NetOps' single box for **alerts, notices and approval requests**. Who publishes: scheduled tasks
+(script, agent, script + agent), standalone scripts and agents. Who reads and decides: the human, in the console.
 
-- **Sino 🔔 no topo** de todas as telas, com bolinha vermelha contando *não lidas + aguardando aprovação*
-  (pulsa se houver crítico). Clique = últimas mensagens, aprovar/reprovar rápido, link para a Central.
-- **Menu Saída → Central de Avisos** (`#inbox`): lista completa, filtros, detalhe com Aprovar / Reprovar /
-  **Discutir no Claude** (leva o aviso para o prompt da aba Claude, já escrito no campo; se veio de um agente,
-  abre a MESMA conversa dele). O título da aba do navegador mostra `(N)`.
+- **Bell 🔔 at the top** of every screen, with a red dot counting *unread + awaiting approval*
+  (it pulses if there is a critical one). Click = latest messages, quick approve/reject, link to the Center.
+- **Menu Output → Notification center** (`#inbox`): full list, filters, detail with Approve / Reject /
+  **Discuss in Claude** (takes the notice to the Claude tab prompt, already written in the field; if it came from an agent,
+  it opens that agent's SAME conversation). The browser tab title shows `(N)`.
 - URLs: `#inbox[?view=pending|unread|alerts|archived|all&kind=&sev=&q=]`, `#inbox/<id>`.
 
-| kind | Para quê | Fica no contador até |
-|------|----------|----------------------|
-| `info` | informação ("backup concluído") | ser lido |
-| `alert` | algo merece atenção (`severity` warning/critical) | ser lido |
-| `approval` | precisa da decisão do humano | ser **aprovado/reprovado** (ou expirar) |
+| kind | What for | Stays in the counter until |
+|------|----------|----------------------------|
+| `info` | information ("backup completed") | it is read |
+| `alert` | something deserves attention (`severity` warning/critical) | it is read |
+| `approval` | needs the human's decision | it is **approved/rejected** (or expires) |
 
-Dados: `runs/inbox.db` (SQLite, git-ignorado, 0600). Log das ações: `runs/inbox/<id>.log`.
-Arquivadas são apagadas após 90 dias; teto de 5000 mensagens (nunca apaga pedido pendente).
+Data: `runs/inbox.db` (SQLite, git-ignored, 0600). Action log: `runs/inbox/<id>.log`.
+Archived messages are deleted after 90 days; cap of 5000 messages (a pending request is never deleted).
 
-## Pedido de aprovação → o que acontece ao decidir
+## Approval request → what happens on decision
 
-1. **Sem ação** (padrão para scripts): quem pediu consulta a decisão — `cli.py wait <id>` (bloqueia) ou
-   `cli.py get <id>` na próxima execução — e segue a partir dela.
-2. **Com ação** (roda sozinha ao decidir, num processo destacado, como o usuário do console):
-   - `command`: `--on-approve-command "..."` / `--on-reject-command "..."`. Ambiente recebe
+1. **No action** (default for scripts): the requester checks the decision — `cli.py wait <id>` (blocks) or
+   `cli.py get <id>` on the next run — and continues from there.
+2. **With action** (runs by itself on decision, in a detached process, as the console user):
+   - `command`: `--on-approve-command "..."` / `--on-reject-command "..."`. The environment receives
      `NETOPS_INBOX_ID`, `NETOPS_INBOX_DECISION` (approved|rejected), `NETOPS_INBOX_DECIDED_BY`, `NETOPS_INBOX_NOTE`.
-   - `agent`: retoma a **mesma sessão** do agente que pediu (`claude -p --resume`) com a decisão e a observação
-     do humano; ou abre agente novo com `--on-approve-agent "prompt"`. `permissions` restricted (padrão) ou full.
-   - O resultado volta para a mensagem e ela reaparece como não lida no sino.
-   - Pedido **com ação** só é decidido por **administrador** (roda no servidor). Sem ação: permissão `inbox.decide`.
-3. Só a primeira decisão vale (a segunda recebe 409). `--expires-hours N`: sem decisão até lá = `expired`.
+   - `agent`: resumes the **same session** of the agent that asked (`claude -p --resume`) with the human's decision
+     and note; or opens a new agent with `--on-approve-agent "prompt"`. `permissions` restricted (default) or full.
+   - The result goes back into the message and it reappears as unread in the bell.
+   - A request **with action** can only be decided by an **administrator** (it runs on the server). Without action: permission `inbox.decide`.
+3. Only the first decision counts (the second gets 409). `--expires-hours N`: no decision by then = `expired`.
 
-## Integração automática com as tarefas agendadas
+## Automatic integration with scheduled tasks
 
-- Execução que **notifica** (`notify` da tarefa) vira mensagem: falha = `alert` (falhas repetidas da mesma
-  tarefa agrupam numa só, `×N`); achado do agente = `info` com a resposta dele.
-- Ler na Central marca a execução como lida em **Tarefas agendadas** e vice-versa.
-- O agente da tarefa (mesmo em modo `restricted`, sem shell) publica avisos e pedidos escrevendo na resposta
-  um bloco ```` ```netops-inbox ```` com JSON (objeto ou lista) — a instrução já vai no prompt de sistema:
+- A run that **notifies** (the task's `notify`) becomes a message: failure = `alert` (repeated failures of the same
+  task are grouped into one, `×N`); agent finding = `info` with its answer.
+- Reading in the Center marks the run as read in **Scheduled tasks** and vice versa.
+- The task's agent (even in `restricted` mode, with no shell) publishes notices and requests by writing in its answer
+  a ```` ```netops-inbox ```` block with JSON (object or list) — the instruction is already in the system prompt:
 
 ```netops-inbox
 {"kind": "approval", "severity": "warning", "title": "Apagar 12 arquivos temporários (3,1 GB) em /var/tmp",
@@ -48,10 +48,10 @@ Arquivadas são apagadas após 90 dias; teto de 5000 mensagens (nunca apaga pedi
  "action": {"type": "agent", "permissions": "full", "prompt": "Apague exatamente os arquivos listados."}}
 ```
 
-  Sem `action`, aprovar retoma a sessão com permissões restritas. Se o agente só publicou blocos, a execução
-  não gera notificação duplicada.
+  Without `action`, approving resumes the session with restricted permissions. If the agent only published blocks, the run
+  does not generate a duplicate notification.
 
-## Uso por script / agente (CLI)
+## Use from a script / agent (CLI)
 
 ```bash
 P="python3 scripts/engine/inbox/cli.py"
@@ -60,20 +60,20 @@ $P add --kind info --title "Backup noturno ok (14 hosts)"
 $P add --kind approval --title "Apagar 3 snapshots antigos do PVE-SITE-A (host 14)" --body "…" \
    --on-approve-command "python3 scripts/tools/... --apply" --expires-hours 24
 ID=$($P add --kind approval --title "Reiniciar serviço X?" | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')
-$P wait "$ID" --timeout-min 120 && echo aprovado   # exit 0 aprovado, 3 reprovado, 4 expirou/tempo
+$P wait "$ID" --timeout-min 120 && echo aprovado   # exit 0 approved, 3 rejected, 4 expired/timeout
 $P list --view pending | $P get 12 | $P summary | $P read 12 13 | $P archive 12
 ```
 
-Opções do `add`: `--severity`, `--body`/`--body-file` (markdown; `-` = stdin), `--dedupe-key` (mesmo achado
-recorrente atualiza a mensagem aberta em vez de duplicar), `--link "#hosts/2"`, `--session-id`, `--telegram`
-(também avisa no Telegram via `network/telegram.yaml`), `--on-approve-agent`, `--agent-permissions`, `--timeout` (min).
-Dentro de tarefa agendada a origem (tarefa/execução) é preenchida sozinha; na aba Claude, `NETOPS_USER`.
+`add` options: `--severity`, `--body`/`--body-file` (markdown; `-` = stdin), `--dedupe-key` (the same recurring
+finding updates the open message instead of duplicating it), `--link "#hosts/2"`, `--session-id`, `--telegram`
+(also notifies on Telegram via `network/telegram.yaml`), `--on-approve-agent`, `--agent-permissions`, `--timeout` (min).
+Inside a scheduled task the origin (task/run) is filled in automatically; in the Claude tab, `NETOPS_USER`.
 
-## Regras
+## Rules
 
-- O console **não cria** mensagens (não há rota de criação): nenhum navegador enfileira comando para rodar como root.
-- Mensagem nunca leva segredo (senha, token) no título/corpo — vale a constituição §V.
-- Ação de pedido aprovado que altera equipamento segue as regras de sempre (backup `change.py begin/end`, rollback).
-- Permissões (Usuários → Grupos de acesso): `inbox.view` (ver/ler) e `inbox.decide` (decidir sem ação, arquivar).
-- Código: `scripts/engine/inbox/{store,actions,cli}.py`, `ui/routers/inbox.py`, `ui/static/js/inbox.js` (sino),
-  `ui/static/js/pages/inbox.js` (página). Testes: `scripts/engine/ui/tests/test_inbox.py`.
+- The console **does not create** messages (there is no creation route): no browser queues a command to run as root.
+- A message never carries a secret (password, token) in the title/body — constitution §V applies.
+- An approved request's action that changes equipment follows the usual rules (backup `change.py begin/end`, rollback).
+- Permissions (Users → Access groups): `inbox.view` (view/read) and `inbox.decide` (decide without action, archive).
+- Code: `scripts/engine/inbox/{store,actions,cli}.py`, `ui/routers/inbox.py`, `ui/static/js/inbox.js` (bell),
+  `ui/static/js/pages/inbox.js` (page). Tests: `scripts/engine/ui/tests/test_inbox.py`.

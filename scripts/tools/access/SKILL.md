@@ -1,104 +1,104 @@
 ---
 id: device-access
-name: Acesso a Equipamentos
+name: Equipment Access
 type: script
 runtime: python
-description: Conecta em equipamentos do inventário (SSH/Telnet via session.py, API MikroTik) e roda comandos.
+description: Connects to inventory equipment (SSH/Telnet via session.py, MikroTik API) and runs commands.
 env: []
 ---
 
-## O que faz
+## What it does
 
-Família de scripts que o agente `executor` usa para conectar nos equipamentos de rede e
-rodar comandos — de coleta (read-only) ou de mudança de configuração.
+Family of scripts the `executor` agent uses to connect to network equipment and
+run commands — collection (read-only) or configuration changes.
 
-| Script | Acesso | Biblioteca |
+| Script | Access | Library |
 |--------|--------|-----------|
-| `session.py` | **SSH/Telnet — o ÚNICO script de CLI** (`run` = lote; `open`/`exec`/`close` = persistente) | Netmiko + canal exec Paramiko (Linux) |
-| `api_mikrotik.py` | API RouterOS (dados estruturados, só se `access.method: api`) | librouteros |
-| (console) **Acessar → Web** | Não é script: botão do console abre Proxmox/Zabbix já logados (`lib/web_login`, ver `memory/web-launch-acessar-web-login-automatico.md`). Pedido "abre a interface web do host X" = peça ao humano clicar em Acessar → Web | — |
-| `terminal_link.py` | **Não conecta**: gera o link que abre o terminal web do host numa janela do console (pedido "abre a borda pra mim") | — |
+| `session.py` | **SSH/Telnet — the ONLY CLI script** (`run` = batch; `open`/`exec`/`close` = persistent) | Netmiko + Paramiko exec channel (Linux) |
+| `api_mikrotik.py` | RouterOS API (structured data, only if `access.method: api`) | librouteros |
+| (console) **Access → Web** | Not a script: a console button opens Proxmox/Zabbix already logged in (`lib/web_login`, see `memory/web-launch-acessar-web-login-automatico.md`). Request "open the web interface of host X" = ask the human to click Access → Web | — |
+| `terminal_link.py` | **Does not connect**: generates the link that opens the host's web terminal in a console window (request "open the edge router for me") | — |
 
-`ssh.py` e `telnet.py` **não existem mais** (removidos em 12/11/2026): o `session.py` faz tudo o que
-eles faziam. O motor (backup do console etc.) usa a biblioteca `scripts/engine/lib/cli_runner.py`.
+`ssh.py` and `telnet.py` **no longer exist** (removed on 12/11/2026): `session.py` does everything
+they did. The engine (console backup etc.) uses the `scripts/engine/lib/cli_runner.py` library.
 
-## Receita — copie e rode (sem preparar nada)
+## Recipe — copy and run (no preparation)
 
-`python3` (ou `python`) do sistema; o script **entra sozinho** no `.venv` do projeto — não ative venv,
-não instale nada. Sempre a partir de `/opt/netops` (ou caminho absoluto). Host por `--host-id <ID>`
-(ID de `network/hosts.yaml`) ou `--host <nome/alias>`.
+System `python3` (or `python`); the script **enters** the project's `.venv` **on its own** — do not activate a venv,
+do not install anything. Always from `/opt/netops` (or an absolute path). Host by `--host-id <ID>`
+(ID from `network/hosts.yaml`) or `--host <name/alias>`.
 
 ```bash
-# PADRÃO — sessão persistente por host (1 login por host, N comandos, estado mantido)
-python3 scripts/tools/access/session.py exec --host-id 21 --command "/ip address print"   # login + abre
-python3 scripts/tools/access/session.py exec --host-id 22 --command "ip -br addr"         # outro host, outra sessão
-python3 scripts/tools/access/session.py exec --host-id 21 --command "/ip arp print"       # REUSA (sem login)
+# DEFAULT — persistent session per host (1 login per host, N commands, state kept)
+python3 scripts/tools/access/session.py exec --host-id 21 --command "/ip address print"   # login + open
+python3 scripts/tools/access/session.py exec --host-id 22 --command "ip -br addr"         # another host, another session
+python3 scripts/tools/access/session.py exec --host-id 21 --command "/ip arp print"       # REUSES (no login)
 python3 scripts/tools/access/session.py exec --host-id 21 --command "/ping 192.0.2.2" --timing --timeout 5
-python3 scripts/tools/access/session.py list                       # abertas, ocioso/limite
-python3 scripts/tools/access/session.py close --host-id 21         # ou close --all (ou espera o idle)
+python3 scripts/tools/access/session.py list                       # open sessions, idle/limit
+python3 scripts/tools/access/session.py close --host-id 21         # or close --all (or wait for idle)
 
-# Lote isolado (conecta, roda, desconecta — sem reuso): só p/ coleta pontual
+# Isolated batch (connects, runs, disconnects — no reuse): only for one-off collection
 python3 scripts/tools/access/session.py run --host-id 21 --command "/system identity print"
 
-# SESSION_ID explícito (raro): S=$(... open --host-id 21) [--new força outra] → exec --session $S → close --session $S
-# Telnet (só se o usuário pedir / equipamento legado): acrescente --telnet no exec/open/run
+# Explicit SESSION_ID (rare): S=$(... open --host-id 21) [--new forces another] → exec --session $S → close --session $S
+# Telnet (only if the user asks / legacy equipment): add --telnet to exec/open/run
 ```
 
-Qual usar: **`exec --host-id`** sempre que houver mais de um comando no mesmo host, mesmo em chamadas
-separadas (comando → ler saída → decidir o próximo) e mesmo alternando entre vários hosts: cada host
-mantém sua sessão aberta (medido: Linux 0,02–0,05 s/comando, MikroTik ~0,9 s, contra 1,4–1,6 s+ de
-login a cada conexão nova). Mantém estado (`enable`, contexto, variáveis/`cd` no Linux) e não enche o
-log do equipamento de logins. `run` só para uma coleta isolada. Não use `ssh`/`sshpass`/`telnet` do
-sistema: só o `session.py` resolve a credencial do cofre sem expô-la.
+Which to use: **`exec --host-id`** whenever there is more than one command on the same host, even in separate
+calls (command → read output → decide the next one) and even when alternating between several hosts: each host
+keeps its session open (measured: Linux 0.02–0.05 s/command, MikroTik ~0.9 s, versus 1.4–1.6 s+ of
+login on every new connection). It keeps state (`enable`, context, variables/`cd` on Linux) and does not flood the
+equipment log with logins. `run` only for an isolated collection. Do not use the system's `ssh`/`sshpass`/`telnet`:
+only `session.py` resolves the vault credential without exposing it.
 
-## Comportamento
+## Behavior
 
-- Linux (`vendor` linux/proxmox): **1 login + 1 shell persistente** (`bash -l`, ou `sh -l`) por
-  sessão/`run`. Todos os comandos rodam no MESMO shell (mesmo `$$`): `export`, `cd`, funções,
-  `source` (ex.: `. ~/.nvm/nvm.sh`) e venv **persistem** entre `exec`s — com exit code real e stderr
-  separado (sem PTY; fim do comando detectado por marcador aleatório). `modo=shell-persistente`.
-  - stdin dos comandos = `/dev/null` (nada de prompt interativo; `read` retorna na hora).
-  - `exit`/`set -e` que derruba o shell: devolve a saída e o exit code; o próximo comando sobe um
-    shell novo **no mesmo login** e avisa `AVISO: shell novo — variáveis/cd anteriores foram perdidos`.
-  - Processo em background que deve sobreviver ao `close`: `setsid nohup cmd >/tmp/x.log 2>&1 &`.
-  - Host sem `base64`/shell restrito: cai sozinho para `modo=exec-por-comando` (sem estado).
-  - `--shell` força o shell do Netmiko com PTY (raro: só p/ comando que exige terminal; sem exit code).
-- Rede (MikroTik/Cisco/Huawei...): shell Netmiko único por sessão — contexto/`enable` persistem.
-- Comando contínuo/paginado (ping sem count, `/tool torch`): `--timing --timeout N` lê por N s,
-  manda Ctrl-C e devolve a saída (`status=interrompido`, rc 0).
-- `status=timeout` (rc 3): interrompe (Ctrl-C na rede; SIGINT nos filhos do shell no Linux) — a
-  sessão e o estado seguem vivos. Se nem assim volta (loop em builtin), o shell é morto e o próximo
-  comando abre outro (com o aviso de estado perdido). Com vários
-  `--command`, para no primeiro que falha. Queda de conexão: reconecta **antes** do próximo comando e
-  **nunca reenvia** o que estava em curso.
-- Comando multilinha/aspas complexas: mande em base64 (`echo <b64> | base64 -d | sh`) ou use
-  `--commands-file` (um comando por linha, no `run`).
-- Sessão persistente fecha sozinha após **`access.session_idle_minutes`** sem comando (padrão **5 min**;
-  `core/config/project-config.yaml` ou console → **Configuração** → "Sessão de acesso aos equipamentos").
-  Relido a cada 5 s pelas sessões: mudar a config vale na hora, até para as já abertas.
-  `NETOPS_SESSION_IDLE=<segundos>` sobrepõe (testes). Vida máxima 2 h (`NETOPS_SESSION_MAX`). O cofre
-  precisa estar destrancado só para ABRIR; sessão já aberta segue funcionando se ele re-trancar.
-  Socket em `$XDG_RUNTIME_DIR` ou `/tmp/netops-sessions-<uid>/` (0700/0600); reuso sob trava por host.
-- Auditoria: todo comando/saída (run ou sessão) vai para `runs/<ts>-session-<id>/session.log` — o
-  `run` imprime o caminho no fim (`[log] ...`). Esse é o "salvar a coleta"; não há `--save`.
-- A credencial só existe dentro do processo; o cofre precisa estar destrancado (senão falha com
-  instrução clara — o humano roda `python3 scripts/engine/vault/cli.py unlock`).
-- Mudança de config segue as mesmas regras: baseline + rollback antes (workflow apply-config-change).
+- Linux (`vendor` linux/proxmox): **1 login + 1 persistent shell** (`bash -l`, or `sh -l`) per
+  session/`run`. All commands run in the SAME shell (same `$$`): `export`, `cd`, functions,
+  `source` (e.g. `. ~/.nvm/nvm.sh`) and venv **persist** across `exec`s — with a real exit code and separate
+  stderr (no PTY; end of command detected by a random marker). `modo=shell-persistente`.
+  - Commands' stdin = `/dev/null` (no interactive prompts; `read` returns immediately).
+  - `exit`/`set -e` that kills the shell: returns the output and the exit code; the next command starts a
+    new shell **in the same login** and warns `AVISO: shell novo — variáveis/cd anteriores foram perdidos` (new shell — previous variables/cd were lost).
+  - Background process that must survive `close`: `setsid nohup cmd >/tmp/x.log 2>&1 &`.
+  - Host without `base64`/restricted shell: falls back on its own to `modo=exec-por-comando` (no state).
+  - `--shell` forces the Netmiko shell with PTY (rare: only for a command that requires a terminal; no exit code).
+- Network (MikroTik/Cisco/Huawei...): a single Netmiko shell per session — context/`enable` persist.
+- Continuous/paged command (ping without count, `/tool torch`): `--timing --timeout N` reads for N s,
+  sends Ctrl-C and returns the output (`status=interrompido`, rc 0).
+- `status=timeout` (rc 3): interrupts (Ctrl-C on network devices; SIGINT to the shell's children on Linux) — the
+  session and the state stay alive. If even that does not bring it back (loop in a builtin), the shell is killed and the next
+  command opens another one (with the lost-state warning). With several
+  `--command`, it stops at the first one that fails. Connection drop: reconnects **before** the next command and
+  **never resends** what was in progress.
+- Multiline command/complex quoting: send it in base64 (`echo <b64> | base64 -d | sh`) or use
+  `--commands-file` (one command per line, with `run`).
+- A persistent session closes on its own after **`access.session_idle_minutes`** without a command (default **5 min**;
+  `core/config/project-config.yaml` or console → **Settings** → "Equipment access session").
+  Re-read every 5 s by the sessions: changing the config takes effect immediately, even for sessions already open.
+  `NETOPS_SESSION_IDLE=<seconds>` overrides it (tests). Maximum life 2 h (`NETOPS_SESSION_MAX`). The vault
+  must be unlocked only to OPEN; an already open session keeps working if it gets locked again.
+  Socket in `$XDG_RUNTIME_DIR` or `/tmp/netops-sessions-<uid>/` (0700/0600); reuse under a per-host lock.
+- Audit: every command/output (run or session) goes to `runs/<ts>-session-<id>/session.log` — `run`
+  prints the path at the end (`[log] ...`). That is the "save the collection"; there is no `--save`.
+- The credential only exists inside the process; the vault must be unlocked (otherwise it fails with
+  a clear instruction — the human runs `python3 scripts/engine/vault/cli.py unlock`).
+- Configuration changes follow the same rules: baseline + rollback first (workflow apply-config-change).
 
-## Códigos de saída
+## Exit codes
 
-`0` ok · `1` host fora do inventário / falha de login / cofre trancado · `2` sem comando ·
-`3` comando com status ≠ ok (parou a sequência) · `4` sessão inexistente/morta (rode `open` de novo) ·
-outro = exit code do comando Linux.
+`0` ok · `1` host not in the inventory / login failure / vault locked · `2` no command ·
+`3` command with status ≠ ok (stopped the sequence) · `4` session missing/dead (run `open` again) ·
+other = exit code of the Linux command.
 
 ## Host
 
-`--host-id` recebe o ID inteiro, automático e imutável do cadastro. `--host` aceita nome único ou
-alias legado. As opções são exclusivas; texto numérico passado a `--host` é tratado como nome/alias.
-A conexão usa IP de gerência e porta do cadastro (`access.port`), nunca o ID como endereço.
-Nunca conecte em host fora de `network/hosts.yaml`.
+`--host-id` takes the integer, automatic and immutable ID from the inventory. `--host` accepts a unique name or
+legacy alias. The options are mutually exclusive; numeric text passed to `--host` is treated as a name/alias.
+The connection uses the management IP and port from the inventory (`access.port`), never the ID as an address.
+Never connect to a host outside `network/hosts.yaml`.
 
-## API MikroTik
+## MikroTik API
 
 ```bash
 python3 scripts/tools/access/api_mikrotik.py --host-id 1 --path /ip/service --path /user
@@ -106,9 +106,9 @@ python3 scripts/tools/access/api_mikrotik.py --host rt-core-01 \
   --path /ip/firewall/filter --path /ip/service --path /snmp --save
 ```
 
-`--save` grava em `runs/<execução>/collected/<id-inteiro>.json`.
+`--save` writes to `runs/<run>/collected/<integer-id>.json`.
 
 ## Setup
 
-Nenhum por chamada. Na instalação: `.venv` com `requirements.txt` (netmiko, librouteros) — ver
-`README.md`. As credenciais vêm de `network/credentials.yaml` — nunca passe senha por argumento.
+None per call. At installation: `.venv` with `requirements.txt` (netmiko, librouteros) — see
+`README.md`. Credentials come from `network/credentials.yaml` — never pass a password as an argument.

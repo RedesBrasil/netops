@@ -1,23 +1,23 @@
-# NetOps — Configuração do projeto/rede (MODELO)
-# O arquivo real é core/config/project-config.yaml: fica só na sua instalação (git-ignorado e
-# preservado nas atualizações). O instalador cria uma cópia deste modelo; edite pela tela Configuração.
+# NetOps — Project/network configuration (TEMPLATE)
+# The real file is core/config/project-config.yaml: it stays only in your installation (git-ignored and
+# preserved across updates). The installer creates a copy of this template; edit it in the Settings screen.
 
 project:
-  network_name: ""                    # nome da rede/empresa
+  network_name: ""                    # name of the network/company
   description: ""
 
 operations:
-  maintenance_window: ""              # ex.: "seg-sex 22:00-05:00"
+  maintenance_window: ""              # e.g.: "mon-fri 22:00-05:00"
   escalation_contact: ""
 
 vault:
-  session_ttl_seconds: 900            # re-bloqueio por inatividade (padrão 900 = 15 min)
+  session_ttl_seconds: 900            # re-lock after inactivity (default 900 = 15 min)
 
 access:
-  session_idle_minutes: 5             # sessão aberta fecha após N min sem comando
+  session_idle_minutes: 5             # an open session closes after N min without a command
 
-# Firewall de acesso web do console (tela Configuração → Acesso web). Quem estiver fora das redes recebe 403.
-# Desligado por padrão: ligue depois de cadastrar as suas redes (a tela impede salvar se o seu IP ficar de fora).
+# Web access firewall of the console (Settings screen → Web access). Anyone outside the networks gets 403.
+# Off by default: turn it on after registering your networks (the screen prevents saving if your IP is left out).
 web_access:
   enabled: false
   allowed_networks:
@@ -25,9 +25,9 @@ web_access:
     - 172.16.0.0/12
     - 192.168.0.0/16
     - fc00::/7
-  trusted_proxies: []                 # IP do proxy reverso à frente do console (ex.: Nginx/Traefik), se houver
+  trusted_proxies: []                 # IP of the reverse proxy in front of the console (e.g.: Nginx/Traefik), if any
 
 backups:
-  keep_versions: 10                   # arquivos mantidos por host em backups/by-id/<id>/
+  keep_versions: 10                   # files kept per host in backups/by-id/<id>/
 
 overrides: {}

@@ -4,7 +4,7 @@
 //   - painel ao lado do terminal de host         src=<token>  — SFTP sobre a conexão SSH do terminal.
 // Lista própria (não é DataTable): exceção registrada em core/rules/tabelas-console.md.
 // Estado de navegação (path, q, sort, hidden, open) é CONTROLADO por quem usa (URL no menu Arquivos).
-import { html, useState, useEffect, useRef, useMemo, api, toast, Modal } from "./ui.js";
+import { html, useState, useEffect, useRef, useMemo, api, toast, Modal, t } from "./ui.js";
 import { useLayoutEffect } from "preact/hooks";
 import { CodeTextEditor } from "./components.js";
 import { authToken } from "./api.js";
@@ -105,8 +105,8 @@ function putChunk(url, blob, onProgress, xhrRef) {
       if (x.status >= 200 && x.status < 300) resolve(body);
       else reject(Object.assign(new Error(body?.detail || body?.error || `HTTP ${x.status}`), { status: x.status, body }));
     };
-    x.onerror = () => reject(new Error("falha de rede no upload"));
-    x.onabort = () => reject(Object.assign(new Error("cancelado"), { aborted: true }));
+    x.onerror = () => reject(new Error(t("files.upload_network_error")));
+    x.onabort = () => reject(Object.assign(new Error(t("files.cancelled")), { aborted: true }));
     x.send(blob);
   });
 }
@@ -144,7 +144,7 @@ async function readDrop(dt) {
 }
 
 /* ------------------------------ diálogos ------------------------------- */
-function NameDialog({ title, label, initial = "", ok = "OK", onOk, onClose }) {
+function NameDialog({ title, label, initial = "", ok, onOk, onClose }) {
   const [v, setV] = useState(initial);
   const [err, setErr] = useState("");
   const ref = useRef(null);
@@ -163,7 +163,7 @@ function NameDialog({ title, label, initial = "", ok = "OK", onOk, onClose }) {
     <form onSubmit=${submit}>
       <label class="fm-label">${label}<input ref=${ref} value=${v} onInput=${(e) => { setV(e.target.value); setErr(""); }} /></label>
       ${err && html`<div class="err">${err}</div>`}
-      <div class="modal-actions"><button type="button" onClick=${onClose}>Cancelar</button><button class="primary" type="submit">${ok}</button></div>
+      <div class="modal-actions"><button type="button" onClick=${onClose}>${t("files.cancel")}</button><button class="primary" type="submit">${ok || t("files.ok")}</button></div>
     </form>
   <//>`;
 }
@@ -172,10 +172,10 @@ function NameDialog({ title, label, initial = "", ok = "OK", onOk, onClose }) {
 export async function copyText(text) {
   try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch (e) {}
   try {
-    const t = document.createElement("textarea");
-    t.value = text; t.setAttribute("readonly", ""); t.style.cssText = "position:fixed;top:-1000px;opacity:0";
-    document.body.appendChild(t); t.select();
-    const ok = document.execCommand("copy"); t.remove(); return ok;
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand("copy"); ta.remove(); return ok;
   } catch (e) { return false; }
 }
 
@@ -190,7 +190,7 @@ function DeleteDialog({ paths, entries, onOk, onClose }) {
   async function copyExpected() {
     const ok = await copyText(expected);
     setCopied(ok);
-    if (!ok) toast.err("Não consegui copiar; digite o nome.");
+    if (!ok) toast.err(t("files.copy_failed_type"));
     inputRef.current?.focus();
   }
   async function go(e) {
@@ -199,18 +199,18 @@ function DeleteDialog({ paths, entries, onOk, onClose }) {
     setBusy(true);
     try { await onOk(); onClose(); } finally { setBusy(false); }
   }
-  return html`<${Modal} title=${single ? "Apagar de vez?" : `Apagar ${paths.length} itens de vez?`} onClose=${onClose}>
+  return html`<${Modal} title=${single ? t("files.delete_title_one") : t("files.delete_title_many", { n: paths.length })} onClose=${onClose}>
     <form onSubmit=${go}>
-      <p>Exclusão <b>definitiva</b> (sem lixeira)${dirs ? html`, incluindo <b>todo o conteúdo</b> de ${dirs} pasta(s)` : ""}.</p>
+      <p>${t("files.delete_permanent_before")} <b>${t("files.delete_permanent_word")}</b> ${t("files.delete_permanent_after")}${dirs ? html`${t("files.delete_including")} <b>${t("files.delete_all_content")}</b> ${t("files.delete_of_folders", { n: dirs })}` : ""}.</p>
       <ul class="fm-del-list">${paths.slice(0, 12).map((p) => html`<li class="mono" key=${p}>${p}</li>`)}
-        ${paths.length > 12 && html`<li>… e mais ${paths.length - 12}</li>`}</ul>
-      <div class="fm-label">Para confirmar, digite ${single ? "o nome" : "a quantidade"}
-        <button type="button" class="fm-copy" title="Clique para copiar e depois cole no campo abaixo" onClick=${copyExpected}>
-          <span class="mono">${expected}</span> <${ToolIcon} name="copy" size=${14} /> <span class="fm-copy-txt">${copied ? "copiado!" : "copiar"}</span></button></div>
+        ${paths.length > 12 && html`<li>${t("files.and_more", { n: paths.length - 12 })}</li>`}</ul>
+      <div class="fm-label">${single ? t("files.delete_type_name") : t("files.delete_type_count")}
+        <button type="button" class="fm-copy" title=${t("files.delete_copy_title")} onClick=${copyExpected}>
+          <span class="mono">${expected}</span> <${ToolIcon} name="copy" size=${14} /> <span class="fm-copy-txt">${copied ? t("files.copied") : t("files.copy_lower")}</span></button></div>
       <label class="fm-label">
         <input ref=${inputRef} autoFocus value=${v} onInput=${(e) => setV(e.target.value)} /></label>
-      <div class="modal-actions"><button type="button" onClick=${onClose}>Cancelar</button>
-        <button class="danger" type="submit" disabled=${busy || v.trim() !== expected}>${busy ? "Apagando…" : "Apagar de vez"}</button></div>
+      <div class="modal-actions"><button type="button" onClick=${onClose}>${t("files.cancel")}</button>
+        <button class="danger" type="submit" disabled=${busy || v.trim() !== expected}>${busy ? t("files.deleting") : t("files.delete_forever")}</button></div>
     </form>
   <//>`;
 }
@@ -220,37 +220,38 @@ function ChmodDialog({ entry, path, onOk, onClose }) {
   const [err, setErr] = useState("");
   const bits = octalToBits(oct);
   const flip = (i) => { const b = [...bits]; b[i] = !b[i]; setOct(bitsToOctal(b, oct)); };
-  const who = ["Dono", "Grupo", "Outros"], what = ["ler", "gravar", "executar"];
+  const who = [t("files.perm_owner"), t("files.perm_group"), t("files.perm_others")];
+  const what = [t("files.perm_read"), t("files.perm_write"), t("files.perm_exec")];
   async function go(e) {
     e && e.preventDefault();
-    if (!/^[0-7]{3,4}$/.test(oct)) return setErr("Use 3 ou 4 dígitos octais (ex.: 644, 0755).");
+    if (!/^[0-7]{3,4}$/.test(oct)) return setErr(t("files.chmod_invalid"));
     try { await onOk(oct); onClose(); } catch (ex) { setErr(ex.message || String(ex)); }
   }
-  return html`<${Modal} title="Permissões" onClose=${onClose}>
+  return html`<${Modal} title=${t("files.permissions")} onClose=${onClose}>
     <form onSubmit=${go}>
       <p class="mono">${path}</p>
-      <p class="help">Dono: <b>${entry.owner || "?"}</b> · Grupo: <b>${entry.group || "?"}</b> · atual: <span class="mono">${entry.perms}</span></p>
+      <p class="help">${t("files.perm_owner")}: <b>${entry.owner || "?"}</b> · ${t("files.perm_group")}: <b>${entry.group || "?"}</b> · ${t("files.perm_current")}: <span class="mono">${entry.perms}</span></p>
       <div class="fm-perm-grid">
         <span></span>${what.map((w) => html`<b key=${w}>${w}</b>`)}
         ${who.map((w, r) => html`<b key=${w}>${w}</b>${[0, 1, 2].map((c) => html`<input type="checkbox" key=${w + c}
             checked=${bits[r * 3 + c]} onChange=${() => flip(r * 3 + c)} />`)}`)}
       </div>
-      <label class="fm-label">Octal<input class="mono" value=${oct} onInput=${(e) => { setOct(e.target.value.trim()); setErr(""); }} /></label>
+      <label class="fm-label">${t("files.octal")}<input class="mono" value=${oct} onInput=${(e) => { setOct(e.target.value.trim()); setErr(""); }} /></label>
       ${err && html`<div class="err">${err}</div>`}
-      <div class="modal-actions"><button type="button" onClick=${onClose}>Cancelar</button><button class="primary" type="submit">Aplicar</button></div>
+      <div class="modal-actions"><button type="button" onClick=${onClose}>${t("files.cancel")}</button><button class="primary" type="submit">${t("files.apply")}</button></div>
     </form>
   <//>`;
 }
 
 function ConflictDialog({ names, onChoice, onClose }) {
-  return html`<${Modal} title="Já existe na pasta" onClose=${() => { onChoice("cancel"); onClose(); }}>
-    <p>${names.length === 1 ? html`<b class="mono">${names[0]}</b> já existe.` : html`${names.length} itens já existem:`}</p>
+  return html`<${Modal} title=${t("files.conflict_title")} onClose=${() => { onChoice("cancel"); onClose(); }}>
+    <p>${names.length === 1 ? html`<b class="mono">${names[0]}</b> ${t("files.conflict_one_exists")}` : t("files.conflict_many_exist", { n: names.length })}</p>
     ${names.length > 1 && html`<ul class="fm-del-list">${names.slice(0, 10).map((n) => html`<li class="mono" key=${n}>${n}</li>`)}
-      ${names.length > 10 && html`<li>… e mais ${names.length - 10}</li>`}</ul>`}
+      ${names.length > 10 && html`<li>${t("files.and_more", { n: names.length - 10 })}</li>`}</ul>`}
     <div class="modal-actions">
-      <button onClick=${() => { onChoice("cancel"); onClose(); }}>Cancelar</button>
-      <button onClick=${() => { onChoice("skip"); onClose(); }}>Pular existentes</button>
-      <button class="danger" onClick=${() => { onChoice("overwrite"); onClose(); }}>Substituir</button>
+      <button onClick=${() => { onChoice("cancel"); onClose(); }}>${t("files.cancel")}</button>
+      <button onClick=${() => { onChoice("skip"); onClose(); }}>${t("files.skip_existing")}</button>
+      <button class="danger" onClick=${() => { onChoice("overwrite"); onClose(); }}>${t("files.replace")}</button>
     </div>
   <//>`;
 }
@@ -285,7 +286,7 @@ export function FileEditor({ src, path, onClose, onSaved, onDownload }) {
       const r = await api.put("/files/write", body);
       setDoc({ ...doc, content, mtime: r.mtime, size: r.size });
       setConflict(false);
-      toast.ok(`Salvo: ${baseName(path)}`);
+      toast.ok(t("files.saved", { name: baseName(path) }));
       onSaved && onSaved();
     } catch (e) {
       if (e.status === 409 && e.payload?.error === "changed") setConflict(true);
@@ -298,29 +299,29 @@ export function FileEditor({ src, path, onClose, onSaved, onDownload }) {
     const k = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveRef.current(); } };
     addEventListener("keydown", k); return () => removeEventListener("keydown", k);
   }, []);
-  const close = () => { if (!dirty || confirm("Descartar as alterações não salvas?")) onClose(); };
+  const close = () => { if (!dirty || confirm(t("files.discard_confirm"))) onClose(); };
 
   return html`<${Modal} title=${html`<span class="mono">${path}</span>`} onClose=${close} wide cls="fm-editor-modal">
     ${err && html`<div class="err">${err}</div>`}
-    ${!doc && !err && html`<p class="help">Carregando…</p>`}
-    ${doc && doc.binary && html`<p>Arquivo binário (${formatSize(doc.size)}) — não abre no editor.</p>`}
+    ${!doc && !err && html`<p class="help">${t("files.loading")}</p>`}
+    ${doc && doc.binary && html`<p>${t("files.binary_file", { size: formatSize(doc.size) })}</p>`}
     ${doc && !doc.binary && html`
-      <p class="help">${formatSize(doc.size)} · ${doc.encoding}${doc.encoding !== "utf-8" ? " (salvar converte para UTF-8)" : ""} · Ctrl+S salva</p>
+      <p class="help">${formatSize(doc.size)} · ${doc.encoding}${doc.encoding !== "utf-8" ? t("files.encoding_converts") : ""} · ${t("files.ctrl_s_saves")}</p>
       <${CodeTextEditor} value=${text} onChange=${setText} name=${baseName(path)} />`}
-    ${conflict && html`<div class="err">O arquivo mudou no disco desde que foi aberto.
-      <button class="sm" onClick=${load}>Recarregar (perde a edição)</button>
-      <button class="sm danger" onClick=${() => save(true)}>Sobrescrever mesmo assim</button></div>`}
+    ${conflict && html`<div class="err">${t("files.changed_on_disk")}
+      <button class="sm" onClick=${load}>${t("files.reload_lose_edit")}</button>
+      <button class="sm danger" onClick=${() => save(true)}>${t("files.overwrite_anyway")}</button></div>`}
     <div class="modal-actions">
-      <button onClick=${() => onDownload([path])}>Baixar</button>
+      <button onClick=${() => onDownload([path])}>${t("files.download")}</button>
       <span class="spacer"></span>
-      <button onClick=${close}>Fechar</button>
-      ${doc && !doc.binary && html`<button class="primary" disabled=${!dirty || busy} onClick=${() => save()}>${busy ? "Salvando…" : "Salvar"}</button>`}
+      <button onClick=${close}>${t("files.close")}</button>
+      ${doc && !doc.binary && html`<button class="primary" disabled=${!dirty || busy} onClick=${() => save()}>${busy ? t("files.saving") : t("files.save")}</button>`}
     </div>
   <//>`;
 }
 
 /* ------------------------------ explorador ----------------------------- */
-const SORTS = [["name", "Nome"], ["size", "Tamanho"], ["mtime", "Modificado"]];
+const SORTS = [["name", "files.col_name"], ["size", "files.col_size"], ["mtime", "files.col_modified"]];   // label keys
 
 // state: {path, q, sort, hidden(bool), open(caminho do arquivo aberto no editor)}; setState(patch, {push})
 export function FileBrowser({ src = "local", state, setState, compact = false, home = "/", title = "" }) {
@@ -371,9 +372,9 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
   function open(entry) {
     const full = joinPath(path, entry.name);
     if (entry.is_dir) return go(full);
-    if (entry.type === "other") return toast.info("Não é um arquivo comum (socket, dispositivo ou fifo).");
+    if (entry.type === "other") return toast.info(t("files.not_regular_file"));
     if ((entry.type === "link" ? entry.target_size : entry.size) > 5 * 1024 * 1024) {
-      if (confirm(`${entry.name} tem ${formatSize(entry.size)} — grande demais para o editor. Baixar?`)) download([full]);
+      if (confirm(t("files.too_big_confirm", { name: entry.name, size: formatSize(entry.size) }))) download([full]);
       return;
     }
     setState({ open: full }, { push: true });
@@ -393,12 +394,12 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
   }
 
   async function downloadZip(paths = selPaths) {
-    if (!paths.length) return toast.info("Selecione o que baixar.");
+    if (!paths.length) return toast.info(t("files.select_to_download"));
     try {
       const qs = paths.map((p) => "path=" + enc(p)).join("&");
       const r = await api.get(`/files/download-link?src=${enc(src)}&${qs}`);
       clickLink(r.url, r.name);
-      if (r.zip) toast.info(`Compactando e baixando ${r.name}…`);
+      if (r.zip) toast.info(t("files.zipping", { name: r.name }));
     } catch (e) { toast.err(e.message || String(e)); }
   }
 
@@ -410,7 +411,7 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       catch (e) { toast.err(`${baseName(p)}: ${e.message || e}`); }
       await sleep(350);
     }
-    if (paths.length > 1) toast.info(`${n} download(s) iniciado(s). Se só veio 1, permita "vários downloads" no navegador.`);
+    if (paths.length > 1) toast.info(t("files.downloads_started_allow", { n }));
   }
 
   async function downloadIntoDir(paths, dirHandle) {
@@ -436,7 +437,7 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       }
       rename.set(top, name);
     }
-    for (const it of plan.items) { const [t, ...rest] = it.rel.split("/"); it.rel = [rename.get(t), ...rest].join("/"); }
+    for (const it of plan.items) { const [top, ...rest] = it.rel.split("/"); it.rel = [rename.get(top), ...rest].join("/"); }
     const tops = [...rename.values()];
     const dirCache = new Map([["", dirHandle]]);
     async function dirOf(rel) {
@@ -473,12 +474,12 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
         } catch (e) { fail++; toast.err(`${f.rel}: ${e.message || e}`); }
       }
     } finally { setDl(null); }
-    if (dlCancel.current) toast.info(`Download cancelado (${ok} arquivo(s) salvos).`);
-    else if (!fail) toast.ok(`Baixado: ${dirHandle.name}/${tops.join(", ")} (${ok} arquivo(s)).`);
+    if (dlCancel.current) toast.info(t("files.download_cancelled", { n: ok }));
+    else if (!fail) toast.ok(t("files.downloaded_into", { dir: dirHandle.name, names: tops.join(", "), n: ok }));
   }
 
   async function download(paths = selPaths) {
-    if (!paths.length) return toast.info("Selecione o que baixar.");
+    if (!paths.length) return toast.info(t("files.select_to_download"));
     const info = paths.map((p) => byName[baseName(p)] && parentPath(p) === path ? byName[baseName(p)] : null);
     const hasDir = info.some((e) => e && e.is_dir);
     if (!hasDir) return downloadLoose(paths);
@@ -491,15 +492,15 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
   // O Chrome recusa a raiz de Downloads/Área de Trabalho/Documentos ("contém arquivos de sistema").
   async function pickDirAndDownload(paths) {
     const last = await downloadDir.get();
-    toast.info("Crie ou selecione uma pasta para salvar os arquivos (a raiz de Downloads, Área de Trabalho e Documentos não é aceita pelo navegador).");
+    toast.info(t("files.pick_folder_hint"));
     let handle;
     try { handle = await window.showDirectoryPicker({ id: "netops-download", mode: "readwrite", startIn: last || "downloads" }); }
     catch (e) {
       if (e && e.name === "AbortError") return;
       if (last) {   // a última pasta sumiu/foi movida: abre em Downloads
         try { handle = await window.showDirectoryPicker({ id: "netops-download", mode: "readwrite", startIn: "downloads" }); }
-        catch (e2) { if (e2 && e2.name !== "AbortError") toast.err(`Não deu para usar essa pasta: ${e2.message || e2}`); return; }
-      } else { toast.err(`Não deu para usar essa pasta: ${e.message || e}`); return; }
+        catch (e2) { if (e2 && e2.name !== "AbortError") toast.err(t("files.folder_unusable", { error: e2.message || e2 })); return; }
+      } else { toast.err(t("files.folder_unusable", { error: e.message || e })); return; }
     }
     await downloadDir.set(handle);
     return downloadIntoDir(paths, handle);
@@ -511,34 +512,34 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     try { plan = await api.get(`/files/download-plan?src=${enc(src)}&${paths.map((p) => "path=" + enc(p)).join("&")}`); }
     catch (e) { return toast.err(e.message || String(e)); }
     const files = plan.items.filter((i) => !i.is_dir);
-    if (files.length > 50 && !confirm(`Isso inicia ${files.length} downloads separados. Continuar?`)) return;
+    if (files.length > 50 && !confirm(t("files.many_downloads_confirm", { n: files.length }))) return;
     let n = 0;
     for (const f of files) {
       try { const r = await linkFor(f.path); clickLink(r.url, f.rel.split("/").join("_")); n++; }
       catch (e) { toast.err(`${f.rel}: ${e.message || e}`); }
       await sleep(350);
     }
-    toast.info(`${n} download(s) iniciado(s).`);
+    toast.info(t("files.downloads_started", { n }));
   }
 
   function report(res, verb) {
     const bad = (res.results || []).filter((r) => !r.ok);
     if (!bad.length) return toast.ok(verb);
-    toast.err(`${bad.length} falha(s): ${bad[0].error}${bad.length > 1 ? " …" : ""}`);
+    toast.err(t("files.failures", { n: bad.length, error: bad[0].error }) + (bad.length > 1 ? " …" : ""));
   }
 
   async function doDelete() {
     const res = await api.post("/files/delete", { src, paths: selPaths });
-    report(res, `Apagado: ${selPaths.length} item(ns)`);
+    report(res, t("files.deleted_items", { n: selPaths.length }));
     load(path);
   }
 
   async function paste(dest = path) {
     if (!clip) return;
-    if (clip.src !== src) return toast.info("A área de transferência é de outra origem (servidor × host). Baixe e envie o arquivo.");
+    if (clip.src !== src) return toast.info(t("files.clipboard_other_source"));
     try {
       const res = await api.post("/files/paste", { src, op: clip.op, paths: clip.paths, dest });
-      report(res, clip.op === "move" ? "Movido" : "Copiado");
+      report(res, clip.op === "move" ? t("files.moved") : t("files.copied_done"));
       if (clip.op === "move") setClip(null);
       load(path, { keepSel: true });
     } catch (e) { toast.err(e.message || String(e)); }
@@ -549,7 +550,7 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     if (!real.length) return;
     try {
       const res = await api.post("/files/paste", { src, op: "move", paths: real, dest: destDir });
-      report(res, `Movido para ${baseName(destDir)}`);
+      report(res, t("files.moved_to", { name: baseName(destDir) }));
       load(path);
     } catch (e) { toast.err(e.message || String(e)); }
   }
@@ -603,8 +604,8 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       setUp(null); xhrRef.current = null;
       load(path, { keepSel: true });
     }
-    if (cancelRef.current) toast.info(`Upload cancelado (${ok} enviado(s)).`);
-    else if (!fail) toast.ok(`Enviado: ${ok} arquivo(s)${dirs.length ? ` e ${dirs.length} pasta(s)` : ""}.`);
+    if (cancelRef.current) toast.info(t("files.upload_cancelled", { n: ok }));
+    else if (!fail) toast.ok(dirs.length ? t("files.uploaded_with_dirs", { n: ok, dirs: dirs.length }) : t("files.uploaded", { n: ok }));
   }
   function cancelUpload() { cancelRef.current = true; try { xhrRef.current && xhrRef.current.abort(); } catch (e) {} }
 
@@ -634,8 +635,8 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
   useEffect(() => { dragLinks.current.clear(); }, [src, path]);
   useEffect(() => {
     if (!sel.length) return;
-    const t = setTimeout(() => prepareDrag(selPaths), 120);
-    return () => clearTimeout(t);
+    const tm = setTimeout(() => prepareDrag(selPaths), 120);
+    return () => clearTimeout(tm);
   }, [sel.join("\n"), path, src]);
   const hoverTimer = useRef(null);
   function hoverRow(entry) {
@@ -657,13 +658,13 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       setTimeout(() => prepareDrag(paths), 400);
     } else {
       prepareDrag(paths);
-      toast.info("Preparando o download… arraste de novo para soltar no computador.");
+      toast.info(t("files.drag_preparing"));
     }
     e.dataTransfer.effectAllowed = "copyMove";
   }
   function onDragOver(e, target = "") {
-    const t = e.dataTransfer.types || [];
-    if (![...t].includes("Files") && ![...t].includes(INTERNAL)) return;
+    const types = e.dataTransfer.types || [];
+    if (![...types].includes("Files") && ![...types].includes(INTERNAL)) return;
     e.preventDefault(); e.stopPropagation();
     if (dropOn !== target) setDropOn(target);
   }
@@ -675,7 +676,7 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
       try { const d = JSON.parse(internal); if (d.src === src && target) moveInto(d.paths, dest); } catch (err2) {}
       return;
     }
-    if (up) return toast.info("Aguarde o upload em andamento terminar.");
+    if (up) return toast.info(t("files.wait_upload"));
     const { files, dirs } = await readDrop(e.dataTransfer);
     startUpload(files, dirs, dest);
   }
@@ -699,14 +700,14 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     open: () => one && open(one),
     download: () => download(),
     rename: () => one && setDialog({ kind: "rename", entry: one }),
-    copy: () => selPaths.length && (setClip({ src, op: "copy", paths: selPaths }), toast.info(`${selPaths.length} item(ns) copiado(s) — cole em outra pasta (Ctrl+V).`)),
-    cut: () => selPaths.length && (setClip({ src, op: "move", paths: selPaths }), toast.info(`${selPaths.length} item(ns) recortado(s) — cole em outra pasta (Ctrl+V).`)),
+    copy: () => selPaths.length && (setClip({ src, op: "copy", paths: selPaths }), toast.info(t("files.items_copied", { n: selPaths.length }))),
+    cut: () => selPaths.length && (setClip({ src, op: "move", paths: selPaths }), toast.info(t("files.items_cut", { n: selPaths.length }))),
     paste: () => paste(),
     chmod: () => one && setDialog({ kind: "chmod", entry: one }),
     del: () => selPaths.length && setDialog({ kind: "delete" }),
     mkdir: () => setDialog({ kind: "mkdir" }),
     touch: () => setDialog({ kind: "touch" }),
-    copyPath: () => { const t = one ? joinPath(path, one.name) : path; navigator.clipboard?.writeText(t).then(() => toast.ok("Caminho copiado.")).catch(() => prompt("Caminho:", t)); },
+    copyPath: () => { const p = one ? joinPath(path, one.name) : path; navigator.clipboard?.writeText(p).then(() => toast.ok(t("files.path_copied"))).catch(() => prompt(t("files.path_prompt"), p)); },
     refresh: () => load(path, { keepSel: true }),
   };
 
@@ -759,22 +760,22 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
 
   return html`<div class=${"fm" + (compact ? " fm-compact" : "")}>
     <div class="fm-toolbar">
-      ${btn("Subir", "up", goUp, !parentPath(path))}
-      ${btn("Atualizar", "refresh", actions.refresh)}
-      ${btn("Início", "home", () => go(home))}
+      ${btn(t("files.up"), "up", goUp, !parentPath(path))}
+      ${btn(t("files.refresh"), "refresh", actions.refresh)}
+      ${btn(t("files.home"), "home", () => go(home))}
       <span class="fm-sep"></span>
-      ${btn("Nova pasta", "mkdir", actions.mkdir)}
-      ${btn("Novo arquivo", "touch", actions.touch)}
-      ${btn("Enviar arquivos", "upload", () => fileInput.current?.click(), !!up)}
-      ${btn("Enviar pasta", "updir", () => dirInput.current?.click(), !!up)}
-      ${btn("Baixar", "download", () => download(), !sel.length)}
+      ${btn(t("files.new_folder"), "mkdir", actions.mkdir)}
+      ${btn(t("files.new_file"), "touch", actions.touch)}
+      ${btn(t("files.upload_files"), "upload", () => fileInput.current?.click(), !!up)}
+      ${btn(t("files.upload_folder"), "updir", () => dirInput.current?.click(), !!up)}
+      ${btn(t("files.download"), "download", () => download(), !sel.length)}
       <span class="fm-sep"></span>
-      ${btn("Copiar", "copy", actions.copy, !sel.length)}
-      ${btn("Recortar", "cut", actions.cut, !sel.length)}
-      ${btn("Colar", "paste", actions.paste, !canPaste)}
-      ${btn("Renomear", "rename", actions.rename, !one)}
-      ${btn("Permissões", "chmod", actions.chmod, !one)}
-      ${btn("Apagar", "del", actions.del, !sel.length, "fm-danger")}
+      ${btn(t("files.copy"), "copy", actions.copy, !sel.length)}
+      ${btn(t("files.cut"), "cut", actions.cut, !sel.length)}
+      ${btn(t("files.paste"), "paste", actions.paste, !canPaste)}
+      ${btn(t("files.rename"), "rename", actions.rename, !one)}
+      ${btn(t("files.permissions"), "chmod", actions.chmod, !one)}
+      ${btn(t("files.delete"), "del", actions.del, !sel.length, "fm-danger")}
       <input ref=${fileInput} type="file" multiple hidden onChange=${(e) => pickFiles(e, false)} />
       <input ref=${dirInput} type="file" multiple hidden webkitdirectory=${true} directory=${true} onChange=${(e) => pickFiles(e, true)} />
     </div>
@@ -783,37 +784,35 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
         ? html`<form class="fm-pathform" onSubmit=${(e) => { e.preventDefault(); setEditPath(false); go(pathInput.trim() || "/"); }}>
             <input class="mono" autoFocus value=${pathInput} onInput=${(e) => setPathInput(e.target.value)}
               onBlur=${() => { setEditPath(false); setPathInput(path); }} onKeyDown=${(e) => { if (e.key === "Escape") { setEditPath(false); setPathInput(path); } }} /></form>`
-        : html`<div class="fm-crumbs" title="Clique no espaço vazio para digitar o caminho" onClick=${(e) => { if (!e.target.closest("a")) setEditPath(true); }}>
+        : html`<div class="fm-crumbs" title=${t("files.crumbs_title")} onClick=${(e) => { if (!e.target.closest("a")) setEditPath(true); }}>
             ${crumbs(path).map((c, i) => html`<span key=${c.path}>${i > 1 ? html`<span class="fm-crumb-sep">/</span>` : ""}<a
               href="#" onClick=${(e) => { e.preventDefault(); go(c.path); }}>${c.name}</a></span>`)}
           </div>`}
-      <input class="fm-filter" type="search" placeholder="Filtrar" value=${state.q || ""}
+      <input class="fm-filter" type="search" placeholder=${t("files.filter")} value=${state.q || ""}
         onInput=${(e) => setState({ q: e.target.value })} />
-      <label class="fm-hidden-tg" title="Mostrar arquivos ocultos (que começam com ponto)">
-        <input type="checkbox" checked=${showHidden} onChange=${(e) => setState({ hidden: e.target.checked })} />${compact ? ".*" : "ocultos"}</label>
+      <label class="fm-hidden-tg" title=${t("files.hidden_title")}>
+        <input type="checkbox" checked=${showHidden} onChange=${(e) => setState({ hidden: e.target.checked })} />${compact ? ".*" : t("files.hidden")}</label>
     </div>
     <div class="fm-head">
-      <span class="fm-c-name" onClick=${() => sortBy("name")}>Nome${sortMark("name")}</span>
-      <span class="fm-c-size" onClick=${() => sortBy("size")}>Tamanho${sortMark("size")}</span>
-      <span class="fm-c-date" onClick=${() => sortBy("mtime")}>Modificado${sortMark("mtime")}</span>
-      ${!compact && html`<span class="fm-c-perm">Permissões</span><span class="fm-c-own">Dono</span>`}
+      ${SORTS.map(([k, label]) => html`<span key=${k} class=${k === "mtime" ? "fm-c-date" : "fm-c-" + k} onClick=${() => sortBy(k)}>${t(label)}${sortMark(k)}</span>`)}
+      ${!compact && html`<span class="fm-c-perm">${t("files.permissions")}</span><span class="fm-c-own">${t("files.perm_owner")}</span>`}
     </div>
     <div ref=${listRef} class=${"fm-list" + (dropOn === "" ? " fm-drop" : "")} tabIndex="0" onKeyDown=${onKey}
       onDragOver=${(e) => onDragOver(e, "")} onDragLeave=${(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropOn(null); }}
       onDrop=${(e) => onDrop(e, "")} onContextMenu=${(e) => contextRow(e, null)}
       onClick=${(e) => { if (e.target === e.currentTarget) { setSel([]); setMenu(null); } }}>
       ${err && html`<div class="fm-msg err">${err.message || String(err)}${err.status === 404 && parentPath(path)
-        ? html` <button class="sm" onClick=${goUp}>Voltar para ${parentPath(path)}</button>` : ""}</div>`}
-      ${!err && !data && html`<div class="fm-msg help">Carregando…</div>`}
+        ? html` <button class="sm" onClick=${goUp}>${t("files.back_to", { path: parentPath(path) })}</button>` : ""}</div>`}
+      ${!err && !data && html`<div class="fm-msg help">${t("files.loading")}</div>`}
       ${data && parentPath(path) && html`<div class="fm-row fm-up" onDblClick=${goUp} onClick=${coarse ? goUp : undefined}
           onDragOver=${(e) => onDragOver(e, "..")} onDrop=${(e) => { e.preventDefault(); setDropOn(null);
             const d = e.dataTransfer.getData(INTERNAL); if (d) try { moveInto(JSON.parse(d).paths, parentPath(path)); } catch (x) {} }}>
         <span class="fm-c-name"><${FileIcon} entry=${{ name: "..", is_dir: true }} /> ..</span></div>`}
-      ${data && !entries.length && html`<div class="fm-msg help">${state.q ? "Nada com esse filtro." : "Pasta vazia — arraste arquivos ou pastas para cá."}</div>`}
+      ${data && !entries.length && html`<div class="fm-msg help">${state.q ? t("files.no_match") : t("files.empty_folder")}</div>`}
       ${entries.map((e, i) => html`<div key=${e.name} data-i=${i} draggable="true"
           class=${"fm-row" + (sel.includes(e.name) ? " sel" : "") + (dropOn === e.name ? " fm-drop" : "") + (e.name.startsWith(".") ? " fm-dot" : "")
             + (clip && clip.op === "move" && clip.src === src && clip.paths.includes(joinPath(path, e.name)) ? " fm-cut" : "")}
-          title=${e.type === "link" ? `${e.name} → ${e.target || "?"}${e.broken ? " (quebrado)" : ""}` : e.name}
+          title=${e.type === "link" ? `${e.name} → ${e.target || "?"}${e.broken ? t("files.link_broken") : ""}` : e.name}
           onClick=${(ev) => clickRow(ev, e)} onDblClick=${() => open(e)} onContextMenu=${(ev) => contextRow(ev, e)}
           onDragStart=${(ev) => onDragStartRow(ev, e)} onMouseEnter=${() => hoverRow(e)}
           onDragOver=${e.is_dir ? (ev) => onDragOver(ev, e.name) : undefined}
@@ -828,52 +827,52 @@ export function FileBrowser({ src = "local", state, setState, compact = false, h
     <div class="fm-status">
       ${dl && !up
         ? html`<span class="fm-progress"><span style=${`width:${dl.pct}%`}></span></span>
-            <span class="fm-up-txt">Baixando ${dl.n}/${dl.of} · ${dl.pct}% · <span class="mono">${dl.name}</span></span>
-            <button class="sm" onClick=${() => { dlCancel.current = true; }}>Cancelar</button>`
+            <span class="fm-up-txt">${t("files.downloading_progress", { n: dl.n, of: dl.of, pct: dl.pct })} · <span class="mono">${dl.name}</span></span>
+            <button class="sm" onClick=${() => { dlCancel.current = true; }}>${t("files.cancel")}</button>`
         : up
         ? html`<span class="fm-progress"><span style=${`width:${up.pct}%`}></span></span>
-            <span class="fm-up-txt">Enviando ${up.n}/${up.of} · ${up.pct}% · <span class="mono">${up.name}</span></span>
-            <button class="sm" onClick=${cancelUpload}>Cancelar</button>`
-        : html`<span>${loading ? "Atualizando…" : `${entries.length} item(ns)`}${sel.length ? ` · ${sel.length} selecionado(s)` : ""}${
-            clip && clip.src === src ? ` · ${clip.paths.length} na área de transferência (${clip.op === "move" ? "recortar" : "copiar"})` : ""}</span>
+            <span class="fm-up-txt">${t("files.uploading_progress", { n: up.n, of: up.of, pct: up.pct })} · <span class="mono">${up.name}</span></span>
+            <button class="sm" onClick=${cancelUpload}>${t("files.cancel")}</button>`
+        : html`<span>${loading ? t("files.refreshing") : t("files.item_count", { n: entries.length })}${sel.length ? " · " + t("files.selected_count", { n: sel.length }) : ""}${
+            clip && clip.src === src ? " · " + t(clip.op === "move" ? "files.clipboard_count_cut" : "files.clipboard_count_copy", { n: clip.paths.length }) : ""}</span>
           ${title && html`<span class="spacer"></span><span class="help">${title}</span>`}`}
     </div>
 
     ${menu && html`<div class="fm-menu" ref=${menuRef} style=${`left:${menu.x}px;top:${menu.y}px`} onClick=${(e) => e.stopPropagation()}>
-      ${!menu.empty && one && html`<button onClick=${() => { setMenu(null); actions.open(); }}>${one.is_dir ? "Abrir" : "Abrir / editar"}</button>`}
-      ${!menu.empty && html`<button onClick=${() => { setMenu(null); download(); }}>Baixar</button>
-        <button onClick=${() => { setMenu(null); downloadZip(); }}>Baixar como .zip</button>`}
-      ${!menu.empty && html`<hr /><button onClick=${() => { setMenu(null); actions.copy(); }}>Copiar</button>
-        <button onClick=${() => { setMenu(null); actions.cut(); }}>Recortar</button>`}
+      ${!menu.empty && one && html`<button onClick=${() => { setMenu(null); actions.open(); }}>${one.is_dir ? t("files.open") : t("files.open_edit")}</button>`}
+      ${!menu.empty && html`<button onClick=${() => { setMenu(null); download(); }}>${t("files.download")}</button>
+        <button onClick=${() => { setMenu(null); downloadZip(); }}>${t("files.download_zip")}</button>`}
+      ${!menu.empty && html`<hr /><button onClick=${() => { setMenu(null); actions.copy(); }}>${t("files.copy")}</button>
+        <button onClick=${() => { setMenu(null); actions.cut(); }}>${t("files.cut")}</button>`}
       <button disabled=${!canPaste} onClick=${() => { setMenu(null); paste(one && one.is_dir && !menu.empty ? joinPath(path, one.name) : path); }}>
-        Colar${one && one.is_dir && !menu.empty ? " dentro" : " aqui"}</button>
-      ${!menu.empty && one && html`<hr /><button onClick=${() => { setMenu(null); actions.rename(); }}>Renomear</button>
-        <button onClick=${() => { setMenu(null); actions.chmod(); }}>Permissões…</button>`}
-      <button onClick=${() => { setMenu(null); actions.copyPath(); }}>Copiar caminho</button>
-      <hr /><button onClick=${() => { setMenu(null); actions.mkdir(); }}>Nova pasta</button>
-      <button onClick=${() => { setMenu(null); actions.touch(); }}>Novo arquivo</button>
-      <button onClick=${() => { setMenu(null); fileInput.current?.click(); }}>Enviar arquivos…</button>
-      ${!menu.empty && html`<hr /><button class="fm-danger" onClick=${() => { setMenu(null); actions.del(); }}>Apagar…</button>`}
+        ${one && one.is_dir && !menu.empty ? t("files.paste_inside") : t("files.paste_here")}</button>
+      ${!menu.empty && one && html`<hr /><button onClick=${() => { setMenu(null); actions.rename(); }}>${t("files.rename")}</button>
+        <button onClick=${() => { setMenu(null); actions.chmod(); }}>${t("files.permissions_ellipsis")}</button>`}
+      <button onClick=${() => { setMenu(null); actions.copyPath(); }}>${t("files.copy_path")}</button>
+      <hr /><button onClick=${() => { setMenu(null); actions.mkdir(); }}>${t("files.new_folder")}</button>
+      <button onClick=${() => { setMenu(null); actions.touch(); }}>${t("files.new_file")}</button>
+      <button onClick=${() => { setMenu(null); fileInput.current?.click(); }}>${t("files.upload_files_ellipsis")}</button>
+      ${!menu.empty && html`<hr /><button class="fm-danger" onClick=${() => { setMenu(null); actions.del(); }}>${t("files.delete_ellipsis")}</button>`}
     </div>`}
 
-    ${dialog?.kind === "mkdir" && html`<${NameDialog} title="Nova pasta" label="Nome" ok="Criar" onClose=${() => setDialog(null)}
+    ${dialog?.kind === "mkdir" && html`<${NameDialog} title=${t("files.new_folder")} label=${t("files.col_name")} ok=${t("files.create")} onClose=${() => setDialog(null)}
       onOk=${async (n) => { await api.post("/files/mkdir", { src, path: joinPath(path, n) }); await load(path); setSel([n]); setAnchor(n); }} />`}
-    ${dialog?.kind === "touch" && html`<${NameDialog} title="Novo arquivo" label="Nome" ok="Criar e editar" onClose=${() => setDialog(null)}
+    ${dialog?.kind === "touch" && html`<${NameDialog} title=${t("files.new_file")} label=${t("files.col_name")} ok=${t("files.create_and_edit")} onClose=${() => setDialog(null)}
       onOk=${async (n) => { await api.post("/files/touch", { src, path: joinPath(path, n) }); await load(path); setState({ open: joinPath(path, n) }, { push: true }); }} />`}
-    ${dialog?.kind === "rename" && html`<${NameDialog} title="Renomear" label="Novo nome" initial=${dialog.entry.name} ok="Renomear"
+    ${dialog?.kind === "rename" && html`<${NameDialog} title=${t("files.rename")} label=${t("files.new_name")} initial=${dialog.entry.name} ok=${t("files.rename")}
       onClose=${() => setDialog(null)} onOk=${async (n) => { if (n === dialog.entry.name) return;
         await api.post("/files/rename", { src, path: joinPath(path, dialog.entry.name), name: n }); await load(path); setSel([n]); setAnchor(n); }} />`}
     ${dialog?.kind === "chmod" && html`<${ChmodDialog} entry=${dialog.entry} path=${joinPath(path, dialog.entry.name)} onClose=${() => setDialog(null)}
       onOk=${async (mode) => { await api.post("/files/chmod", { src, path: joinPath(path, dialog.entry.name), mode }); await load(path, { keepSel: true }); }} />`}
     ${dialog?.kind === "delete" && html`<${DeleteDialog} paths=${selPaths} entries=${selEntries} onOk=${doDelete} onClose=${() => setDialog(null)} />`}
-    ${dialog?.kind === "nodir" && html`<${Modal} title="Baixar pasta" onClose=${() => setDialog(null)}>
-      <p>Este navegador não deixa o site gravar uma <b>pasta</b> no seu computador. Isso exige Chrome ou Edge com o console
-        em <b>HTTPS</b> (ou localhost); o endereço atual é ${location.protocol === "https:" ? "HTTPS, mas o navegador não oferece o recurso" : "HTTP"}.</p>
-      <p>Escolha como baixar:</p>
+    ${dialog?.kind === "nodir" && html`<${Modal} title=${t("files.download_folder_title")} onClose=${() => setDialog(null)}>
+      <p>${t("files.nodir_before")} <b>${t("files.nodir_folder")}</b> ${t("files.nodir_middle")}
+        <b>HTTPS</b> ${t("files.nodir_after")} ${location.protocol === "https:" ? t("files.nodir_https_unsupported") : "HTTP"}.</p>
+      <p>${t("files.nodir_choose")}</p>
       <div class="modal-actions">
-        <button onClick=${() => setDialog(null)}>Cancelar</button>
-        <button onClick=${() => { const p = dialog.paths; setDialog(null); downloadFlat(p); }}>Arquivos soltos (pasta_arquivo)</button>
-        <button class="primary" onClick=${() => { const p = dialog.paths; setDialog(null); downloadZip(p); }}>Baixar .zip</button>
+        <button onClick=${() => setDialog(null)}>${t("files.cancel")}</button>
+        <button onClick=${() => { const p = dialog.paths; setDialog(null); downloadFlat(p); }}>${t("files.download_flat")}</button>
+        <button class="primary" onClick=${() => { const p = dialog.paths; setDialog(null); downloadZip(p); }}>${t("files.download_zip_btn")}</button>
       </div>
     <//>`}
     ${dialog?.kind === "conflict" && html`<${ConflictDialog} names=${dialog.names} onChoice=${dialog.onChoice} onClose=${() => setDialog(null)} />`}

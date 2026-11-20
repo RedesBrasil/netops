@@ -1,0 +1,14 @@
+{
+  "cache_dir_insecure": "Diretório do cache com permissões inseguras: {path}. Rode: {cmd}",
+  "cache_file_insecure": "Arquivo de cache com permissões inseguras. Rode: {cmd}  (e depois unlock)",
+  "cache_open_failed": "Não foi possível abrir o cache com segurança: {error}",
+  "env_key_invalid": "{var} inválida: {error}",
+  "incomplete_block": "Bloco 'vault:' incompleto. Rode 'init'.",
+  "locked": "Cofre de credenciais trancado. Para liberar as senhas, copie e cole no terminal:\n\n  {cmd}\n",
+  "no_verifier": "Bloco 'vault:' sem 'verifier'. Rode 'init' novamente.",
+  "not_initialized": "Cofre não inicializado. Rode:\n  {cmd}",
+  "unknown_kdf": "KDF desconhecido no cofre: {kdf}",
+  "unsupported_kdf": "KDF não suportado: {kdf}",
+  "wrong_master": "Senha mestra incorreta.",
+  "wrong_master_or_corrupt": "Senha mestra incorreta ou dado corrompido."
+}

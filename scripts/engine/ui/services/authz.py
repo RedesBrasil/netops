@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, field
 
 import deps
+from lib import i18n
 from lib import accessdb
 
 ANY = None            # qualquer usuário logado
@@ -38,6 +39,9 @@ RULES: list[tuple[frozenset, re.Pattern, str | None]] = [
     (WRITE, _R(r"^/setup/complete$"), ANY),
     (ALL, _R(r"^/setup/finish$"), "server.admin"),
     (GET, _R(r"^/config/meta$"), ANY),
+    # traduções: lista de idiomas e catálogos (abertos: login e primeiro acesso usam); idioma da instalação = admin
+    (GET, _R(r"^/i18n(/[A-Za-z_-]{2,20})?$"), ANY),
+    (WRITE, _R(r"^/config/language$"), "config"),
     (GET, _R(r"^/meta/(enums|icons)$"), ANY),
     (GET, _R(r"^/vault/status$"), ANY),
     (WRITE, _R(r"^/vault/unlock$"), ANY),                     # exige a senha-mestra de qualquer jeito
@@ -186,14 +190,15 @@ class Forbidden(Exception):
     def __init__(self, perm: str, detail: str | None = None):
         super().__init__(detail or perm)
         self.perm = perm
-        self.detail = detail or f"Sem permissão: {perm_label(perm)}."
+        self.detail = detail or i18n.t("errors.forbidden_perm", perm=perm_label(perm))
 
 
 def perm_label(perm: str) -> str:
-    for p in accessdb.PERMISSIONS:
+    for p in accessdb.localized_permissions():
         if p["key"] == perm:
             return p["label"]
-    return "somente administradores" if perm in (UNMAPPED, ROUTER) else str(perm)
+    from lib import i18n  # noqa: PLC0415
+    return i18n.t("common.admins_only") if perm in (UNMAPPED, ROUTER) else str(perm)
 
 
 def require(request, perm: str) -> Principal:

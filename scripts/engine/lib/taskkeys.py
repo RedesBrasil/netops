@@ -16,6 +16,8 @@ from pathlib import Path
 
 import yaml
 
+from lib import i18n
+
 MARK = "netops-task:"
 FORCED = "/usr/local/sbin/netops-ro-shell"
 OPTS = "no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding"
@@ -27,7 +29,7 @@ def keys_root(root: Path | str) -> Path:
 
 def task_dir(root, task_id: str) -> Path:
     if not task_id or "/" in task_id or task_id.startswith("."):
-        raise ValueError("task_id inválido")
+        raise ValueError(i18n.t("lib_taskkeys.invalid_task_id"))
     return keys_root(root) / task_id
 
 

@@ -1,0 +1,14 @@
+{
+  "title": "Network Topology",
+  "generated_notice": "File **generated** by `scripts/tools/docs/topology_render.py`. Do not edit by hand.",
+  "missing_host": "missing host",
+  "segments": "Logical segments",
+  "col_segment": "Segment",
+  "col_subnet": "Subnet",
+  "generated_at": "Generated at: {ts} — {hosts} host(s), {links} link(s).",
+  "description": "Generate the topology diagram in Mermaid.",
+  "help_stdout": "Print to the terminal, do not write the file",
+  "no_pyyaml": "ERROR: PyYAML not installed. Run: pip install -r requirements.txt",
+  "files_missing": "ERROR: network/hosts.yaml and/or network/topology.yaml not found.",
+  "written": "[generated] {path}"
+}

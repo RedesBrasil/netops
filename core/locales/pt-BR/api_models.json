@@ -1,0 +1,13 @@
+{
+  "all_map_id": "o mapa geral usa o ID all",
+  "all_map_kind": "o mapa geral não pode mudar de tipo",
+  "duplicate_excluded": "hosts excluídos duplicados",
+  "duplicate_ip": "IP {address} repetido (já é o IP de gerência ou outro IP adicional)",
+  "duplicate_members": "membros de host duplicados",
+  "duplicate_positions": "posições de host duplicadas",
+  "invalid_history_dir": "diretório de histórico inválido",
+  "invalid_ip": "IP inválido (use IPv4/IPv6, com máscara opcional: 200.1.2.3/29)",
+  "reference_needs_map": "referência precisa de um mapa de destino",
+  "site_map_needs_site": "mapa por localidade precisa de site",
+  "unknown_icon": "ícone não existe na biblioteca local"
+}

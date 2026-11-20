@@ -33,6 +33,7 @@ from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
 
 import yaml  # noqa: E402
+from lib import i18n  # noqa: E402
 from lib.inventory_lock import inventory_lock  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -71,7 +72,7 @@ def cmd_register(args) -> int:
     by_id = {h["id"]: h for h in hosts}
     prox = by_id.get(spec["proxmox"])
     if not prox:
-        sys.exit(f"Proxmox {spec['proxmox']} não existe no inventário")
+        sys.exit(i18n.t("cli_inventory.proxmox_not_found", proxmox=spec["proxmox"]))
     names = {h["hostname"] for h in hosts}
     ips = {h.get("mgmt_ip") for h in hosts}
     nxt = data["next_host_id"]
@@ -79,11 +80,11 @@ def cmd_register(args) -> int:
     for item in spec["hosts"]:
         name = item["hostname"]
         if name != name.upper():
-            sys.exit(f"{name}: hostname tem de ser TUDO MAIÚSCULO (AGENTS.md)")
+            sys.exit(i18n.t("cli_inventory.hostname_uppercase", name=name))
         if name in names:
-            print(f"- pulei {name}: já cadastrado"); continue
+            print(i18n.t("cli_inventory.skip_name", name=name)); continue
         if item["ip"] in ips:
-            print(f"- pulei {name}: IP {item['ip']} já cadastrado"); continue
+            print(i18n.t("cli_inventory.skip_ip", name=name, ip=item["ip"])); continue
         kind = item.get("kind", "CT")
         entry = {"id": nxt, "hostname": name, "mgmt_ip": item["ip"], "group": item.get("group", "LINUX-SERVERS"),
                  "icon": item.get("icon", "linux-server"), "model": item.get("model", "LXC" if kind == "CT" else "KVM"),
@@ -97,16 +98,16 @@ def cmd_register(args) -> int:
                           f"{item.get('notes', '')} {access}").replace("  ", " ")
         new.append(entry); names.add(name); ips.add(item["ip"]); nxt += 1
     for e in new:
-        print(f"+ host {e['id']}: {e['hostname']} ({e['mgmt_ip']}) runs_on {e['runs_on']}")
+        print(i18n.t("cli_inventory.added_host", id=e["id"], hostname=e["hostname"], ip=e["mgmt_ip"], runs_on=e["runs_on"]))
     if args.apply and new:
         with inventory_lock(NET):
             backup(NET / "hosts.yaml", "pre-register")
             data["hosts"] = hosts + new
             data["next_host_id"] = nxt
             dump(data, NET / "hosts.yaml")
-        print("gravado.")
+        print(i18n.t("cli_inventory.saved"))
     elif not args.apply:
-        print("(dry-run: nada gravado; use --apply)")
+        print(i18n.t("cli_inventory.dry_run"))
     return 0
 
 
@@ -124,13 +125,13 @@ def cmd_place(args) -> int:
         elif t.get("host_id") == args.proxmox and s.get("kind") == "object":
             bridge = objs[s["object_id"]]
     if not bridge:
-        sys.exit(f"Proxmox {args.proxmox} não está ligado a uma bridge no mapa '{MAP_ID}': ligue-o antes (host -> bridge)")
+        sys.exit(i18n.t("cli_inventory.no_bridge_link", proxmox=args.proxmox, map=MAP_ID))
     bx, by = bridge["position"]["x"], bridge["position"]["y"]
     box = next((o for o in m["objects"] if o["type"] == "shape" and not o.get("label") and o.get("color")
                 and o["position"]["x"] <= bx <= o["position"]["x"] + o["width"]
                 and o["position"]["y"] <= by <= o["position"]["y"] + o["height"]), None)
     if not box:
-        sys.exit("não achei a caixa azul (shape) que contém a bridge")
+        sys.exit(i18n.t("cli_inventory.no_box"))
     bx0, by0 = box["position"]["x"], box["position"]["y"]
     labels = {int(k): v for k, v in (p.split("=", 1) for p in args.labels.split(",") if p)}
     pos = {p["host_id"]: p for p in m["positions"]}
@@ -139,13 +140,13 @@ def cmd_place(args) -> int:
                                and by0 <= pos[i]["y"] <= by0 + box["height"] else (1, i, 0))  # já na caixa: mantém a ordem; novos no fim
     n = len(ids)
     if not n:
-        sys.exit("nenhum host com runs_on = proxmox; rode `register` antes")
+        sys.exit(i18n.t("cli_inventory.no_hosts"))
     cap = int((box["height"] - FIRST_ROW - 20) // ROW_STEP)
     ncols = 1 if n <= 3 else max(MAX_COLS, math.ceil(n / cap))
     nrows = math.ceil(n / ncols)
     need_w = COL_OFFSET + COL_STEP * (ncols - 1) + 195 + 40  # largura útil: a caixa cresce se faltar espaço
     if need_w > box["width"]:
-        print(f"caixa alargada: {box['width']:.0f} -> {need_w:.0f}")
+        print(i18n.t("cli_inventory.box_widened", old=f"{box['width']:.0f}", new=f"{need_w:.0f}"))
         box["width"] = float(need_w)
     xs = [bx0 + COL_OFFSET + COL_STEP * c for c in range(ncols)]
     trunks = [x - 52 for x in xs]  # vão entre a coluna anterior e esta (1139/1437/1734 no Techify)
@@ -158,7 +159,8 @@ def cmd_place(args) -> int:
         center = y0 + ROW_STEP * k + HOST_H + (ROW_STEP - HOST_H) / 2
     zp = max(p["z_index"] for p in m["positions"]) + 1
     zl = max(v.get("z_index", 0) for v in m["visual_links"]) + 1
-    print(f"caixa ({bx0:.0f},{by0:.0f}) {box['width']:.0f}x{box['height']:.0f}; {n} hosts em {ncols} col x {nrows} lin; bridge centro y={center:.0f}")
+    print(i18n.t("cli_inventory.layout", x=f"{bx0:.0f}", y=f"{by0:.0f}", w=f"{box['width']:.0f}", h=f"{box['height']:.0f}",
+                 n=n, cols=ncols, rows=nrows, center=f"{center:.0f}"))
     for i, hid in enumerate(ids):
         c, r = divmod(i, nrows)
         x, y = float(xs[c]), float(y0 + ROW_STEP * r)
@@ -176,7 +178,8 @@ def cmd_place(args) -> int:
         link["anchors"] = {"source": {"side": "right", "ratio": 0.5}, "target": {"side": "left", "ratio": 0.5}}
         link["route"] = {"axis": "x", "tracks": [float(trunks[c])]}
         link["label"] = labels.get(hid, link.get("label", "") or "")
-        print(f"  {hosts[hid]['hostname']} (host {hid}) -> col {c + 1} lin {r + 1} ({x:.0f},{y:.0f}) {link['label']}")
+        print(i18n.t("cli_inventory.placed", hostname=hosts[hid]["hostname"], host_id=hid, col=c + 1, row=r + 1,
+                     x=f"{x:.0f}", y=f"{y:.0f}", label=link["label"]))
     bridge["position"] = {"x": float(bx0 + 71), "y": float(center - 44)}
     order = ["anchors", "route", "z_index", "id", "source", "target", "label", "speed"]
     m["visual_links"] = [{k: v[k] for k in order if k in v} | {k: v[k] for k in v if k not in order}
@@ -185,9 +188,9 @@ def cmd_place(args) -> int:
         with inventory_lock(NET):
             backup(NET / "maps.yaml", "pre-place")
             dump(maps, NET / "maps.yaml")
-        print("gravado. Peça para recarregar o mapa (a tela aberta com estado antigo sobrescreve).")
+        print(i18n.t("cli_inventory.saved_reload_map_warning"))
     else:
-        print("(dry-run: nada gravado; use --apply)")
+        print(i18n.t("cli_inventory.dry_run"))
     return 0
 
 
@@ -216,20 +219,20 @@ def cmd_append(args) -> int:
     maps = load("maps.yaml")
     m = next(x for x in maps["maps"] if x["id"] == MAP_ID)
     objs = {o["id"]: o for o in m["objects"]}
-    bridge = find_bridge(m, objs, args.proxmox) or sys.exit("Proxmox sem bridge no mapa")
+    bridge = find_bridge(m, objs, args.proxmox) or sys.exit(i18n.t("cli_inventory.proxmox_no_bridge"))
     pos = {p["host_id"]: p for p in m["positions"]}
     links = [v for v in m["visual_links"] if v["source"].get("object_id") == bridge["id"] and v["target"].get("host_id") in pos]
     cols = {}
     for v in links:
         cols.setdefault(round(pos[v["target"]["host_id"]]["x"]), []).append(v)
     if not cols:
-        sys.exit("bridge sem hosts ligados: use `place`")
+        sys.exit(i18n.t("cli_inventory.bridge_no_hosts"))
     labels = {int(k): v for k, v in (p.split("=", 1) for p in args.labels.split(",") if p)}
     zp = max(p["z_index"] for p in m["positions"]) + 1
     zl = max(v.get("z_index", 0) for v in m["visual_links"]) + 1
     xy = [tuple(float(n) for n in c.split(",")) for c in args.xy]
     if xy and len(xy) != len(args.hosts):
-        sys.exit("--xy precisa de uma coordenada x,y por host")
+        sys.exit(i18n.t("cli_inventory.xy_count"))
     for i, hid in enumerate(args.hosts):
         if xy:                                                         # caixa cheia: posição escolhida à mão (--xy / --trunk)
             x, y = xy[i]
@@ -242,7 +245,7 @@ def cmd_append(args) -> int:
             ref = next((v for v in cols[x] if v.get("route")), cols[x][0])
             tracks = list(ref["route"]["tracks"]) if ref.get("route") else [x - 52.0]
             if y + HOST_H > bridge_box_bottom(m, bridge) - 10:
-                sys.exit(f"{hosts[hid]['hostname']} não cabe embaixo da coluna; use --xy x,y [--trunk X] ou aumente a caixa")
+                sys.exit(i18n.t("cli_inventory.does_not_fit", hostname=hosts[hid]["hostname"]))
         link = {"anchors": {"source": {"side": "right", "ratio": 0.5}, "target": {"side": "left", "ratio": 0.5}},
                 "route": {"axis": "x", "tracks": tracks},
                 "z_index": zl, "id": f"vl-bridge-{args.proxmox}-{hid}",
@@ -257,14 +260,15 @@ def cmd_append(args) -> int:
         if not any(v["target"].get("host_id") == hid and v["source"].get("object_id") == bridge["id"] for v in m["visual_links"]):
             m["visual_links"].append(link)
         cols.setdefault(round(x), []).append(link)
-        print(f"  {hosts[hid]['hostname']} (host {hid}) -> x={x:.0f} y={y:.0f} {link['label']}")
+        print(i18n.t("cli_inventory.appended", hostname=hosts[hid]["hostname"], host_id=hid, x=f"{x:.0f}", y=f"{y:.0f}",
+                     label=link["label"]))
     if args.apply:
         with inventory_lock(NET):
             backup(NET / "maps.yaml", "pre-append")
             dump(maps, NET / "maps.yaml")
-        print("gravado. Peça para recarregar o mapa.")
+        print(i18n.t("cli_inventory.saved_reload_map"))
     else:
-        print("(dry-run: nada gravado; use --apply)")
+        print(i18n.t("cli_inventory.dry_run"))
     return 0
 
 
@@ -275,7 +279,7 @@ def cmd_zone(args) -> int:
     m = next(x for x in maps["maps"] if x["id"] == MAP_ID)
     objs = {o["id"]: o for o in m["objects"]}
     if find_bridge(m, objs, args.proxmox):
-        sys.exit("esse Proxmox já tem bridge/zona no mapa")
+        sys.exit(i18n.t("cli_inventory.zone_exists"))
     boxes = [o for o in m["objects"] if o["type"] == "shape" and not o.get("label") and o.get("color") and o["width"] == 1328.0]
     top = max(b["position"]["y"] + b["height"] for b in boxes)
     box_y = float(top + 24)                                               # mesmo vão de ~24 entre as caixas
@@ -301,32 +305,33 @@ def cmd_zone(args) -> int:
                               "z_index": max(v.get("z_index", 0) for v in m["visual_links"]) + 1, "id": ids["link"],
                               "source": {"kind": "host", "host_id": args.proxmox},
                               "target": {"kind": "object", "object_id": ids["bridge"]}, "label": "", "speed": "10G"})
-    print(f"zona '{args.name}': caixa y={box_y:.0f}, host {args.proxmox} ({hosts[args.proxmox]['hostname']}) em (434,{host_y:.0f})")
+    print(i18n.t("cli_inventory.zone_created", name=args.name, y=f"{box_y:.0f}", host_id=args.proxmox,
+                 hostname=hosts[args.proxmox]["hostname"], host_y=f"{host_y:.0f}"))
     if args.apply:
         with inventory_lock(NET):
             backup(NET / "maps.yaml", "pre-zone")
             dump(maps, NET / "maps.yaml")
-        print("gravado. Agora rode `place` para os hosts.")
+        print(i18n.t("cli_inventory.saved_run_place"))
     else:
-        print("(dry-run: nada gravado; use --apply)")
+        print(i18n.t("cli_inventory.dry_run"))
     return 0
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=i18n.t("cli_inventory.description"), formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("register"); r.add_argument("--spec", required=True); r.add_argument("--apply", action="store_true")
-    p = sub.add_parser("place")
-    p.add_argument("--proxmox", type=int, required=True, help="ID do host Proxmox (runs_on)")
-    p.add_argument("--hosts", type=int, nargs="*", help="IDs e ordem (padrão: todos com runs_on = proxmox)")
-    p.add_argument("--labels", default="", help="rótulos por host: 37=VLAN3000,55=vmbr1")
+    r = sub.add_parser("register", help=i18n.t("cli_inventory.help_register")); r.add_argument("--spec", required=True); r.add_argument("--apply", action="store_true")
+    p = sub.add_parser("place", help=i18n.t("cli_inventory.help_place"))
+    p.add_argument("--proxmox", type=int, required=True, help=i18n.t("cli_inventory.help_proxmox"))
+    p.add_argument("--hosts", type=int, nargs="*", help=i18n.t("cli_inventory.help_hosts"))
+    p.add_argument("--labels", default="", help=i18n.t("cli_inventory.help_labels"))
     p.add_argument("--apply", action="store_true")
-    a = sub.add_parser("append", help="acrescenta hosts numa caixa com desenho próprio, sem reorganizar")
+    a = sub.add_parser("append", help=i18n.t("cli_inventory.help_append"))
     a.add_argument("--proxmox", type=int, required=True); a.add_argument("--hosts", type=int, nargs="+", required=True)
     a.add_argument("--labels", default=""); a.add_argument("--apply", action="store_true")
-    a.add_argument("--xy", nargs="*", default=[], help="posições à mão, uma 'x,y' por host (caixa cheia)")
-    a.add_argument("--trunk", type=float, help="x do tronco da linha (com --xy)")
-    z = sub.add_parser("zone", help="cria a caixa/nota/bridge de um Proxmox que ainda não tem zona no mapa")
+    a.add_argument("--xy", nargs="*", default=[], help=i18n.t("cli_inventory.help_xy"))
+    a.add_argument("--trunk", type=float, help=i18n.t("cli_inventory.help_trunk"))
+    z = sub.add_parser("zone", help=i18n.t("cli_inventory.help_zone"))
     z.add_argument("--proxmox", type=int, required=True); z.add_argument("--name", required=True)
     z.add_argument("--apply", action="store_true")
     args = ap.parse_args()

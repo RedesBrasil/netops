@@ -1,0 +1,22 @@
+{
+  "alias_not_object": "alias must be an object",
+  "alias_not_text": "alias must be non-empty text",
+  "alias_reserved": "alias '{ref}' is reserved for a deleted host",
+  "alias_unallocated": "alias points to an ID not allocated yet",
+  "aliases_not_list": "aliases must be a list",
+  "counter_too_low": "counter must be above all IDs already allocated",
+  "duplicate_alias": "duplicate alias",
+  "duplicate_id": "duplicate ID",
+  "each_host_object": "each host must be an object",
+  "host_id_invalid": "Host ID must be a positive integer up to 9007199254740991",
+  "host_id_not_found": "host ID {ref} is not in network/hosts.yaml",
+  "host_not_found": "host '{ref}' is not in network/hosts.yaml",
+  "host_not_object": "host must be an object",
+  "hostname_ambiguous": "hostname '{ref}' is ambiguous; enter the integer ID",
+  "inventory_not_object": "inventory must be an object",
+  "legacy_keys_text": "legacy keys must be non-empty text",
+  "unknown_inventory_version": "unknown inventory version",
+  "use_int_or_name": "use an integer ID or a text name/alias",
+  "v1_needs_text_keys": "inventory v1 needs hosts keyed by text",
+  "v2_needs_list": "inventory v2 needs a list of hosts"
+}

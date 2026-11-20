@@ -1,40 +1,40 @@
-# PADRÃO — `workflows/`
+# STANDARD — `workflows/`
 
-Um workflow é um pipeline YAML que orquestra os agentes para resolver um tipo de pedido.
-O `coordinator` escolhe o workflow e executa os `steps` na ordem.
+A workflow is a YAML pipeline that orchestrates the agents to solve one type of request.
+The `coordinator` picks the workflow and runs the `steps` in order.
 
-## Formato
+## Format
 
 ```yaml
 workflow:
-  id: identificador
-  name: Nome legível
-  description: O que resolve.
-  triggers: [frases/comandos que disparam este workflow]
+  id: identifier
+  name: Readable name
+  description: What it solves.
+  triggers: [phrases/commands that trigger this workflow]
   steps:
     - id: "01"
-      name: Nome do passo
+      name: Step name
       type: subagent | inline | checkpoint
       agent: planner | executor | tester | documenter | coordinator
-      inputFiles: [arquivos lidos]
-      outputFiles: [arquivos gerados]
-      instructions: O que fazer neste passo.
-      qualityCriteria: Como saber se o passo ficou bom.
-      vetoConditions: [condições que abortam o passo]
+      inputFiles: [files read]
+      outputFiles: [files generated]
+      instructions: What to do in this step.
+      qualityCriteria: How to know the step went well.
+      vetoConditions: [conditions that abort the step]
 ```
 
-## Tipos de passo
+## Step types
 
-- `inline` — o `coordinator` executa direto (decisões rápidas, carregar contexto).
-- `subagent` — delega a um agente especializado, com handoff.
-- `checkpoint` — pausa e mostra opções ao usuário antes de continuar.
+- `inline` — the `coordinator` runs it directly (quick decisions, loading context).
+- `subagent` — delegates to a specialized agent, with a handoff.
+- `checkpoint` — pauses and shows options to the user before continuing.
 
-## Regra
+## Rule
 
-Todo workflow termina com um passo de **reflexão** (`documenter`) que registra lições em
-`memory/` — é o que mantém o projeto vivo (ver `core/rules/memory-protocol.md`).
+Every workflow ends with a **reflection** step (`documenter`) that records lessons in
+`memory/` — this is what keeps the project alive (see `core/rules/memory-protocol.md`).
 
-## Como criar
+## How to create one
 
-Copie `_TEMPLATE.workflow.yaml`, defina os steps, e adicione um exemplo de planejamento
-correspondente em `planning-examples/`.
+Copy `_TEMPLATE.workflow.yaml`, define the steps, and add a matching planning example
+in `planning-examples/`.

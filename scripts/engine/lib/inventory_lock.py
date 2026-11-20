@@ -11,6 +11,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock, local
 
+from lib import i18n
+
 _THREAD_LOCK = RLock()
 _HELD = local()
 JOURNAL_NAME = ".host-id-migration.json"
@@ -24,7 +26,7 @@ class MigrationIncomplete(RuntimeError):
 def inventory_lock(network_dir: Path):
     network_dir = Path(network_dir).absolute()
     if any(component.is_symlink() for component in (network_dir, *network_dir.parents)):
-        raise ValueError("diretório do inventário não pode passar por symlink")
+        raise ValueError(i18n.t("lib_inventory.dir_symlink"))
     network_dir = Path(network_dir).resolve()
     with _THREAD_LOCK:
         held = getattr(_HELD, "paths", None)
@@ -54,11 +56,11 @@ def ensure_migration_complete(network_dir: Path):
     import json
     journal = Path(network_dir) / JOURNAL_NAME
     if any(component.is_symlink() for component in (journal, *journal.parents)):
-        raise MigrationIncomplete("journal de migração inválido; verifique symlinks antes de recuperar")
+        raise MigrationIncomplete(i18n.t("lib_inventory.journal_invalid"))
     if journal.exists():
         try:
             state = json.loads(journal.read_text(encoding="utf-8"))
         except (ValueError, OSError) as exc:
-            raise MigrationIncomplete("journal de migração ilegível; recupere o baseline antes de continuar") from exc
+            raise MigrationIncomplete(i18n.t("lib_inventory.journal_unreadable")) from exc
         if not isinstance(state, dict) or state.get("version") != 1 or state.get("status") not in ("complete", "rolled_back"):
-            raise MigrationIncomplete("migração de IDs incompleta; execute host_id_migration.py recover")
+            raise MigrationIncomplete(i18n.t("lib_inventory.migration_incomplete"))

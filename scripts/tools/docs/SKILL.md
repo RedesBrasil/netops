@@ -1,44 +1,44 @@
 ---
 id: docs
-name: Geração de Documentação
+name: Documentation Generation
 type: script
 runtime: python
-description: Gera artefatos de documentação da rede a partir do inventário.
+description: Generates network documentation artifacts from the inventory.
 env: []
 ---
 
-## O que faz
+## What it does
 
-Scripts que o agente `documenter` usa para gerar documentação a partir dos dados do
-framework.
+Scripts the `documenter` agent uses to generate documentation from the
+framework's data.
 
-| Script | O que gera |
+| Script | What it generates |
 |--------|-----------|
-| `topology_render.py` | `network/topology.md` — diagrama Mermaid da topologia |
+| `topology_render.py` | `network/topology.md` — Mermaid diagram of the topology |
 
-## Quando usar
+## When to use
 
-Sempre que `network/topology.yaml` ou `network/hosts.yaml` mudar — para manter o diagrama
-atualizado. Faz parte do passo de documentação dos workflows.
+Whenever `network/topology.yaml` or `network/hosts.yaml` changes — to keep the diagram
+up to date. It is part of the documentation step of the workflows.
 
-## Como usar
+## How to use
 
 ```bash
-python3 scripts/tools/docs/topology_render.py            # grava network/topology.md
-python3 scripts/tools/docs/topology_render.py --stdout   # só imprime
+python3 scripts/tools/docs/topology_render.py            # writes network/topology.md
+python3 scripts/tools/docs/topology_render.py --stdout   # only prints
 ```
 
 ## Setup
 
 `pip install -r requirements.txt` (pyyaml).
 
-## Exemplos
+## Examples
 
-Após cadastrar novos hosts e enlaces, regenere o diagrama:
+After registering new hosts and links, regenerate the diagram:
 ```bash
 python3 scripts/tools/docs/topology_render.py
 ```
-O `network/topology.md` resultante renderiza o grafo direto na IDE e no GitHub.
-No inventário v2, os enlaces referenciam IDs inteiros e os rótulos mostram `hostname`.
-Renomear um host preserva o identificador do nó Mermaid e suas ligações. O gerador também
-lê o inventário legado v1 e nunca carrega credenciais.
+The resulting `network/topology.md` renders the graph directly in the IDE and on GitHub.
+In inventory v2, links reference integer IDs and the labels show `hostname`.
+Renaming a host preserves the Mermaid node identifier and its links. The generator also
+reads the legacy v1 inventory and never loads credentials.

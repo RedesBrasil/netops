@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 import deps
+from lib import i18n
 from services import web_launch_svc
 
 router = APIRouter()
@@ -26,7 +27,7 @@ def _int(value):
 @router.post("/hosts/{host_id}/web-launch")
 async def web_launch(host_id: str, body: dict | None = None):
     if not deps.STATE.enable_terminal or deps.STATE.read_only:
-        return JSONResponse({"error": "disabled", "detail": "acesso web desligado (precisa do terminal ligado e fora de --read-only)"},
+        return JSONResponse({"error": "disabled", "detail": i18n.t("api_web_launch.disabled")},
                             status_code=403, headers=_HEADERS)
     body = body or {}
     try:

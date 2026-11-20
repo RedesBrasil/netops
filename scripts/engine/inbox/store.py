@@ -22,6 +22,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from lib import i18n
+
 NETOPS_ROOT = Path(__file__).resolve().parents[3]
 
 KINDS = ("info", "alert", "approval")
@@ -136,24 +138,24 @@ def _validate_action(a, loc: str, errors: list) -> dict | None:
     if a in (None, "", {}):
         return None
     if not isinstance(a, dict):
-        errors.append({"loc": loc, "msg": "ação deve ser um objeto"})
+        errors.append({"loc": loc, "msg": i18n.t("lib_inbox.action_not_object")})
         return None
     t = a.get("type")
     if t not in ACTION_TYPES:
-        errors.append({"loc": f"{loc}/type", "msg": f"use um de {', '.join(ACTION_TYPES)}"})
+        errors.append({"loc": f"{loc}/type", "msg": i18n.t("lib_inbox.use_one_of", options=', '.join(ACTION_TYPES))})
         return None
     out: dict = {"type": t}
     if t == "command":
         cmd = str(a.get("command") or "").strip()
         if not cmd:
-            errors.append({"loc": f"{loc}/command", "msg": "comando vazio"})
+            errors.append({"loc": f"{loc}/command", "msg": i18n.t("lib_inbox.empty_command")})
         out["command"] = cmd
     else:
         out["prompt"] = str(a.get("prompt") or "").strip()
         out["resume"] = a.get("resume", True) is not False
         perm = a.get("permissions") or "restricted"
         if perm not in ("restricted", "full"):
-            errors.append({"loc": f"{loc}/permissions", "msg": "use restricted ou full"})
+            errors.append({"loc": f"{loc}/permissions", "msg": i18n.t("lib_inbox.use_restricted_full")})
         out["permissions"] = perm
         if a.get("model"):
             out["model"] = str(a["model"])
@@ -171,26 +173,26 @@ def _clean(msg: dict) -> dict:
     errors: list = []
     kind = msg.get("kind") or "info"
     if kind not in KINDS:
-        errors.append({"loc": "kind", "msg": f"use um de {', '.join(KINDS)}"})
+        errors.append({"loc": "kind", "msg": i18n.t("lib_inbox.use_one_of", options=', '.join(KINDS))})
     sev = msg.get("severity") or ("info" if kind == "info" else "warning")
     if sev not in SEVERITIES:
-        errors.append({"loc": "severity", "msg": f"use um de {', '.join(SEVERITIES)}"})
+        errors.append({"loc": "severity", "msg": i18n.t("lib_inbox.use_one_of", options=', '.join(SEVERITIES))})
     title = " ".join(str(msg.get("title") or "").split())
     if not title:
-        errors.append({"loc": "title", "msg": "título obrigatório"})
+        errors.append({"loc": "title", "msg": i18n.t("lib_inbox.title_required")})
     body = str(msg.get("body") or "")
     action = _validate_action(msg.get("action"), "action", errors)
     reject_action = _validate_action(msg.get("reject_action"), "reject_action", errors)
     if (action or reject_action) and kind != "approval":
-        errors.append({"loc": "action", "msg": "ação só existe em pedido de aprovação (kind=approval)"})
+        errors.append({"loc": "action", "msg": i18n.t("lib_inbox.action_only_approval")})
     if action and action["type"] == "agent" and not (action.get("prompt") or msg.get("session_id")):
-        errors.append({"loc": "action/prompt", "msg": "ação de agente precisa de prompt ou de session_id para retomar"})
+        errors.append({"loc": "action/prompt", "msg": i18n.t("lib_inbox.agent_action_needs_prompt")})
     expires_at = msg.get("expires_at")
     if expires_at not in (None, ""):
         try:
             expires_at = float(expires_at)
         except (TypeError, ValueError):
-            errors.append({"loc": "expires_at", "msg": "timestamp inválido"})
+            errors.append({"loc": "expires_at", "msg": i18n.t("lib_inbox.invalid_timestamp")})
     else:
         expires_at = None
     if errors:
@@ -322,7 +324,7 @@ def archive_read(user: str = "", root=None) -> int:
 def decide(mid: int, decision: str, user: str, note: str = "", root=None) -> dict:
     """approve|reject atômico: só o primeiro a decidir vence. Devolve o registro já decidido."""
     if decision not in ("approve", "reject"):
-        raise InboxError([{"loc": "decision", "msg": "use approve ou reject"}])
+        raise InboxError([{"loc": "decision", "msg": i18n.t("lib_inbox.use_approve_reject")}])
     now = time.time()
     status = "approved" if decision == "approve" else "rejected"
     with _db(root) as con:
@@ -333,7 +335,7 @@ def decide(mid: int, decision: str, user: str, note: str = "", root=None) -> dic
                           (status, user or None, now, (note or "").strip()[:4000] or None, now, now, user or None, int(mid)))
         rec = _require(con, mid)
         if cur.rowcount == 0:
-            raise NotPending(f"o pedido #{mid} não está pendente (situação: {rec.get('status') or rec['kind']})")
+            raise NotPending(i18n.t("lib_inbox.not_pending", id=mid, status=rec.get('status') or rec['kind']))
         return rec
 
 
@@ -353,7 +355,7 @@ def set_result(mid: int, result: dict, unread: bool = False, root=None) -> None:
 def _require(con, mid) -> dict:
     r = _row(con.execute("SELECT * FROM messages WHERE id=?", (int(mid),)).fetchone())
     if r is None:
-        raise KeyError(f"aviso #{mid} não encontrado")
+        raise KeyError(i18n.t("lib_inbox.not_found", id=mid))
     return r
 
 

@@ -37,8 +37,19 @@ if (typeof window !== "undefined") window.addEventListener("storage", event => {
 let _onUnauthorized = null;
 export function setOnUnauthorized(fn) { _onUnauthorized = fn; }
 
+// i18n without imports (node tests load this file as plain source): globalThis.netopsT is set by i18n.js.
+const tr = (key, vars, fallback) => {
+  const out = globalThis.netopsT ? globalThis.netopsT(key, vars) : key;
+  return out === key ? fallback : out;
+};
+// payload.error = stable code: "errors.<code>" in the catalog wins over the server's text.
+const errText = (payload, status) => {
+  const code = typeof payload?.error === "string" ? payload.error : "";
+  const known = code ? tr("errors." + code, payload?.params || payload, "") : "";
+  return known || (typeof payload?.detail === "string" ? payload.detail : code || `HTTP ${status}`);
+};
 export class ApiError extends Error {
-  constructor(status, payload) { super(typeof payload?.detail === "string" ? payload.detail : payload?.error || `HTTP ${status}`); this.status = status; this.payload = payload; }
+  constructor(status, payload) { super(errText(payload, status)); this.status = status; this.payload = payload; }
 }
 export class ConflictError extends ApiError {}
 export class ValidationError extends ApiError {
@@ -52,7 +63,7 @@ export class ValidationError extends ApiError {
         Number.isInteger(path[2]) && path[2] >= 0 && path[3] === "icon";
     });
     return unsupportedShapeIcon
-      ? "Este servidor ainda não aceita ícones nas formas. Atualize o NetOps e reinicie o console no servidor. Seus ajustes ainda não foram salvos."
+      ? tr("errors.shape_icon_unsupported", null, "Este servidor ainda não aceita ícones nas formas. Atualize o NetOps e reinicie o console no servidor. Seus ajustes ainda não foram salvos.")
       : null;
   }
   get fieldErrors() {
@@ -62,7 +73,7 @@ export class ValidationError extends ApiError {
     if (!Array.isArray(this.payload?.detail)) return [];
     return this.payload.detail.map(error => ({
       loc: (Array.isArray(error.loc) ? error.loc.filter(part => part !== "body") : []).join("/"),
-      msg: error.type === "missing" ? "Campo obrigatório" : error.msg || "Valor inválido",
+      msg: error.type === "missing" ? tr("errors.field_required", null, "Campo obrigatório") : error.msg || tr("errors.invalid_value", null, "Valor inválido"),
     }));
   }
 }
@@ -77,6 +88,8 @@ async function req(method, path, { body, rev } = {}) {
   const headers = {};
   const sentAuth = authToken();
   if (sentAuth) headers["X-Netops-Session"] = sentAuth;
+  // Language of the API messages = the console's (static/js/i18n.js sets globalThis.netopsLang).
+  if (globalThis.netopsLang) headers["X-Netops-Lang"] = globalThis.netopsLang;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (rev) headers["If-Match"] = rev;
   const res = await fetch("/api" + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });

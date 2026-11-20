@@ -1,0 +1,4 @@
+{
+  "no_credentials_file": "credentials.yaml does not exist.",
+  "unlock_disabled": "Unlocking from the web is disabled (--no-vault-unlock). Use the terminal."
+}

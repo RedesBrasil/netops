@@ -1,0 +1,7 @@
+{
+  "file_modified": "file modified elsewhere",
+  "forbidden_host": "Host not allowed and the console has no login (vault not initialized). Initialize the vault (scripts/engine/vault/cli.py init) or set NETOPS_UI_ALLOWED_HOSTS=<domain> and restart.",
+  "ip_denied": "Access denied: IP {ip} is not allowed to access this console.",
+  "unknown_ip": "unknown",
+  "validation_errors": "{n} validation error(s)"
+}

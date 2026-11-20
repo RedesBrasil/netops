@@ -395,7 +395,7 @@ install_code() {
   grep -q 'USER_MODE' "$NETOPS_DIR/scripts/engine/ui/start.sh" 2>/dev/null || { LAYOUT=1; warn "v$PKG_VERSION é anterior à conta dedicada: instalada no modelo antigo (root)"; }
   # pastas de trabalho que o pacote não traz (dados locais, git-ignorados no repositório)
   mkdir -p "$NETOPS_DIR"/{runs,reports,backups,memory}
-  [ -f "$NETOPS_DIR/memory/MEMORY.md" ] || printf '# Memória — NetOps\n\n' >"$NETOPS_DIR/memory/MEMORY.md"
+  [ -f "$NETOPS_DIR/memory/MEMORY.md" ] || { if [ "${NETOPS_LANG:-}" = en ]; then printf '# Memory — NetOps\n\n'; else printf '# Memória — NetOps\n\n'; fi; } >"$NETOPS_DIR/memory/MEMORY.md"
   [ -f "$NETOPS_DIR/core/config/project-config.yaml" ] || cp "$NETOPS_DIR/core/config/project-config.example.yaml" "$NETOPS_DIR/core/config/project-config.yaml" 2>/dev/null || true
   ok "NetOps v$PKG_VERSION instalado em $NETOPS_DIR"
 }
@@ -749,6 +749,9 @@ setup_localadmin() {
 # nasce do modelo limpo core/templates/AGENTS.tmpl.md. O usuário acrescenta o que é dele (menu Memória).
 setup_agents_md() {
   local tpl="$NETOPS_DIR/core/templates/AGENTS.tmpl.md" dst="$NETOPS_DIR/AGENTS.md"
+  # Idioma já definido (NETOPS_LANG): modelo do idioma. Sem idioma, o 1º acesso troca pelo modelo escolhido.
+  case "${NETOPS_LANG:-}" in en|pt-BR) [ -f "$NETOPS_DIR/core/templates/$NETOPS_LANG/AGENTS.tmpl.md" ] &&
+    tpl="$NETOPS_DIR/core/templates/$NETOPS_LANG/AGENTS.tmpl.md" ;; esac
   if [ -e "$dst" ]; then ok "AGENTS.md da instalação mantido (é local)"; return 0; fi
   [ -f "$tpl" ] || { warn "modelo do AGENTS.md ausente nesta versão: o console cria quando houver"; return 0; }
   sed '1,/-->/d' "$tpl" >"$dst"

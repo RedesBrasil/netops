@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 
 import deps
+from lib import i18n
 from services import yaml_io
 
 CRED_KEY_ORDER = ["username", "password", "secret", "key_file", "api_ssl"]
@@ -32,7 +33,7 @@ def _ckey(creds: dict, name: str) -> str:
     for k in creds or {}:
         if str(k).casefold() == folded:
             return k
-    raise KeyError(f"credencial '{name}' não existe")
+    raise KeyError(i18n.t("api_credentials.not_exists", name=name))
 
 
 def load_creds() -> tuple[dict, str]:
@@ -93,8 +94,7 @@ LOCAL_CREDENTIAL = "CRED_LOCAL_ADMIN"   # admin local (scripts/engine/localadmin
 
 def _protect(name: str) -> None:
     if str(name or "").strip().casefold() == LOCAL_CREDENTIAL.casefold():
-        raise deps.ValidationFailed([{"loc": "name", "msg": "credencial do admin local é gerenciada pelo sistema: "
-                                      "troque a senha com `sudo scripts/engine/localadmin/provision.py rotate`"}])
+        raise deps.ValidationFailed([{"loc": "name", "msg": i18n.t("api_credentials.local_managed")}])
 
 
 @yaml_io.serialized
@@ -103,7 +103,7 @@ def create_credential(name: str, fields: dict, rev: str | None) -> dict:
     creds = data.setdefault("credentials", {})
     name = name.strip().upper()  # padrão de cadastro: MAIÚSCULAS
     if any(str(k).casefold() == name.casefold() for k in creds):
-        raise deps.ValidationFailed([{"loc": "name", "msg": f"credencial '{name}' já existe"}])
+        raise deps.ValidationFailed([{"loc": "name", "msg": i18n.t("api_credentials.exists", name=name)}])
     creds[name] = _clean_fields(fields)
     new_rev = yaml_io.write_rt(deps.CREDS_FILE, y, data, expected=rev, mode=MODE_600, backup=True)
     return get_credential(name) | {"rev": new_rev}
@@ -137,7 +137,7 @@ def delete_credential(name: str, rev: str | None, *, force: bool) -> dict:
     used = _referencing_hosts(name)
     if used and not force:
         raise deps.ConflictError(yaml_io.file_rev(deps.CREDS_FILE),
-                                 detail=f"credencial em uso por: {', '.join(used)}")
+                                 detail=i18n.t("api_credentials.in_use", users=", ".join(used)))
     del creds[name]
     new_rev = yaml_io.write_rt(deps.CREDS_FILE, y, data, expected=rev, mode=MODE_600, backup=True)
     return {"deleted": name, "rev": new_rev}
@@ -182,15 +182,15 @@ def rename_credential(old: str, new: str, rev: str | None) -> dict:
     transação atômica. credentials.yaml mantém modo 0600 e o bloco vault: intacto
     (ruamel round-trip); os tokens enc.v1: viajam junto com o valor."""
     if not ID_RE.match(new):
-        raise deps.ValidationFailed([{"loc": "to", "msg": "use a-z, 0-9, ponto, hífen ou underline"}])
+        raise deps.ValidationFailed([{"loc": "to", "msg": i18n.t("api_credentials.bad_name")}])
     new = new.strip().upper()
     data, y = _load_doc()
     creds = data.get("credentials") or {}
     old = _ckey(creds, old)
     if new == old:
-        raise deps.ValidationFailed([{"loc": "to", "msg": "o novo nome é igual ao atual"}])
+        raise deps.ValidationFailed([{"loc": "to", "msg": i18n.t("api_common.same_name")}])
     if new in creds:
-        raise deps.ValidationFailed([{"loc": "to", "msg": f"credencial '{new}' já existe"}])
+        raise deps.ValidationFailed([{"loc": "to", "msg": i18n.t("api_credentials.exists", name=new)}])
 
     yaml_io.rename_key(creds, old, new)
     writes = [(deps.CREDS_FILE, yaml_io.dump_rt(y, data), MODE_600)]
@@ -242,6 +242,6 @@ def set_secret(name: str, field: str, value: str, rev: str | None) -> dict:
 
     new_lines = cli._set_field(text.splitlines(), name, field, token)
     if new_lines is None:
-        raise KeyError(f"bloco da credencial '{name}' não encontrado no arquivo")
+        raise KeyError(i18n.t("api_credentials.block_not_found", name=name))
     cli._atomic_write(deps.CREDS_FILE, "\n".join(new_lines) + "\n")  # 0600
     return get_credential(name)

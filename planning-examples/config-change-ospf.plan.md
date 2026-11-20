@@ -1,47 +1,47 @@
-# Plano: Configurar OSPF em um MikroTik
+# Plan: Configure OSPF on a MikroTik
 
-## Objetivo
+## Goal
 
-Habilitar o roteamento OSPF em um roteador MikroTik para que ele troque rotas com os
-vizinhos da rede, com baseline e rollback garantidos.
+Enable OSPF routing on a MikroTik router so that it exchanges routes with the
+network neighbors, with a guaranteed baseline and rollback.
 
-## Contexto
+## Context
 
-Ler antes: `network/hosts.yaml` (o host-alvo), `network/topology.yaml` (vizinhos e enlaces),
+Read first: `network/hosts.yaml` (the target host), `network/topology.yaml` (neighbors and links),
 `best-practices/mikrotik/security-hardening.md`, `config-examples/mikrotik/ospf-basic.rsc`,
-`memory/MEMORY.md` (quirks de OSPF no RouterOS).
+`memory/MEMORY.md` (OSPF quirks in RouterOS).
 
-## Escopo
+## Scope
 
-- **Inclui:** o roteador MikroTik indicado e a configuração da instância/área OSPF.
-- **Fora do escopo:** mudança de firewall, de endereçamento IP ou de outros hosts.
+- **Includes:** the indicated MikroTik router and the configuration of the OSPF instance/area.
+- **Out of scope:** changes to the firewall, to IP addressing or to other hosts.
 
-## Passos
+## Steps
 
-1. **coordinator** — confirmar host-alvo, áreas/redes desejadas e janela de manutenção.
-2. **executor** — baseline: coletar `/routing/ospf/...` e `/ip/route` atuais.
-3. **planner** — adaptar `config-examples/mikrotik/ospf-basic.rsc` ao host (router-id,
-   redes, interfaces); gerar `change.txt` e o `rollback.txt` (remover a instância criada).
-4. **tester** — validar a sintaxe contra o exemplo MikroTik; conferir impacto na topologia.
-5. **executor** — aplicar em `safe-mode`; capturar o estado pós-mudança.
-6. **tester** — confirmar adjacências (`/routing/ospf/neighbor`) e rotas aprendidas.
-7. **documenter** — registrar a mudança e as lições.
+1. **coordinator** — confirm the target host, the desired areas/networks and the maintenance window.
+2. **executor** — baseline: collect the current `/routing/ospf/...` and `/ip/route`.
+3. **planner** — adapt `config-examples/mikrotik/ospf-basic.rsc` to the host (router-id,
+   networks, interfaces); generate `change.txt` and the `rollback.txt` (remove the created instance).
+4. **tester** — validate the syntax against the MikroTik example; check the impact on the topology.
+5. **executor** — apply in `safe-mode`; capture the post-change state.
+6. **tester** — confirm the adjacencies (`/routing/ospf/neighbor`) and the learned routes.
+7. **documenter** — record the change and the lessons.
 
-## Riscos e mitigação
+## Risks and mitigation
 
-| Risco | Mitigação |
-|-------|-----------|
-| Sintaxe RouterOS 6 vs 7 diferente | Usar o exemplo v7; confirmar `/system/resource` |
-| Loop/rota inesperada | Começar com interfaces passivas onde não há vizinho OSPF |
-| Perda de gerência | Aplicar em `safe-mode`; rollback automático em falha |
+| Risk | Mitigation |
+|------|------------|
+| Different RouterOS 6 vs 7 syntax | Use the v7 example; confirm `/system/resource` |
+| Loop/unexpected route | Start with passive interfaces where there is no OSPF neighbor |
+| Loss of management access | Apply in `safe-mode`; automatic rollback on failure |
 
 ## Rollback
 
-`runs/<id>/proposals/<host>.rollback.txt` — remove a instância, a área e os
-interface-templates criados, voltando ao estado do baseline.
+`runs/<id>/proposals/<host>.rollback.txt` — removes the instance, the area and the
+interface-templates created, going back to the baseline state.
 
-## Critérios de sucesso
+## Success criteria
 
-- Adjacências OSPF formadas com os vizinhos esperados.
-- Rotas OSPF presentes em `/ip/route`.
-- Conectividade de gerência preservada.
+- OSPF adjacencies formed with the expected neighbors.
+- OSPF routes present in `/ip/route`.
+- Management connectivity preserved.

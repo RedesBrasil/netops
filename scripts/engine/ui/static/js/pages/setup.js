@@ -1,7 +1,8 @@
 // Primeiro acesso (#setup?token=...): idioma + conta do admin + cofre, depois a etapa root.
 // O instalador não pergunta nada: imprime o link com token de uso único. Sem o token o assistente
 // não conclui (services/setup_svc.py). A senha vira a senha-mestra do cofre E a senha do admin.
-import { html, useState, useEffect, api, CopyButton, refreshVault } from "../ui.js";
+import { html, useState, useEffect, api, CopyButton, refreshVault, t, useLocale } from "../ui.js";
+import { loadLocale } from "../i18n.js";
 import { setAuthToken } from "../api.js";
 import { PasswordInput } from "../components.js";
 
@@ -14,6 +15,7 @@ export function setupTokenFromHash(hash = location.hash) {
 const LANG_LABEL = { en: "English", "pt-BR": "Português" };
 
 export function SetupScreen({ onDone }) {
+  useLocale();
   const [info, setInfo] = useState(null);
   const [token, setToken] = useState(setupTokenFromHash());
   const [lang, setLang] = useState("");
@@ -40,7 +42,7 @@ export function SetupScreen({ onDone }) {
       n += 1;
       try { const s = await api.get("/setup/finish"); setFinish(s); if (s.state !== "pending") clearInterval(t); }
       catch { /* segue tentando */ }
-      if (n > 30) { clearInterval(t); setFinish((f) => ({ ...f, state: "failed", detail: f?.detail || "sem resposta da etapa root" })); }
+      if (n > 30) { clearInterval(t); setFinish((f) => ({ ...f, state: "failed", detail: f?.detail || t("setup.root_no_answer") })); }
     }, 2000);
     return () => clearInterval(t);
   }, [finish && finish.state]);
@@ -65,63 +67,62 @@ export function SetupScreen({ onDone }) {
       if (f.state === "not_applicable" || f.state === "done") { onDone && onDone(); return; }
       setFinish(f);
     } catch (e2) {
-      setErr(e2.payload?.detail || e2.message || "Falha ao concluir.");
+      setErr(e2.message || t("setup.failed"));
     } finally { setBusy(false); }
   }
 
   async function retry() {
-    try { setFinish(await api.post("/setup/finish")); } catch (e2) { setErr(e2.payload?.detail || e2.message); }
+    try { setFinish(await api.post("/setup/finish")); } catch (e2) { setErr(e2.message); }
   }
 
   if (finish) {
     const ok = finish.state === "done" || finish.state === "not_applicable";
     return html`<div class="login-screen"><div class="login-card setup-card">
-      <div class="login-brand">🔧 NetOps — finalizando</div>
-      ${finish.state === "pending" && html`<p class="help">Ativando o sudo pelo cofre e o host Local (etapa de root)…</p>`}
-      ${ok && html`<p class="help">✓ Pronto: sudo pelo cofre e host Local configurados.</p>`}
+      <div class="login-brand">🔧 NetOps — ${t("setup.finishing")}</div>
+      ${finish.state === "pending" && html`<p class="help">${t("setup.root_running")}</p>`}
+      ${ok && html`<p class="help">✓ ${t("setup.root_done")}</p>`}
       ${finish.state === "failed" && html`<div>
-        <p class="err">A etapa de root não terminou: ${finish.detail || "motivo desconhecido"}.</p>
-        <p class="help">O console já funciona. Para ativar o sudo pelo cofre e o host Local, rode uma vez no servidor:</p>
+        <p class="err">${t("setup.root_failed", { detail: finish.detail || t("common.unknown") })}</p>
+        <p class="help">${t("setup.root_manual")}</p>
         <p class="setup-cmd"><code>${finish.command}</code><${CopyButton} text=${finish.command} /></p>
-        <button type="button" onClick=${retry}>Tentar de novo</button>
+        <button type="button" onClick=${retry}>${t("common.try_again")}</button>
       </div>`}
       <button type="button" class="primary" disabled=${finish.state === "pending"} onClick=${() => onDone && onDone()}>
-        Abrir o console</button>
+        ${t("setup.open_console")}</button>
     </div></div>`;
   }
 
   return html`<div class="login-screen">
     <form class="login-card setup-card" onSubmit=${submit}>
-      <div class="login-brand">🔧 NetOps — primeiro acesso</div>
+      <div class="login-brand">🔧 NetOps — ${t("setup.title")}</div>
       ${!token && html`<div class="field">
-        <p class="help">Abra o link que o instalador mostrou (ele traz o código). Perdeu? Gere outro no servidor:</p>
+        <p class="help">${t("setup.token_help")}</p>
         <p class="setup-cmd"><code>sudo -u netops python3 /opt/netops/scripts/engine/users/cli.py setup-link</code></p>
-        <label>Código do link</label>
+        <label>${t("setup.token_label")}</label>
         <input value=${token} onInput=${(e) => setToken(e.target.value)} autocomplete="off" spellcheck="false" />
       </div>`}
-      ${info?.token === "expired" && !token && html`<p class="err">O link anterior expirou: gere outro.</p>`}
+      ${info?.token === "expired" && !token && html`<p class="err">${t("setup.token_expired")}</p>`}
       <div class="field">
         <label>Language / Idioma</label>
         <div class="setup-langs" role="radiogroup">
           ${(info?.languages || [{ code: "en" }, { code: "pt-BR" }]).map((l) => html`
             <button type="button" role="radio" aria-checked=${lang === l.code} class=${lang === l.code ? "primary" : ""}
-              onClick=${() => setLang(l.code)}>${l.name || LANG_LABEL[l.code] || l.code}</button>`)}
+              onClick=${() => { setLang(l.code); loadLocale(l.code); }}>${l.name || LANG_LABEL[l.code] || l.code}</button>`)}
         </div>
       </div>
-      <div class="field"><label>Nome</label>
+      <div class="field"><label>${t("common.name")}</label>
         <input value=${name} onInput=${(e) => setName(e.target.value)} autocomplete="name" maxlength="80" /></div>
-      <div class="field"><label>E-mail do administrador (seu login)</label>
+      <div class="field"><label>${t("setup.email_label")}</label>
         <input type="email" value=${email} onInput=${(e) => setEmail(e.target.value)} autocomplete="username"
           autocapitalize="none" spellcheck="false" /></div>
-      <div class="field"><label>Senha (mínimo ${min} caracteres)</label>
+      <div class="field"><label>${t("setup.password_label", { min })}</label>
         <${PasswordInput} autocomplete="new-password" value=${pw} onInput=${(e) => setPw(e.target.value)} /></div>
-      <div class="field"><label>Confirme a senha</label>
+      <div class="field"><label>${t("setup.password_confirm")}</label>
         <${PasswordInput} autocomplete="new-password" value=${pw2} onInput=${(e) => setPw2(e.target.value)} />
-        ${pw2 && pw !== pw2 && html`<div class="err">As senhas não conferem.</div>`}</div>
-      <p class="help">Essa senha é o seu login e também a senha-mestra do cofre (protege as senhas dos
-        equipamentos). Guarde bem: não há como recuperá-la.</p>
+        ${pw2 && pw !== pw2 && html`<div class="err">${t("setup.password_mismatch")}</div>`}</div>
+      <p class="help">${t("setup.password_help")}</p>
       ${err && html`<div class="err">${err}</div>`}
-      <button type="submit" class="primary" disabled=${!ready}>${busy ? "Configurando…" : "Concluir"}</button>
+      <button type="submit" class="primary" disabled=${!ready}>${busy ? t("setup.configuring") : t("setup.finish")}</button>
     </form>
   </div>`;
 }

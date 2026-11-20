@@ -18,16 +18,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # script
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # OBRIGATÓRIO: python3 do sistema -> re-executa no .venv (antes de libs externas)
+from lib import i18n  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Link para abrir o terminal web (SSH/Telnet) de um host no console.")
+    parser = argparse.ArgumentParser(description=i18n.t("cli_access.terminal_link_description"))
     selection = parser.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--host-id", type=int, help="ID inteiro do host no inventário")
-    selection.add_argument("--host", help="Hostname único ou alias legado do host")
-    parser.add_argument("--method", choices=["ssh", "telnet"], help="Método (padrão: o principal do cadastro)")
-    parser.add_argument("--port", type=int, help="Porta (quando o host tem o mesmo método em portas diferentes)")
-    parser.add_argument("--all", action="store_true", help="Um link para cada método SSH/Telnet cadastrado")
+    selection.add_argument("--host-id", type=int, help=i18n.t("cli_access.help_host_id"))
+    selection.add_argument("--host", help=i18n.t("cli_access.help_hostname"))
+    parser.add_argument("--method", choices=["ssh", "telnet"], help=i18n.t("cli_access.help_method"))
+    parser.add_argument("--port", type=int, help=i18n.t("cli_access.help_port"))
+    parser.add_argument("--all", action="store_true", help=i18n.t("cli_access.help_all_links"))
     args = parser.parse_args()
 
     from lib.inventory import load_inventory, resolve_host  # noqa: PLC0415
@@ -38,12 +39,12 @@ def main() -> int:
     try:
         host, _ = resolve_host(ref, hosts_data, {}, decrypt=False)
     except Exception as exc:  # noqa: BLE001
-        print(f"ERRO: host '{ref}' não está no inventário ({exc})", file=sys.stderr)
+        print(i18n.t("cli_access.terminal_host_not_found", host=ref, error=exc), file=sys.stderr)
         return 2
     entries = access_entries(host)
     if not entries:
-        print(f"ERRO: host {host.get('id', ref)} não tem SSH/Telnet cadastrado (só {(host.get('access') or {}).get('method')})",
-              file=sys.stderr)
+        print(i18n.t("cli_access.terminal_no_ssh_telnet", host=host.get("id", ref),
+                     method=(host.get("access") or {}).get("method")), file=sys.stderr)
         return 3
     if args.all:
         chosen = entries
@@ -51,12 +52,13 @@ def main() -> int:
         try:
             chosen = [pick_entry(entries, args.method, args.port)]
         except TargetError as exc:
-            print(f"ERRO: {exc}. Cadastrados: " + ", ".join(f"{e['method']}:{e['port']}" for e in entries), file=sys.stderr)
+            print(i18n.t("cli_access.terminal_pick_failed", error=exc,
+                         entries=", ".join(f"{e['method']}:{e['port']}" for e in entries)), file=sys.stderr)
             return 3
     name = host.get("hostname") or host.get("id", ref)
     for entry in chosen:
         url = terminal_url(host.get("id", ref), entry)
-        print(f"[⌨ Abrir terminal — {name} ({entry['method'].upper()}:{entry['port']})]({url})")
+        print(f"[{i18n.t('cli_access.terminal_link_label', name=name, method=entry['method'].upper(), port=entry['port'])}]({url})")
     return 0
 
 

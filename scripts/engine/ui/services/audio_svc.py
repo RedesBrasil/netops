@@ -16,6 +16,7 @@ import threading
 import httpx
 
 import deps
+from lib import i18n
 
 _FILE = deps.RUNS_DIR / "claude" / "audio-transcription.json"
 _LOCK = threading.Lock()
@@ -57,7 +58,7 @@ def _unseal(value: str) -> str:
         from lib import vault, vault_session  # noqa: PLC0415
         plain = vault.decrypt_value(vault_session.get_session_key(), value)
     except Exception:
-        raise AudioError(409, "Cole o token da Cloudflare novamente nas configurações (formato antigo).") from None
+        raise AudioError(409, i18n.t("api_audio.token_old_format")) from None
     with _LOCK:
         d = _load()
         d["token"] = plain
@@ -96,10 +97,9 @@ async def list_accounts(token: str) -> list[dict]:
                                      params={"per_page": 50, "page": page},
                                      headers={"Authorization": f"Bearer {token}"})
                 if r.status_code in (400, 401, 403):
-                    raise AudioError(422, "Não consegui listar as contas com este token. Confira o token; se ele for "
-                                          "válido, adicione a permissão Account → Account Settings → Read ou informe o Account ID.")
+                    raise AudioError(422, i18n.t("api_audio.cannot_list_accounts"))
                 if not r.is_success:
-                    raise AudioError(502, "A Cloudflare não conseguiu listar as contas.")
+                    raise AudioError(502, i18n.t("api_audio.list_accounts_failed"))
                 d = r.json()
                 out += [{"id": a.get("id"), "name": a.get("name") or ""} for a in d.get("result") or []
                         if isinstance(a, dict) and _ID_RE.fullmatch(a.get("id") or "")]
@@ -108,9 +108,9 @@ async def list_accounts(token: str) -> list[dict]:
                     break
                 page += 1
     except httpx.TimeoutException:
-        raise AudioError(504, "A Cloudflare demorou demais para responder.") from None
+        raise AudioError(504, i18n.t("api_audio.cf_timeout")) from None
     except (httpx.RequestError, ValueError):
-        raise AudioError(502, "Não foi possível conectar à Cloudflare.") from None
+        raise AudioError(502, i18n.t("api_audio.cf_connect_failed")) from None
     return out
 
 
@@ -120,11 +120,11 @@ async def save(account_id: str | None, token: str | None) -> dict:
     tok = (token or "").strip()
     aid = (account_id or "").strip()
     if aid and not _ID_RE.fullmatch(aid):
-        raise AudioError(422, "Account ID inválido: use 32 caracteres hexadecimais.")
+        raise AudioError(422, i18n.t("api_audio.bad_account_id"))
     if tok and not aid:
         accounts = await list_accounts(tok)
         if not accounts:
-            raise AudioError(422, "O token não enxerga nenhuma conta. Informe o Account ID manualmente.")
+            raise AudioError(422, i18n.t("api_audio.no_accounts"))
         if len(accounts) > 1:
             return {**status(), "needs_account": True, "accounts": accounts}
         aid = accounts[0]["id"]
@@ -132,7 +132,7 @@ async def save(account_id: str | None, token: str | None) -> dict:
         d = _load()
         if aid:
             if d.get("account_id") and d["account_id"] != aid and not tok:
-                raise AudioError(422, "Ao trocar de conta, informe também o token da nova conta.")
+                raise AudioError(422, i18n.t("api_audio.new_account_token"))
             d["account_id"] = aid
         if tok:
             d["token"] = tok
@@ -153,7 +153,7 @@ def credentials() -> tuple[str, str]:
     d = _load()
     aid, tok = d.get("account_id") or "", d.get("token") or ""
     if not tok or not _ID_RE.fullmatch(aid):
-        raise AudioError(400, "Configure o Account ID e o token da Cloudflare.")
+        raise AudioError(400, i18n.t("api_audio.not_configured"))
     return aid, _unseal(tok)
 
 
@@ -171,53 +171,52 @@ def audio_kind(content: bytes) -> str:
 def _info(content: bytes) -> str:
     if audio_kind(content) == "ogg":
         dur, pages = _ogg_info(content)
-        return f"{dur:.1f} s, {len(content) // 1024} KB, {pages} páginas Ogg"
+        return i18n.t("api_audio.ogg_info", seconds=f"{dur:.1f}", kb=len(content) // 1024, pages=pages)
     return f"{audio_kind(content)}, {len(content) // 1024} KB"
 
 
 async def transcribe(content: bytes) -> str:
     aid, token = credentials()
     if not content:
-        raise AudioError(400, "A gravação está vazia.")
+        raise AudioError(400, i18n.t("api_audio.empty"))
     if len(content) > MAX_AUDIO_BYTES:
-        raise AudioError(413, "O áudio excede o tamanho permitido.")
+        raise AudioError(413, i18n.t("api_audio.too_large"))
     kind = audio_kind(content)
     if not kind:
-        raise AudioError(415, "Envie um áudio OGG/Opus, WebM ou MP4/M4A.")
+        raise AudioError(415, i18n.t("api_audio.bad_type"))
     if len(content) < 1024:   # só cabeçalho, sem nenhum quadro de áudio: não gasta chamada na Cloudflare
         _debug_keep(content)
-        raise AudioError(422, f"O navegador entregou a gravação sem áudio ({kind}, {len(content)} bytes). "
-                              "Tente de novo segurando um pouco mais; se repetir, recarregue a página.")
+        raise AudioError(422, i18n.t("api_audio.no_audio", kind=kind, size=len(content)))
     url = f"https://api.cloudflare.com/client/v4/accounts/{aid}/ai/run/{MODEL}"
     payload = {"audio": base64.b64encode(content).decode("ascii"), "task": "transcribe", "language": "pt"}
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
             r = await client.post(url, json=payload, headers={"Authorization": f"Bearer {token}"})
     except httpx.TimeoutException:
-        raise AudioError(504, "A transcrição demorou demais. Tente novamente.") from None
+        raise AudioError(504, i18n.t("api_audio.transcription_timeout")) from None
     except httpx.RequestError:
-        raise AudioError(502, "Não foi possível conectar à Cloudflare.") from None
+        raise AudioError(502, i18n.t("api_audio.cf_connect_failed")) from None
     if r.status_code in (401, 403):
-        raise AudioError(502, "Confira o token, a conta e as permissões do Workers AI.")
+        raise AudioError(502, i18n.t("api_audio.check_permissions"))
     if r.status_code == 429:
-        raise AudioError(429, "Limite de uso da Cloudflare atingido. Tente mais tarde.")
+        raise AudioError(429, i18n.t("api_audio.rate_limited"))
     if not r.is_success:
         _debug_keep(content)
-        raise AudioError(502, f"A Cloudflare não conseguiu processar o áudio (HTTP {r.status_code}"
-                              f"{_cf_errors(r)}; {_info(content)}).")
+        raise AudioError(502, i18n.t("api_audio.process_failed", status=r.status_code, errors=_cf_errors(r),
+                                     info=_info(content)))
     try:
         data = r.json()
     except ValueError:
-        raise AudioError(502, "Resposta inválida da Cloudflare.") from None
+        raise AudioError(502, i18n.t("api_audio.bad_response")) from None
     if not isinstance(data, dict) or data.get("success") is not True:
-        raise AudioError(502, "A Cloudflare informou uma falha na transcrição.")
+        raise AudioError(502, i18n.t("api_audio.transcription_failed"))
     res = data.get("result")
     if not isinstance(res, dict) or not isinstance(res.get("text"), str):
-        raise AudioError(502, "A resposta da Cloudflare não incluiu a transcrição.")
+        raise AudioError(502, i18n.t("api_audio.no_transcription"))
     text = res["text"].strip()
     if not text:
         _debug_keep(content)
-        raise AudioError(422, f"Não foi possível identificar fala no áudio ({_info(content)}).")
+        raise AudioError(422, i18n.t("api_audio.no_speech", info=_info(content)))
     return text
 
 
@@ -253,17 +252,17 @@ async def verify() -> dict:
         async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=10.0)) as client:
             r = await client.get(url, headers={"Authorization": f"Bearer {token}"})
     except httpx.TimeoutException:
-        raise AudioError(504, "A Cloudflare demorou demais para responder.") from None
+        raise AudioError(504, i18n.t("api_audio.cf_timeout")) from None
     except httpx.RequestError:
-        raise AudioError(502, "Não foi possível conectar à Cloudflare.") from None
+        raise AudioError(502, i18n.t("api_audio.cf_connect_failed")) from None
     if r.status_code in (400, 401, 403):
-        raise AudioError(502, "Token inválido para esta conta. Confira o token e o Account ID.")
+        raise AudioError(502, i18n.t("api_audio.token_invalid"))
     if not r.is_success:
-        raise AudioError(502, "A Cloudflare não conseguiu verificar o token.")
+        raise AudioError(502, i18n.t("api_audio.verify_failed"))
     try:
         active = r.json().get("result", {}).get("status") == "active"
     except (ValueError, AttributeError):
         active = False
     if not active:
-        raise AudioError(502, "O token não está ativo.")
+        raise AudioError(502, i18n.t("api_audio.token_inactive"))
     return {"ok": True}

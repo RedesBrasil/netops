@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # script
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
+from lib import i18n  # noqa: E402
 
 # Portas de gerência/serviço comuns em redes e infra.
 DEFAULT_PORTS = [21, 22, 23, 25, 53, 80, 161, 443, 445, 2000, 3389, 8080, 8291, 8728, 8729]
@@ -35,7 +36,7 @@ def resolve_target(host: int | str | None, target: str | None) -> str:
         hosts_data, _ = load_inventory(include_credentials=False)
         resolved, _ = resolve_host(host, hosts_data, {}, decrypt=False)
         return resolved.get("mgmt_ip") or resolved.get("hostname")
-    raise SystemExit("informe --host-id, --host ou --target")
+    raise SystemExit(i18n.t("cli_diagnostics.target_required"))
 
 
 def scan_nmap(target: str, ports: list[int]) -> dict:
@@ -70,12 +71,12 @@ def scan_socket(target: str, ports: list[int]) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Scan de portas TCP de um host.")
+    parser = argparse.ArgumentParser(description=i18n.t("cli_diagnostics.scan_description"))
     selection = parser.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--host-id", type=int, help="ID inteiro do host no inventário")
-    selection.add_argument("--host", help="Nome único ou alias legado do host")
-    selection.add_argument("--target", help="IP ou nome direto")
-    parser.add_argument("--ports", help="Portas separadas por vírgula (padrão: portas comuns)")
+    selection.add_argument("--host-id", type=int, help=i18n.t("cli_diagnostics.help_host_id"))
+    selection.add_argument("--host", help=i18n.t("cli_diagnostics.help_host"))
+    selection.add_argument("--target", help=i18n.t("cli_diagnostics.help_target"))
+    parser.add_argument("--ports", help=i18n.t("cli_diagnostics.help_ports"))
     args = parser.parse_args()
 
     target = resolve_target(args.host_id if args.host_id is not None else args.host, args.target)
@@ -84,12 +85,11 @@ def main() -> int:
     try:
         result = scan_nmap(target, ports) if shutil.which("nmap") else scan_socket(target, ports)
     except subprocess.TimeoutExpired:
-        print(f"ERRO: scan de {target} excedeu o tempo.", file=sys.stderr)
+        print(i18n.t("cli_diagnostics.scan_timeout", target=target), file=sys.stderr)
         return 1
 
     if result["tool"] == "socket":
-        print("AVISO: nmap não encontrado — usando scan socket sem detecção de versão. "
-              "Instale com: sudo apt install nmap", file=sys.stderr)
+        print(i18n.t("cli_diagnostics.scan_no_nmap"), file=sys.stderr)
     print(json.dumps({k: v for k, v in result.items() if k != "raw"}, indent=2, ensure_ascii=False))
     return 0
 

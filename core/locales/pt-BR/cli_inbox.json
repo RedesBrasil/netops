@@ -1,0 +1,8 @@
+{
+  "description": "Central de Avisos do NetOps",
+  "help_add": "publica um aviso/alerta/pedido de aprovação",
+  "help_body_file": "arquivo markdown (ou - p/ stdin)",
+  "help_on_approve_agent": "prompt do agente que roda se aprovado (retoma --session-id se houver)",
+  "help_telegram": "também avisa no Telegram (network/telegram.yaml)",
+  "help_timeout": "minutos da ação"
+}

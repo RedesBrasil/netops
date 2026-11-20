@@ -1,71 +1,71 @@
 ---
 id: network-security-audit
-titulo: Auditoria de Segurança de Rede
+titulo: Network Security Audit
 vendor: general
 tags: [security, audit, hardening]
 severidade: alta
 ---
 
-## Resumo
+## Summary
 
-Roteiro cross-vendor para avaliar a postura de segurança de qualquer equipamento de rede.
-O agente `tester` usa este guia para classificar os achados de uma auditoria. Cada item
-abaixo é uma checagem objetiva — quando falha, vira um achado com severidade.
+Cross-vendor checklist to assess the security posture of any network device.
+The `tester` agent uses this guide to classify the findings of an audit. Each item
+below is an objective check — when it fails, it becomes a finding with a severity.
 
 ## Checklist
 
-- [ ] Telnet desabilitado (só SSH para acesso CLI).
-- [ ] Acesso de gerência (SSH/API/HTTPS) restrito a sub-redes de gerência.
-- [ ] Sem credenciais padrão de fábrica; sem usuário sem senha.
-- [ ] SNMP: sem community `public`/`private`; preferir SNMPv3; restringir por ACL.
-- [ ] Interface web de gerência só em HTTPS (nunca HTTP puro), e restrita.
-- [ ] Firmware/SO em versão suportada e sem CVEs críticas conhecidas.
-- [ ] Firewall com política de `input` restritiva (default drop) na borda.
-- [ ] Logs habilitados e enviados para um coletor central (syslog).
-- [ ] NTP configurado (horário correto é pré-requisito de log confiável).
-- [ ] Serviços não usados desligados (reduzir superfície de ataque).
-- [ ] Contas administrativas individuais (sem login compartilhado quando possível).
+- [ ] Telnet disabled (SSH only for CLI access).
+- [ ] Management access (SSH/API/HTTPS) restricted to management subnets.
+- [ ] No factory default credentials; no user without a password.
+- [ ] SNMP: no `public`/`private` community; prefer SNMPv3; restrict by ACL.
+- [ ] Management web interface over HTTPS only (never plain HTTP), and restricted.
+- [ ] Firmware/OS on a supported version with no known critical CVEs.
+- [ ] Firewall with a restrictive `input` policy (default drop) at the edge.
+- [ ] Logging enabled and sent to a central collector (syslog).
+- [ ] NTP configured (correct time is a prerequisite for reliable logs).
+- [ ] Unused services turned off (reduce the attack surface).
+- [ ] Individual administrative accounts (no shared login when possible).
 
-## Detalhamento
+## Details
 
-**Acesso administrativo.** Telnet trafega senha em texto puro — qualquer um na rede captura.
-Use SSH. Restrinja de onde a gerência é aceita: um roteador que aceita SSH de qualquer IP é
-um convite. Liste explicitamente as sub-redes de gerência.
+**Administrative access.** Telnet sends the password in plain text — anyone on the network can capture it.
+Use SSH. Restrict where management is accepted from: a router that accepts SSH from any IP is
+an invitation. List the management subnets explicitly.
 
-**Credenciais.** O vetor de ataque nº 1 é a senha padrão de fábrica. Toda auditoria começa
-verificando se `admin/admin`, `admin` sem senha, ou a senha conhecida do fabricante ainda
-funcionam.
+**Credentials.** Attack vector no. 1 is the factory default password. Every audit starts by
+checking whether `admin/admin`, `admin` with no password, or the vendor's well-known password still
+work.
 
-**SNMP.** Community `public` permite a qualquer um ler a configuração e a topologia. Troque
-por uma string única, restrinja por ACL e, idealmente, migre para SNMPv3 (autenticado e
-criptografado).
+**SNMP.** The `public` community lets anyone read the configuration and the topology. Replace
+it with a unique string, restrict it by ACL and, ideally, migrate to SNMPv3 (authenticated and
+encrypted).
 
-**Exposição.** Um scan de portas do IP de gerência revela o que está exposto. Portas como
-23 (Telnet), 21 (FTP), 80 (HTTP), 3389 (RDP) abertas são achados. Use
+**Exposure.** A port scan of the management IP reveals what is exposed. Ports such as
+23 (Telnet), 21 (FTP), 80 (HTTP), 3389 (RDP) being open are findings. Use
 `scripts/tools/diagnostics/portscan.py`.
 
-**Firmware.** Equipamento desatualizado acumula vulnerabilidades. Compare a versão coletada
-com a recomendada pelo fabricante.
+**Firmware.** Outdated devices accumulate vulnerabilities. Compare the collected version
+with the one recommended by the vendor.
 
-## Severidades sugeridas
+## Suggested severities
 
-| Achado | Severidade |
+| Finding | Severity |
 |--------|-----------|
-| Credencial padrão / sem senha | CRÍTICO |
-| Telnet habilitado e exposto | ALTO |
-| SNMP community public | ALTO |
-| Gerência aberta para qualquer IP | ALTO |
-| Firmware desatualizado | MÉDIO |
-| HTTP de gerência sem TLS | MÉDIO |
-| Serviço não usado ligado | BAIXO |
+| Default credential / no password | CRITICAL |
+| Telnet enabled and exposed | HIGH |
+| SNMP community public | HIGH |
+| Management open to any IP | HIGH |
+| Outdated firmware | MEDIUM |
+| Management HTTP without TLS | MEDIUM |
+| Unused service turned on | LOW |
 
-## Configuração relacionada
+## Related configuration
 
 - `config-examples/mikrotik/security-hardening.rsc`
 - `config-examples/mikrotik/firewall-baseline.rsc`
 - `config-examples/linux/sshd_config`
 
-## Referências
+## References
 
-- CIS Benchmarks (por fabricante/SO).
+- CIS Benchmarks (per vendor/OS).
 - `best-practices/general/ssh-hardening.md`

@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 import deps
+from lib import i18n
 from services import yaml_io
 
 
@@ -26,7 +27,7 @@ def safe_child(base: Path, *parts: str) -> Path:
     candidate = base.joinpath(*parts).resolve()
     base_resolved = base.resolve()
     if base_resolved != candidate and base_resolved not in candidate.parents:
-        raise deps.ValidationFailed([{"loc": "path", "msg": "caminho fora do diretório permitido"}])
+        raise deps.ValidationFailed([{"loc": "path", "msg": i18n.t("api_common.path_outside")}])
     return candidate
 
 
@@ -36,14 +37,14 @@ SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 def assert_slug(value: str, loc: str = "name") -> None:
     if not SLUG_RE.match(value):
         raise deps.ValidationFailed(
-            [{"loc": loc, "msg": "use kebab-case (a-z, 0-9, hífen), começando por letra/dígito"}]
+            [{"loc": loc, "msg": i18n.t("api_common.use_kebab_case")}]
         )
 
 
 def assert_vendor(vendor: str) -> None:
     if vendor not in deps.VENDORS:
         raise deps.ValidationFailed(
-            [{"loc": "vendor", "msg": f"vendor inválido. Use um de: {', '.join(deps.VENDORS)}"}]
+            [{"loc": "vendor", "msg": i18n.t("api_common.invalid_vendor", vendors=", ".join(deps.VENDORS))}]
         )
 
 

@@ -1,126 +1,126 @@
-# SKILL — Usuários, grupos de acesso e auditoria (multiusuário)
+# SKILL — Users, access groups and audit (multi-user)
 
-## O que é
+## What it is
 
-O console NetOps é **multiusuário**: cada pessoa entra com **e-mail + senha**. Cada usuário
-pertence a um ou mais **grupos de acesso**, que definem o que ele vê e faz no console.
-- Uso normal: menu **Sistema → Usuários / Grupos de acesso / Auditoria** (`#users`, `#access-groups`, `#audit`).
-- Cada um troca a própria senha em **Minha conta** (`#account`, botão com o nome no topo).
-- Este `cli.py` é o caminho de **recuperação** (admin trancado fora) e de automação.
+The NetOps console is **multi-user**: each person signs in with **e-mail + password**. Each user
+belongs to one or more **access groups**, which define what they see and do in the console.
+- Normal use: menu **System → Users / Access groups / Audit** (`#users`, `#access-groups`, `#audit`).
+- Each person changes their own password in **My account** (`#account`, the button with the name at the top).
+- This `cli.py` is the **recovery** path (admin locked out) and the automation path.
 
-## Onde fica (SQLite, não YAML)
+## Where it lives (SQLite, not YAML)
 
-`runs/netops.db` (git-ignorado, `0600`, modo WAL), via `scripts/engine/lib/accessdb.py`:
+`runs/netops.db` (git-ignored, `0600`, WAL mode), via `scripts/engine/lib/accessdb.py`:
 `users`, `access_groups`, `user_groups`, `sessions`, `login_failures`, `audit`, `claude_owners`.
 
-**Por que banco aqui e arquivo no resto:** isto é estado do sistema, escrito a cada login e a cada
-request por vários processos. Precisa de transação ("não apague o último admin") e de consulta
-(auditoria). O que a IA lê e edita (inventário, skills, memória) continua em arquivo.
+**Why a database here and files everywhere else:** this is system state, written on every login and on every
+request by several processes. It needs transactions ("do not delete the last admin") and queries
+(audit). What the AI reads and edits (inventory, skills, memory) stays in files.
 
-**Nunca copie o `.db` com o console no ar.** Use `cli.py snapshot <destino>` (API de backup do SQLite).
-O backup completo (`scripts/tools/backup/full_mirror.sh`) já espelha `runs/netops.db.snapshot`.
+**Never copy the `.db` while the console is running.** Use `cli.py snapshot <destino>` (SQLite backup API).
+The full backup (`scripts/tools/backup/full_mirror.sh`) already mirrors `runs/netops.db.snapshot`.
 
 ## Login = e-mail
 
-- O e-mail é obrigatório e único, sem diferenciar maiúsculas (é gravado em minúsculo).
-- Cada usuário também tem um **ID interno** (`username`), derivado do e-mail (`joao.silva@x.com` → `joao.silva`; repetido → `joao.silva-2`).
-  - Ele aparece na auditoria, no dono das conversas Claude e no CLI.
-  - **Trocar o e-mail não muda o ID** e não quebra o histórico.
-- O login também aceita o ID interno. É o caso do `admin` migrado sem e-mail, de scripts e do CLI.
-- A API recebe `POST /api/auth/login {email, password}`. `username` continua aceito.
-- **Recuperar senha por e-mail ainda NÃO existe:** precisaria de SMTP configurado. Quem redefine é o admin (tela ou `cli.py passwd`).
+- The e-mail is required and unique, case-insensitive (it is stored in lowercase).
+- Each user also has an **internal ID** (`username`), derived from the e-mail (`joao.silva@x.com` → `joao.silva`; repeated → `joao.silva-2`).
+  - It appears in the audit log, as the owner of Claude conversations and in the CLI.
+  - **Changing the e-mail does not change the ID** and does not break the history.
+- Login also accepts the internal ID. That is the case of the `admin` migrated without an e-mail, of scripts and of the CLI.
+- The API receives `POST /api/auth/login {email, password}`. `username` is still accepted.
+- **Password recovery by e-mail does NOT exist yet:** it would need SMTP configured. The admin resets passwords (screen or `cli.py passwd`).
 
-## Modelo de permissões
+## Permission model
 
-- **Permissões efetivas** = união dos grupos do usuário. O catálogo está em `accessdb.PERMISSIONS`.
-- **Rota → permissão:** `scripts/engine/ui/services/authz.py` (`RULES`).
-  - É **default-deny**: rota sem regra só passa para admin.
-  - O teste `test_every_route_is_mapped_to_a_permission` reprova rota nova sem regra.
-- **Grupo `admin` (fixo):** tem `*`. Só ele tem as permissões `admin_only`:
-  terminal e arquivos do servidor, configuração, atualização, usuários, auditoria,
-  **editar scripts/skills** e **criar/editar tarefas agendadas**. Essas duas últimas rodam com a conta do servidor (`netops`; root só na instalação legada). `server.admin` = administração Local como root (só admin).
-- **Grupos sugeridos** (editáveis): `operador` e `leitura`.
-- **Sem escopo por host:** quem tem `hosts.view` vê todos os hosts.
-- **Aba Claude:** liberável por grupo (`claude.use`).
-  - O teto `net_perms` do grupo limita o que ela faz nos **equipamentos**. Acima do teto, nem a aprovação na tela libera.
-  - Isso é proteção contra erro, **não fronteira de segurança**: o agente tem shell no servidor.
-  - Cada conversa tem **dono**. Quem não é admin só vê as próprias conversas; conversas sem dono (anteriores ao multiusuário) ficam só para admin.
-  - O agente recebe `NETOPS_USER`.
-- **Botões no front:** as páginas marcam botões com a classe `needs-<perm>` (ex.: `needs-hosts-edit`), e o shell esconde quando falta a permissão.
-  Isso é só visual: quem bloqueia é o backend (403 `forbidden`).
+- **Effective permissions** = union of the user's groups. The catalog is in `accessdb.PERMISSIONS`.
+- **Route → permission:** `scripts/engine/ui/services/authz.py` (`RULES`).
+  - It is **default-deny**: a route without a rule only passes for admin.
+  - The test `test_every_route_is_mapped_to_a_permission` fails a new route without a rule.
+- **`admin` group (fixed):** has `*`. Only it has the `admin_only` permissions:
+  server terminal and files, settings, updates, users, audit,
+  **editing scripts/skills** and **creating/editing scheduled tasks**. These last two run with the server account (`netops`; root only on the legacy install). `server.admin` = Local administration as root (admin only).
+- **Suggested groups** (editable): `operador` and `leitura`.
+- **No per-host scope:** whoever has `hosts.view` sees all hosts.
+- **Claude tab:** can be enabled per group (`claude.use`).
+  - The group's `net_perms` ceiling limits what it does on **equipment**. Above the ceiling, not even the on-screen approval allows it.
+  - This is protection against mistakes, **not a security boundary**: the agent has a shell on the server.
+  - Each conversation has an **owner**. Non-admins only see their own conversations; conversations without an owner (from before multi-user) are admin-only.
+  - The agent receives `NETOPS_USER`.
+- **Frontend buttons:** pages mark buttons with the class `needs-<perm>` (e.g. `needs-hosts-edit`), and the shell hides them when the permission is missing.
+  This is only visual: the backend is what blocks (403 `forbidden`).
 
-## Cofre por usuário (keyslot)
+## Per-user vault (keyslot)
 
-- A senha do usuário usa o mesmo esquema do cofre (Argon2id + verifier, `lib/vault.build_meta`).
-- A chave derivada dela **embrulha a chave do cofre**. Por isso o login de cada usuário destranca o cofre sem ninguém conhecer a senha-mestra.
-- O slot é criado sozinho quando o usuário entra com o cofre **já destrancado**. Isso cobre o usuário novo e a troca da senha-mestra.
-- Desativar o usuário apaga o slot. Trocar a senha reembrulha o slot.
+- The user's password uses the same scheme as the vault (Argon2id + verifier, `lib/vault.build_meta`).
+- The key derived from it **wraps the vault key**. That is why each user's login unlocks the vault without anyone knowing the master password.
+- The slot is created automatically when the user signs in with the vault **already unlocked**. This covers new users and master-password changes.
+- Disabling the user deletes the slot. Changing the password rewraps the slot.
 
-## Migração (instalação que já existia)
+## Migration (existing installation)
 
-- **Sem usuários:** o login continua com a senha-mestra, como antes.
-  - A tela pede o **e-mail do administrador** + senha-mestra. O 1º login cria o usuário `admin` (grupo admin) com esse e-mail, essa senha e o keyslot.
-  - Senha-mestra com menos de 8 caracteres continua no modo legado: crie o admin pela tela ou pelo CLI.
-- **Sessões antigas:** quem estava logado (arquivo `runs/.ui-auth-sessions.json`) continua logado, como `admin`. A importação acontece uma vez.
-- **Compatibilidade:** `POST /api/auth/login {master_password}` sem `username` = senha do `admin`.
+- **No users:** login keeps using the master password, as before.
+  - The screen asks for the **administrator's e-mail** + master password. The 1st login creates the `admin` user (admin group) with that e-mail, that password and the keyslot.
+  - A master password shorter than 8 characters stays in legacy mode: create the admin through the screen or the CLI.
+- **Old sessions:** whoever was logged in (file `runs/.ui-auth-sessions.json`) stays logged in, as `admin`. The import happens once.
+- **Compatibility:** `POST /api/auth/login {master_password}` without `username` = the `admin` password.
 
-## GitHub por usuário
+## GitHub per user
 
-Cada usuário conecta a **própria** conta do GitHub em **Minha conta → GitHub** (`#account/github`). O agente das
-conversas que **ele** abre (aba Claude Code, Projetos) usa essa conta para push, PR e `gh`, e os commits saem com o
-nome e o e-mail dele. Código: `scripts/engine/lib/github_identity.py`, `ui/services/github_auth.py`, `ui/routers/github.py`.
+Each user connects **their own** GitHub account in **My account → GitHub** (`#account/github`). The agent of the
+conversations that **they** open (Claude Code tab, Projects) uses that account for push, PR and `gh`, and commits carry their
+name and e-mail. Code: `scripts/engine/lib/github_identity.py`, `ui/services/github_auth.py`, `ui/routers/github.py`.
 
-- **Como conecta:** login por dispositivo do GitHub CLI (código + `github.com/login/device`, autorizado no navegador
-  da pessoa) ou um token pessoal. A senha do GitHub nunca passa pelo NetOps.
-- **Onde fica:** `runs/users/<username>/gh/` (GH_CONFIG_DIR do `gh`, token em `hosts.yml` com `--insecure-storage`,
-  pasta 0700) e `runs/users/<username>/github.json` (login, nome, e-mail escolhido, sem token). Tudo git-ignorado.
-- **Ambiente do agente** (`claude_svc._options` → `github_identity.env_for`): `GH_CONFIG_DIR` dele,
-  `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, credential helper do github.com por `GIT_CONFIG_*` (vale sobre qualquer gitconfig),
-  `GIT_TERMINAL_PROMPT=0`; `GH_TOKEN`/`GITHUB_TOKEN` herdados são removidos.
-- **Sem conta conectada:** `GH_CONFIG_DIR` aponta para `runs/users/_sem-github/gh` (vazia). Push, PR e `gh` falham e
-  **nunca** usam a conta do servidor. Os commits saem com o nome e o e-mail do cadastro no console.
-- **Vale para conversas novas ou reabertas:** o ambiente é fixado quando o processo do agente nasce. Quem retoma
-  a conversa de outra pessoa (admin) usa o GitHub **dele próprio**.
-- **Guarda** (`_hook_github_guard`, só para não-admin): bloqueia ler `/root/.config/gh`, `runs/users/`, `gh auth token`,
-  trocar `GH_CONFIG_DIR`/`GH_TOKEN`, `env -i/-u`, `git config credential/user.*` e `--author`. É uma grade contra
-  erro, **não** uma fronteira: o agente tem shell com a conta do servidor.
-- **Onde aparece:** só em **Minha conta → GitHub**. Não aparece na aba Claude nem na lista de Usuários (decisão do
-  usuário, 19/11). O admin consulta e revoga só pela API: `GET`/`DELETE /api/users/<u>/github`.
-  Apagar o usuário apaga a pasta dele. A auditoria registra `github_connected`, `github_disconnected`, `github_email`
-  e `github_revoked`.
-- **Modo sem usuários:** nada muda; o agente usa o `gh` do servidor.
-- **Servidor:** o atualizador e o backup completo continuam com o `gh` do root (`/root/.config/gh`). O ideal é uma
-  conta de serviço, não a pessoal de alguém.
-- **Tarefas agendadas:** `agent.github_as: <username>` (CLI `--github-as`) faz o agente da tarefa usar o GitHub
-  desse usuário. Vazio mantém o `gh` do servidor.
-- **Testes:** `scripts/engine/ui/tests/test_github_per_user.py`.
+- **How to connect:** GitHub CLI device login (code + `github.com/login/device`, authorized in the person's
+  browser) or a personal token. The GitHub password never goes through NetOps.
+- **Where it lives:** `runs/users/<username>/gh/` (`gh`'s GH_CONFIG_DIR, token in `hosts.yml` with `--insecure-storage`,
+  folder 0700) and `runs/users/<username>/github.json` (login, name, chosen e-mail, no token). All git-ignored.
+- **Agent environment** (`claude_svc._options` → `github_identity.env_for`): their `GH_CONFIG_DIR`,
+  `GIT_AUTHOR_*`/`GIT_COMMITTER_*`, github.com credential helper via `GIT_CONFIG_*` (overrides any gitconfig),
+  `GIT_TERMINAL_PROMPT=0`; inherited `GH_TOKEN`/`GITHUB_TOKEN` are removed.
+- **No account connected:** `GH_CONFIG_DIR` points to `runs/users/_sem-github/gh` (empty). Push, PR and `gh` fail and
+  **never** use the server account. Commits carry the name and e-mail of the console record.
+- **Applies to new or reopened conversations:** the environment is fixed when the agent process starts. Whoever resumes
+  someone else's conversation (admin) uses **their own** GitHub.
+- **Guard** (`_hook_github_guard`, non-admins only): blocks reading `/root/.config/gh`, `runs/users/`, `gh auth token`,
+  changing `GH_CONFIG_DIR`/`GH_TOKEN`, `env -i/-u`, `git config credential/user.*` and `--author`. It is a rail against
+  mistakes, **not** a boundary: the agent has a shell with the server account.
+- **Where it shows:** only in **My account → GitHub**. It does not show in the Claude tab nor in the Users list (user's
+  decision, 19/11). The admin checks and revokes only through the API: `GET`/`DELETE /api/users/<u>/github`.
+  Deleting the user deletes their folder. The audit log records `github_connected`, `github_disconnected`, `github_email`
+  and `github_revoked`.
+- **No-users mode:** nothing changes; the agent uses the server's `gh`.
+- **Server:** the updater and the full backup keep using root's `gh` (`/root/.config/gh`). Ideally this is a
+  service account, not someone's personal one.
+- **Scheduled tasks:** `agent.github_as: <username>` (CLI `--github-as`) makes the task's agent use that user's
+  GitHub. Empty keeps the server's `gh`.
+- **Tests:** `scripts/engine/ui/tests/test_github_per_user.py`.
 
 ## CLI
 
 ```bash
-python3 scripts/engine/users/cli.py list                       # usuários, grupos, último login, sessões
+python3 scripts/engine/users/cli.py list                       # users, groups, last login, sessions
 python3 scripts/engine/users/cli.py groups
-python3 scripts/engine/users/cli.py reset-admin [--email a@b.com]   # RECUPERAÇÃO: cria/reativa admin + senha nova
-sudo -u netops python3 scripts/engine/users/cli.py setup-link [--hours 24]   # instalação nova: (re)gera o link do PRIMEIRO ACESSO
+python3 scripts/engine/users/cli.py reset-admin [--email a@b.com]   # RECOVERY: creates/reactivates admin + new password
+sudo -u netops python3 scripts/engine/users/cli.py setup-link [--hours 24]   # new install: (re)generates the FIRST ACCESS link
 python3 scripts/engine/users/cli.py add joao@empresa.com --groups operador --name "João" --temp
-python3 scripts/engine/users/cli.py passwd joao@empresa.com --temp         # senha provisória, derruba as sessões
+python3 scripts/engine/users/cli.py passwd joao@empresa.com --temp         # temporary password, drops the sessions
 python3 scripts/engine/users/cli.py disable joao | enable joao | delete joao
 python3 scripts/engine/users/cli.py sessions [--user joao] ; logout joao | logout --all
 python3 scripts/engine/users/cli.py audit --user joao --limit 100
 python3 scripts/engine/users/cli.py snapshot /caminho/netops.db
 ```
 
-A senha nunca vai por argumento. Use `getpass` (terminal interativo) ou `--password-stdin`.
+The password never goes as an argument. Use `getpass` (interactive terminal) or `--password-stdin`.
 
-## Segurança
+## Security
 
 - **Throttle:**
-  - Depois de 5 falhas seguidas de um usuário+IP (ou 20 de um IP), a espera cresce (15 s × 2ⁿ, máx. 15 min).
-  - A falha vale mesmo com a senha certa durante o bloqueio.
-- **Senha provisória (`must_change_password`):** a API devolve 403 `password_change_required` até a troca.
-- **Auditoria:**
-  - Registra login/logout/falha, toda escrita na API (inclusive as **negadas**, com o status), abertura de terminais e mudanças de usuário/grupo.
-  - Nunca grava o corpo da requisição.
-  - Retenção em `ui.audit_keep_days` (padrão 365).
-- **Testes:** `scripts/engine/ui/tests/test_multiuser.py` e `tests/multiuser.browser.mjs`.
-  - O browser test precisa de uma instância com cofre fictício: `NETOPS_E2E_VAULT=... tests/e2e-env.sh up`.
+  - After 5 consecutive failures for a user+IP (or 20 for an IP), the wait grows (15 s × 2ⁿ, max. 15 min).
+  - A failure counts even with the correct password during the lockout.
+- **Temporary password (`must_change_password`):** the API returns 403 `password_change_required` until it is changed.
+- **Audit:**
+  - Records login/logout/failure, every write to the API (including the **denied** ones, with the status), terminal openings and user/group changes.
+  - Never stores the request body.
+  - Retention in `ui.audit_keep_days` (default 365).
+- **Tests:** `scripts/engine/ui/tests/test_multiuser.py` and `tests/multiuser.browser.mjs`.
+  - The browser test needs an instance with a fake vault: `NETOPS_E2E_VAULT=... tests/e2e-env.sh up`.

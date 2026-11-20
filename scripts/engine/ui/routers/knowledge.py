@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 import deps
+from lib import i18n
 from services import docs_svc, yaml_io
 
 router = APIRouter(tags=["knowledge"])
@@ -25,7 +26,7 @@ def _rev(request: Request) -> str | None:
 
 def _kind(kind: str):
     if kind not in KINDS:
-        raise KeyError(f"tipo de conhecimento '{kind}' inválido")
+        raise KeyError(i18n.t("api_knowledge.bad_kind", kind=kind))
     return KINDS[kind]
 
 
@@ -68,7 +69,7 @@ def get_file(kind: str, vendor: str, name: str):
     base, _, _ = _kind(kind)
     path = docs_svc.safe_child(base, vendor, name)
     if not path.exists():
-        raise KeyError(f"{vendor}/{name} não existe")
+        raise KeyError(i18n.t("api_common.path_not_exists", path=f"{vendor}/{name}"))
     info = docs_svc.read_text_file(path)
     fm, _body = docs_svc.split_frontmatter(info["text"])
     info["frontmatter"] = fm
@@ -82,10 +83,10 @@ def create_file(kind: str, body: dict, request: Request):
     name = (body.get("name") or body.get("file") or "").strip()
     docs_svc.assert_vendor(vendor)
     if not name or "/" in name or name.startswith("_"):
-        raise deps.ValidationFailed([{"loc": "name", "msg": "nome de arquivo inválido"}])
+        raise deps.ValidationFailed([{"loc": "name", "msg": i18n.t("api_common.invalid_filename")}])
     path = docs_svc.safe_child(base, vendor, name)
     if path.exists():
-        raise deps.ValidationFailed([{"loc": "name", "msg": f"{vendor}/{name} já existe"}])
+        raise deps.ValidationFailed([{"loc": "name", "msg": i18n.t("api_common.path_exists", path=f"{vendor}/{name}")}])
     path.parent.mkdir(parents=True, exist_ok=True)
     yaml_io.atomic_write(path, body.get("text", ""))
     # adiciona entrada ao índice (ruamel preserva comentários)
@@ -103,7 +104,7 @@ def update_file(kind: str, body: dict, request: Request):
     vendor, name = body.get("vendor", ""), body.get("name", "")
     path = docs_svc.safe_child(base, vendor, name)
     if not path.exists():
-        raise KeyError(f"{vendor}/{name} não existe")
+        raise KeyError(i18n.t("api_common.path_not_exists", path=f"{vendor}/{name}"))
     new_rev = yaml_io.write_text(path, body.get("text", ""), expected=_rev(request), backup=True)
     return {"file": f"{vendor}/{name}", "rev": new_rev}
 
@@ -119,15 +120,15 @@ def rename_file(kind: str, body: dict):
     to_name = (body.get("to_name") or "").strip()
     docs_svc.assert_vendor(to_vendor)
     if not to_name or "/" in to_name or to_name.startswith("_"):
-        raise deps.ValidationFailed([{"loc": "to_name", "msg": "nome de arquivo inválido"}])
+        raise deps.ValidationFailed([{"loc": "to_name", "msg": i18n.t("api_common.invalid_filename")}])
     src = docs_svc.safe_child(base, vendor, name)
     if not src.exists():
-        raise KeyError(f"{vendor}/{name} não existe")
+        raise KeyError(i18n.t("api_common.path_not_exists", path=f"{vendor}/{name}"))
     dst = docs_svc.safe_child(base, to_vendor, to_name)
     if dst == src:
-        raise deps.ValidationFailed([{"loc": "to_name", "msg": "destino igual à origem"}])
+        raise deps.ValidationFailed([{"loc": "to_name", "msg": i18n.t("api_common.same_target")}])
     if dst.exists():
-        raise deps.ValidationFailed([{"loc": "to_name", "msg": f"{to_vendor}/{to_name} já existe"}])
+        raise deps.ValidationFailed([{"loc": "to_name", "msg": i18n.t("api_common.path_exists", path=f"{to_vendor}/{to_name}")}])
     dst.parent.mkdir(parents=True, exist_ok=True)
     os.replace(src, dst)
     old_rel, new_rel = f"{vendor}/{name}", f"{to_vendor}/{to_name}"
@@ -150,7 +151,7 @@ def delete_file(kind: str, vendor: str, name: str):
     base, index_file, key = _kind(kind)
     path = docs_svc.safe_child(base, vendor, name)
     if not path.exists():
-        raise KeyError(f"{vendor}/{name} não existe")
+        raise KeyError(i18n.t("api_common.path_not_exists", path=f"{vendor}/{name}"))
     path.unlink()
     rel = f"{vendor}/{name}"
     data, _, y = yaml_io.load_rt(index_file)

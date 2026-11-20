@@ -1,17 +1,18 @@
 // Atualizações oficiais: notas como texto, sem HTML remoto e sem tokens no navegador.
-import { html, useState, useEffect, useRef, api, Modal, Spinner } from "../ui.js";
+import { html, useState, useEffect, useRef, api, Modal, Spinner, t, fmtDate } from "../ui.js";
 import { useMenuRoute } from "../route.js";
 
 const JOB_KEY = "netops_update_job";
 const FINISHED = new Set(["completed", "failed", "rolled_back", "recovery_failed", "migration_failed"]);
+// Phase -> catalog key (translated at render time).
 const PHASES = {
-  queued: "Atualização confirmada", downloading: "Baixando a release", validating: "Validando o pacote",
-  backup: "Criando e verificando backup", preparing: "Preparando dependências", applying: "Aplicando atualização",
-  restarting: "Reiniciando o console", rolling_back: "Restaurando a versão anterior",
-  completed: "Atualização concluída", failed: "Atualização cancelada", rolled_back: "Versão anterior restaurada",
-  recovery_failed: "Recuperação manual necessária",
-  migrating: "Convertendo automaticamente as identidades dos hosts",
-  migration_failed: "Código instalado; migração de dados bloqueada",
+  queued: "updates.phase_queued", downloading: "updates.phase_downloading", validating: "updates.phase_validating",
+  backup: "updates.phase_backup", preparing: "updates.phase_preparing", applying: "updates.phase_applying",
+  restarting: "updates.phase_restarting", rolling_back: "updates.phase_rolling_back",
+  completed: "updates.phase_completed", failed: "updates.phase_failed", rolled_back: "updates.phase_rolled_back",
+  recovery_failed: "updates.phase_recovery_failed",
+  migrating: "updates.phase_migrating",
+  migration_failed: "updates.phase_migration_failed",
 };
 
 // part: "version" = só o número (topbar); "button" = botão + painel (Configuração).
@@ -63,7 +64,7 @@ export function UpdatesControl({ part = "button" } = {}) {
   async function check() {
     setOpen(true); setLoading(true); setError(""); setConfirm(false);
     try { setData(await api.get("/updates/check")); }
-    catch (e) { setError(e.message || "Não foi possível consultar as releases."); }
+    catch (e) { setError(e.message || t("updates.check_failed")); }
     finally { setLoading(false); }
   }
 
@@ -74,7 +75,7 @@ export function UpdatesControl({ part = "button" } = {}) {
       sessionStorage.setItem(JOB_KEY, job.id);
       setData((old) => ({ ...old, job }));
       setConfirm(false);
-    } catch (e) { setError(e.message || "Não foi possível iniciar a atualização."); }
+    } catch (e) { setError(e.message || t("updates.apply_failed")); }
     finally { setSubmitting(false); }
   }
 
@@ -82,43 +83,43 @@ export function UpdatesControl({ part = "button" } = {}) {
   if (part === "version")
     return data?.current_version ? html`<span class="updates-version">v${data.current_version}</span>` : null;
   return html`<div class="updates-control">
-    <button class="sm" onClick=${busy || pending ? () => setOpen(true) : check}>${busy ? "Atualização em andamento" : "Verificar atualizações"}</button>
-    ${open && html`<${Modal} title="Atualizações do NetOps" wide=${true} onClose=${() => setOpen(false)}>
-      <div class="updates-panel" role="region" aria-label="Atualizações">
-        ${data && html`<p>Versão instalada: <b>v${data.current_version}</b></p>`}
+    <button class="sm" onClick=${busy || pending ? () => setOpen(true) : check}>${busy ? t("updates.in_progress") : t("updates.check_btn")}</button>
+    ${open && html`<${Modal} title=${t("updates.title")} wide=${true} onClose=${() => setOpen(false)}>
+      <div class="updates-panel" role="region" aria-label=${t("updates.region_label")}>
+        ${data && html`<p>${t("updates.installed_version")} <b>v${data.current_version}</b></p>`}
         ${loading && html`<${Spinner} />`}
         ${error && html`<p class="updates-error" role="alert">${error}</p>`}
-        ${offline && html`<p role="status">Console reiniciando ou indisponível. Aguardando reconexão. Pode ser necessário entrar novamente.</p>`}
+        ${offline && html`<p role="status">${t("updates.offline")}</p>`}
         ${data?.job?.id && html`<section class="updates-progress" aria-live="polite">
-          <b>${PHASES[data.job.phase] || data.job.phase}</b>
-          <p>${data.job.detail || "Acompanhe as etapas. Seus dados locais serão preservados."}</p>
-          ${data.job.backup && html`<p>Backup privado no servidor: <code>${data.job.backup}</code></p>`}
-          ${!!data.job.preserved?.length && html`<details><summary>Personalizações preservadas (${data.job.preserved.length})</summary>
+          <b>${PHASES[data.job.phase] ? t(PHASES[data.job.phase]) : data.job.phase}</b>
+          <p>${data.job.detail || t("updates.job_default_detail")}</p>
+          ${data.job.backup && html`<p>${t("updates.private_backup")} <code>${data.job.backup}</code></p>`}
+          ${!!data.job.preserved?.length && html`<details><summary>${t("updates.preserved", { n: data.job.preserved.length })}</summary>
             <ul>${data.job.preserved.map((p) => html`<li key=${p}><code>${p}</code></li>`)}</ul></details>`}
-          ${data.job.phase === "completed" && html`<button class="primary" onClick=${() => location.reload()}>Recarregar interface atualizada</button>`}
+          ${data.job.phase === "completed" && html`<button class="primary" onClick=${() => location.reload()}>${t("updates.reload_ui")}</button>`}
         </section>`}
-        ${data?.no_releases && html`<p>Nenhuma release publicada no GitHub ainda.</p>`}
-        ${data?.releases?.length === 0 && !data.no_releases && html`<p>Não há versão estável mais recente que a instalada.</p>`}
-        ${!data?.managed && html`<p class="help">O reinício automático exige iniciar o console por <code>scripts/engine/ui/start.sh</code>.</p>`}
-        ${data?.requires_setup && html`<p class="help">Inicialize o cofre e faça login no console antes de aplicar atualizações.</p>`}
-        ${data?.read_only && html`<p class="help">Modo somente leitura: você pode consultar novidades, mas não atualizar.</p>`}
-        ${latest && !latest.installable && html`<p class="help">A última release ainda não contém um pacote oficial verificável.</p>`}
+        ${data?.no_releases && html`<p>${t("updates.no_releases")}</p>`}
+        ${data?.releases?.length === 0 && !data.no_releases && html`<p>${t("updates.up_to_date")}</p>`}
+        ${!data?.managed && html`<p class="help">${t("updates.unmanaged")} <code>scripts/engine/ui/start.sh</code>.</p>`}
+        ${data?.requires_setup && html`<p class="help">${t("updates.requires_setup")}</p>`}
+        ${data?.read_only && html`<p class="help">${t("updates.read_only")}</p>`}
+        ${latest && !latest.installable && html`<p class="help">${t("updates.not_installable")}</p>`}
         ${data?.releases?.map((r) => html`<section class="update-release" key=${r.id}>
-          <h3>${r.tag} ${r.published_at && html`<small>${new Date(r.published_at).toLocaleDateString("pt-BR")}</small>`}</h3>
+          <h3>${r.tag} ${r.published_at && html`<small>${fmtDate(r.published_at)}</small>`}</h3>
           <pre class="update-changelog">${r.changelog}</pre>
-          <a href=${r.url} target="_blank" rel="noopener noreferrer">Ver release no GitHub</a>
+          <a href=${r.url} target="_blank" rel="noopener noreferrer">${t("updates.view_on_github")}</a>
         </section>`)}
         ${confirm && html`<section class="updates-confirm">
-          <h3>Atualizar para ${latest.tag}?</h3>
-          <p>Salve os formulários abertos. Terminais e sessões do agente abertos serão encerrados no reinício (as conversas do Claude ficam salvas e podem ser retomadas). Backups e workflows em execução impedem a atualização até terminarem. Um backup privado será verificado antes de substituir o código.</p>
-          <p>O console ficará indisponível por alguns instantes. Se a nova versão falhar, o atualizador tentará restaurar a anterior. Mantenha também um backup externo.</p>
-          <button disabled=${submitting} onClick=${() => setConfirm(false)}>Cancelar</button>
-          <button class="primary" disabled=${submitting} onClick=${apply}>${submitting ? "Confirmando…" : "Criar backup e atualizar"}</button>
+          <h3>${t("updates.confirm_title", { tag: latest.tag })}</h3>
+          <p>${t("updates.confirm_body_1")}</p>
+          <p>${t("updates.confirm_body_2")}</p>
+          <button disabled=${submitting} onClick=${() => setConfirm(false)}>${t("common.cancel")}</button>
+          <button class="primary" disabled=${submitting} onClick=${apply}>${submitting ? t("updates.confirming") : t("updates.backup_and_update")}</button>
         </section>`}
         <div class="modal-actions">
-          <button onClick=${() => setOpen(false)}>Fechar</button>
-          <button disabled=${loading || busy || submitting} onClick=${check}>Verificar novamente</button>
-          ${latest && !confirm && html`<button class="primary" disabled=${!data.can_apply || busy || submitting} onClick=${() => setConfirm(true)}>Atualizar para ${latest.tag}</button>`}
+          <button onClick=${() => setOpen(false)}>${t("common.close")}</button>
+          <button disabled=${loading || busy || submitting} onClick=${check}>${t("updates.check_again")}</button>
+          ${latest && !confirm && html`<button class="primary" disabled=${!data.can_apply || busy || submitting} onClick=${() => setConfirm(true)}>${t("updates.update_to", { tag: latest.tag })}</button>`}
         </div>
       </div>
     <//>`}

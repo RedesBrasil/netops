@@ -1,83 +1,83 @@
-# Atualizações do NetOps
+# NetOps updates
 
-## Uso
+## Usage
 
-Inicie sempre por `scripts/engine/ui/start.sh`. Na barra superior, clique em **Verificar atualizações**, leia as notas de todas as versões posteriores e escolha **Atualizar para vX.Y.Z**. Salve formulários antes de confirmar. Terminais e sessões do agente abertos não bloqueiam: são encerrados no reinício (as conversas do Claude ficam salvas e podem ser retomadas). Só backup de equipamento ou workflow em execução impede a atualização até terminar.
+Always start through `scripts/engine/ui/start.sh`. In the top bar, click **Check for updates** (Verificar atualizações), read the notes of all later versions and choose **Update to vX.Y.Z** (Atualizar para vX.Y.Z). Save forms before confirming. Open terminals and agent sessions do not block: they are closed on restart (Claude conversations stay saved and can be resumed). Only an equipment backup or a running workflow prevents the update until it finishes.
 
-O repositório oficial é `RedesBrasil/netops`, atualmente privado. Instale GitHub CLI e rode `gh auth login --hostname github.com` como o mesmo usuário e HOME do servidor. Não passe tokens pela interface. O atualizador usa `gh api`; não imprime nem exporta credenciais.
+The official repository is `RedesBrasil/netops`, currently private. Install GitHub CLI and run `gh auth login --hostname github.com` as the same user and HOME as the server. Do not pass tokens through the interface. The updater uses `gh api`; it does not print or export credentials.
 
-A aplicação exige login com a senha-mestra, mesmo em instalações em que o restante do console esteja aberto por falta de cofre. Modo somente leitura permite consultar, mas não aplicar. Não é necessário destrancar ou descriptografar as credenciais para fazer um backup da instalação.
+Applying requires login with the master password, even on installations where the rest of the console is open for lack of a vault. Read-only mode allows checking, but not applying. It is not necessary to unlock or decrypt the credentials to back up the installation.
 
-## O que é preservado
+## What is preserved
 
-- Inventário, credenciais cifradas, mapas, topologia, backups de equipamentos, relatórios e execuções;
-  formatos de identidade antigos são convertidos pelo protocolo descrito abaixo, não substituídos
-  por exemplos do pacote.
-- Configuração local do projeto, memória, arquivos desconhecidos, ambientes e históricos pessoais.
-- Personalizações de agentes, workflows, conhecimento e scripts operacionais. Edições e exclusões locais não são substituídas por versões da distribuição.
-- `.git/` e HOME externo ao projeto não são alterados. O atualizador não faz checkout, reset, clean, pull nem stash.
+- Inventory, encrypted credentials, maps, topology, equipment backups, reports and runs;
+  old identity formats are converted by the protocol described below, not replaced
+  by examples from the package.
+- Local project configuration, memory, unknown files, environments and personal histories.
+- Customizations of agents, workflows, knowledge and operational scripts. Local edits and deletions are not replaced by distribution versions.
+- `.git/` and the HOME outside the project are not changed. The updater does no checkout, reset, clean, pull or stash.
 
-Código do motor modificado localmente ou novos caminhos colidindo com arquivos existentes impedem a atualização automática. A referência inicial de um clone legado é o conteúdo de `HEAD`; depois, é o manifesto privado `.netops-update/installed.json`. Por isso, após instalar um pacote, `git status` pode mostrar mudanças de distribuição: o atualizador não usa o working tree como referência de instalação.
+Locally modified engine code or new paths colliding with existing files prevent the automatic update. The initial reference of a legacy clone is the content of `HEAD`; afterwards, it is the private manifest `.netops-update/installed.json`. That is why, after installing a package, `git status` may show distribution changes: the updater does not use the working tree as the installation reference.
 
-## Migração automática dos IDs de host
+## Automatic migration of host IDs
 
-A versão 2 converte `hosts.yaml`, `topology.yaml` e `maps.yaml` para v2 e a configuração
-de backups para v3, mantendo nomes, atributos, layouts, IDs dos enlaces e o histórico.
-IDs antigos viram aliases; novas coletas usam `backups/by-id/<id>/`. Não há acesso a
-equipamentos nem leitura do cofre nessa conversão.
+Version 2 converts `hosts.yaml`, `topology.yaml` and `maps.yaml` to v2 and the backup
+configuration to v3, keeping names, attributes, layouts, link IDs and history.
+Old IDs become aliases; new collections use `backups/by-id/<id>/`. There is no access to
+equipment nor reading of the vault in this conversion.
 
-O candidato primeiro faz uma pré-validação sem modificar os documentos. Dados inválidos,
-como ligações para hosts inexistentes, impedem a prontidão da nova versão: o supervisor
-anterior restaura o código e os dados antigos permanecem intactos. O diagnóstico fica
-privado em `.netops-update/host-migration-preflight.json`. Nenhuma ligação é descartada
-automaticamente; a correção exige uma decisão do operador.
+The candidate first runs a pre-validation without modifying the documents. Invalid data,
+such as links to nonexistent hosts, prevents the new version from becoming ready: the previous
+supervisor restores the code and the old data stays intact. The diagnosis is kept
+private in `.netops-update/host-migration-preflight.json`. No link is discarded
+automatically; the fix requires a decision by the operator.
 
-Com os dados válidos, o candidato aguarda a confirmação do código e a publicação de sua
-identidade pelo supervisor. Só depois converte os quatro documentos sob a trava de
-inventário, com hashes esperados, baseline e journal próprios. Isso mantém compatibilidade
-com supervisores de releases anteriores, que sabem restaurar código, mas não desfazer
-uma conversão de dados. O pacote continua no protocolo 1, sem scripts pós-instalação.
+With valid data, the candidate waits for the code confirmation and for the supervisor to publish its
+identity. Only then does it convert the four documents under the inventory
+lock, with expected hashes, its own baseline and journal. This keeps compatibility
+with supervisors from earlier releases, which know how to restore code, but not how to undo
+a data conversion. The package stays on protocol 1, with no post-install scripts.
 
-Até terminar, a interface mostra a preparação e as APIs e WebSockets ficam bloqueados,
-exceto as consultas mínimas de estado. `host_migration` nos metadados informa a fase e
-se há bloqueio. O status público usa `migrating` ou `migration_failed` e não anuncia a
-atualização como concluída enquanto os dados estiverem bloqueados.
+Until it finishes, the interface shows the preparation and the APIs and WebSockets are blocked,
+except the minimal status queries. `host_migration` in the metadata reports the phase and
+whether there is a block. The public status uses `migrating` or `migration_failed` and does not announce the
+update as completed while the data is blocked.
 
-Uma abertura normal pelo launcher também recupera/converte inventários legados antes
-de liberar o console. `--read-only` nunca executa essa escrita. Inventários já convertidos
-não recebem novos IDs; instalações sem inventário não criam equipamentos.
+A normal start through the launcher also recovers/converts legacy inventories before
+releasing the console. `--read-only` never performs this write. Already converted inventories
+do not receive new IDs; installations without an inventory do not create equipment.
 
-## Backup e limites
+## Backup and limits
 
-`.netops-update/` contém jobs, pacotes, snapshot e journal. Ambientes Python novos vivem em
-`.netops-venvs/`, git-ignorado, sem dados privados e acessível ao usuário reduzido do terminal. É privado (`0700`, backups `0600`), git-ignorado e não servido pela API. Não copiar esse diretório para relatórios nem publicá-lo. O arquivo `snapshot.json` registra hashes e permissões originais, sem conteúdo de segredos.
+`.netops-update/` contains jobs, packages, snapshot and journal. New Python environments live in
+`.netops-venvs/`, git-ignored, with no private data and accessible to the terminal's reduced user. It is private (`0700`, backups `0600`), git-ignored and not served by the API. Do not copy this directory into reports nor publish it. The `snapshot.json` file records original hashes and permissions, with no secret content.
 
-O snapshot inclui arquivos regulares da instalação e DATA_ROOT externo, com links registrados sem seguir seus destinos. Exclusões regeneráveis: `.git`, `.venv`, `.netops-venvs`, `node_modules`, `__pycache__`, `.pytest_cache` e o próprio diretório de atualização. O ambiente Python anterior é mantido separadamente quando houver troca. Links externos e arquivos fora desses diretórios permanecem intocados, mas não estão cobertos pelo snapshot.
+The snapshot includes regular files of the installation and of an external DATA_ROOT, with links recorded without following their targets. Regenerable exclusions: `.git`, `.venv`, `.netops-venvs`, `node_modules`, `__pycache__`, `.pytest_cache` and the update directory itself. The previous Python environment is kept separately when it is replaced. External links and files outside these directories stay untouched, but are not covered by the snapshot.
 
-Backups não são apagados automaticamente. Reserve espaço para snapshot, pacote e ambiente Python novo. Mantenha também backup em outro disco: nenhuma atualização pode garantir recuperação de falha física, corrupção do armazenamento ou alterações concorrentes de processos externos. Pause editores, CLIs, cron e outros escritores externos durante a atualização. O console bloqueia seus próprios escritores e sessões, não todos os processos do sistema.
+Backups are not deleted automatically. Reserve space for the snapshot, the package and the new Python environment. Also keep a backup on another disk: no update can guarantee recovery from physical failure, storage corruption or concurrent changes by external processes. Pause editors, CLIs, cron and other external writers during the update. The console blocks its own writers and sessions, not every process on the system.
 
-Pacotes são limitados a 256 MiB comprimidos, 512 MiB descomprimidos e 10 mil arquivos, sem links, entradas especiais ou execução de scripts pós-instalação. O digest do asset vem da API autenticada do GitHub e cada arquivo é conferido contra o manifesto. Checksums não substituem confiança nos mantenedores do repositório. Releases sem pacote compatível, drafts, prereleases e downgrades não são aplicados.
+Packages are limited to 256 MiB compressed, 512 MiB uncompressed and 10 thousand files, with no links, special entries or execution of post-install scripts. The asset digest comes from the authenticated GitHub API and each file is checked against the manifest. Checksums do not replace trust in the repository maintainers. Releases without a compatible package, drafts, prereleases and downgrades are not applied.
 
-## Recuperação
+## Recovery
 
-O supervisor roda a partir de uma cópia privada do atualizador. Primeiro prepara pacote, snapshot e dependências enquanto o console informa progresso em manutenção. Depois encerra somente seu processo, aplica o código e inicia a versão candidata na mesma porta. Só confirma a instalação depois de receber uma resposta HTTP com versão e identidade de inicialização corretas.
+The supervisor runs from a private copy of the updater. First it prepares the package, snapshot and dependencies while the console reports progress in maintenance mode. Then it stops only its own process, applies the code and starts the candidate version on the same port. It only confirms the installation after receiving an HTTP response with the correct version and startup identity.
 
-Falha de inicialização, inclusive na pré-validação da conversão, restaura código e ambiente
-anteriores automaticamente, antes de alterar os dados de identidade. O login do console
-pode ser solicitado novamente após reinício.
+A startup failure, including in the conversion pre-validation, restores the previous code and environment
+automatically, before changing the identity data. The console login
+may be requested again after the restart.
 
-Falha durante a conversão posterior à confirmação mantém o código novo e bloqueia o console
-com **Migração de IDs bloqueada**. A transação de dados tenta restaurar seu próprio baseline;
-baseline e journal ficam preservados. Não há retorno automático do código nessa etapa.
-Um novo início pelo launcher recupera uma aplicação interrompida e tenta a conversão novamente.
-Referências inválidas devem ser corrigidas após um `dry-run`; edições externas ou baseline
-corrompido exigem comparação humana e não são sobrescritos para forçar a abertura.
-Procedimentos e comandos: `scripts/engine/lib/SKILL.md`.
+A failure during the conversion after confirmation keeps the new code and blocks the console
+with **ID migration blocked**. The data transaction tries to restore its own baseline;
+baseline and journal are preserved. There is no automatic rollback of the code at this stage.
+A new start through the launcher recovers an interrupted apply and tries the conversion again.
+Invalid references must be fixed after a `dry-run`; external edits or a corrupted baseline
+require human comparison and are not overwritten to force the opening.
+Procedures and commands: `scripts/engine/lib/SKILL.md`.
 
-Após interrupção inesperada, execute novamente `scripts/engine/ui/start.sh`: journals não confirmados são revertidos antes de abrir o console. Se o processo anterior ainda estiver vivo, o launcher recusa a recuperação até o operador encerrá-lo; não mata processos por PID reutilizado. Se o status for `recovery_failed`, o launcher recusa iniciar para não esconder uma recuperação incompleta. Não apague o journal nem o snapshot. Com os processos parados, um operador deve verificar os arquivos listados em `journal.json`, recuperar os originais de `jobs/<id>/backup/installation/` respeitando as permissões de `snapshot.json`, e restaurar a seleção de `.venv` se necessário. Só depois de validar toda a instalação pode encerrar manualmente o incidente. Conflito de arquivo alterado externamente exige comparação humana, nunca sobrescrita forçada.
+After an unexpected interruption, run `scripts/engine/ui/start.sh` again: unconfirmed journals are reverted before the console opens. If the previous process is still alive, the launcher refuses the recovery until the operator stops it; it does not kill processes by a reused PID. If the status is `recovery_failed`, the launcher refuses to start so as not to hide an incomplete recovery. Do not delete the journal nor the snapshot. With the processes stopped, an operator must check the files listed in `journal.json`, recover the originals from `jobs/<id>/backup/installation/` respecting the permissions in `snapshot.json`, and restore the `.venv` selection if necessary. Only after validating the whole installation may they close the incident manually. A conflict with a file changed externally requires human comparison, never a forced overwrite.
 
-## Releases e testes
+## Releases and tests
 
-Antes de gerar uma versão, siga `core/rules/releases.md`. O comando `python3 scripts/engine/update/release.py --output /tmp/netops-release-NOVO` consulta o GitHub e prepara um pacote de `HEAD` sem publicar. Exige versão e changelog commitados.
+Before generating a version, follow `core/rules/releases.md`. The command `python3 scripts/engine/update/release.py --output /tmp/netops-release-NOVO` queries GitHub and prepares a package from `HEAD` without publishing. It requires a committed version and changelog.
 
-Testes: `.venv/bin/python3 -m pytest scripts/engine/ui/tests/ -q`. Testes de aplicação devem usar uma **cópia completa temporária do código e dados fictícios**. Apenas mudar `NETOPS_UI_DATA_ROOT` não isola o motor que seria atualizado. Nunca testar aplicação contra o console real.
+Tests: `.venv/bin/python3 -m pytest scripts/engine/ui/tests/ -q`. Apply tests must use a **complete temporary copy of the code and fake data**. Only changing `NETOPS_UI_DATA_ROOT` does not isolate the engine that would be updated. Never test applying against the real console.

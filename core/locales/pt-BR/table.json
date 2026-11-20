@@ -1,0 +1,16 @@
+{
+  "click_to_sort": "Clique para ordenar · ",
+  "columns": "Colunas",
+  "columns_btn": "⚙ Colunas",
+  "columns_title": "Escolher, ordenar e reorganizar colunas",
+  "columns_visible": "Colunas visíveis",
+  "drag_to_move": "arraste para mover a coluna",
+  "empty": "Nada aqui ainda.",
+  "move_col_left": "Mover {name} para a esquerda",
+  "move_col_right": "Mover {name} para a direita",
+  "move_left": "Mover para a esquerda",
+  "move_right": "Mover para a direita",
+  "reset": "Restaurar padrão",
+  "resize_col": "Redimensionar coluna {name}",
+  "resize_hint": "Arraste para redimensionar · duplo clique ajusta ao conteúdo"
+}

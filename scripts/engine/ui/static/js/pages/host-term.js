@@ -2,7 +2,7 @@
 // URL: #hostterm/<id>?method=ssh|telnet&port=N  (core/rules/urls-navegacao.md)
 // WebSocket /api/term/host/<id>: teclas -> binário; resize -> JSON {resize:[c,r]};
 // servidor -> binário (saída) ou JSON {status, ...}. A senha nunca passa pelo navegador.
-import { html, useRef, useEffect, useState, Modal, api, refreshVault, toast } from "../ui.js";
+import { html, useRef, useEffect, useState, Modal, api, refreshVault, toast, t } from "../ui.js";
 import { UnlockModal } from "../components.js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -14,6 +14,12 @@ import { createHighlighter } from "../term-highlight.js";
 import { registerTermLinks } from "../term-links.js";
 
 const TERM_METHODS = ["ssh", "telnet"];
+// Status values come from the server (host_term_svc) and are compared below; only the label is translated.
+const STATUS_KEYS = {
+  conectado: "host_term.status_connected", conectando: "host_term.status_connecting",
+  desconectado: "host_term.status_disconnected", desabilitado: "host_term.status_disabled",
+  erro: "host_term.status_error", vault_locked: "host_term.status_vault_locked",
+};
 const DEFAULT_PORT = { ssh: 22, telnet: 23 };
 const THEME = {
   background: "#11161c", foreground: "#e6ebf1", cursor: "#4aa3e0",
@@ -80,14 +86,14 @@ const AUX_LOGIN_APPS = ["proxmox"];
 export async function openWebLaunch(id, entry) {
   const name = `netops-web-${id}-${entry.port}`.replace(/[^\w-]/g, "_");
   const w = window.open("about:blank", name);
-  if (!w) { toast("err", "Pop-up bloqueado: permita pop-ups para este site e tente de novo."); return; }
+  if (!w) { toast("err", t("host_term.popup_blocked")); return; }
   let aux = null;
   if (AUX_LOGIN_APPS.includes(entry.app)) {
     try { aux = window.open("about:blank", name + "-auth", "popup,width=420,height=180"); } catch (e) { aux = null; }
   }
   const say = (win, text) => { try { win.document.title = text; win.document.body.style.cssText = "font:16px sans-serif;background:#11161c;color:#e6ebf1;padding:2em"; win.document.body.textContent = text; } catch (e) {} };
-  say(w, `Autenticando em ${entry.app || "host"}… redirecionando.`);
-  if (aux) say(aux, "Autenticando…");
+  say(w, t("host_term.web_authenticating_in", { app: entry.app || "host" }));
+  if (aux) say(aux, t("host_term.web_authenticating"));
   try {
     const r = await api.post(`/hosts/${encodeURIComponent(id)}/web-launch`, { method: entry.method, port: entry.port });
     if (r.mode === "form_post") {
@@ -111,7 +117,7 @@ export async function openWebLaunch(id, entry) {
   } catch (e) {
     try { w.close(); } catch (e2) {}
     if (aux) { try { aux.close(); } catch (e2) {} }
-    toast("err", `Acesso web: ${e.message || e}`);
+    toast("err", t("host_term.web_access_error", { error: e.message || e }));
   }
 }
 
@@ -131,18 +137,18 @@ export function openHostTerminal(id, entry) {
 // Popup de escolha quando o host tem mais de um método de terminal.
 export function AccessChooser({ host, entries, onClose }) {
   const name = host.explicit?.hostname || host.id;
-  return html`<${Modal} title=${`Acessar ${name}`} onClose=${onClose}>
-    <p class="help">Escolha o método de acesso (terminal ou interface web):</p>
+  return html`<${Modal} title=${t("host_term.access_title", { name })} onClose=${onClose}>
+    <p class="help">${t("host_term.access_choose")}</p>
     <div class="access-choices">
       ${entries.map((e, i) => html`<button key=${i} class=${i === 0 ? "primary" : ""}
           onClick=${() => { openEntry(host.id, e); onClose(); }}>
         <b>${e.kind === "web" ? "WEB " : ""}${e.method.toUpperCase()}</b> <span class="mono">:${e.port}</span>
         ${e.kind === "web"
-          ? html` <span class="help">· ${e.app ? "login automático (" + e.app + ")" : "abre a página (login manual)"}</span>`
-          : e.credential ? html` <span class="help">· ${e.credential}</span>` : html` <span class="help">· sem credencial (pede senha)</span>`}
+          ? html` <span class="help">· ${e.app ? t("host_term.web_auto_login", { app: e.app }) : t("host_term.web_manual_login")}</span>`
+          : e.credential ? html` <span class="help">· ${e.credential}</span>` : html` <span class="help">· ${t("host_term.no_credential")}</span>`}
       </button>`)}
     </div>
-    <div class="modal-actions"><button onClick=${onClose}>Cancelar</button></div>
+    <div class="modal-actions"><button onClick=${onClose}>${t("host_term.cancel")}</button></div>
   <//>`;
 }
 
@@ -191,10 +197,10 @@ export function HostTermPage() {
     const dec = new TextDecoder("utf-8");
     const hl = createHighlighter();
     let hlTimer = null;
-    const flushHl = () => { hlTimer = null; const t = hl.flush(); if (t) term.write(t); };
+    const flushHl = () => { hlTimer = null; const rest = hl.flush(); if (rest) term.write(rest); };
     ws.onmessage = (e) => {
       if (typeof e.data !== "string") {
-        if (!highlightRef.current) { const t = hl.flush(); if (t) term.write(t); term.write(new Uint8Array(e.data)); return; }
+        if (!highlightRef.current) { const rest = hl.flush(); if (rest) term.write(rest); term.write(new Uint8Array(e.data)); return; }
         const out = hl.feed(dec.decode(new Uint8Array(e.data), { stream: true }));
         if (out) term.write(out);
         clearTimeout(hlTimer);
@@ -215,10 +221,10 @@ export function HostTermPage() {
       setSftp(null);
       if (e.code === 4403) {
         setStatus("desabilitado");
-        term.write("\r\n\x1b[33mAcesso negado: faça login no console (ou o terminal está desligado: suba sem --read-only e com o terminal ligado).\x1b[0m\r\n");
+        term.write(`\r\n\x1b[33m${t("host_term.access_denied")}\x1b[0m\r\n`);
       } else {
         setStatus((s) => (s === "erro" ? s : "desconectado"));
-        term.write("\r\n\x1b[31m— sessão encerrada —\x1b[0m\r\n");
+        term.write(`\r\n\x1b[31m${t("host_term.session_ended")}\x1b[0m\r\n`);
       }
     };
     ws.onerror = () => setStatus("erro");
@@ -270,25 +276,25 @@ export function HostTermPage() {
   const badge = { conectado: "ok", conectando: "", desconectado: "warn", desabilitado: "danger", erro: "danger", vault_locked: "warn" }[status] || "";
   return html`<div class="hostterm-page">
     <div class="hostterm-bar">
-      <b>${info.host || `host ${id}`}</b>
+      <b>${info.host || t("host_term.host_fallback", { id })}</b>
       <span class="mono">${info.ip || ""} · ${(method || "?").toUpperCase()}${port ? ":" + port : ""}${info.user ? " · " + info.user : ""}</span>
-      <span class="badge ${badge}">${status === "vault_locked" ? "cofre trancado" : status}</span>
+      <span class="badge ${badge}">${STATUS_KEYS[status] ? t(STATUS_KEYS[status]) : status}</span>
       <span class="spacer"></span>
       <button class=${"sm fm-toggle" + (highlight ? " on" : "")} onClick=${() => setHighlight(!highlight)}
-        title="Realce de sintaxe (estilo MobaXterm): IPs e MACs em magenta, erros em vermelho, avisos em amarelo, OK em verde. Só no texto que chega sem cor.">
-        <span class="term-hl-dot"></span> Cores</button>
+        title=${t("host_term.highlight_title")}>
+        <span class="term-hl-dot"></span> ${t("host_term.highlight_btn")}</button>
       ${(method || "ssh") === "ssh" && html`<button class=${"sm fm-toggle" + (showFiles ? " on" : "")}
-        title=${sftp ? "Painel de arquivos (SFTP) deste host" : "Arquivos: disponível com a sessão SSH conectada"}
-        onClick=${() => setShowFiles(!showFiles)}><${ToolIcon} name="files" size=${14} /> Arquivos</button>`}
+        title=${sftp ? t("host_term.files_title_ready") : t("host_term.files_title_waiting")}
+        onClick=${() => setShowFiles(!showFiles)}><${ToolIcon} name="files" size=${14} /> ${t("host_term.files_btn")}</button>`}
       ${(status === "desconectado" || status === "erro") &&
-        html`<button class="sm" onClick=${() => { setStatus("conectando"); setGen((g) => g + 1); }}>Reconectar</button>`}
+        html`<button class="sm" onClick=${() => { setStatus("conectando"); setGen((g) => g + 1); }}>${t("host_term.reconnect")}</button>`}
     </div>
     <div class="hostterm-body">
       ${filesUsed && (method || "ssh") === "ssh" && html`<div class="hostterm-files-wrap" style=${showFiles ? "" : "display:none"}>
           <${HostFilesPanel} token=${sftp} status=${status} width=${filesW} /></div>
-        ${showFiles && html`<div class=${"hostterm-resizer" + (dragW ? " drag" : "")} onPointerDown=${startResize} title="Arraste para ajustar a largura"></div>`}`}
+        ${showFiles && html`<div class=${"hostterm-resizer" + (dragW ? " drag" : "")} onPointerDown=${startResize} title=${t("host_term.resize_title")}></div>`}`}
       ${(method || "ssh") === "ssh" && html`<button class="hostterm-files-toggle" style=${`left:${showFiles ? filesW - 12 : 6}px`}
-        aria-label=${showFiles ? "Recolher arquivos" : "Mostrar arquivos"} title=${showFiles ? "Recolher arquivos" : "Mostrar arquivos (SFTP)"}
+        aria-label=${showFiles ? t("host_term.files_collapse") : t("host_term.files_show")} title=${showFiles ? t("host_term.files_collapse") : t("host_term.files_show_sftp")}
         onClick=${() => setShowFiles(!showFiles)}>${showFiles ? "‹" : "›"}</button>`}
       <div class="hostterm-host" ref=${hostRef}></div>
     </div>
@@ -320,11 +326,11 @@ function HostFilesPanel({ token, status, width }) {
   const setState = (patch) => setSt((s) => ({ ...s, ...patch }));
   const box = (msg) => html`<div class="hostterm-files" style=${`width:${width}px`}><div class="fm-msg-box">${msg}</div></div>`;
   if (!token) return box(status === "conectado"
-    ? "Arquivos indisponíveis nesta sessão (gerenciador de arquivos desligado no console)."
-    : status === "conectando" || status === "vault_locked" ? "Os arquivos aparecem aqui quando a sessão SSH conectar."
-    : "Sessão SSH encerrada — reconecte para ver os arquivos.");
+    ? t("host_term.files_unavailable")
+    : status === "conectando" || status === "vault_locked" ? t("host_term.files_wait_ssh")
+    : t("host_term.files_ssh_ended"));
   if (err) return box(html`<span class="err">${err}</span>`);
-  if (!home) return box("Abrindo SFTP…");
+  if (!home) return box(t("host_term.files_opening_sftp"));
   return html`<div class="hostterm-files" style=${`width:${width}px`}>
     <${FileBrowser} src=${token} home=${home} state=${st} setState=${setState} compact />
   </div>`;

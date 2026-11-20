@@ -1,0 +1,11 @@
+{
+  "browser_unsupported": "This browser cannot record audio (use HTTPS or localhost).",
+  "empty_transcription": "The audio produced no transcription.",
+  "mic_denied": "Microphone permission denied. Allow access in the browser.",
+  "mic_not_found": "No microphone found.",
+  "recorder_load_failed": "Could not load the recorder.",
+  "recording_empty": "The recording is empty.",
+  "start_failed": "Could not start recording.",
+  "transcribe_failed": "Failed to transcribe the audio.",
+  "transcribe_failed_http": "Failed to transcribe the audio (HTTP {status})."
+}

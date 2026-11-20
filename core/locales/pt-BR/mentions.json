@@ -1,0 +1,6 @@
+{
+  "fields_count_one": "{count} campo(s)",
+  "fields_count_other": "{count} campo(s)",
+  "hosts_count_one": "{count} host(s)",
+  "hosts_count_other": "{count} host(s)"
+}

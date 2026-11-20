@@ -29,6 +29,7 @@ import signal
 from fastapi import WebSocket, WebSocketDisconnect
 
 import deps
+from lib import i18n
 from lib import github_identity as ghid
 
 _ANSI = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-Z\\-_78=>]")
@@ -87,7 +88,7 @@ class GitHubLoginSession:
     async def _spawn(self) -> None:
         gh = ghid.gh_bin()
         if not gh:
-            await self._send({"type": "error", "detail": "GitHub CLI (gh) não está instalado no servidor."})
+            await self._send({"type": "error", "detail": i18n.t("api_github.gh_missing")})
             return
         cfg = ghid.gh_dir(deps.DATA_ROOT, self.username)
         # Login novo sobrescreve o anterior da pasta (troca de conta).
@@ -162,7 +163,7 @@ class GitHubLoginSession:
         try:
             await asyncio.wait_for(self._exited.wait(), timeout=LOGIN_TIMEOUT)
         except asyncio.TimeoutError:
-            await self._send({"type": "error", "detail": "tempo esgotado esperando a autorização no GitHub"})
+            await self._send({"type": "error", "detail": i18n.t("api_github.auth_timeout")})
         rc = None
         for _ in range(30):            # o gh sai logo depois do EOF; espera sem bloquear o loop
             rc = self._reap()
@@ -178,7 +179,7 @@ class GitHubLoginSession:
             except ghid.GitHubError as e:
                 detail = e.detail
         else:
-            detail = "login não concluído"
+            detail = i18n.t("api_github.login_not_completed")
         if ok and self.on_done:
             try:
                 self.on_done(self.username)

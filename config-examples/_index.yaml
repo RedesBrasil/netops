@@ -1,5 +1,5 @@
-# Índice de Exemplos de Configuração
-# O agente lê este índice para achar o exemplo certo por vendor + tópico.
+# Configuration Examples Index
+# The agent reads this index to find the right example by vendor + topic.
 
 version: 1
 
@@ -8,29 +8,29 @@ examples:
   - vendor: mikrotik
     topico: security-hardening
     file: mikrotik/security-hardening.rsc
-    descricao: "Endurecimento de serviços, usuários, descoberta e SNMP."
+    descricao: "Hardening of services, users, discovery and SNMP."
   - vendor: mikrotik
     topico: firewall
     file: mikrotik/firewall-baseline.rsc
-    descricao: "Chain input segura (default drop) com anti-brute-force."
+    descricao: "Secure input chain (default drop) with anti-brute-force."
   - vendor: mikrotik
     topico: ospf
     file: mikrotik/ospf-basic.rsc
-    descricao: "Instância OSPF com área backbone e redistribuição mínima."
+    descricao: "OSPF instance with backbone area and minimal redistribution."
   - vendor: mikrotik
     topico: vlan
     file: mikrotik/vlan-trunk.rsc
-    descricao: "VLANs sobre bridge com porta trunk e portas de acesso."
+    descricao: "VLANs over a bridge with a trunk port and access ports."
 
   # --- Linux ---
   - vendor: linux
     topico: ssh
     file: linux/sshd_config
-    descricao: "sshd_config endurecido — chave, sem root, ciphers modernos."
-  # Mais exemplos Linux (firewall de host, Apache, Docker) entram aqui conforme
-  # o projeto vivo evolui — ver config-examples/PADRAO.md e best-practices/linux/.
+    descricao: "Hardened sshd_config — keys, no root, modern ciphers."
+  # More Linux examples (host firewall, Apache, Docker) go here as
+  # the living project evolves — see config-examples/PADRAO.md and best-practices/linux/.
 
-# Status dos vendors — seed = preenchido | pendente = só estrutura
+# Vendor status — seed = filled in | pendente = structure only
 vendors:
   mikrotik:  { status: seed }
   linux:     { status: seed }

@@ -1,0 +1,6 @@
+{
+  "description": "Describe what the script does.",
+  "help_host_id": "Integer host ID in the inventory",
+  "help_host": "Unique hostname or legacy alias of the host",
+  "todo": "TODO: implement. host={host}"
+}

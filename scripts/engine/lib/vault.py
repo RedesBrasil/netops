@@ -26,6 +26,8 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+from lib import i18n
+
 ENC_PREFIX = "enc.v1:"
 VERIFIER_PLAINTEXT = "netops-vault-verifier-v1"
 SALT_BYTES = 16
@@ -49,8 +51,7 @@ class VaultLocked(VaultError):
     def __init__(self, msg: str | None = None):
         super().__init__(
             msg
-            or "Cofre de credenciais trancado. Para liberar as senhas, copie e cole no terminal:\n\n"
-            "  cd /home/francisco/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock\n"
+            or i18n.t("lib_vault.locked", cmd="cd /home/francisco/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock")
         )
 
 
@@ -64,8 +65,7 @@ class VaultNotInitialized(VaultError):
     def __init__(self, msg: str | None = None):
         super().__init__(
             msg
-            or "Cofre não inicializado. Rode:\n"
-            "  python3 scripts/engine/vault/cli.py init"
+            or i18n.t("lib_vault.not_initialized", cmd="python3 scripts/engine/vault/cli.py init")
         )
 
 
@@ -113,7 +113,7 @@ def derive_key(master_password: str, meta: dict) -> bytes:
             r=int(kdf["r"]),
             p=int(kdf["p"]),
         ).derive(pw)
-    raise VaultError(f"KDF desconhecido no cofre: {algo!r}")
+    raise VaultError(i18n.t("lib_vault.unknown_kdf", kdf=repr(algo)))
 
 
 def _new_meta(algorithm: str = "argon2id") -> dict:
@@ -123,7 +123,7 @@ def _new_meta(algorithm: str = "argon2id") -> dict:
     elif algorithm == "scrypt":
         kdf = {"algorithm": "scrypt", "salt": _b64e(salt), **SCRYPT_DEFAULTS}
     else:
-        raise VaultError(f"KDF não suportado: {algorithm!r}")
+        raise VaultError(i18n.t("lib_vault.unsupported_kdf", kdf=repr(algorithm)))
     return {"version": 1, "kdf": kdf}
 
 
@@ -139,9 +139,9 @@ def verify_key(key: bytes, meta: dict) -> None:
     """Valida a chave contra o verifier. Levanta VaultWrongKey se a senha estiver errada."""
     verifier = meta.get("verifier")
     if not verifier:
-        raise VaultNotInitialized("Bloco 'vault:' sem 'verifier'. Rode 'init' novamente.")
+        raise VaultNotInitialized(i18n.t("lib_vault.no_verifier"))
     if decrypt_value(key, verifier) != VERIFIER_PLAINTEXT:  # decrypt já levanta VaultWrongKey
-        raise VaultWrongKey("Senha mestra incorreta.")
+        raise VaultWrongKey(i18n.t("lib_vault.wrong_master"))
 
 
 # --------------------------------------------------------------------------- #
@@ -163,7 +163,7 @@ def decrypt_value(key: bytes, value: str) -> str:
     try:
         return _fernet(key).decrypt(token).decode("utf-8")
     except InvalidToken as exc:
-        raise VaultWrongKey("Senha mestra incorreta ou dado corrompido.") from exc
+        raise VaultWrongKey(i18n.t("lib_vault.wrong_master_or_corrupt")) from exc
 
 
 # --------------------------------------------------------------------------- #
@@ -175,5 +175,5 @@ def load_meta(creds_data: dict) -> dict:
     if not meta:
         raise VaultNotInitialized()
     if "kdf" not in meta or "verifier" not in meta:
-        raise VaultNotInitialized("Bloco 'vault:' incompleto. Rode 'init'.")
+        raise VaultNotInitialized(i18n.t("lib_vault.incomplete_block"))
     return meta

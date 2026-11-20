@@ -1,52 +1,52 @@
 ---
 id: mikrotik-firewall
-titulo: Boas Práticas de Firewall no MikroTik
+titulo: MikroTik Firewall Best Practices
 vendor: mikrotik
 tags: [security, mikrotik, firewall]
 severidade: alta
 ---
 
-## Resumo
+## Summary
 
-O firewall do RouterOS tem três chains principais: `input` (tráfego destinado ao próprio
-roteador), `forward` (tráfego que passa por ele) e `output` (originado nele). A maioria dos
-problemas de segurança em MikroTik vem de uma chain `input` permissiva.
+The RouterOS firewall has three main chains: `input` (traffic destined to the router
+itself), `forward` (traffic passing through it) and `output` (originated by it). Most
+security problems on MikroTik come from a permissive `input` chain.
 
 ## Checklist
 
-- [ ] Chain `input`: aceitar `established`/`related`, aceitar gerência das sub-redes
-      confiáveis, e **dropar o resto** (regra final `action=drop`).
-- [ ] Aceitar ICMP de forma controlada (não dropar tudo — quebra PMTUD e diagnóstico).
-- [ ] Bloquear acesso de gerência vindo da interface WAN.
-- [ ] Address-list para gerência e para redes confiáveis (regras legíveis e reutilizáveis).
-- [ ] Proteção contra brute force de SSH/Winbox via address-list dinâmica.
-- [ ] `fasttrack` para conexões estabelecidas no `forward` (desempenho), com cuidado.
-- [ ] Regras comentadas — cada regra explica o que faz e por quê.
-- [ ] Ordem importa: regras mais específicas antes; o `drop` final por último.
+- [ ] `input` chain: accept `established`/`related`, accept management from the trusted
+      subnets, and **drop the rest** (final rule `action=drop`).
+- [ ] Accept ICMP in a controlled way (do not drop everything — it breaks PMTUD and diagnostics).
+- [ ] Block management access coming from the WAN interface.
+- [ ] Address-lists for management and for trusted networks (readable, reusable rules).
+- [ ] SSH/Winbox brute force protection via a dynamic address-list.
+- [ ] `fasttrack` for established connections in `forward` (performance), with care.
+- [ ] Commented rules — each rule explains what it does and why.
+- [ ] Order matters: more specific rules first; the final `drop` last.
 
-## Detalhamento
+## Details
 
-**Chain input — modelo seguro.** A lógica é: deixar passar o que é legítimo e dropar todo o
-resto explicitamente. Sem a regra `drop` final, a chain "aceita por omissão" e o roteador
-fica exposto.
+**Input chain — secure model.** The logic is: let through what is legitimate and explicitly drop everything
+else. Without the final `drop` rule, the chain "accepts by default" and the router
+is exposed.
 
-**ICMP.** Dropar todo ICMP parece seguro mas quebra Path MTU Discovery e diagnóstico.
-Aceite os tipos necessários (echo controlado, fragmentation-needed, time-exceeded).
+**ICMP.** Dropping all ICMP looks safe but breaks Path MTU Discovery and diagnostics.
+Accept the required types (controlled echo, fragmentation-needed, time-exceeded).
 
-**WAN.** Identifique a(s) interface(s) WAN numa interface-list e bloqueie gerência vinda
-delas — mesmo que o firewall `input` esteja correto, é uma camada extra.
+**WAN.** Put the WAN interface(s) in an interface-list and block management coming from
+them — even if the `input` firewall is correct, it is an extra layer.
 
-**Brute force.** Conexões novas para a porta de SSH/Winbox alimentam uma address-list
-escalonada; após N tentativas, o IP entra numa lista de bloqueio temporário.
+**Brute force.** New connections to the SSH/Winbox port feed a staged
+address-list; after N attempts, the IP goes into a temporary block list.
 
-**Ordem e lockout.** Adicione a regra de aceitar gerência **antes** da regra de `drop`. Ao
-aplicar via API/SSH remoto, use `safe-mode` — se a regra te trancar, o RouterOS reverte.
+**Order and lockout.** Add the accept-management rule **before** the `drop` rule. When
+applying via the API/remote SSH, use `safe-mode` — if the rule locks you out, RouterOS reverts it.
 
-## Configuração relacionada
+## Related configuration
 
-- `config-examples/mikrotik/firewall-baseline.rsc` — chain `input` completa e comentada.
+- `config-examples/mikrotik/firewall-baseline.rsc` — complete, commented `input` chain.
 
-## Referências
+## References
 
 - MikroTik Wiki — "Building Your First Firewall".
 - `best-practices/mikrotik/security-hardening.md`

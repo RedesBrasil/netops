@@ -1,45 +1,45 @@
-# PADRÃO — `config-examples/`
+# STANDARD — `config-examples/`
 
-Exemplos de configuração **reais e aplicáveis**, na sintaxe nativa de cada fabricante. Onde
-`best-practices/` explica o "porquê", aqui está o "como" — config pronta para o `planner`
-adaptar (REUSE > ADAPT > CREATE).
+**Real and applicable** configuration examples, in the native syntax of each vendor. Where
+`best-practices/` explains the "why", here is the "how" — ready config for the `planner`
+to adapt (REUSE > ADAPT > CREATE).
 
-## Organização
+## Organization
 
-- `<vendor>/` — uma pasta por fabricante (`mikrotik/`, `linux/`, `cisco/`, ...).
-- `_index.yaml` — índice de todos os exemplos, por vendor e tópico.
-- `_TEMPLATE/` — modelo a copiar ao adicionar um vendor/exemplo novo.
+- `<vendor>/` — one folder per vendor (`mikrotik/`, `linux/`, `cisco/`, ...).
+- `_index.yaml` — index of all examples, per vendor and topic.
+- `_TEMPLATE/` — template to copy when adding a new vendor/example.
 
-## Formato de um exemplo
+## Format of an example
 
-Arquivo na extensão nativa do fabricante, com **cabeçalho comentado** explicando:
-o que configura, em que versão foi testado, e o que ajustar antes de aplicar.
+File with the vendor's native extension, with a **commented header** explaining:
+what it configures, which version it was tested on, and what to adjust before applying.
 
-| Fabricante | Extensão | Sintaxe |
-|------------|----------|---------|
-| MikroTik | `.rsc` | Script RouterOS (`/comando ...`) |
+| Vendor | Extension | Syntax |
+|--------|-----------|--------|
+| MikroTik | `.rsc` | RouterOS script (`/command ...`) |
 | Cisco | `.ios` | IOS CLI |
-| Linux | `.conf`, `.sh`, `.yml` | Config do serviço / shell / compose |
+| Linux | `.conf`, `.sh`, `.yml` | Service config / shell / compose |
 | Huawei | `.cfg` | VRP CLI |
 
-Exemplo de cabeçalho (MikroTik):
+Header example (MikroTik):
 
 ```
 # ============================================================
-# Exemplo: <o que configura>
-# Testado em: RouterOS 7.x
-# Ajuste antes de aplicar: <interfaces, IPs, sub-redes>
-# Boa prática relacionada: best-practices/mikrotik/<guia>.md
+# Example: <what it configures>
+# Tested on: RouterOS 7.x
+# Adjust before applying: <interfaces, IPs, subnets>
+# Related best practice: best-practices/mikrotik/<guide>.md
 # ============================================================
 ```
 
-## Regras
+## Rules
 
-- Exemplo é ponto de partida — **sempre** ajustar interfaces/IPs/sub-redes ao host real.
-- Toda mudança aplicada a partir daqui exige baseline + rollback (ver `core/rules/connection-safety.md`).
-- Registrar o exemplo em `_index.yaml`.
+- An example is a starting point — **always** adjust interfaces/IPs/subnets to the real host.
+- Every change applied from here requires baseline + rollback (see `core/rules/connection-safety.md`).
+- Register the example in `_index.yaml`.
 
-## Como adicionar
+## How to add one
 
-Copie `_TEMPLATE/`, crie o exemplo na sintaxe do fabricante, registre em `_index.yaml`.
-Conteúdo seed: `mikrotik/` e `linux/`. Demais vendors: preencher conforme o projeto evolui.
+Copy `_TEMPLATE/`, create the example in the vendor's syntax, register it in `_index.yaml`.
+Seed content: `mikrotik/` and `linux/`. Other vendors: fill in as the project evolves.

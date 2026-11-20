@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import deps
+from lib import i18n
 from lib import accessdb
 from lib import github_identity as ghid
 from services import authz, github_auth
@@ -42,8 +43,7 @@ def _me(request: Request) -> authz.Principal | JSONResponse:
     p = authz.request_principal(request)
     if not deps.has_users() or p.legacy or not p.username:
         return JSONResponse({"error": "no_multiuser",
-                             "detail": "GitHub por usuário só existe com usuários cadastrados (Sistema → Usuários). "
-                                       "Sem eles, o agente usa o gh do servidor."}, status_code=409)
+                             "detail": i18n.t("api_github.no_multiuser")}, status_code=409)
     return p
 
 
@@ -119,7 +119,7 @@ def account_github_delete(request: Request):
 def _user_or_404(username: str) -> str:
     u = accessdb.get_user(deps.db_file(), username)
     if not u:
-        raise accessdb.NotFound(f"Usuário '{username}' não encontrado.")
+        raise accessdb.NotFound(i18n.t("api_common.user_not_found", username=username))
     return u["username"]
 
 

@@ -18,6 +18,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 sys.path.insert(0, str(HERE))
 import monitor  # noqa: E402
+from lib import i18n  # noqa: E402  (path set by monitor)
 
 TASK_ID = "monitor-de-lentidao-atendimento"   # chave dedicada da tarefa (network/task-keys/<id>/), não usa o cofre
 SESSION = ["python3", str(ROOT / "scripts/tools/access/task_exec.py"), "--task", TASK_ID]
@@ -86,7 +87,7 @@ def aprender(report: str) -> tuple[str, list[str]]:
     try:
         props = json.loads(m.group(1))
     except Exception:
-        return clean, ["bloco coleta-add inválido (JSON) — ignorado"]
+        return clean, [i18n.t("cli_diagnostics.inv_block_invalid")]
     cur = monitor._yaml(COLETA) if COLETA.exists() else {}
     extras = cur.get("extras") or {}
     existentes = {c for h in load_coleta().values() for c in h.values()}
@@ -99,16 +100,16 @@ def aprender(report: str) -> tuple[str, list[str]]:
         if h not in GROUPS or cmd in existentes:
             continue
         if not comando_seguro(cmd):
-            log.append(f"REJEITADO (não é só leitura): {cmd[:80]}"); continue
+            log.append(i18n.t("cli_diagnostics.inv_rejected_not_readonly", cmd=cmd[:80])); continue
         if len(extras.get(h, [])) >= MAX_POR_HOST:
-            log.append(f"limite de {MAX_POR_HOST} extras no host {h} — ignorado: {title}"); continue
+            log.append(i18n.t("cli_diagnostics.inv_limit", max=MAX_POR_HOST, host_id=h, title=title)); continue
         t = subprocess.run(SESSION + ["--host-id", str(h), "--timeout", "30", "--command", cmd],
                            capture_output=True, text=True, timeout=60, cwd=ROOT)
         if "exit=0" not in t.stdout + t.stderr:
-            log.append(f"REJEITADO (falhou no teste): {cmd[:80]}"); continue
+            log.append(i18n.t("cli_diagnostics.inv_rejected_test", cmd=cmd[:80])); continue
         extras.setdefault(h, []).append({"title": title, "cmd": cmd, "why": str(pr.get("reason", ""))[:200],
                                          "added": datetime.now().isoformat(timespec="seconds")})
-        log.append(f"APRENDIDO no host {h}: {title}")
+        log.append(i18n.t("cli_diagnostics.inv_learned", host_id=h, title=title))
     cur["extras"] = extras
     COLETA.write_text("# Comandos de coleta aprendidos pelo agente investigador (somente leitura, validados). Pode editar/remover.\n"
                       + yaml.safe_dump(cur, allow_unicode=True, sort_keys=False))
@@ -123,7 +124,7 @@ def run_group(host_id: int, cmds: dict[str, str]) -> str:
                                capture_output=True, text=True, timeout=90, cwd=ROOT)
             body = "\n".join(l for l in (p.stdout + p.stderr).splitlines() if not l.startswith(("[sessão", "[status")))
         except Exception as e:
-            body = f"(falha na coleta: {type(e).__name__})"
+            body = i18n.t("cli_diagnostics.inv_collect_failed", error=type(e).__name__)
         out.append(f"### {title}\n{body.strip()[:2500]}")
     return "\n\n".join(out)
 
@@ -147,12 +148,12 @@ def prepare() -> int:
     pend.rename(monitor.DATA / f"incident-{datetime.now():%Y%m%d-%H%M%S}.json")
     try:
         recent = (monitor.DATA / f"metrics-{datetime.now():%Y%m%d}.jsonl").read_text().splitlines()[-10:]
-        evidence += "\n\nÚltimos ciclos do monitor:\n" + "\n".join(recent)
+        evidence += "\n\n" + i18n.t("cli_diagnostics.inv_recent_cycles") + "\n" + "\n".join(recent)
     except Exception:
         pass
-    print("## Mapa da infraestrutura\n" + json.dumps(cfg["infra"], ensure_ascii=False, indent=1))
-    print("\n## Evidência do monitor (incidente)\n" + evidence[:6000])
-    print("\n## Coleta automática já feita agora\n" + collect())
+    print("## " + i18n.t("cli_diagnostics.inv_infra_map") + "\n" + json.dumps(cfg["infra"], ensure_ascii=False, indent=1))
+    print("\n## " + i18n.t("cli_diagnostics.inv_evidence_incident") + "\n" + evidence[:6000])
+    print("\n## " + i18n.t("cli_diagnostics.inv_collected_now") + "\n" + collect())
     return 0
 
 
@@ -171,7 +172,9 @@ def link_conversa() -> str:
 
 def resumo_telegram(report: str, caminho: str) -> str:
     """Versão curta do relatório para o Telegram: causa, impacto e 1ª ação (texto puro, ~900 caracteres)."""
-    corpo = re.split(r"\n\*\*Auto-aperfeiçoamento|```coleta-add", report)[0]
+    # the self-improvement heading may be in any language (old reports: Portuguese)
+    heads = {"Auto-aperfeiçoamento", i18n.t("cli_diagnostics.inv_self_improvement_word")}
+    corpo = re.split(r"\n\*\*(?:" + "|".join(re.escape(h) for h in heads) + r")|```coleta-add", report)[0]
     cab = r"\*\*([^*\n]+?)(?::\*\*|\*\*\s*\([^)\n]*\):)"      # **Rótulo:** ou **Rótulo** (obs):
     secoes = {m.group(1).strip().lower(): m.group(2).strip()
               for m in re.finditer(cab + r"\s*(.*?)(?=\n" + cab + r"|\Z)", corpo, re.S)}
@@ -187,8 +190,11 @@ def resumo_telegram(report: str, caminho: str) -> str:
     acoes = [ln.lstrip("- ").strip() for ln in secoes.get("ação recomendada", "").splitlines()
              if ln.strip().startswith("- ")]
     acao = acoes[0] if acoes else secoes.get("ação recomendada", "")
-    partes = ["🔎 Atendimento — investigação concluída", ""]
-    for rotulo, chave, n in (("Causa", "causa provável", 260), ("Impacto", "impacto", 160), ("Ação", None, 160)):
+    partes = [i18n.t("cli_diagnostics.inv_tg_title"), ""]
+    # section keys = the bold labels PROMPT_AGENTE.md keeps in Portuguese (parsed, never translated)
+    for rotulo, chave, n in ((i18n.t("cli_diagnostics.inv_tg_cause"), "causa provável", 260),
+                             (i18n.t("cli_diagnostics.inv_tg_impact"), "impacto", 160),
+                             (i18n.t("cli_diagnostics.inv_tg_action"), None, 160)):
         txt = limpa(acao if chave is None else secoes.get(chave, ""), n)
         if txt:
             partes.append(f"{rotulo}: {txt}")
@@ -196,8 +202,8 @@ def resumo_telegram(report: str, caminho: str) -> str:
         partes.append(limpa(corpo, 600))
     link = link_conversa()
     if link:
-        partes += ["", f"Mais informações na conversa: {link}"]
-    partes += ["", f"Relatório: {caminho}"]
+        partes += ["", i18n.t("cli_diagnostics.inv_tg_more_info", link=link)]
+    partes += ["", i18n.t("cli_diagnostics.inv_tg_report", path=caminho)]
     return "\n".join(partes)
 
 
@@ -205,9 +211,9 @@ def finish(path: str) -> int:
     f = Path(path)
     report, log = aprender(f.read_text())
     if log:
-        report += "\n\n**Auto-aperfeiçoamento da coleta:**\n" + "\n".join(f"- {l}" for l in log)
+        report += "\n\n**" + i18n.t("cli_diagnostics.inv_self_improvement") + "**\n" + "\n".join(f"- {l}" for l in log)
     f.write_text(report + "\n")
-    print("\n".join(log) or "nada a aprender")
+    print("\n".join(log) or i18n.t("cli_diagnostics.inv_nothing_learned"))
     monitor.telegram(resumo_telegram(report, str(f.relative_to(ROOT) if f.is_absolute() else f)))
     return 0
 
@@ -224,30 +230,33 @@ def main() -> int:
     if a.finish:
         return finish(a.finish)
     cfg = monitor._yaml(ROOT / "network" / "atendimento-monitor.yaml")
-    evidence = Path(a.evidence).read_text() if a.evidence else "(execução manual, sem incidente)"
+    evidence = Path(a.evidence).read_text() if a.evidence else i18n.t("cli_diagnostics.inv_manual_run")
     try:
         recent = (monitor.DATA / f"metrics-{datetime.now():%Y%m%d}.jsonl").read_text().splitlines()[-10:]
-        evidence += "\n\nÚltimos ciclos do monitor:\n" + "\n".join(recent)
+        evidence += "\n\n" + i18n.t("cli_diagnostics.inv_recent_cycles") + "\n" + "\n".join(recent)
     except Exception:
         pass
     collected = collect()
-    prompt = ("## Mapa da infraestrutura\n" + json.dumps(cfg["infra"], ensure_ascii=False, indent=1) + "\n\n## Evidência\n" + evidence[:6000]
-              + "\n\n## Coleta automática\n" + collected + "\n\n" + (HERE / "PROMPT_AGENTE.md").read_text())
+    prompt = ("## " + i18n.t("cli_diagnostics.inv_infra_map") + "\n" + json.dumps(cfg["infra"], ensure_ascii=False, indent=1)
+              + "\n\n## " + i18n.t("cli_diagnostics.inv_evidence") + "\n" + evidence[:6000]
+              + "\n\n## " + i18n.t("cli_diagnostics.inv_collected") + "\n" + collected + "\n\n" + (HERE / "PROMPT_AGENTE.md").read_text())
     claude = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
     timeout = cfg["investigate"].get("timeout_minutes", 15) * 60
     try:
         p = subprocess.run([claude, "-p", prompt, "--output-format", "text", "--dangerously-skip-permissions",
                             "--disallowedTools", "Edit", "Write", "NotebookEdit", "CronCreate", "AskUserQuestion"],
                            capture_output=True, text=True, timeout=timeout, cwd=ROOT)
-        report = p.stdout.strip() or f"(agente sem saída; código {p.returncode}) {p.stderr[-500:]}"
+        report = p.stdout.strip() or i18n.t("cli_diagnostics.inv_agent_no_output", code=p.returncode) + f" {p.stderr[-500:]}"
     except subprocess.TimeoutExpired:
-        report = "(agente excedeu o tempo; veja a coleta automática abaixo)"
+        report = i18n.t("cli_diagnostics.inv_agent_timeout")
     report, aprendido = aprender(report)
     if aprendido:
-        report += "\n\n**Auto-aperfeiçoamento da coleta:**\n" + "\n".join(f"- {l}" for l in aprendido)
+        report += "\n\n**" + i18n.t("cli_diagnostics.inv_self_improvement") + "**\n" + "\n".join(f"- {l}" for l in aprendido)
     stamp = f"{datetime.now():%Y%m%d-%H%M%S}"
     out = ROOT / "reports" / f"atendimento-lentidao-{stamp}.md"
-    out.write_text(f"# Investigação de lentidão — atendimento ({stamp})\n\n{report}\n\n---\n## Evidência do monitor\n```\n{evidence}\n```\n\n## Coleta automática\n{collected}\n")
+    out.write_text(f"# {i18n.t('cli_diagnostics.inv_report_title', stamp=stamp)}\n\n{report}\n\n---\n"
+                   f"## {i18n.t('cli_diagnostics.inv_evidence_monitor')}\n```\n{evidence}\n```\n\n"
+                   f"## {i18n.t('cli_diagnostics.inv_collected')}\n{collected}\n")
     print(out)
     if not a.no_telegram:
         monitor.telegram(resumo_telegram(report, f"reports/{out.name}"))

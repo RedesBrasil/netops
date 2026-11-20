@@ -1,45 +1,45 @@
-# Plano: Auditoria de Segurança da Rede
+# Plan: Network Security Audit
 
-## Objetivo
+## Goal
 
-Avaliar a postura de segurança de todos os equipamentos do inventário e produzir um
-relatório priorizado com recomendações.
+Assess the security posture of all devices in the inventory and produce a
+prioritized report with recommendations.
 
-## Contexto
+## Context
 
-Ler antes: `network/hosts.yaml`, `network/topology.yaml`,
+Read first: `network/hosts.yaml`, `network/topology.yaml`,
 `best-practices/general/network-security-audit.md`, `best-practices/general/ssh-hardening.md`,
-os guias `best-practices/<vendor>/` dos fabricantes presentes, e `memory/MEMORY.md`.
+the `best-practices/<vendor>/` guides of the vendors present, and `memory/MEMORY.md`.
 
-## Escopo
+## Scope
 
-- **Inclui:** todos os hosts de `network/hosts.yaml` (ou o subconjunto pedido).
-- **Fora do escopo:** qualquer mudança de configuração — esta tarefa é **somente leitura**.
+- **Includes:** all hosts in `network/hosts.yaml` (or the requested subset).
+- **Out of scope:** any configuration change — this task is **read-only**.
 
-## Passos
+## Steps
 
-1. **coordinator** — validar inventário, definir escopo, criar `runs/<id>/`.
-2. **planner** — montar, por host/fabricante, a lista de comandos read-only de auditoria
-   (firewall, serviços, usuários, SNMP, versão de firmware).
-3. **executor** — conectar e coletar; salvar em `runs/<id>/collected/`.
-4. **tester** — rodar `scripts/tools/analysis/security_assessment.py`, confrontar com as boas
-   práticas, classificar achados por severidade.
-5. **documenter** — gerar o relatório em `reports/` e registrar lições em `memory/`.
+1. **coordinator** — validate the inventory, define the scope, create `runs/<id>/`.
+2. **planner** — build, per host/vendor, the list of read-only audit commands
+   (firewall, services, users, SNMP, firmware version).
+3. **executor** — connect and collect; save in `runs/<id>/collected/`.
+4. **tester** — run `scripts/tools/analysis/security_assessment.py`, check against the best
+   practices, classify findings by severity.
+5. **documenter** — generate the report in `reports/` and record lessons in `memory/`.
 
-## Riscos e mitigação
+## Risks and mitigation
 
-| Risco | Mitigação |
-|-------|-----------|
-| Comando de coleta que altera estado | O planner só inclui comandos comprovadamente read-only |
-| Falha de conexão em um host | Registrar e seguir; o host vira "não avaliado" no relatório |
-| Scan disparar alarme de IDS | Avisar o usuário; usar scan moderado |
+| Risk | Mitigation |
+|------|------------|
+| Collection command that changes state | The planner only includes commands proven to be read-only |
+| Connection failure on a host | Record it and move on; the host becomes "not assessed" in the report |
+| Scan triggers an IDS alarm | Warn the user; use a moderate scan |
 
 ## Rollback
 
-Não aplicável — tarefa somente leitura.
+Not applicable — read-only task.
 
-## Critérios de sucesso
+## Success criteria
 
-- Todos os hosts do escopo foram coletados ou marcados como "não avaliados".
-- Relatório gerado em `reports/`, com achados priorizados e referências.
-- Pelo menos uma lição registrada em `memory/MEMORY.md`.
+- All hosts in scope were collected or marked as "not assessed".
+- Report generated in `reports/`, with prioritized findings and references.
+- At least one lesson recorded in `memory/MEMORY.md`.

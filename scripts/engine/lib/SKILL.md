@@ -1,33 +1,33 @@
-# SKILL — Inventário e migração de identidade
+# SKILL — Inventory and identity migration
 
-O núcleo `inventory.py` resolve herança e seleciona hosts sem alterar os arquivos.
-`host_identity.py` mantém IDs inteiros positivos até `2^53 - 1`, contador e aliases
-legados reservados. IDs não são editáveis. `load_inventory(include_credentials=False)`
-lê exclusivamente metadados; somente os transportes de acesso precisam de credenciais.
+The `inventory.py` core resolves inheritance and selects hosts without changing the files.
+`host_identity.py` keeps positive integer IDs up to `2^53 - 1`, a counter and reserved legacy
+aliases. IDs are not editable. `load_inventory(include_credentials=False)`
+reads metadata only; only the access transports need credentials.
 
-## Conversão automática no console
+## Automatic conversion in the console
 
-A partir da versão 2, atualizar ou iniciar o console em modo de escrita pelo
-`scripts/engine/ui/start.sh` recupera e converte inventários legados automaticamente.
-O console aguarda a conclusão antes de liberar suas operações. Não há migração por GET,
-acesso a equipamentos ou leitura de `credentials.yaml`; `--read-only` não converte dados.
+From version 2 on, updating or starting the console in write mode through
+`scripts/engine/ui/start.sh` recovers and converts legacy inventories automatically.
+The console waits for it to finish before enabling its operations. There is no migration via GET,
+no access to equipment and no reading of `credentials.yaml`; `--read-only` does not convert data.
 
-Durante uma atualização, o candidato pré-valida os documentos sem escrita. Referências
-inválidas impedem sua inicialização e o supervisor anterior restaura o código. O diagnóstico
-privado fica em `.netops-update/host-migration-preflight.json`. Se a pré-validação passar,
-a conversão aguarda o commit do código pelo supervisor, a publicação do PID do novo servidor
-e a retirada do marcador de recuperação. Só então executa `apply` com os hashes esperados.
+During an update, the candidate pre-validates the documents without writing. Invalid
+references prevent it from starting and the previous supervisor restores the code. The private
+diagnostic is in `.netops-update/host-migration-preflight.json`. If the pre-validation passes,
+the conversion waits for the supervisor to commit the code, for the new server's PID to be published
+and for the recovery marker to be removed. Only then does it run `apply` with the expected hashes.
 
-`/api/config/meta` informa `host_migration.phase`, `detail` e `blocking`. As fases bloqueantes
-são `waiting_for_commit`, `running` e `failed`; API e WebSockets não observam dados parcialmente
-convertidos. `completed`, `not_required` e `read_only` encerram essa etapa sem bloqueio próprio.
-Falha depois do commit mantém o código novo, com erro visível e escrita bloqueada; um reinício
-normal recupera a transação interrompida e tenta novamente. Conflitos ou baselines corrompidos
-continuam bloqueados, sem sobrescrita forçada. Ver também `scripts/engine/update/SKILL.md`.
+`/api/config/meta` reports `host_migration.phase`, `detail` and `blocking`. The blocking phases
+are `waiting_for_commit`, `running` and `failed`; the API and WebSockets never see partially
+converted data. `completed`, `not_required` and `read_only` end this step without a blocker of their own.
+A failure after the commit keeps the new code, with a visible error and writes blocked; a normal
+restart recovers the interrupted transaction and tries again. Conflicts or corrupted baselines
+stay blocked, with no forced overwrite. See also `scripts/engine/update/SKILL.md`.
 
-## Conferência e migração manual
+## Manual check and migration
 
-Executar a partir da raiz da instalação; não há acesso à rede nem leitura do cofre:
+Run from the installation root; there is no network access and no reading of the vault:
 
 ```bash
 .venv/bin/python scripts/engine/lib/host_id_migration.py dry-run
@@ -36,22 +36,22 @@ Executar a partir da raiz da instalação; não há acesso à rede nem leitura d
 .venv/bin/python scripts/engine/lib/host_id_migration.py rollback
 ```
 
-`--root /caminho/instalacao` aponta outra instalação. O dry-run não grava arquivos.
-Referências ausentes bloqueiam a migração e são listadas por arquivo/campo; nenhum
-enlace é excluído e nenhum equipamento é inventado. Comentários YAML e IDs dos enlaces
-são preservados; nomes antigos viram aliases e pastas antigas de backup são associadas
-explicitamente. Novas coletas usam `backups/by-id/<inteiro>/`.
+`--root /caminho/instalacao` points to another installation. The dry-run writes no files.
+Missing references block the migration and are listed by file/field; no
+link is deleted and no equipment is invented. YAML comments and link IDs
+are preserved; old names become aliases and old backup folders are associated
+explicitly. New collections use `backups/by-id/<integer>/`.
 
-Antes do commit, a ferramenta guarda baseline, documentos preparados e hashes em
-`runs/<data>-host-id-migration-<id>/`. O journal privado em
-`network/.host-id-migration.json` permite recuperar interrupções. `recover` restaura
-automaticamente uma aplicação incompleta; `rollback` também desfaz uma aplicação
-concluída, desde que nenhum dos quatro arquivos tenha sido editado depois. Os baselines
-ficam preservados. Novas coletas em `backups/by-id/` também impedem o rollback completo,
-pois reaproveitar a identidade poderia associar o histórico a outro equipamento.
-O rollback nunca substitui edições posteriores silenciosamente.
+Before the commit, the tool stores the baseline, prepared documents and hashes in
+`runs/<date>-host-id-migration-<id>/`. The private journal in
+`network/.host-id-migration.json` allows recovering from interruptions. `recover` automatically
+restores an incomplete apply; `rollback` also undoes a completed
+apply, as long as none of the four files was edited afterwards. The baselines
+are kept. New collections in `backups/by-id/` also prevent a full rollback,
+because reusing the identity could associate the history with another device.
+Rollback never silently overwrites later edits.
 
-Console e migrador usam o mesmo `flock` por diretório de inventário. Ferramentas externas
-que editam YAML diretamente devem estar paradas durante a migração. Se uma execução
-ficar incompleta, recupere antes de liberar novas escritas. Para vincular uma aplicação a
-um dry-run específico, salve o JSON retornado e forneça `apply --expected-plan plano.json`.
+The console and the migrator use the same `flock` per inventory directory. External tools
+that edit YAML directly must be stopped during the migration. If a run
+is left incomplete, recover before allowing new writes. To tie an apply to
+a specific dry-run, save the returned JSON and pass `apply --expected-plan plano.json`.

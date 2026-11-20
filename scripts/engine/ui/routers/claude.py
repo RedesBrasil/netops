@@ -24,6 +24,7 @@ from fastapi import APIRouter, Request, Response, UploadFile, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 
 import deps
+from lib import i18n
 from services import claude_auth, claude_models, claude_prefs, claude_svc, projects_svc
 
 router = APIRouter(tags=["claude"])
@@ -49,7 +50,7 @@ def _cwd(project: str | None) -> str | None:
     return path
 
 def _bad_project() -> JSONResponse:
-    return JSONResponse({"error": "project_not_found", "detail": "Projeto não encontrado."}, status_code=404)
+    return JSONResponse({"error": "project_not_found", "detail": i18n.t("api_common.project_not_found")}, status_code=404)
 
 def _ws_authorized(ws: WebSocket, *, need_sdk: bool = True, perm: str = "claude.use") -> bool:
     """Mesmas defesas do middleware http (que NÃO cobre WebSocket) — ver routers/terminal.py.
@@ -88,7 +89,7 @@ def _owner_guard(request: Request) -> None:
         return
     from services import authz  # noqa: PLC0415
     if not _may_access(authz.request_principal(request), sid):
-        raise authz.Forbidden("claude.use", "Esta conversa é de outro usuário.")
+        raise authz.Forbidden("claude.use", i18n.t("api_claude.other_users_session"))
 
 
 def _visible(request: Request, sessions: list[dict]) -> list[dict]:
@@ -416,7 +417,7 @@ async def claude_upload(file: UploadFile, project: str = ""):
     raw = await file.read(_MAX_UPLOAD + 1)
     if len(raw) > _MAX_UPLOAD:
         return JSONResponse(
-            {"error": "too_large", "detail": f"limite de {_MAX_UPLOAD // (1024 * 1024)} MiB"},
+            {"error": "too_large", "detail": i18n.t("api_common.size_limit_mib", mib=_MAX_UPLOAD // (1024 * 1024))},
             status_code=413,
         )
     name = _SAFE_NAME.sub("_", (file.filename or "anexo").rsplit("/", 1)[-1]).strip("._") or "anexo"

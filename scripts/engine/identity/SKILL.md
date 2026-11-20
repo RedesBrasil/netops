@@ -1,50 +1,50 @@
 ---
 id: identity-migration
-name: Migração para a conta dedicada netops
+name: Migration to the dedicated netops account
 type: script
 runtime: python
-description: Migra uma instalação legada (console como root) para a conta operacional netops, com dry-run, baseline, journal e rollback.
+description: Migrates a legacy installation (console as root) to the netops operational account, with dry-run, baseline, journal and rollback.
 env: []
 ---
 
-## Quando usar
+## When to use
 
-Instalação antiga (antes do layout 2) roda o console como **root**: `install.sh` e o console avisam
-"instalação LEGADA". A migração deixa console, IA, terminal, agendador e atualizador rodando como `netops`.
-**Só root roda** (o humano, numa janela de manutenção) — nunca a IA por conta própria.
+An old installation (before layout 2) runs the console as **root**: `install.sh` and the console warn
+"instalação LEGADA" (LEGACY installation). The migration makes the console, AI, terminal, scheduler and updater run as `netops`.
+**Only root runs it** (the human, in a maintenance window) — never the AI on its own.
 
-## Passo a passo
+## Step by step
 
 ```bash
-sudo python3 -I /opt/netops/scripts/engine/identity/migrate.py plan      # dry-run: inventário + bloqueios
-# recomendado em produção: snapshot/backup externo da VM/CT antes (ex.: pct snapshot <CT> antes-netops)
-sudo python3 -I /opt/netops/scripts/engine/identity/migrate.py apply     # console cai ~1 min
-#   valide: login, aba Claude (/login de novo), conversas e memória, tarefas agendadas
-sudo reboot                                                              # confirma o boot sem login
+sudo python3 -I /opt/netops/scripts/engine/identity/migrate.py plan      # dry-run: inventory + blockers
+# recommended in production: external snapshot/backup of the VM/CT first (e.g. pct snapshot <CT> antes-netops)
+sudo python3 -I /opt/netops/scripts/engine/identity/migrate.py apply     # console goes down ~1 min
+#   validate: login, Claude tab (/login again), conversations and memory, scheduled tasks
+sudo reboot                                                              # confirms boot without login
 sudo python3 -I /opt/netops/scripts/engine/identity/migrate.py commit
-# administração Local (etapa própria, com o cofre destrancado)
+# Local administration (separate step, with the vault unlocked)
 sudo python3 -I /opt/netops/scripts/engine/localadmin/provision.py install
 ```
 
-Antes do `commit`, `migrate.py rollback` devolve dono/modo, unidade e cron antigos e religa o console root.
-Dados novos são preservados; o banco **não** é restaurado às cegas (cópia de antes no baseline).
+Before `commit`, `migrate.py rollback` restores the old owner/mode, unit and cron and turns the root console back on.
+New data is preserved; the database is **not** restored blindly (the pre-migration copy is in the baseline).
 
-## O que muda
+## What changes
 
-| Antes | Depois |
+| Before | After |
 |---|---|
-| console root (`/etc/systemd/system/netops-console.service` ou unidade transitória) | `netops-console@<slug>.service` do usuário `netops` (linger) |
-| `/root/.claude` (login + conversas) | `/var/lib/netops/.claude` (memória e conversas copiadas; **login novo** na aba) |
-| `/etc/cron.d/netops-scheduler` (root) | crontab de `netops` (bloco `netops-scheduler`) |
-| arquivos root/netops misturados | tudo de `netops` (sem seguir links nem atravessar montagens) |
-| — | `/etc/netops/instances/<slug>.env` (identidade, root-owned) |
+| root console (`/etc/systemd/system/netops-console.service` or transient unit) | `netops-console@<slug>.service` of the `netops` user (linger) |
+| `/root/.claude` (login + conversations) | `/var/lib/netops/.claude` (memory and conversations copied; **new login** in the tab) |
+| `/etc/cron.d/netops-scheduler` (root) | `netops` crontab (`netops-scheduler` block) |
+| mixed root/netops files | everything owned by `netops` (without following links or crossing mounts) |
+| — | `/etc/netops/instances/<slug>.env` (identity, root-owned) |
 
-Baseline/journal: `/var/backups/netops-migration/<slug>-<data>/` (root 0700): `ownership.jsonl`, cópia
-consistente do SQLite, `network/`, `core/config`, cron e unidade antigos, `SHA256SUMS`, `RESTAURAR.txt`.
+Baseline/journal: `/var/backups/netops-migration/<slug>-<date>/` (root 0700): `ownership.jsonl`, consistent
+copy of the SQLite, `network/`, `core/config`, old cron and unit, `SHA256SUMS`, `RESTAURAR.txt`.
 
-## Cuidados
+## Caveats
 
-- Várias instalações na mesma máquina: cada uma migra separada; todas usam a conta `netops` e o mesmo
-  perfil da IA (conversas separadas por pasta). A que não foi migrada continua root.
-- Não migre com atualização pendente (`.netops-update/journal.json`) — o `plan` bloqueia.
-- Mantenha acesso de resgate fora do console (ex.: `pct enter` no Proxmox) durante a janela.
+- Several installations on the same machine: each one migrates separately; all use the `netops` account and the same
+  AI profile (conversations separated by folder). One that was not migrated keeps running as root.
+- Do not migrate with a pending update (`.netops-update/journal.json`) — `plan` blocks it.
+- Keep rescue access outside the console (e.g. `pct enter` on Proxmox) during the window.

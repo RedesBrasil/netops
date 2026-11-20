@@ -1,0 +1,19 @@
+{
+  "invalid_filename": "invalid file name",
+  "invalid_path": "invalid path",
+  "invalid_vendor": "invalid vendor. Use one of: {vendors}",
+  "invalid_yaml": "Invalid YAML: {error}",
+  "name_must_end": "name must end with {suffix}",
+  "nothing_to_update": "Nothing to change.",
+  "path_exists": "{path} already exists",
+  "path_not_exists": "{path} does not exist",
+  "path_outside": "path outside the allowed directory",
+  "project_not_found": "Project not found.",
+  "quoted_exists": "'{name}' already exists",
+  "quoted_not_exists": "'{name}' does not exist",
+  "same_name": "the new name is the same as the current one",
+  "same_target": "target is the same as the source",
+  "size_limit_mib": "limit of {mib} MiB",
+  "use_kebab_case": "use kebab-case (a-z, 0-9, hyphen), starting with a letter/digit",
+  "user_not_found": "User '{username}' not found."
+}

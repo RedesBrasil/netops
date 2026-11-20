@@ -19,6 +19,9 @@ MAX_UNPACKED = 512 * 1024 * 1024
 MAX_FILES = 10000
 CUSTOM_ROOTS = {"agents", "workflows", "best-practices", "config-examples", "planning-examples"}
 DIST_ROOTS = CUSTOM_ROOTS | {"scripts", "core", "network", ".github"}
+# Nunca acrescente raiz nova nem arquivo novo em DIST_FILES sem pensar no atualizador ANTIGO: ele valida o pacote
+# com a lista dele e recusa o que não conhece (protected_path). Por isso as traduções moram em core/locales/ e o
+# README.pt-BR.md fica só no git (GitHub).
 # AGENTS.md NÃO é distribuído: é local de cada instalação, criado do modelo core/templates/AGENTS.tmpl.md.
 DIST_FILES = {"README.md", "PADRAO.md", "constitution.md", "requirements.txt", ".gitignore", "CHANGELOG.md"}
 TERMINAL_STATES = {"completed", "failed", "rolled_back", "recovery_failed"}

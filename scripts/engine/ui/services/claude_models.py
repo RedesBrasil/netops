@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 import deps
+from lib import i18n
 
 _CACHE_SOURCE = "claude-cli-v1"
 _CACHE_TTL = 7 * 24 * 3600
@@ -27,7 +28,8 @@ _retry_after = 0.0
 _cache_lock = threading.Lock()
 
 # O próprio CLI resolve o padrão da conta; não inventa versões nem presume acesso.
-_FALLBACK = [{"id": "default", "name": "Padrão do Claude Code"}]
+def _fallback() -> list[dict]:
+    return [{"id": "default", "name": i18n.t("api_claude.model_default")}]
 
 _SECRET_KEYS = ("AUTH_TOKEN", "API_KEY")
 
@@ -197,11 +199,11 @@ def _list_models(force: bool = False) -> list[dict]:
         return disk["models"]
     previous = _cache["models"] or (disk["models"] if disk else None)
     if not force and now < _retry_after:
-        return previous or list(_FALLBACK)
+        return previous or _fallback()
     models = _fetch()
     if not models:
         _retry_after = now + _RETRY_TTL
-        return previous or list(_FALLBACK)
+        return previous or _fallback()
     _retry_after = 0.0
     _cache.update(at=now, models=models)
     _save_disk(models, now)

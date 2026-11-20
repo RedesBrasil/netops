@@ -2,20 +2,21 @@
 //  - "Serviços de Backup": lista de serviços (estilo jobs do Proxmox); criar/editar em modal.
 //  - "Armazenamento de Backup": visualizar/baixar os configs coletados.
 // Config só — a execução no horário é feita por um runner externo.
-import { html, useState, useEffect, useRef, api, useResource, Spinner, toast, handleError, Modal, Tabs, ConfirmDialog } from "../ui.js";
+import { html, useState, useEffect, useRef, api, useResource, Spinner, toast, handleError, Modal, Tabs, ConfirmDialog, t, fmtDateTime } from "../ui.js";
 import { authToken } from "../api.js";
 import { useMenuRoute, matchText } from "../route.js";
 import { FilterBar, DataTable } from "../components.js";
 
-const FREQS = [["daily", "Diária"], ["weekly", "Semanal"], ["hourly", "De hora em hora"]];
-const WEEKDAYS = [["mon", "Seg"], ["tue", "Ter"], ["wed", "Qua"], ["thu", "Qui"],
-  ["fri", "Sex"], ["sat", "Sáb"], ["sun", "Dom"]];
+// Labels are catalog keys, translated at render time.
+const FREQS = [["daily", "backups.freq_daily"], ["weekly", "backups.freq_weekly"], ["hourly", "backups.freq_hourly"]];
+const WEEKDAYS = [["mon", "backups.wd_mon"], ["tue", "backups.wd_tue"], ["wed", "backups.wd_wed"], ["thu", "backups.wd_thu"],
+  ["fri", "backups.wd_fri"], ["sat", "backups.wd_sat"], ["sun", "backups.wd_sun"]];
 const WD = Object.fromEntries(WEEKDAYS);
 
 const uniq = (xs) => [...new Set(xs.filter(Boolean))].sort();
 const fmtSize = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
-const fmtDate = (s) => new Date(s * 1000).toLocaleString();
-const hostLabel = (host) => host.hostname || (host.host != null ? "Host " + host.host : "Sem vínculo · " + host.directory);
+const fmtTs = (s) => fmtDateTime(s);
+const hostLabel = (host) => host.hostname || (host.host != null ? t("backups.host_n", { id: host.host }) : t("backups.unassigned_dir", { dir: host.directory }));
 
 function slugify(s) {
   const base = (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -30,25 +31,25 @@ function uniqueId(name, existing) {
   return base + "-" + i;
 }
 function scheduleSummary(s) {
-  const t = (s && s.time) || "03:00";
-  if (!s || s.frequency === "daily") return "Diária às " + t;
-  if (s.frequency === "hourly") return "De hora em hora";
-  if (s.frequency === "weekly") return "Semanal · " + (WD[s.weekday] || "") + " às " + t;
-  return t;
+  const tm = (s && s.time) || "03:00";
+  if (!s || s.frequency === "daily") return t("backups.sched_daily", { time: tm });
+  if (s.frequency === "hourly") return t("backups.freq_hourly");
+  if (s.frequency === "weekly") return t("backups.sched_weekly", { day: WD[s.weekday] ? t(WD[s.weekday]) : "", time: tm });
+  return tm;
 }
-function targetsSummary(t) {
-  const g = (t && t.groups && t.groups.length) || 0;
-  const h = (t && t.hosts && t.hosts.length) || 0;
+function targetsSummary(tg) {
+  const g = (tg && tg.groups && tg.groups.length) || 0;
+  const h = (tg && tg.hosts && tg.hosts.length) || 0;
   const parts = [];
-  if (g) parts.push(g + " grupo" + (g > 1 ? "s" : ""));
-  if (h) parts.push(h + " host" + (h > 1 ? "s" : ""));
-  return parts.length ? parts.join(", ") : "sem alvos";
+  if (g) parts.push(t("backups.groups_count", { count: g }));
+  if (h) parts.push(t("backups.hosts_count", { count: h }));
+  return parts.length ? parts.join(", ") : t("backups.no_targets");
 }
 function retentionSummary(r) {
-  if (!r) return "retém 7 backups";
+  if (!r) return t("backups.retain_backups", { count: 7 });
   return r.mode === "days"
-    ? "retém " + r.value + " dia" + (r.value > 1 ? "s" : "")
-    : "retém " + r.value + " backup" + (r.value > 1 ? "s" : "");
+    ? t("backups.retain_days", { count: r.value })
+    : t("backups.retain_backups", { count: r.value });
 }
 
 // ---- Editor de serviço (modal de criar/editar) ---------------------------- //
@@ -88,8 +89,8 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
   }
 
   function submit() {
-    if (!name.trim()) { toast.err("Dê um nome ao serviço"); return; }
-    if (hosts.length === 0 && groups.length === 0) { toast.err("Selecione ao menos um host ou grupo"); return; }
+    if (!name.trim()) { toast.err(t("backups.name_required")); return; }
+    if (hosts.length === 0 && groups.length === 0) { toast.err(t("backups.targets_required")); return; }
     const id = isNew ? uniqueId(name, existingIds) : initial.id;
     onSave({ id, name: name.trim(), enabled,
       schedule: { frequency: freq, time, weekday },
@@ -97,64 +98,64 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
       targets: { hosts, groups } });
   }
 
-  return html`<${Modal} title=${isNew ? "Novo serviço de backup" : "Editar serviço"} wide onClose=${onClose}>
+  return html`<${Modal} title=${isNew ? t("backups.new_service_title") : t("backups.edit_service_title")} wide onClose=${onClose}>
     <div class="bk-form">
       <div class="bk-form-grid">
         <div class="bk-col-full">
-          <h3>Nome do serviço</h3>
-          <input class="bk-name-input" type="text" value=${name} placeholder="ex.: Núcleo MikroTik diário"
+          <h3>${t("backups.service_name")}</h3>
+          <input class="bk-name-input" type="text" value=${name} placeholder=${t("backups.service_name_placeholder")}
             onInput=${(e) => setName(e.target.value)} />
           <label class="toggle" style="margin-top:10px">
             <input type="checkbox" checked=${enabled} onChange=${(e) => setEnabled(e.target.checked)} />
             <span class="track"><span class="thumb"></span></span>
-            <span>Serviço ativo</span>
+            <span>${t("backups.service_enabled")}</span>
           </label>
         </div>
 
         <div>
-          <h3>Agendamento</h3>
+          <h3>${t("backups.schedule")}</h3>
           <div class="bk-sched">
-            <label>Frequência
+            <label>${t("backups.frequency")}
               <select value=${freq} onChange=${(e) => setFreq(e.target.value)}>
-                ${FREQS.map(([v, l]) => html`<option key=${v} value=${v}>${l}</option>`)}
+                ${FREQS.map(([v, l]) => html`<option key=${v} value=${v}>${t(l)}</option>`)}
               </select>
             </label>
-            ${freq !== "hourly" && html`<label>Hora
+            ${freq !== "hourly" && html`<label>${t("backups.time")}
               <input type="time" value=${time} onInput=${(e) => setTime(e.target.value)} />
             </label>`}
-            ${freq === "weekly" && html`<label>Dia da semana
+            ${freq === "weekly" && html`<label>${t("backups.weekday")}
               <select value=${weekday} onChange=${(e) => setWeekday(e.target.value)}>
-                ${WEEKDAYS.map(([v, l]) => html`<option key=${v} value=${v}>${l}</option>`)}
+                ${WEEKDAYS.map(([v, l]) => html`<option key=${v} value=${v}>${t(l)}</option>`)}
               </select>
             </label>`}
           </div>
         </div>
 
         <div>
-          <h3>Retenção</h3>
+          <h3>${t("backups.retention")}</h3>
           <div class="bk-sched">
-            <label>Manter por
+            <label>${t("backups.keep_by")}
               <select value=${retMode} onChange=${(e) => setRetMode(e.target.value)}>
-                <option value="count">Quantidade de backups</option>
-                <option value="days">Dias</option>
+                <option value="count">${t("backups.keep_count")}</option>
+                <option value="days">${t("backups.days")}</option>
               </select>
             </label>
-            <label>${retMode === "days" ? "Dias" : "Backups por dispositivo"}
+            <label>${retMode === "days" ? t("backups.days") : t("backups.backups_per_device")}
               <input type="number" min="1" max="3650" value=${retValue}
                 onInput=${(e) => setRetValue(e.target.value)} style="width:130px" />
             </label>
           </div>
           <div class="help" style="margin-top:4px">
             ${retMode === "days"
-              ? "Remove backups mais antigos que o número de dias."
-              : "Mantém apenas os N backups mais recentes de cada dispositivo."}
+              ? t("backups.retention_days_help")
+              : t("backups.retention_count_help")}
           </div>
         </div>
 
         <div class="bk-col-full">
-          <h3>Grupos <span class="help" style="text-transform:none">(todo host do grupo entra)</span></h3>
+          <h3>${t("backups.groups")} <span class="help" style="text-transform:none">${t("backups.groups_help")}</span></h3>
           ${allGroups.length === 0
-            ? html`<div class="help">Nenhum grupo no inventário.</div>`
+            ? html`<div class="help">${t("backups.no_groups")}</div>`
             : html`<div class="bk-chips">
               ${allGroups.map((g) => html`<label key=${g.name} class=${"bk-chip" + (groups.includes(g.name) ? " on" : "")}>
                 <input type="checkbox" checked=${groups.includes(g.name)}
@@ -165,43 +166,43 @@ function ServiceEditor({ initial, allHosts, allGroups, existingIds, onSave, onCl
         </div>
       </div>
 
-      <h3>Hosts individuais</h3>
+      <h3>${t("backups.individual_hosts")}</h3>
       <div class="bk-toolbar">
-        <input type="text" placeholder="filtrar por nome ou IP…" value=${filter} onInput=${(e) => setFilter(e.target.value)} />
+        <input type="text" placeholder=${t("backups.filter_placeholder")} value=${filter} onInput=${(e) => setFilter(e.target.value)} />
         <select value=${groupFilter} onChange=${(e) => setGroupFilter(e.target.value)}>
-          <option value="">grupo: todos</option>
+          <option value="">${t("backups.group_all")}</option>
           ${allGroups.map((g) => html`<option key=${g.name} value=${g.name}>${g.name}</option>`)}
         </select>
         <select value=${vendorFilter} onChange=${(e) => setVendorFilter(e.target.value)}>
-          <option value="">vendor: todos</option>
+          <option value="">${t("backups.vendor_all")}</option>
           ${vendors.map((v) => html`<option key=${v} value=${v}>${v}</option>`)}
         </select>
         <select value=${roleFilter} onChange=${(e) => setRoleFilter(e.target.value)}>
-          <option value="">função: todas</option>
+          <option value="">${t("backups.role_all")}</option>
           ${roles.map((r) => html`<option key=${r} value=${r}>${r}</option>`)}
         </select>
-        ${hasFilter && html`<button class="sm" onClick=${clearFilters}>limpar filtros</button>`}
-        <span class="badge accent bk-selcount">${hosts.length} selecionado(s)</span>
+        ${hasFilter && html`<button class="sm" onClick=${clearFilters}>${t("backups.clear_filters")}</button>`}
+        <span class="badge accent bk-selcount">${t("backups.selected_n", { n: hosts.length })}</span>
       </div>
       <${DataTable} tableId="backup-service-hosts" wrapClass="bk-tablewrap" rows=${shown.map((h) => ({ ...h, _key: h.id }))}
-        empty="Nenhum host com esses filtros." rowClass=${(h) => (hosts.includes(h.id) ? "on" : "")}
+        empty=${t("backups.no_hosts_filtered")} rowClass=${(h) => (hosts.includes(h.id) ? "on" : "")}
         onRowClick=${(h) => toggle(hosts, setHosts, h.id)}
         columns=${[
           { key: "check", pinned: true, width: 40, tdClass: "bk-col-check",
-            label: html`<input type="checkbox" title="selecionar todos os visíveis" checked=${allShownOn} onChange=${toggleAllShown} />`,
+            label: html`<input type="checkbox" title=${t("backups.select_all_visible")} checked=${allShownOn} onChange=${toggleAllShown} />`,
             render: (h) => html`<input type="checkbox" checked=${hosts.includes(h.id)} onClick=${(e) => e.stopPropagation()} onChange=${() => toggle(hosts, setHosts, h.id)} />` },
-          { key: "hostname", label: "Host", hideable: false, sort: (h) => h.hostname || h.mgmt_ip || "", render: (h) => h.hostname || h.mgmt_ip || "Host " + h.id },
+          { key: "hostname", label: "Host", hideable: false, sort: (h) => h.hostname || h.mgmt_ip || "", render: (h) => h.hostname || h.mgmt_ip || t("backups.host_n", { id: h.id }) },
           { key: "vendor", label: "Vendor", sort: true, render: (h) => h.vendor || "" },
-          { key: "role", label: "Função", sort: true, render: (h) => h.role || "" },
-          { key: "group", label: "Grupo", sort: true, render: (h) => h.group || "" },
+          { key: "role", label: t("backups.col_role"), sort: true, render: (h) => h.role || "" },
+          { key: "group", label: t("backups.col_group"), sort: true, render: (h) => h.group || "" },
           { key: "mgmt_ip", label: "IP", sort: true, render: (h) => h.mgmt_ip || "" },
         ]} />
     </div>
 
     <div class="modal-actions">
-      ${!isNew && html`<button class="danger" style="margin-right:auto" onClick=${onDelete}>Remover</button>`}
-      <button onClick=${onClose}>Cancelar</button>
-      <button class="primary needs-backups-edit" onClick=${submit}>Salvar</button>
+      ${!isNew && html`<button class="danger" style="margin-right:auto" onClick=${onDelete}>${t("common.remove")}</button>`}
+      <button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary needs-backups-edit" onClick=${submit}>${t("common.save")}</button>
     </div>
   <//>`;
 }
@@ -224,21 +225,21 @@ function RunModal({ runId, onClose, onDone }) {
   const finished = hosts.filter((h) => ["ok", "fail", "skip"].includes(h.state)).length;
   const ic = (s) => s === "ok" ? "✓" : s === "fail" ? "✕" : s === "skip" ? "—" : s === "running" ? "…" : "·";
   const done = st && st.state === "done";
-  return html`<${Modal} title=${"Execução" + (st ? " · " + st.service_name : "")} wide onClose=${onClose}>
+  return html`<${Modal} title=${st ? t("backups.run_title_named", { name: st.service_name }) : t("backups.run_title")} wide onClose=${onClose}>
     ${!st ? html`<${Spinner} />` : html`<div>
       <div class="help" style="margin-bottom:8px">
-        ${done ? "Concluído" : "Em execução…"} — ${finished}/${hosts.length} host(s)${st.note ? " · " + st.note : ""}
+        ${done ? t("backups.run_done") : t("backups.run_running")} — ${t("backups.run_progress", { done: finished, total: hosts.length })}${st.note ? " · " + st.note : ""}
       </div>
-      <${DataTable} tableId="backup-run-progress" wrapClass="bk-tablewrap" rows=${hosts.map((h) => ({ ...h, _key: h.id }))} empty="Serviço sem alvos."
+      <${DataTable} tableId="backup-run-progress" wrapClass="bk-tablewrap" rows=${hosts.map((h) => ({ ...h, _key: h.id }))} empty=${t("backups.service_no_targets")}
         columns=${[
-          { key: "icon", label: "", menuLabel: "Ícone", width: 40, render: (h) => html`<span class=${"bk-run-" + h.state} style="font-weight:700">${ic(h.state)}</span>` },
-          { key: "hostname", label: "Host", hideable: false, sort: (h) => h.hostname || "", render: (h) => h.hostname || "Host " + h.id },
-          { key: "state", label: "Estado", sort: true, render: (h) => html`<span class=${"bk-run-" + h.state}>${h.state}</span>` },
-          { key: "detail", label: "Detalhe", sort: true, render: (h) => html`<span class="help">${h.detail || ""}</span>` },
+          { key: "icon", label: "", menuLabel: t("backups.col_icon"), width: 40, render: (h) => html`<span class=${"bk-run-" + h.state} style="font-weight:700">${ic(h.state)}</span>` },
+          { key: "hostname", label: "Host", hideable: false, sort: (h) => h.hostname || "", render: (h) => h.hostname || t("backups.host_n", { id: h.id }) },
+          { key: "state", label: t("backups.col_state"), sort: true, render: (h) => html`<span class=${"bk-run-" + h.state}>${h.state}</span>` },
+          { key: "detail", label: t("backups.col_detail"), sort: true, render: (h) => html`<span class="help">${h.detail || ""}</span>` },
         ]} />
     </div>`}
     <div class="modal-actions" style="margin-top:10px">
-      <button onClick=${onClose}>Fechar${st && !done ? " (continua em segundo plano)" : ""}</button>
+      <button onClick=${onClose}>${st && !done ? t("backups.close_keeps_running") : t("common.close")}</button>
     </div>
   <//>`;
 }
@@ -267,13 +268,13 @@ function DiffModal({ data, onClose }) {
     }
   }
   flush();
-  return html`<${Modal} title="Diferença entre backups" wide onClose=${onClose}>
+  return html`<${Modal} title=${t("backups.diff_title")} wide onClose=${onClose}>
     <div class="help" style="margin-bottom:8px; display:flex; gap:10px; flex-wrap:wrap; align-items:center">
       <span><b>A:</b> ${data.a}</span><span><b>B:</b> ${data.b}</span>
       <span style="flex:1"></span>
-      <span class="bk-d-add" style="padding:1px 8px; border-radius:4px">${c.added} adicionada(s)</span>
-      <span class="bk-d-del" style="padding:1px 8px; border-radius:4px">${c.removed} removida(s)</span>
-      <span class="bk-d-chg" style="padding:1px 8px; border-radius:4px">${c.changed} alterada(s)</span>
+      <span class="bk-d-add" style="padding:1px 8px; border-radius:4px">${t("backups.diff_added", { n: c.added })}</span>
+      <span class="bk-d-del" style="padding:1px 8px; border-radius:4px">${t("backups.diff_removed", { n: c.removed })}</span>
+      <span class="bk-d-chg" style="padding:1px 8px; border-radius:4px">${t("backups.diff_changed", { n: c.changed })}</span>
     </div>
     <div class="bk-diff bk-side">
       <div class="bk-side-head bk-col-a">A: ${data.a}</div><div class="bk-side-head bk-col-b">B: ${data.b}</div>
@@ -281,7 +282,7 @@ function DiffModal({ data, onClose }) {
         html`<div key=${"l" + i} class=${"bk-d-line bk-col-a " + r.lc + (i === rows.length - 1 ? " bk-last" : "")}>${r.l == null ? " " : (r.l || " ")}</div>`,
         html`<div key=${"r" + i} class=${"bk-d-line bk-col-b " + r.rc + (i === rows.length - 1 ? " bk-last" : "")}>${r.r == null ? " " : (r.r || " ")}</div>`])}
     </div>
-    <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>Fechar</button></div>
+    <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>${t("common.close")}</button></div>
   <//>`;
 }
 
@@ -297,7 +298,7 @@ function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, 
   function doDiff() {
     const el = anchorRef.current;
     if (sel.length !== 2) {
-      el.setCustomValidity("Selecione exatamente 2 backups para comparar.");
+      el.setCustomValidity(t("backups.diff_select_two"));
       el.reportValidity();
       return;
     }
@@ -312,37 +313,37 @@ function HostBackupsModal({ host, onView, onDownloadOne, onDownloadZip, onDiff, 
     const ok = await onDelete(sel);
     if (ok) { setItems(items.filter((b) => !sel.includes(b.path))); setSel([]); }
   }
-  return html`<${Modal} title=${"Backups · " + hostLabel(host)} wide onClose=${onClose}>
+  return html`<${Modal} title=${t("backups.host_backups_title", { host: hostLabel(host) })} wide onClose=${onClose}>
     <div class="bk-toolbar" style="margin-bottom:10px">
       <label class=${"bk-chip" + (allOn ? " on" : "")}>
-        <input type="checkbox" checked=${allOn} onChange=${toggleAll} /> Todos
+        <input type="checkbox" checked=${allOn} onChange=${toggleAll} /> ${t("common.all")}
       </label>
-      <span class="help">${sel.length} de ${items.length} selecionado(s)</span>
+      <span class="help">${t("backups.selected_of", { n: sel.length, total: items.length })}</span>
       <span style="flex:1"></span>
       <input ref=${anchorRef} class="bk-vanchor" tabindex="-1" aria-hidden="true" />
       <button class="sm" onClick=${doDiff}>Diff</button>
       <button class="btn-ok" disabled=${sel.length === 0}
-        onClick=${() => onDownloadZip(sel, hostLabel(host) + "-selecionados")}>Baixar (${sel.length})</button>
+        onClick=${() => onDownloadZip(sel, hostLabel(host) + "-" + t("backups.zip_selected_suffix"))}>${t("backups.download_n", { n: sel.length })}</button>
       <button class="danger" disabled=${sel.length === 0}
-        onClick=${() => setConfirming(true)}>Apagar (${sel.length})</button>
+        onClick=${() => setConfirming(true)}>${t("backups.delete_n", { n: sel.length })}</button>
     </div>
     <${DataTable} tableId="backup-host-files" wrapClass="bk-tablewrap" rows=${items.map((b) => ({ ...b, _key: b.path }))}
       defaultSort=${{ key: "mtime", dir: "desc" }} rowClass=${(b) => (sel.includes(b.path) ? "on" : "")} onRowClick=${(b) => toggle(b.path)}
       actions=${(b) => html`<div class="bk-actions">
-        <button class="sm" onClick=${() => onView(b.path)}>Visualizar</button>
-        <button class="sm btn-ok" onClick=${() => onDownloadOne(b.path)}>Baixar</button></div>`}
+        <button class="sm" onClick=${() => onView(b.path)}>${t("backups.view")}</button>
+        <button class="sm btn-ok" onClick=${() => onDownloadOne(b.path)}>${t("common.download")}</button></div>`}
       columns=${[
         { key: "check", pinned: true, width: 40, tdClass: "bk-col-check",
           label: html`<input type="checkbox" checked=${allOn} onChange=${toggleAll} />`,
           render: (b) => html`<input type="checkbox" checked=${sel.includes(b.path)} onClick=${(e) => e.stopPropagation()} onChange=${() => toggle(b.path)} />` },
         { key: "name", label: "Backup", hideable: false, sort: true, tdClass: "bk-id", render: (b) => b.name },
-        { key: "size", label: "Tamanho", sort: true, render: (b) => fmtSize(b.size) },
-        { key: "mtime", label: "Data", sort: true, render: (b) => fmtDate(b.mtime) },
+        { key: "size", label: t("backups.col_size"), sort: true, render: (b) => fmtSize(b.size) },
+        { key: "mtime", label: t("backups.col_date"), sort: true, render: (b) => fmtTs(b.mtime) },
       ]} />
-    <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>Fechar</button></div>
+    <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>${t("common.close")}</button></div>
     ${confirming && html`<${ConfirmDialog}
-      title="Apagar backups selecionados?"
-      message=${"Isto vai apagar " + sel.length + " backup(s) de " + hostLabel(host) + ". Esta ação é permanente — não será possível reaver os backups apagados."}
+      title=${t("backups.delete_confirm_title")}
+      message=${t("backups.delete_confirm_message", { n: sel.length, host: hostLabel(host) })}
       danger onConfirm=${doDelete} onClose=${() => setConfirming(false)} />`}
   <//>`;
 }
@@ -398,7 +399,7 @@ export function BackupsPage() {
     try {
       const legacy_sources = (cfgRes.data && cfgRes.data.config && cfgRes.data.config.legacy_sources) || [];
       const r = await api.put("/backups", { version: 3, services: next, legacy_sources }, rev);
-      setServices(next); setRev(r.rev); toast.ok("Serviços salvos"); return true;
+      setServices(next); setRev(r.rev); toast.ok(t("backups.services_saved")); return true;
     } catch (e) { handleError(e); return false; }
   }
   async function upsertService(svc) {
@@ -422,7 +423,7 @@ export function BackupsPage() {
     try {
       const r = await api.post("/backups/files/delete", { paths });
       hostsRes.reload();
-      toast.ok((r.count || paths.length) + " backup(s) apagado(s)");
+      toast.ok(t("backups.deleted_n", { n: r.count || paths.length }));
       return true;
     } catch (e) { handleError(e); return false; }
   }
@@ -445,11 +446,11 @@ export function BackupsPage() {
       a.href = url; a.download = path.split("/").pop();
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
-    } catch (e) { toast.err("Falha ao baixar: " + e.message); }
+    } catch (e) { toast.err(t("backups.download_failed", { error: e.message })); }
   }
 
   async function downloadZip(paths, name) {
-    if (!paths || paths.length === 0) { toast.err("Nenhum backup selecionado"); return; }
+    if (!paths || paths.length === 0) { toast.err(t("backups.none_selected")); return; }
     try {
       const qs = paths.map((p) => "path=" + encodeURIComponent(p)).join("&") + "&name=" + encodeURIComponent(name || "backups");
       const res = await fetch("/api/backups/files/zip?" + qs,
@@ -461,10 +462,10 @@ export function BackupsPage() {
       a.href = url; a.download = (name || "backups") + ".zip";
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
-    } catch (e) { toast.err("Falha ao baixar: " + e.message); }
+    } catch (e) { toast.err(t("backups.download_failed", { error: e.message })); }
   }
 
-  if (cfgRes.error) return html`<div class="card">Erro ao carregar: ${cfgRes.error.message}</div>`;
+  if (cfgRes.error) return html`<div class="card">${t("backups.load_error", { error: cfgRes.error.message })}</div>`;
   if (cfgRes.loading || rev === null) return html`<${Spinner} />`;
 
   const allHosts = (candRes.data && candRes.data.hosts) || [];
@@ -482,25 +483,25 @@ export function BackupsPage() {
 
   const servicos = html`<div>
     <div style="display:flex; align-items:center; gap:12px; margin:4px 0 12px">
-      <div class="help">Cada serviço define seus próprios hosts/grupos e agendamento.</div>
+      <div class="help">${t("backups.services_help")}</div>
       <span style="flex:1"></span>
-      <button class="primary" onClick=${() => r.open(["services", "new"])}>＋ Criar serviço</button>
+      <button class="primary" onClick=${() => r.open(["services", "new"])}>${t("backups.create_service_btn")}</button>
     </div>
     ${services.length === 0
-      ? html`<div class="card bk-empty">Nenhum serviço de backup configurado. Clique em <b>Criar serviço</b>.</div>`
+      ? html`<div class="card bk-empty">${t("backups.no_services_pre")} <b>${t("backups.create_service")}</b>.</div>`
       : html`<div class="bk-svc-list">
         ${shownServices.map((s) => html`<div key=${s.id} class="card bk-svc" onClick=${() => r.open(["services", s.id])}>
           <div class="bk-svc-main">
             <div class="bk-svc-name">
               <a href=${svcLink(s.id)} onClick=${(e) => e.stopPropagation()}>${s.name}</a>
-              ${s.enabled !== false ? html`<span class="badge ok">ativo</span>` : html`<span class="badge">pausado</span>`}
+              ${s.enabled !== false ? html`<span class="badge ok">${t("backups.badge_active")}</span>` : html`<span class="badge">${t("backups.badge_paused")}</span>`}
             </div>
             <div class="help">${scheduleSummary(s.schedule)} · ${targetsSummary(s.targets)} · ${retentionSummary(s.retention)}</div>
           </div>
           <div class="bk-svc-btns" onClick=${(e) => e.stopPropagation()}>
             <button class="sm primary needs-backups-run" onClick=${() => startRun(s.id)}>▶ Run</button>
-            ${runs[s.id] && html`<button class="sm" onClick=${() => setRunModal(runs[s.id])}>acompanhar</button>`}
-            <button class="sm needs-backups-edit" onClick=${() => r.open(["services", s.id])}>Editar</button>
+            ${runs[s.id] && html`<button class="sm" onClick=${() => setRunModal(runs[s.id])}>${t("backups.follow")}</button>`}
+            <button class="sm needs-backups-edit" onClick=${() => r.open(["services", s.id])}>${t("common.edit")}</button>
           </div>
         </div>`)}
       </div>`}
@@ -508,38 +509,38 @@ export function BackupsPage() {
 
   const armazenamento = html`<div>
     <div class="card">
-      <h2>Backups por host</h2>
-      <div class="help" style="margin-bottom:8px">Diretório: <code>${storeDir}</code></div>
+      <h2>${t("backups.by_host")}</h2>
+      <div class="help" style="margin-bottom:8px">${t("backups.directory")} <code>${storeDir}</code></div>
       ${(hostsRes.loading && !hostsRes.data)
         ? html`<${Spinner} />`
         : backupHosts.length === 0
-          ? html`<div class="bk-empty">Nenhum backup ainda. Os hosts aparecem aqui após a primeira coleta.</div>`
-          : html`<${DataTable} tableId="backup-storage" urlSort wrapClass="bk-tablewrap" empty="Nenhum host com esse filtro."
+          ? html`<div class="bk-empty">${t("backups.no_backups_yet")}</div>`
+          : html`<${DataTable} tableId="backup-storage" urlSort wrapClass="bk-tablewrap" empty=${t("backups.no_hosts_filter")}
               rows=${shownHosts.map((h) => ({ ...h, _key: h.host != null ? h.host : "unassigned:" + h.directory }))}
               onRowClick=${(h) => r.open(["storage", hostKey(h)])}
               actions=${(h) => html`<div class="bk-actions">
-                <button class="sm" onClick=${() => r.open(["storage", hostKey(h)])}>Ver Backups</button>
-                <button class="sm btn-ok" onClick=${() => downloadZip(h.backups.map((b) => b.path), hostLabel(h) + "-backups")}>Baixar todos</button></div>`}
+                <button class="sm" onClick=${() => r.open(["storage", hostKey(h)])}>${t("backups.view_backups")}</button>
+                <button class="sm btn-ok" onClick=${() => downloadZip(h.backups.map((b) => b.path), hostLabel(h) + "-backups")}>${t("backups.download_all")}</button></div>`}
               columns=${[
                 { key: "host", label: "Host", hideable: false, sort: (h) => hostLabel(h), render: (h) => html`<a href=${"#backups/storage/" + encodeURIComponent(hostKey(h))} onClick=${(e) => e.stopPropagation()}>${hostLabel(h)}</a>` },
                 { key: "count", label: "Backups", sort: true },
-                { key: "latest_mtime", label: "Último", sort: true, render: (h) => fmtDate(h.latest_mtime) },
-                { key: "total_size", label: "Tamanho", sort: true, render: (h) => fmtSize(h.total_size) },
+                { key: "latest_mtime", label: t("backups.col_latest"), sort: true, render: (h) => fmtTs(h.latest_mtime) },
+                { key: "total_size", label: t("backups.col_size"), sort: true, render: (h) => fmtSize(h.total_size) },
               ]} />`}
-      <button class="sm" style="margin-top:8px" onClick=${hostsRes.reload}>Atualizar</button>
+      <button class="sm" style="margin-top:8px" onClick=${hostsRes.reload}>${t("common.refresh")}</button>
     </div>
   </div>`;
 
   return html`<div>
     <div class="page-title"><h1>Backups</h1></div>
     <${Tabs} active=${tab} onChange=${setTab} tabs=${[
-      { key: "servicos", label: "Serviços de Backup" },
-      { key: "armazenamento", label: "Armazenamento de Backup" },
+      { key: "servicos", label: t("backups.tab_services") },
+      { key: "armazenamento", label: t("backups.tab_storage") },
     ]} />
     <div style="margin-top:12px">
-      <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${tab === "servicos" ? "Buscar serviço" : "Buscar host"}
+      <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${tab === "servicos" ? t("backups.search_service") : t("backups.search_host")}
         count=${tab === "servicos" ? shownServices.length : shownHosts.length} total=${tab === "servicos" ? services.length : backupHosts.length} />
-      ${missing && html`<div class="card">Item '${itemSeg}' não encontrado. <a href=${tab === "servicos" ? "#backups/services" : "#backups/storage"}>Voltar</a></div>`}
+      ${missing && html`<div class="card">${t("backups.item_not_found", { id: itemSeg })} <a href=${tab === "servicos" ? "#backups/services" : "#backups/storage"}>${t("common.back")}</a></div>`}
       ${tab === "servicos" ? servicos : armazenamento}</div>
 
     ${editing && html`<${ServiceEditor} key=${itemSeg}
@@ -559,12 +560,12 @@ export function BackupsPage() {
 
     ${viewing && html`<${Modal} title=${viewing.path} wide onClose=${() => r.pushParams({ file: "" })}>
       ${viewing.binary
-        ? html`<div class="help">Arquivo binário — use “Baixar”.</div>`
+        ? html`<div class="help">${t("backups.binary_file")}</div>`
         : html`<pre class="raw md-readbox bk-viewer">${viewing.text}</pre>`}
-      ${viewing.truncated && html`<div class="help" style="margin-top:6px">Exibindo os primeiros 2 MB do arquivo.</div>`}
+      ${viewing.truncated && html`<div class="help" style="margin-top:6px">${t("backups.truncated")}</div>`}
       <div class="modal-actions" style="margin-top:10px">
-        <button class="btn-ok" onClick=${() => download(viewing.path)}>Baixar</button>
-        <button onClick=${() => r.pushParams({ file: "" })}>Fechar</button>
+        <button class="btn-ok" onClick=${() => download(viewing.path)}>${t("common.download")}</button>
+        <button onClick=${() => r.pushParams({ file: "" })}>${t("common.close")}</button>
       </div>
     <//>`}
   </div>`;

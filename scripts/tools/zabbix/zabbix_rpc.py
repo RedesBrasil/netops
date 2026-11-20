@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
 import requests  # noqa: E402
+from lib import i18n  # noqa: E402
 from lib.inventory import load_inventory, resolve_host  # noqa: E402
 
 
@@ -25,7 +26,7 @@ def main() -> int:
     host, cred = resolve_host(a.host_id, hosts, creds)
     token = next((cred[k] for k in ("token", "api_token", "secret", "password") if cred.get(k)), None)
     if not token:
-        sys.exit("credencial do host sem token")
+        sys.exit(i18n.t("cli_zabbix.no_token"))
     site = host.get("site") or f"http://{host['mgmt_ip']}/zabbix"
     url = site.rstrip("/") + "/api_jsonrpc.php"
     body = {"jsonrpc": "2.0", "method": a.method, "params": json.loads(a.params), "id": 1}

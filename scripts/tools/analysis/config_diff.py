@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
+from lib import i18n  # noqa: E402
 
 
 def diff(before: Path, after: Path) -> tuple[str, int, int]:
@@ -30,23 +31,23 @@ def diff(before: Path, after: Path) -> tuple[str, int, int]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Compara dois arquivos de configuração.")
-    parser.add_argument("--before", required=True, help="Arquivo de config 'antes' (baseline)")
-    parser.add_argument("--after", required=True, help="Arquivo de config 'depois' (proposta)")
+    parser = argparse.ArgumentParser(description=i18n.t("cli_analysis.diff_description"))
+    parser.add_argument("--before", required=True, help=i18n.t("cli_analysis.help_before"))
+    parser.add_argument("--after", required=True, help=i18n.t("cli_analysis.help_after"))
     args = parser.parse_args()
 
     before, after = Path(args.before), Path(args.after)
     for f in (before, after):
         if not f.exists():
-            print(f"ERRO: arquivo não encontrado: {f}", file=sys.stderr)
+            print(i18n.t("cli_analysis.file_not_found", path=f), file=sys.stderr)
             return 1
 
     text, added, removed = diff(before, after)
     if not text:
-        print("Sem diferenças entre os arquivos.")
+        print(i18n.t("cli_analysis.no_differences"))
         return 0
     print(text)
-    print(f"\n--- Resumo: +{added} linha(s), -{removed} linha(s) ---")
+    print("\n" + i18n.t("cli_analysis.diff_summary", added=added, removed=removed))
     return 0
 
 

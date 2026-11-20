@@ -1,61 +1,63 @@
+🇺🇸 English · 🇧🇷 [Português](README.pt-BR.md)
+
 # NetOps
 
-**Framework multi-agente para operações de redes e infraestrutura.**
+**Multi-agent framework for network and infrastructure operations.**
 
-## Instalação em uma linha (Linux)
+## One-line install (Linux)
 
-Copie, cole no terminal e pronto:
+Copy, paste into the terminal and you are done:
 
 ```bash
-# já autenticado como root:
+# already logged in as root:
 curl -fsSL https://raw.githubusercontent.com/RedesBrasil/netops/main/install.sh | bash
-# com uma conta administrativa e sudo:
+# with an administrative account and sudo:
 curl -fsSL https://raw.githubusercontent.com/RedesBrasil/netops/main/install.sh | sudo bash
 ```
 
-O instalador ([`install.sh`](install.sh)) faz tudo sozinho. Root só **prepara o sistema**: pacotes
-(Python, nmap, cron, ping, traceroute, mtr, ssh, git, gh, sudo), a conta operacional `netops` (HOME
-`/var/lib/netops`, sem sudo) e o serviço. Depois baixa a última release, confere o SHA256 e extrai em
-`/opt/netops`. O `.venv` e o agente `claude` são criados **como `netops`**. **Não pergunta nada:**
-registra o serviço systemd do usuário `netops-console@opt-netops` (sobe no boot, sem login), sobe o
-console escutando em **todos os IPs da máquina** (`0.0.0.0`, e `::` se houver IPv6; a configuração guarda
-só o curinga, nunca a lista), testa tudo e mostra o **link do primeiro acesso** em cada IP
-(`http://IP:porta/#setup?token=...`, vale 24 h).
+The installer ([`install.sh`](install.sh)) does everything on its own. Root only **prepares the system**: packages
+(Python, nmap, cron, ping, traceroute, mtr, ssh, git, gh, sudo), the `netops` service account (HOME
+`/var/lib/netops`, no sudo) and the service. Then it downloads the latest release, checks the SHA256 and extracts it to
+`/opt/netops`. The `.venv` and the `claude` agent are created **as `netops`**. **It asks no questions:**
+it registers the systemd user service `netops-console@opt-netops` (starts at boot, no login needed), starts the
+console listening on **all of the machine's IPs** (`0.0.0.0`, and `::` if IPv6 is available; the configuration stores
+only the wildcard, never the list), tests everything and shows the **first-access link** for each IP
+(`http://IP:port/#setup?token=...`, valid for 24 h).
 
-**Primeiro acesso:** no navegador você escolhe o idioma (English/Português) e cria o admin (nome, e-mail,
-senha e confirmação). Essa senha é o login e também a senha-mestra do cofre. Ao concluir, uma etapa de
-root de uso único (`/usr/local/sbin/netops-setup-finish`) libera o `sudo` pelo cofre e gera a senha do
-host Local, sem você digitar nada. Até concluir, o console só mostra o assistente, que exige o link com
-token. Perdeu o link? `sudo -u netops python3 /opt/netops/scripts/engine/users/cli.py setup-link`.
-Instalação automatizada: `NETOPS_MASTER_PASSWORD=... NETOPS_LANG=en|pt-BR` cria o cofre já na instalação.
-Servidor com IP público: ligue **Configuração → Acesso web** logo após o primeiro acesso.
+**First access:** in the browser you choose the language (English/Português) and create the admin (name, e-mail,
+password and confirmation). This password is the login and also the vault master password. When you finish, a one-time
+root step (`/usr/local/sbin/netops-setup-finish`) enables `sudo` through the vault and generates the password of the
+Local host, without you typing anything. Until then, the console only shows the wizard, which requires the link with the
+token. Lost the link? `sudo -u netops python3 /opt/netops/scripts/engine/users/cli.py setup-link`.
+Automated install: `NETOPS_MASTER_PASSWORD=... NETOPS_LANG=en|pt-BR` creates the vault during the install.
+Server with a public IP: turn on **Settings → Web access** right after the first access.
 
-**O NetOps nunca roda como root:** console, IA, subagentes, terminal web, tarefas agendadas e
-atualizações usam a conta `netops`. Para administrar **este** servidor como root (ex.: "instale o
-Docker aqui"), o instalador cadastra o host **Local** (`NETOPS-LOCAL`, protegido) e a conta de elevação
-`netops-admin`, cuja senha aleatória fica só no cofre: com o cofre destrancado, a operação roda como
-root sem SSH e sem você digitar senha (ver [`scripts/engine/localadmin/SKILL.md`](scripts/engine/localadmin/SKILL.md)).
-Arquivos como root: menu **Arquivos → 🔓 Abrir como root**.
+**NetOps never runs as root:** console, AI, subagents, web terminal, scheduled tasks and
+updates use the `netops` account. To administer **this** server as root (e.g. "install
+Docker here"), the installer registers the **Local** host (`NETOPS-LOCAL`, protected) and the elevation account
+`netops-admin`, whose random password is kept only in the vault: with the vault unlocked, the operation runs as
+root without SSH and without you typing a password (see [`scripts/engine/localadmin/SKILL.md`](scripts/engine/localadmin/SKILL.md)).
+Files as root: menu **Files → 🔓 Open as root**.
 
-Exige systemd (VM ou CT/LXC com systemd). Testado em Ubuntu 24.04 (CT LXC); Debian 12+, RHEL/Rocky/Alma 9+,
-Fedora, openSUSE Tumbleweed e Arch seguem suportados pelo instalador, mas ainda sem validação da conta
-dedicada nesta versão.
-Rodar de novo é seguro: numa instalação existente ele só confere e repara, sem tocar em código nem
-em dados. **Instalação antiga** (console como root) não é migrada sozinha: o instalador avisa e a
-migração é um comando próprio, com dry-run e rollback
+Requires systemd (VM or CT/LXC with systemd). Tested on Ubuntu 24.04 (LXC CT); Debian 12+, RHEL/Rocky/Alma 9+,
+Fedora, openSUSE Tumbleweed and Arch are still supported by the installer, but the dedicated account has not yet been
+validated on them in this version.
+Running it again is safe: on an existing install it only checks and repairs, without touching code or
+data. An **old install** (console as root) is not migrated automatically: the installer warns you and the
+migration is a separate command, with dry-run and rollback
 ([`scripts/engine/identity/SKILL.md`](scripts/engine/identity/SKILL.md)).
 
-Opções (`sudo VAR=valor bash` no fim do pipe): `NETOPS_DIR`, `NETOPS_PORT`, `NETOPS_HOST`,
-`NETOPS_VERSION`, `NETOPS_NO_LOCALADMIN=1` (não cria o host Local/`netops-admin`).
+Options (`sudo VAR=value bash` at the end of the pipe): `NETOPS_DIR`, `NETOPS_PORT`, `NETOPS_HOST`,
+`NETOPS_VERSION`, `NETOPS_NO_LOCALADMIN=1` (does not create the Local host/`netops-admin`).
 
-### Repositório privado: instalação por chave SSH (deploy key)
+### Private repository: install with an SSH key (deploy key)
 
-O repositório oficial é público e usa a linha acima. Esta seção vale para quem mantém uma cópia **privada** do
-NetOps: crie uma **deploy key** própria, somente leitura e cadastrada só no seu repositório. Quem a tem consegue
-clonar, mas não escrever nem ver outros repositórios. **Nunca publique a chave privada** (README, issue, commit
-ou chat): gere a sua pelos passos abaixo e guarde-a só no servidor.
+The official repository is public and uses the line above. This section is for those who keep a **private** copy of
+NetOps: create your own **deploy key**, read-only and registered only in your repository. Whoever has it can
+clone, but cannot write or see other repositories. **Never publish the private key** (README, issue, commit
+or chat): generate yours with the steps below and keep it only on the server.
 
-**1. Uma vez por servidor**: prepara o servidor, gera a chave e mostra a parte pública:
+**1. Once per server**: prepares the server, generates the key and shows the public part:
 
 ```bash
 sudo bash <<'EOF'
@@ -67,135 +69,135 @@ command -v git >/dev/null && command -v ssh-keygen >/dev/null && command -v curl
 install -d -m 700 /root/.ssh
 [ -f /root/.ssh/netops_deploy ] || ssh-keygen -q -t ed25519 -N "" -C "netops-deploy-$(hostname)" -f /root/.ssh/netops_deploy
 curl -fsSL https://api.github.com/meta | python3 -c 'import json,sys; [print("github.com", k) for k in json.load(sys.stdin)["ssh_keys"]]' > /root/.ssh/netops_known_hosts
-printf '\nCopie a linha abaixo e cadastre em GitHub > RedesBrasil/netops > Settings > Deploy keys > Add deploy key (deixe "Allow write access" DESMARCADO):\n\n'
+printf '\nCopy the line below and add it in GitHub > RedesBrasil/netops > Settings > Deploy keys > Add deploy key (leave "Allow write access" UNCHECKED):\n\n'
 cat /root/.ssh/netops_deploy.pub
 EOF
 ```
 
-**2. A linha de instalação** (depois de cadastrar a chave; vale também para o próximo servidor com a mesma chave):
+**2. The install line** (after adding the key; it also works for the next server with the same key):
 
 ```bash
 sudo bash -c 'D=$(mktemp -d) && GIT_SSH_COMMAND="ssh -i /root/.ssh/netops_deploy -o IdentitiesOnly=yes -o UserKnownHostsFile=/root/.ssh/netops_known_hosts -o StrictHostKeyChecking=yes" git clone -q --depth 1 git@github.com:RedesBrasil/netops.git $D/n && NETOPS_SSH_KEY=/root/.ssh/netops_deploy bash $D/n/install.sh; rm -rf $D'
 ```
 
-O instalador clona a tag da última release pela chave e monta o mesmo pacote verificado da release (use `NETOPS_VERSION=X.Y.Z`
-para outra versão). O botão de atualizar do console usa o `gh`: autentique-o no servidor com `gh auth login`.
+The installer clones the latest release tag with the key and builds the same verified release package (use `NETOPS_VERSION=X.Y.Z`
+for another version). The console update button uses `gh`: authenticate it on the server with `gh auth login`.
 
-Abra esta pasta no Claude Code, Codex, Cursor ou Antigravity e peça, em português, tarefas
-de rede — agentes de IA executam de ponta a ponta: leem o inventário, conectam nos
-equipamentos (SSH/Telnet/API), coletam dados, consultam a documentação interna, aplicam
-mudanças, testam e geram relatórios.
+Open this folder in Claude Code, Codex, Cursor or Antigravity and ask, in plain language, for network
+tasks — AI agents carry them out end to end: they read the inventory, connect to the
+devices (SSH/Telnet/API), collect data, look up the internal documentation, apply
+changes, test and write reports.
 
 ```
-"Faça uma avaliação de segurança da minha rede."
-"Configure OSPF no MikroTik rt-core-01."
-"Gere a documentação atualizada da rede."
+"Run a security assessment of my network."
+"Configure OSPF on the MikroTik rt-core-01."
+"Generate up-to-date documentation of the network."
 ```
 
-## Como começar
+## Getting started
 
-1. **Instale** com a linha do topo. Instalação manual, sem o instalador:
+1. **Install** with the line at the top. Manual install, without the installer:
    ```bash
    python3 -m venv .venv
    . .venv/bin/activate
    pip install -r requirements.txt
    sudo apt install nmap python-is-python3
    ```
-   Pronto: depois disso nenhum pedido precisa preparar ambiente. Todo script se re-executa
-   sozinho no `.venv` (`python3 scripts/...` basta, sem `activate`), e o acesso a equipamentos é
-   sempre `python3 scripts/tools/access/session.py run --host-id <ID> --command "..."`.
-2. **Cadastre seus equipamentos** em `network/hosts.yaml` (copie de
-   `network/hosts.example.yaml`). Esse arquivo é git-ignorado.
-3. **Cadastre as credenciais** em `network/credentials.yaml` (copie de
-   `network/credentials.example.yaml`). Esse arquivo é git-ignorado.
-4. **(Recomendado) Criptografe as senhas** com uma senha-mestra:
+   That's it: after this, no request needs to prepare an environment. Every script re-runs itself
+   inside the `.venv` (`python3 scripts/...` is enough, no `activate`), and device access is
+   always `python3 scripts/tools/access/session.py run --host-id <ID> --command "..."`.
+2. **Register your devices** in `network/hosts.yaml` (copy from
+   `network/hosts.example.yaml`). This file is git-ignored.
+3. **Register the credentials** in `network/credentials.yaml` (copy from
+   `network/credentials.example.yaml`). This file is git-ignored.
+4. **(Recommended) Encrypt the passwords** with a master password:
    ```bash
-   python3 scripts/engine/vault/cli.py init       # define a senha-mestra
-   python3 scripts/engine/vault/cli.py encrypt     # senhas -> "enc.v1:..."
-   python3 scripts/engine/vault/cli.py unlock      # destranca a sessão (no início do trabalho)
+   python3 scripts/engine/vault/cli.py init       # sets the master password
+   python3 scripts/engine/vault/cli.py encrypt     # passwords -> "enc.v1:..."
+   python3 scripts/engine/vault/cli.py unlock      # unlocks the session (at the start of work)
    ```
-   Os valores ficam criptografados em repouso e são descriptografados só em memória, durante
-   a sessão. Ver `scripts/engine/vault/SKILL.md`.
-5. **Descreva a topologia** em `network/topology.yaml` (copie de
-   `network/topology.example.yaml`). Esse arquivo e o `topology.md` gerado são git-ignorados.
-6. **Abra o framework na sua IDE de IA e peça o que precisar.**
+   The values stay encrypted at rest and are decrypted only in memory, during
+   the session. See `scripts/engine/vault/SKILL.md`.
+5. **Describe the topology** in `network/topology.yaml` (copy from
+   `network/topology.example.yaml`). This file and the generated `topology.md` are git-ignored.
+6. **Open the framework in your AI IDE and ask for what you need.**
 
-Hosts usam IDs inteiros gerados pelo console, permanentes e separados do hostname.
-Os scripts aceitam `--host-id 1`; `--host <hostname-ou-alias>` continua disponível para
-nomes únicos e automações anteriores. Ao editar o nome, o ID e seus vínculos são mantidos.
-Inventários antigos são convertidos automaticamente ao atualizar ou iniciar a versão 2
-em modo de escrita, com pré-validação, baseline e recuperação. Referências inválidas
-bloqueiam a conversão sem apagar ligações nem inventar hosts. Para conferir os dados
-antes ou recuperar uma interrupção, ver `scripts/engine/lib/SKILL.md`.
+Hosts use integer IDs generated by the console, permanent and separate from the hostname.
+Scripts accept `--host-id 1`; `--host <hostname-or-alias>` is still available for
+unique names and older automations. When you edit the name, the ID and its links are kept.
+Old inventories are converted automatically when you update or start version 2
+in write mode, with pre-validation, baseline and recovery. Invalid references
+block the conversion without deleting links or inventing hosts. To check the data
+beforehand or recover from an interruption, see `scripts/engine/lib/SKILL.md`.
 
-## Mapas de rede no console
+## Network maps in the console
 
 ```bash
 scripts/engine/ui/start.sh
 ```
 
-Abra **Mapas** para desenhar a rede no computador ou no celular. O cadastro é o mesmo de
-**Hosts**: adicionar em qualquer uma das páginas reflete na outra. O mapa geral inclui todos
-os dispositivos; mapas por localidade usam o campo Site. É possível criar mapas adicionais,
-referências entre mapas, vários enlaces, dobras de 90 graus, textos e formas.
-As ações ficam no botão direito do mapa, dispositivo ou enlace, com alternativa **⋯** no celular.
+Open **Maps** to draw the network on a computer or a phone. The inventory is the same as
+**Hosts**: adding on either page shows up on the other. The general map includes all
+devices; per-location maps use the Site field. You can create additional maps,
+references between maps, multiple links, 90-degree bends, text and shapes.
+Actions are on the right-click menu of the map, device or link, with the **⋯** alternative on phones.
 
-O layout é salvo no servidor em `network/maps.yaml`, sem duplicar os hosts nem as senhas.
-Enlaces e interfaces opcionais continuam em `network/topology.yaml`, editados pela página
-**Mapas**. A antiga página Topologia foi removida. A geração Mermaid por script continua
-disponível. Ver `scripts/engine/ui/SKILL.md`.
+The layout is saved on the server in `network/maps.yaml`, without duplicating hosts or passwords.
+Links and optional interfaces remain in `network/topology.yaml`, edited through the
+**Maps** page. The old Topology page was removed. Mermaid generation by script is still
+available. See `scripts/engine/ui/SKILL.md`.
 
-## Atualizações com um clique
+## One-click updates
 
-Na barra superior do console, use **Verificar atualizações**. O painel mostra a versão instalada
- e o changelog de cada release estável posterior. Depois de salvar formulários e encerrar trabalhos
-ativos, escolha **Atualizar para vX.Y.Z** e confirme o backup e a atualização.
+In the console top bar, use **Check for updates**. The panel shows the installed version
+ and the changelog of each later stable release. After saving forms and finishing active
+work, choose **Update to vX.Y.Z** and confirm the backup and the update.
 
-O launcher `scripts/engine/ui/start.sh` gerencia a aplicação, o reinício e a recuperação em falha.
-Para adotar esse launcher pela primeira vez, reinicie o console manualmente. Depois, o fluxo é pela UI.
-O repositório é privado: o GitHub CLI precisa estar autenticado no mesmo usuário/HOME do servidor
-(`gh auth login --hostname github.com`). A aplicação exige login no console e não funciona em read-only.
+The launcher `scripts/engine/ui/start.sh` manages applying the update, the restart and recovery on failure.
+To adopt this launcher for the first time, restart the console manually. After that, the flow is through the UI.
+The repository is private: the GitHub CLI must be authenticated for the same user/HOME as the server
+(`gh auth login --hostname github.com`). Applying an update requires a console login and does not work in read-only mode.
 
-Os pacotes não substituem os dados locais por exemplos da distribuição. Inventário, credenciais,
-mapas, memória, configuração local, backups, relatórios, execuções e personalizações são preservados;
-a versão 2 converte somente os formatos e referências de identidade necessários. O atualizador
-verifica um snapshot privado antes de aplicar e tenta restaurar o código anterior se a nova versão
-não iniciar. A conversão dos dados só começa depois da confirmação do código pelo launcher.
-Se essa etapa posterior falhar, o código novo permanece e a interface bloqueia as operações com
-orientação de recuperação. Código do motor modificado localmente bloqueia a aplicação automática.
-Mantenha também um backup externo contra falhas do disco.
+Packages do not replace local data with the distribution's examples. Inventory, credentials,
+maps, memory, local configuration, backups, reports, runs and customizations are preserved;
+version 2 converts only the identity formats and references that need it. The updater
+checks a private snapshot before applying and tries to restore the previous code if the new version
+does not start. Data conversion only starts after the launcher confirms the code.
+If that later step fails, the new code stays and the interface blocks operations with
+recovery guidance. Locally modified engine code blocks automatic application.
+Also keep an external backup against disk failures.
 
-Detalhes e recuperação: `scripts/engine/update/SKILL.md`. Para publicar versões, os agentes devem
-seguir `core/rules/releases.md`: consultar a última release, incrementar versão e gerar changelog.
-O workflow manual **NetOps release** valida testes/pacote antes de publicar; esta implementação
-não publica nem atualiza instalações automaticamente sem a ação do operador.
+Details and recovery: `scripts/engine/update/SKILL.md`. To publish versions, agents must
+follow `core/rules/releases.md`: check the latest release, bump the version and generate the changelog.
+The manual **NetOps release** workflow validates tests/package before publishing; this implementation
+does not publish or update installs automatically without the operator's action.
 
-## Estrutura
+## Structure
 
-| Pasta | O que contém |
+| Folder | What it contains |
 |-------|--------------|
-| `agents/` | Os 5 agentes de IA (coordinator, planner, executor, tester, documenter) |
-| `best-practices/` | Boas práticas em texto, por fabricante e gerais |
-| `config-examples/` | Exemplos de configuração reais, por fabricante |
-| `scripts/` | Scripts de acesso (SSH/Telnet/API) e diagnóstico (portas, ping, tracert) |
-| `planning-examples/` | Documentos modelo de planejamento |
-| `network/` | Inventário: hosts, credenciais, topologia e config de serviços de backup (`backups.yaml`) |
-| `workflows/` | Pipelines que orquestram os agentes |
-| `memory/` | Memória e auto-aprendizado — o "projeto vivo" |
-| `runs/` · `reports/` | Saída bruta de execuções · relatórios finais |
-| `backups/` | Backups de configuração dos equipamentos, um arquivo por host (aba **Backups** do console) |
-| `core/` | Config, schemas, templates e regras do framework |
+| `agents/` | The 5 AI agents (coordinator, planner, executor, tester, documenter) |
+| `best-practices/` | Best practices as text, per vendor and general |
+| `config-examples/` | Real configuration examples, per vendor |
+| `scripts/` | Access scripts (SSH/Telnet/API) and diagnostics (ports, ping, tracert) |
+| `planning-examples/` | Planning template documents |
+| `network/` | Inventory: hosts, credentials, topology and backup service config (`backups.yaml`) |
+| `workflows/` | Pipelines that orchestrate the agents |
+| `memory/` | Memory and self-learning — the "living project" |
+| `runs/` · `reports/` | Raw run output · final reports |
+| `backups/` | Device configuration backups, one file per host (console **Backups** tab) |
+| `core/` | Framework config, schemas, templates and rules |
 
-## Princípios
+## Principles
 
-É um **projeto vivo**: cada execução registra o que aprendeu em `memory/`, e esse
-conhecimento melhora a documentação para as próximas. Tudo é **padronizado** (ver
-`PADRAO.md`) e segue a `constitution.md`.
+It is a **living project**: every run records what it learned in `memory/`, and that
+knowledge improves the documentation for the next ones. Everything is **standardized** (see
+`PADRAO.md`) and follows `constitution.md`.
 
-## Origem
+## Origin
 
-Construído a partir de padrões de três frameworks de referência:
-[AIOX](https://github.com/SynkraAI/aiox-core) (autoridade de agentes, handoff, workflows,
-multi-IDE), [OpenSquad](https://github.com/renatoasse/opensquad) (estrutura file-based,
-formato de agente/skill, catálogo de boas práticas) e
-[Hermes](https://github.com/nousresearch/hermes-agent) (memória e auto-aprendizado).
+Built from patterns of three reference frameworks:
+[AIOX](https://github.com/SynkraAI/aiox-core) (agent authority, handoff, workflows,
+multi-IDE), [OpenSquad](https://github.com/renatoasse/opensquad) (file-based structure,
+agent/skill format, best-practices catalog) and
+[Hermes](https://github.com/nousresearch/hermes-agent) (memory and self-learning).

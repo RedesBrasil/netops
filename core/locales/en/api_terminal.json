@@ -1,0 +1,3 @@
+{
+  "no_term_user": "[netops] user '{user}' does not exist on this host — terminal refused (for security, we do not open a root shell)."
+}

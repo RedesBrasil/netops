@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 import deps
+from lib import i18n
 from services import authz
 from services import files_svc as fsvc
 
@@ -72,9 +73,7 @@ def _err(exc: fsvc.FsError) -> JSONResponse:
 
 
 def _disabled() -> JSONResponse:
-    return JSONResponse({"error": "files_disabled", "detail":
-                         "Gerenciador de arquivos desligado (exige o terminal web ligado — start.sh — "
-                         "e NETOPS_UI_FILES diferente de 0)."}, status_code=403)
+    return JSONResponse({"error": "files_disabled", "detail": i18n.t("api_files.disabled")}, status_code=403)
 
 
 async def _do(fn):
@@ -310,7 +309,7 @@ async def files_write(body: WriteBody, request: Request):
         fs = fsvc.backend(body.src)
         p = fsvc.norm(body.path)
         if body.create and await fs.exists(p):
-            raise fsvc.Exists(f"já existe: {p}")
+            raise fsvc.Exists(i18n.t("api_files.exists_path", path=p))
         expect = None if body.create or body.mtime is None else {"mtime": body.mtime, "size": body.size}
         meta = await fs.write_bytes(p, body.content.encode("utf-8"), expect)
         fsvc.audit(fs.label, "EDITAR", f"{p} ({meta['size']} bytes)", _client(request))
@@ -330,7 +329,7 @@ async def files_upload(request: Request, path: str = Query(...), uid: str = Quer
         async for piece in request.stream():
             buf += piece
             if len(buf) > MAX_UPLOAD_CHUNK:
-                raise fsvc.FsError("parte grande demais (máx. 32 MiB)")
+                raise fsvc.FsError(i18n.t("api_files.chunk_too_large"))
         try:
             out = await fs.upload_chunk(path, uid, offset, bytes(buf), final, overwrite, mkdirs)
         except fsvc.FsError:
@@ -365,7 +364,7 @@ async def files_download_plan(path: list[str] = Query(...), src: str = "local"):
             for full, rel, size, is_dir in walked:
                 items.append({"rel": rel, "path": full, "size": size, "is_dir": is_dir})
                 if len(items) > 20000:
-                    raise fsvc.FsError("mais de 20.000 itens — baixe como .zip")
+                    raise fsvc.FsError(i18n.t("api_files.too_many_items"))
         return {"items": items, "files": sum(1 for i in items if not i["is_dir"]),
                 "bytes": sum(i["size"] for i in items)}
     return await _do(go)
@@ -380,7 +379,7 @@ async def files_download_link(path: list[str] = Query(...), src: str = "local"):
         st0 = await fs.stat(paths[0])          # valida já (erro aparece antes de abrir o download)
         single = len(paths) == 1 and not st0["is_dir"]
         if single and st0["type"] == "other":
-            raise fsvc.FsError("não é um arquivo comum")
+            raise fsvc.FsError(i18n.t("api_files.not_regular_file"))
         t = fsvc.new_ticket(src, paths)
         name = posixpath.basename(paths[0]) or "raiz"
         if not single:
@@ -403,7 +402,7 @@ async def files_dl(ticket: str, request: Request):
         return _disabled()
     t = fsvc.take_ticket(ticket)
     if not t:
-        return JSONResponse({"error": "expired", "detail": "link de download expirado ou já usado"}, status_code=410)
+        return JSONResponse({"error": "expired", "detail": i18n.t("api_files.ticket_expired")}, status_code=410)
     try:
         fs = fsvc.backend(t["src"])
         paths = t["paths"]

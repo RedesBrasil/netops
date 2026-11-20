@@ -1,42 +1,42 @@
-# PADRÃO — `agents/`
+# STANDARD — `agents/`
 
-Cada agente é um arquivo `.agent.md` que descreve **um papel** com **uma função principal**.
-Quando um workflow delega um passo a um agente, a IDE adota a persona daquele arquivo.
+Each agent is an `.agent.md` file that describes **one role** with **one main function**.
+When a workflow delegates a step to an agent, the IDE adopts the persona from that file.
 
-## Os 5 agentes
+## The 5 agents
 
-| Arquivo | Função principal | Papel |
-|---------|------------------|-------|
-| `coordinator.agent.md` | orquestrar | Recebe o pedido, escolhe o workflow, delega, consolida |
-| `planner.agent.md` | **planejar** | Decide hosts, comandos, ordem; desenha config + rollback |
-| `executor.agent.md` | **executar** | Único que conecta nos equipamentos; coleta e aplica |
-| `tester.agent.md` | **testar** | Audita segurança, valida coletas, verifica pós-mudança |
-| `documenter.agent.md` | documentar | Gera relatórios, documenta a rede, alimenta `memory/` |
+| File | Main function | Role |
+|------|---------------|------|
+| `coordinator.agent.md` | orchestrate | Receives the request, picks the workflow, delegates, consolidates |
+| `planner.agent.md` | **plan** | Decides hosts, commands, order; designs config + rollback |
+| `executor.agent.md` | **execute** | The only one that connects to the devices; collects and applies |
+| `tester.agent.md` | **test** | Audits security, validates collections, verifies after changes |
+| `documenter.agent.md` | document | Generates reports, documents the network, feeds `memory/` |
 
-## Formato `.agent.md` (8 seções obrigatórias)
+## `.agent.md` format (8 mandatory sections)
 
-Front-matter YAML + 8 seções, nesta ordem:
+YAML front-matter + 8 sections, in this order:
 
 ```
 ---
-id:        slug-do-agente
-name:      Nome
+id:        agent-slug
+name:      Name
 icon:      emoji
-function:  planejar | executar | testar | orquestrar | documentar
-scope:     uma linha resumindo o que o agente faz
+function:  plan | execute | test | orchestrate | document
+scope:     one line summarizing what the agent does
 ---
 
-## Persona              — quem é o agente, sua mentalidade
-## Princípios           — regras inegociáveis do agente
-## Modo de Operação     — passo a passo de como trabalha; quais scripts/pastas usa
-## Tom de Voz           — como se comunica (PT-BR, técnico, conciso)
-## Exemplos de Saída    — exemplos concretos do que produz
-## Anti-Padrões         — o que o agente NUNCA faz
-## Critérios de Qualidade — como saber se o trabalho ficou bom
-## Integração           — autoridade, de/para quais agentes faz handoff, arquivos que toca
+## Persona              — who the agent is, its mindset
+## Principles           — the agent's non-negotiable rules
+## Operating Mode       — step by step of how it works; which scripts/folders it uses
+## Tone of Voice        — how it communicates (the user's language, technical, concise)
+## Output Examples      — concrete examples of what it produces
+## Anti-Patterns        — what the agent NEVER does
+## Quality Criteria     — how to know the work went well
+## Integration          — authority, to/from which agents it hands off, files it touches
 ```
 
-## Como criar um agente novo
+## How to create a new agent
 
-Copie `_TEMPLATE.agent.md`, preencha as 8 seções, e registre-o aqui na tabela.
-Mantenha **uma função principal por agente** (princípio YAGNI do OpenSquad).
+Copy `_TEMPLATE.agent.md`, fill in the 8 sections, and register it here in the table.
+Keep **one main function per agent** (OpenSquad's YAGNI principle).

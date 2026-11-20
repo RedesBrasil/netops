@@ -4,34 +4,38 @@
 // URLs (core/rules/urls-navegacao.md):
 //   #schedules[?q=&kind=&status=]   #schedules/<id>   #schedules/new
 //   #schedules/runs[?task=&status=&unread=1]   #schedules/runs/<tarefa>/<run>
-import { html, useState, useEffect, api, useResource, Spinner, toast, handleError, Modal, Tabs, ConfirmDialog } from "../ui.js";
+import { html, useState, useEffect, api, useResource, Spinner, toast, handleError, Modal, Tabs, ConfirmDialog, t, fmtDateTime } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
 import { FilterBar, MarkdownView, Toggle, DataTable } from "../components.js";
 
+// Labels are catalog keys, translated at render time (t() is never called at module load).
 export const KINDS = [
-  { key: "script", label: "Determinística / script", short: "Script", cls: "sc-k-script",
-    help: "Roda um comando ou script. Sem IA: mesmo resultado sempre." },
-  { key: "agent", label: "Agente de IA", short: "Agente IA", cls: "sc-k-agent",
-    help: "Um agente de IA (Claude Code) executa o pedido em linguagem natural — pesquisa, analisa, decide." },
-  { key: "hybrid", label: "Script + agente", short: "Script + agente", cls: "sc-k-hybrid",
-    help: "O script coleta; a saída vai para o agente analisar. Saída vazia = o agente nem é acionado." },
+  { key: "script", label: "schedules.kind_script", short: "schedules.kind_script_short", cls: "sc-k-script",
+    help: "schedules.kind_script_help" },
+  { key: "agent", label: "schedules.kind_agent", short: "schedules.kind_agent_short", cls: "sc-k-agent",
+    help: "schedules.kind_agent_help" },
+  { key: "hybrid", label: "schedules.kind_hybrid", short: "schedules.kind_hybrid_short", cls: "sc-k-hybrid",
+    help: "schedules.kind_hybrid_help" },
 ];
 const KIND = Object.fromEntries(KINDS.map((k) => [k.key, k]));
-const WEEKDAYS = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex"], ["6", "Sáb"], ["0", "Dom"]];
-const WD = Object.fromEntries(WEEKDAYS);
-const NOTIFY = [["auto", "Automático (falhas + achados do agente)"], ["always", "Sempre"],
-  ["failure", "Só em falha"], ["never", "Nunca"]];
-const STATUS = { ok: ["ok", "ok"], error: ["falhou", "danger"], timeout: ["tempo esgotado", "danger"],
-  skipped: ["pulada", "warn"], missed: ["perdida", "warn"] };
+// [cron value, catalog suffix, Portuguese fallback (scheduleText runs in node tests without a catalog)]
+const WEEKDAYS = [["1", "mon", "Seg"], ["2", "tue", "Ter"], ["3", "wed", "Qua"], ["4", "thu", "Qui"], ["5", "fri", "Sex"], ["6", "sat", "Sáb"], ["0", "sun", "Dom"]];
+// Self-contained translation helper: tests/schedules.test.mjs evaluates this file with the imports stripped.
+const tr = (key, vars, fallback) => { const out = globalThis.netopsT ? globalThis.netopsT(key, vars) : key; return out === key ? fallback : out; };
+const wdName = (v) => { const w = WEEKDAYS.find((x) => x[0] === v); return w ? tr("schedules.wd_" + w[1], null, w[2]) : v; };
+const NOTIFY = [["auto", "schedules.notify_auto"], ["always", "schedules.notify_always"],
+  ["failure", "schedules.notify_failure"], ["never", "schedules.notify_never"]];
+const STATUS = { ok: ["schedules.status_ok", "ok"], error: ["schedules.status_error", "danger"], timeout: ["schedules.status_timeout", "danger"],
+  skipped: ["schedules.status_skipped", "warn"], missed: ["schedules.status_missed", "warn"] };
 
 const pad = (n) => String(n).padStart(2, "0");
-const fmtTs = (s) => s ? new Date(s * 1000).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "—";
+const fmtTs = (s) => s ? fmtDateTime(s, { dateStyle: "short", timeStyle: "short" }) : "—";
 const fmtDur = (a, b) => (a && b) ? (b - a < 60 ? Math.round(b - a) + " s" : Math.round((b - a) / 60) + " min") : "";
 function relTime(s) {
   if (!s) return "";
   const d = Math.round(s - Date.now() / 1000), a = Math.abs(d);
-  const t = a < 60 ? a + " s" : a < 3600 ? Math.round(a / 60) + " min" : a < 86400 ? Math.round(a / 3600) + " h" : Math.round(a / 86400) + " d";
-  return d >= 0 ? "em " + t : "há " + t;
+  const v = a < 60 ? a + " s" : a < 3600 ? Math.round(a / 60) + " min" : a < 86400 ? Math.round(a / 3600) + " h" : Math.round(a / 86400) + " d";
+  return d >= 0 ? t("schedules.rel_future", { v }) : t("schedules.rel_past", { v });
 }
 
 // ---- Agenda: presets amigáveis <-> {type, expr|minutes|at} ---------------- //
@@ -73,24 +77,30 @@ export function scheduleText(s) {
   if (!s) return "";
   const p = fromSchedule(s);
   switch (p.preset) {
-    case "interval": return p.minutes % 60 === 0 && p.minutes >= 60 ? `A cada ${p.minutes / 60} h` : `A cada ${p.minutes} min`;
-    case "hourly": return `De hora em hora (min ${pad(p.minute)})`;
-    case "daily": return `Diária às ${p.time}`;
-    case "weekdays": return `Seg–Sex às ${p.time}`;
-    case "weekly": return `${p.days.map((d) => WD[d]).join(", ")} às ${p.time}`;
-    case "monthly": return `Mensal, dia ${p.day} às ${p.time}`;
-    case "once": return `Uma vez: ${p.at.replace("T", " ")}`;
+    case "interval": return p.minutes % 60 === 0 && p.minutes >= 60
+      ? tr("schedules.every_hours", { n: p.minutes / 60 }, `A cada ${p.minutes / 60} h`)
+      : tr("schedules.every_minutes", { n: p.minutes }, `A cada ${p.minutes} min`);
+    case "hourly": return tr("schedules.hourly_text", { minute: pad(p.minute) }, `De hora em hora (min ${pad(p.minute)})`);
+    case "daily": return tr("schedules.daily_text", { time: p.time }, `Diária às ${p.time}`);
+    case "weekdays": return tr("schedules.weekdays_text", { time: p.time }, `Seg–Sex às ${p.time}`);
+    case "weekly": {
+      const days = p.days.map(wdName).join(", ");
+      return tr("schedules.weekly_text", { days, time: p.time }, `${days} às ${p.time}`);
+    }
+    case "monthly": return tr("schedules.monthly_text", { day: p.day, time: p.time }, `Mensal, dia ${p.day} às ${p.time}`);
+    case "once": return tr("schedules.once_text", { at: p.at.replace("T", " ") }, `Uma vez: ${p.at.replace("T", " ")}`);
     default: return `cron: ${p.expr}`;
   }
 }
 
 function KindBadge({ kind }) {
-  const k = KIND[kind] || { short: kind, cls: "" };
-  return html`<span class=${"badge sc-kind " + k.cls} title=${k.label}>${k.short}</span>`;
+  const k = KIND[kind];
+  if (!k) return html`<span class="badge sc-kind">${kind}</span>`;
+  return html`<span class=${"badge sc-kind " + k.cls} title=${t(k.label)}>${t(k.short)}</span>`;
 }
 function StatusBadge({ status }) {
   if (!status) return null;
-  const [label, cls] = STATUS[status] || [status, ""];
+  const [label, cls] = STATUS[status] ? [t(STATUS[status][0]), STATUS[status][1]] : [status, ""];
   return html`<span class=${"badge " + cls}>${label}</span>`;
 }
 
@@ -117,11 +127,11 @@ function TaskEditor({ initial, scripts, onSave, onClose, onDelete }) {
   const schedule = toSchedule(sch);
 
   useEffect(() => {
-    const t = setTimeout(() => {
+    const tm = setTimeout(() => {
       const qs = new URLSearchParams({ type: schedule.type, expr: schedule.expr || "", minutes: schedule.minutes || 0, at: schedule.at || "" });
       api.get("/schedules/preview?" + qs).then(setPrev).catch(() => {});
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(tm);
   }, [JSON.stringify(schedule)]);
 
   async function submit() {
@@ -134,118 +144,118 @@ function TaskEditor({ initial, scripts, onSave, onClose, onDelete }) {
   const err = (k) => errors[k] && html`<div class="err">${errors[k]}</div>`;
   const usesScript = kind !== "agent", usesAgent = kind !== "script";
 
-  return html`<${Modal} title=${isNew ? "Nova tarefa agendada" : "Editar tarefa · " + init.name} wide onClose=${onClose}>
+  return html`<${Modal} title=${isNew ? t("schedules.new_task_title") : t("schedules.edit_task_title", { name: init.name })} wide onClose=${onClose}>
     <div class="sc-form">
       <div class="sc-row">
-        <label class="sc-grow">Nome
-          <input type="text" value=${name} placeholder="ex.: Changelog MikroTik diário" onInput=${(e) => setName(e.target.value)} />
+        <label class="sc-grow">${t("common.name")}
+          <input type="text" value=${name} placeholder=${t("schedules.name_placeholder")} onInput=${(e) => setName(e.target.value)} />
           ${err("name")}
         </label>
-        <div class="sc-toggle"><${Toggle} checked=${enabled} onChange=${setEnabled} label="Ativa" /></div>
+        <div class="sc-toggle"><${Toggle} checked=${enabled} onChange=${setEnabled} label=${t("schedules.enabled_label")} /></div>
       </div>
-      <label><span>Descrição <span class="help">(opcional)</span></span>
+      <label><span>${t("common.description")} <span class="help">(${t("common.optional")})</span></span>
         <input type="text" value=${description} onInput=${(e) => setDescription(e.target.value)} />
       </label>
 
-      <h3>Tipo de execução</h3>
+      <h3>${t("schedules.exec_type")}</h3>
       <div class="sc-kinds" role="radiogroup">
         ${KINDS.map((k) => html`<label key=${k.key} class=${"sc-kind-opt " + k.cls + (kind === k.key ? " on" : "")}>
           <input type="radio" name="kind" checked=${kind === k.key} onChange=${() => setKind(k.key)} />
-          <b>${k.label}</b><span class="help">${k.help}</span>
+          <b>${t(k.label)}</b><span class="help">${t(k.help)}</span>
         </label>`)}
       </div>
 
-      ${usesScript && html`<label>${kind === "hybrid" ? "Script de coleta" : "Comando / script"}
+      ${usesScript && html`<label>${kind === "hybrid" ? t("schedules.script_collect") : t("schedules.script_command")}
         <input type="text" class="mono" list="sc-scripts" value=${script} placeholder="python3 scripts/tools/... --host rt-core-01"
           onInput=${(e) => setScript(e.target.value)} />
         <datalist id="sc-scripts">${(scripts || []).map((s) => html`<option key=${s} value=${s} />`)}</datalist>
-        <span class="help">Roda com <code>bash</code> na raiz do NetOps (venv no PATH). Código de saída ≠ 0 = falha.
-          ${kind === "hybrid" && html` Saída vazia (ou última linha <code>{"wakeAgent": false}</code>) = o agente não é acionado.`}</span>
+        <span class="help">${t("schedules.script_help_pre")} <code>bash</code> ${t("schedules.script_help_post")}
+          ${kind === "hybrid" && html` ${t("schedules.hybrid_empty_pre")} <code>{"wakeAgent": false}</code>${t("schedules.hybrid_empty_post")}`}</span>
         ${err("script")}
       </label>`}
 
-      ${usesAgent && html`<label>${kind === "hybrid" ? "O que o agente faz com a saída" : "Pedido para o agente"}
+      ${usesAgent && html`<label>${kind === "hybrid" ? t("schedules.agent_prompt_hybrid") : t("schedules.agent_prompt")}
         <textarea rows="5" value=${prompt} placeholder=${kind === "hybrid"
-          ? "ex.: Compare com o último backup e me avise só se houver mudança de firewall."
-          : "ex.: Visite mikrotik.com/download/changelogs e veja se há versão nova; se citar correção do bug X, me avise."}
+          ? t("schedules.prompt_placeholder_hybrid")
+          : t("schedules.prompt_placeholder_agent")}
           onInput=${(e) => setPrompt(e.target.value)}></textarea>
-        <span class="help">A resposta final vira a notificação. Se não houver nada relevante, o agente responde <code>[SILENT]</code> e você não é avisado.</span>
+        <span class="help">${t("schedules.prompt_help_pre")} <code>[SILENT]</code> ${t("schedules.prompt_help_post")}</span>
         ${err("prompt")}
       </label>
       <div class="sc-row">
-        <label>Permissões do agente
+        <label>${t("schedules.agent_permissions")}
           <select value=${perm} onChange=${(e) => setPerm(e.target.value)}>
-            <option value="restricted">Restrito — ler arquivos e web (sem shell, sem escrita)</option>
-            <option value="full">Completo — shell e escrita (hooks e regras do AGENTS.md valem)</option>
+            <option value="restricted">${t("schedules.perm_restricted")}</option>
+            <option value="full">${t("schedules.perm_full")}</option>
           </select>
         </label>
-        <label><span>Modelo <span class="help">(vazio = padrão)</span></span>
-          <input type="text" value=${model} placeholder="ex.: sonnet" onInput=${(e) => setModel(e.target.value)} />
+        <label><span>${t("schedules.model_label")} <span class="help">${t("schedules.model_help")}</span></span>
+          <input type="text" value=${model} placeholder=${t("schedules.model_placeholder")} onInput=${(e) => setModel(e.target.value)} />
         </label>
-        <label><span>GitHub de <span class="help">(ID do usuário do console; vazio = conta do servidor)</span></span>
-          <input type="text" value=${githubAs} placeholder="ex.: joao.silva" onInput=${(e) => setGithubAs(e.target.value)} />
+        <label><span>${t("schedules.github_as_label")} <span class="help">${t("schedules.github_as_help")}</span></span>
+          <input type="text" value=${githubAs} placeholder=${t("schedules.github_as_placeholder")} onInput=${(e) => setGithubAs(e.target.value)} />
         </label>
       </div>`}
 
-      <h3>Quando</h3>
+      <h3>${t("schedules.when")}</h3>
       <div class="sc-row sc-sched">
-        <label>Frequência
+        <label>${t("schedules.frequency")}
           <select value=${sch.preset} onChange=${(e) => up({ preset: e.target.value })}>
-            <option value="interval">A cada N minutos</option>
-            <option value="hourly">De hora em hora</option>
-            <option value="daily">Diária</option>
-            <option value="weekdays">Dias úteis (seg–sex)</option>
-            <option value="weekly">Semanal</option>
-            <option value="monthly">Mensal</option>
-            <option value="once">Uma vez</option>
-            <option value="cron">Expressão cron (avançado)</option>
+            <option value="interval">${t("schedules.preset_interval")}</option>
+            <option value="hourly">${t("schedules.preset_hourly")}</option>
+            <option value="daily">${t("schedules.preset_daily")}</option>
+            <option value="weekdays">${t("schedules.preset_weekdays")}</option>
+            <option value="weekly">${t("schedules.preset_weekly")}</option>
+            <option value="monthly">${t("schedules.preset_monthly")}</option>
+            <option value="once">${t("schedules.preset_once")}</option>
+            <option value="cron">${t("schedules.preset_cron")}</option>
           </select>
         </label>
-        ${sch.preset === "interval" && html`<label>Minutos
+        ${sch.preset === "interval" && html`<label>${t("schedules.minutes")}
           <input type="number" min="1" value=${sch.minutes} onInput=${(e) => up({ minutes: e.target.value })} style="width:110px" /></label>`}
-        ${sch.preset === "hourly" && html`<label>No minuto
+        ${sch.preset === "hourly" && html`<label>${t("schedules.at_minute")}
           <input type="number" min="0" max="59" value=${sch.minute} onInput=${(e) => up({ minute: e.target.value })} style="width:90px" /></label>`}
-        ${["daily", "weekdays", "weekly", "monthly"].includes(sch.preset) && html`<label>Hora
+        ${["daily", "weekdays", "weekly", "monthly"].includes(sch.preset) && html`<label>${t("schedules.hour")}
           <input type="time" value=${sch.time} onInput=${(e) => up({ time: e.target.value })} /></label>`}
-        ${sch.preset === "monthly" && html`<label>Dia do mês
+        ${sch.preset === "monthly" && html`<label>${t("schedules.day_of_month")}
           <input type="number" min="1" max="31" value=${sch.day} onInput=${(e) => up({ day: e.target.value })} style="width:90px" /></label>`}
-        ${sch.preset === "once" && html`<label>Data e hora
+        ${sch.preset === "once" && html`<label>${t("schedules.date_time")}
           <input type="datetime-local" value=${sch.at} onInput=${(e) => up({ at: e.target.value })} /></label>`}
-        ${sch.preset === "cron" && html`<label class="sc-grow">Expressão (min hora dia mês dia-semana)
+        ${sch.preset === "cron" && html`<label class="sc-grow">${t("schedules.cron_expression")}
           <input type="text" class="mono" value=${sch.expr} placeholder="0 9 * * 1-5" onInput=${(e) => up({ expr: e.target.value })} /></label>`}
       </div>
       ${sch.preset === "weekly" && html`<div class="bk-chips">
-        ${WEEKDAYS.map(([v, l]) => html`<label key=${v} class=${"bk-chip" + (sch.days.includes(v) ? " on" : "")}>
+        ${WEEKDAYS.map(([v]) => html`<label key=${v} class=${"bk-chip" + (sch.days.includes(v) ? " on" : "")}>
           <input type="checkbox" checked=${sch.days.includes(v)}
-            onChange=${() => up({ days: sch.days.includes(v) ? sch.days.filter((d) => d !== v) : [...sch.days, v] })} />${l}</label>`)}
+            onChange=${() => up({ days: sch.days.includes(v) ? sch.days.filter((d) => d !== v) : [...sch.days, v] })} />${wdName(v)}</label>`)}
       </div>`}
       <div class="help sc-preview">
         ${prev.error ? html`<span class="err">${prev.error}</span>`
-          : prev.next_runs.length ? html`Próximas: ${prev.next_runs.map((t) => t.replace("T", " ").slice(0, 16)).join(" · ")}`
-          : "Sem próximas execuções."}
+          : prev.next_runs.length ? t("schedules.next_runs", { runs: prev.next_runs.map((x) => x.replace("T", " ").slice(0, 16)).join(" · ") })
+          : t("schedules.no_next_runs")}
         ${schedule.type === "cron" && schedule.expr && html` · cron <code>${schedule.expr}</code>`}
       </div>
       ${err("schedule")}
 
       <div class="sc-row">
-        <label>Notificar
+        <label>${t("schedules.notify")}
           <select value=${notify} onChange=${(e) => setNotify(e.target.value)}>
-            ${NOTIFY.map(([v, l]) => html`<option key=${v} value=${v}>${l}</option>`)}
+            ${NOTIFY.map(([v, l]) => html`<option key=${v} value=${v}>${t(l)}</option>`)}
           </select>
         </label>
-        <label>Tempo limite (min)
+        <label>${t("schedules.timeout_min")}
           <input type="number" min="1" max="1440" value=${timeout} onInput=${(e) => setTimeoutMin(e.target.value)} style="width:110px" />
           ${err("timeout_min")}
         </label>
       </div>
     </div>
     <div class="modal-actions">
-      ${!isNew && html`<button class="danger" style="margin-right:auto" onClick=${() => setConfirmDel(true)}>Remover</button>`}
-      <button onClick=${onClose}>Cancelar</button>
-      <button class="primary needs-schedules-edit" onClick=${submit}>Salvar</button>
+      ${!isNew && html`<button class="danger" style="margin-right:auto" onClick=${() => setConfirmDel(true)}>${t("common.remove")}</button>`}
+      <button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary needs-schedules-edit" onClick=${submit}>${t("common.save")}</button>
     </div>
-    ${confirmDel && html`<${ConfirmDialog} title="Remover tarefa?" danger
-      message=${`A tarefa "${init.name}" deixa de rodar. O histórico de execuções fica em runs/schedules/.`}
+    ${confirmDel && html`<${ConfirmDialog} title=${t("schedules.delete_confirm_title")} danger
+      message=${t("schedules.delete_confirm_message", { name: init.name })}
       onConfirm=${onDelete} onClose=${() => setConfirmDel(false)} />`}
   <//>`;
 }
@@ -266,28 +276,28 @@ function RunDetail({ taskId, runId, onClose, onRead }) {
     })();
     return () => { alive = false; };
   }, [taskId, runId]);
-  return html`<${Modal} title=${"Execução · " + (rec ? rec.task_name : taskId)} wide onClose=${onClose}>
-    ${missing ? html`<div>Execução não encontrada. <a href="#schedules/runs">Voltar</a></div>`
+  return html`<${Modal} title=${t("schedules.run_title", { name: rec ? rec.task_name : taskId })} wide onClose=${onClose}>
+    ${missing ? html`<div>${t("schedules.run_not_found")} <a href="#schedules/runs">${t("common.back")}</a></div>`
       : !rec ? html`<${Spinner} />` : html`<div class="sc-run">
       <div class="sc-run-meta">
         <${KindBadge} kind=${rec.kind} />
-        ${rec.state === "running" ? html`<span class="badge accent">em execução…</span>` : html`<${StatusBadge} status=${rec.status} />`}
-        ${rec.silent && rec.status === "ok" && html`<span class="badge">sem novidade</span>`}
-        <span class="help">${rec.trigger === "manual" ? "manual" : "agendada"} · ${fmtTs(rec.started_at)}
+        ${rec.state === "running" ? html`<span class="badge accent">${t("schedules.running_badge")}</span>` : html`<${StatusBadge} status=${rec.status} />`}
+        ${rec.silent && rec.status === "ok" && html`<span class="badge">${t("schedules.no_news")}</span>`}
+        <span class="help">${rec.trigger === "manual" ? t("schedules.trigger_manual") : t("schedules.trigger_scheduled")} · ${fmtTs(rec.started_at)}
           ${rec.finished_at ? " · " + fmtDur(rec.started_at, rec.finished_at) : ""}${rec.cost_usd ? " · US$ " + rec.cost_usd.toFixed(3) : ""}</span>
         <span style="flex:1"></span>
-        <a href=${"#schedules/" + encodeURIComponent(rec.task_id)}>editar tarefa</a>
-        ${rec.session_id && html`<a href=${"#claude/" + encodeURIComponent(rec.session_id)} title="Abre a conversa do agente na aba Claude Code para continuar">continuar no Claude Code</a>`}
+        <a href=${"#schedules/" + encodeURIComponent(rec.task_id)}>${t("schedules.edit_task_link")}</a>
+        ${rec.session_id && html`<a href=${"#claude/" + encodeURIComponent(rec.session_id)} title=${t("schedules.continue_claude_title")}>${t("schedules.continue_claude")}</a>`}
       </div>
       ${rec.error && html`<div class="sc-err">${rec.error}</div>`}
       ${rec.agent_skipped && html`<div class="help">${rec.agent_skipped}</div>`}
-      ${rec.agent_output && html`<h3>Resposta do agente</h3><div class="card sc-md"><${MarkdownView} text=${rec.agent_output} /></div>`}
+      ${rec.agent_output && html`<h3>${t("schedules.agent_response")}</h3><div class="card sc-md"><${MarkdownView} text=${rec.agent_output} /></div>`}
       ${rec.script && html`<h3>Script</h3><code class="sc-cmd">${rec.script}</code>
-        ${rec.exit_code != null && html` <span class="help">código de saída ${rec.exit_code}</span>`}`}
-      ${rec.script_output != null && html`<pre class="raw sc-out">${rec.script_output || "(sem saída)"}</pre>`}
-      ${rec.log && rec.log.trim() && html`<details><summary class="help">Log do executor</summary><pre class="raw sc-out">${rec.log}</pre></details>`}
+        ${rec.exit_code != null && html` <span class="help">${t("schedules.exit_code", { code: rec.exit_code })}</span>`}`}
+      ${rec.script_output != null && html`<pre class="raw sc-out">${rec.script_output || t("schedules.no_output")}</pre>`}
+      ${rec.log && rec.log.trim() && html`<details><summary class="help">${t("schedules.executor_log")}</summary><pre class="raw sc-out">${rec.log}</pre></details>`}
     </div>`}
-    <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>Fechar</button></div>
+    <div class="modal-actions" style="margin-top:10px"><button onClick=${onClose}>${t("common.close")}</button></div>
   <//>`;
 }
 
@@ -302,10 +312,10 @@ export function SchedulesPage() {
 
   // Recarrega enquanto há execução em andamento (lista mostra "rodando" e o resultado ao fim).
   const tasks = (ov.data && ov.data.config.tasks) || [];
-  const anyRunning = tasks.some((t) => t.state.running);
+  const anyRunning = tasks.some((tk) => tk.state.running);
   useEffect(() => {
-    const t = setInterval(() => { ov.reload(); if (tab === "runs") runsRes.reload(); }, anyRunning ? 4000 : 30000);
-    return () => clearInterval(t);
+    const tm = setInterval(() => { ov.reload(); if (tab === "runs") runsRes.reload(); }, anyRunning ? 4000 : 30000);
+    return () => clearInterval(tm);
   }, [anyRunning, tab]);
 
   const refreshBadge = () => dispatchEvent(new Event("netops:schedules"));
@@ -313,49 +323,50 @@ export function SchedulesPage() {
     try {
       const res = id ? await api.put("/schedules/tasks/" + encodeURIComponent(id), body, ov.data.rev)
         : await api.post("/schedules/tasks", body, ov.data.rev);
-      toast.ok(id ? "Tarefa salva" : "Tarefa criada");
+      toast.ok(id ? t("schedules.task_saved") : t("schedules.task_created"));
       await ov.reload(); r.open([]); return null;
     } catch (e) {
-      if (e.status === 409) { toast.err("O cadastro mudou (outro operador ou o agente). Recarregado — revise e salve de novo."); ov.reload(); return null; }
+      if (e.status === 409) { toast.err(t("schedules.conflict_reloaded")); ov.reload(); return null; }
       return handleError(e);
     }
   }
   async function remove(id) {
-    try { await api.del("/schedules/tasks/" + encodeURIComponent(id), ov.data.rev); toast.ok("Tarefa removida"); await ov.reload(); r.open([]); }
+    try { await api.del("/schedules/tasks/" + encodeURIComponent(id), ov.data.rev); toast.ok(t("schedules.task_removed")); await ov.reload(); r.open([]); }
     catch (e) { handleError(e); ov.reload(); }
   }
-  async function runNow(t) {
+  async function runNow(task) {
     try {
-      const res = await api.post("/schedules/tasks/" + encodeURIComponent(t.id) + "/run");
-      toast.ok("Executando “" + t.name + "”…");
+      const res = await api.post("/schedules/tasks/" + encodeURIComponent(task.id) + "/run");
+      toast.ok(t("schedules.running_toast", { name: task.name }));
       setTimeout(ov.reload, 800);
-      r.openWith(["runs", t.id, res.run_id], { q: "" });
+      r.openWith(["runs", task.id, res.run_id], { q: "" });
     } catch (e) { handleError(e); }
   }
-  async function toggle(t) {
-    try { await api.put("/schedules/tasks/" + encodeURIComponent(t.id), { enabled: t.enabled === false }, ov.data.rev); ov.reload(); }
+  async function toggle(task) {
+    try { await api.put("/schedules/tasks/" + encodeURIComponent(task.id), { enabled: task.enabled === false }, ov.data.rev); ov.reload(); }
     catch (e) { handleError(e); ov.reload(); }
   }
   async function readAll() {
     try { await api.post("/schedules/notifications/read", {}); runsRes.reload(); ov.reload(); refreshBadge(); } catch (e) { handleError(e); }
   }
   async function installCron() {
-    try { const res = await api.post("/schedules/cron/install"); res.installed ? toast.ok("Cron instalado") : toast.err(res.error); ov.reload(); }
+    try { const res = await api.post("/schedules/cron/install"); res.installed ? toast.ok(t("schedules.cron_installed")) : toast.err(res.error); ov.reload(); }
     catch (e) { handleError(e); }
   }
 
-  if (ov.error) return html`<div class="card">Erro ao carregar: ${ov.error.message}</div>`;
+  if (ov.error) return html`<div class="card">${t("schedules.load_error", { error: ov.error.message })}</div>`;
   if (!ov.data) return html`<${Spinner} />`;
   const { cron, timezone, unread } = ov.data;
   const itemSeg = tab === "tasks" ? r.segments[0] : null;
-  const editing = itemSeg === "new" ? { initial: null } : itemSeg ? (tasks.find((t) => t.id === itemSeg) ? { initial: tasks.find((t) => t.id === itemSeg) } : null) : null;
+  const editing = itemSeg === "new" ? { initial: null } : itemSeg ? (tasks.find((tk) => tk.id === itemSeg) ? { initial: tasks.find((tk) => tk.id === itemSeg) } : null) : null;
   const runOpen = tab === "runs" && r.segments[1] && r.segments[2] ? { task: r.segments[1], run: r.segments[2] } : null;
 
   const kindF = r.params.kind || "", statusF = r.params.status || "";
-  const shownTasks = tasks.filter((t) => matchText(q, t.name, t.id, t.description, t.script, t.prompt)
-    && (!kindF || t.kind === kindF)
-    && (!statusF || (statusF === "ativas" ? t.enabled !== false : statusF === "pausadas" ? t.enabled === false
-      : statusF === "com falha" ? ["error", "timeout"].includes(t.state.last_status) : true)));
+  // Filter values ("ativas", "pausadas", "com falha") live in the URL: keep them as-is.
+  const shownTasks = tasks.filter((tk) => matchText(q, tk.name, tk.id, tk.description, tk.script, tk.prompt)
+    && (!kindF || tk.kind === kindF)
+    && (!statusF || (statusF === "ativas" ? tk.enabled !== false : statusF === "pausadas" ? tk.enabled === false
+      : statusF === "com falha" ? ["error", "timeout"].includes(tk.state.last_status) : true)));
   const allRuns = (runsRes.data && runsRes.data.runs) || [];
   const taskF = r.params.task || "", runStatusF = r.params.rstatus || "", unreadF = r.params.unread === "1";
   const shownRuns = allRuns.filter((x) => matchText(q, x.task_name, x.excerpt, x.error)
@@ -363,95 +374,94 @@ export function SchedulesPage() {
 
   const cronCard = !cron.healthy && html`<div class="card sc-cron-warn">
     ${!cron.installed
-      ? html`<b>O cron do despachante não está instalado.</b> As tarefas não vão disparar sozinhas.
-          <button class="sm primary" onClick=${installCron}>Instalar agora</button>
+      ? html`<b>${t("schedules.cron_not_installed_title")}</b> ${t("schedules.cron_not_installed_body")}
+          <button class="sm primary" onClick=${installCron}>${t("schedules.install_now")}</button>
           ${cron.error && html`<div class="help">${cron.error}</div>`}`
       : cron.daemon_active === false
-        ? html`<b>O cron não está rodando nesta máquina</b> — as tarefas não disparam sozinhas. Rode
-            <code>apt install cron && systemctl enable --now cron</code> (como root).`
+        ? html`<b>${t("schedules.cron_daemon_title")}</b> ${t("schedules.cron_daemon_body")}
+            <code>apt install cron && systemctl enable --now cron</code> ${t("schedules.cron_daemon_as_root")}`
         : tasks.length
-          ? html`<b>O despachante ainda não rodou</b>${cron.last_tick ? " desde " + fmtTs(cron.last_tick) : ""} — ele roda a cada minuto; se persistir, veja <code>runs/schedules/tick.log</code>.`
-          : html`Crie a primeira tarefa — o despachante do cron já está instalado.`}
+          ? html`<b>${t("schedules.dispatcher_not_run_title")}</b>${cron.last_tick ? " " + t("schedules.dispatcher_since", { when: fmtTs(cron.last_tick) }) : ""} ${t("schedules.dispatcher_not_run_body")} <code>runs/schedules/tick.log</code>.`
+          : t("schedules.create_first_task")}
     <div class="help mono" style="margin-top:6px">${cron.file}: ${cron.line}</div>
   </div>`;
 
   const tasksView = html`<div>
     ${cronCard}
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar tarefa" count=${shownTasks.length} total=${tasks.length}
-      selects=${[{ key: "kind", label: "Tipo", value: kindF, options: ["script", "agent", "hybrid"] },
-        { key: "status", label: "Status", value: statusF, options: ["ativas", "pausadas", "com falha"] }]} />
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${t("schedules.search_task")} count=${shownTasks.length} total=${tasks.length}
+      selects=${[{ key: "kind", label: t("schedules.type"), value: kindF, options: ["script", "agent", "hybrid"] },
+        { key: "status", label: t("common.status"), value: statusF, options: ["ativas", "pausadas", "com falha"] }]} />
     ${tasks.length === 0
-      ? html`<div class="card bk-empty">Nenhuma tarefa agendada. Clique em <b>Nova tarefa</b> — ou peça na aba Claude Code
-          (ex.: “todo dia às 8h veja o changelog do MikroTik e me avise se corrigirem o bug X”).</div>`
+      ? html`<div class="card bk-empty">${t("schedules.empty_pre")} <b>${t("schedules.empty_new_task")}</b> ${t("schedules.empty_post")}</div>`
       : html`<div class="bk-svc-list">
-        ${shownTasks.map((t) => html`<div key=${t.id} class=${"card bk-svc sc-task" + (t.enabled === false ? " off" : "")} onClick=${() => r.open([t.id])}>
+        ${shownTasks.map((tk) => html`<div key=${tk.id} class=${"card bk-svc sc-task" + (tk.enabled === false ? " off" : "")} onClick=${() => r.open([tk.id])}>
           <div class="bk-svc-main">
             <div class="bk-svc-name">
-              <a href=${"#schedules/" + encodeURIComponent(t.id)} onClick=${(e) => e.stopPropagation()}>${t.name}</a>
-              <${KindBadge} kind=${t.kind} />
-              ${t.enabled === false ? html`<span class="badge">pausada</span>` : t.state.completed ? html`<span class="badge">concluída</span>` : html`<span class="badge ok">ativa</span>`}
-              ${t.state.running && html`<span class="badge accent">rodando…</span>`}
-              ${t.created_by === "chat" && html`<span class="badge" title="Criada pelo agente na aba Claude Code">via chat</span>`}
+              <a href=${"#schedules/" + encodeURIComponent(tk.id)} onClick=${(e) => e.stopPropagation()}>${tk.name}</a>
+              <${KindBadge} kind=${tk.kind} />
+              ${tk.enabled === false ? html`<span class="badge">${t("schedules.badge_paused")}</span>` : tk.state.completed ? html`<span class="badge">${t("schedules.badge_completed")}</span>` : html`<span class="badge ok">${t("schedules.badge_active")}</span>`}
+              ${tk.state.running && html`<span class="badge accent">${t("schedules.badge_running")}</span>`}
+              ${tk.created_by === "chat" && html`<span class="badge" title=${t("schedules.via_chat_title")}>${t("schedules.via_chat")}</span>`}
             </div>
             <div class="help">
-              ${scheduleText(t.schedule)}
-              ${t.state.next_run_at ? html` · próxima <b title=${fmtTs(t.state.next_run_at)}>${relTime(t.state.next_run_at)}</b>` : ""}
-              ${t.state.last_run_at ? html` · última ${fmtTs(t.state.last_run_at)} ` : " · nunca rodou"}
-              ${t.state.last_run_id && html`<a href=${"#schedules/runs/" + encodeURIComponent(t.id) + "/" + t.state.last_run_id} onClick=${(e) => e.stopPropagation()}><${StatusBadge} status=${t.state.last_status} /></a>`}
+              ${scheduleText(tk.schedule)}
+              ${tk.state.next_run_at ? html` · ${t("schedules.next_label")} <b title=${fmtTs(tk.state.next_run_at)}>${relTime(tk.state.next_run_at)}</b>` : ""}
+              ${tk.state.last_run_at ? html` · ${t("schedules.last_label")} ${fmtTs(tk.state.last_run_at)} ` : " · " + t("schedules.never_ran")}
+              ${tk.state.last_run_id && html`<a href=${"#schedules/runs/" + encodeURIComponent(tk.id) + "/" + tk.state.last_run_id} onClick=${(e) => e.stopPropagation()}><${StatusBadge} status=${tk.state.last_status} /></a>`}
             </div>
-            ${t.description && html`<div class="help sc-desc">${t.description}</div>`}
-            <div class="help sc-what mono">${t.kind === "agent" ? t.prompt : t.script}${t.kind === "hybrid" ? html` <span class="sc-arrow">→ agente:</span> ${t.prompt}` : ""}</div>
+            ${tk.description && html`<div class="help sc-desc">${tk.description}</div>`}
+            <div class="help sc-what mono">${tk.kind === "agent" ? tk.prompt : tk.script}${tk.kind === "hybrid" ? html` <span class="sc-arrow">${t("schedules.arrow_agent")}</span> ${tk.prompt}` : ""}</div>
           </div>
           <div class="bk-svc-btns" onClick=${(e) => e.stopPropagation()}>
-            <button class="sm primary needs-schedules-run" onClick=${() => runNow(t)} disabled=${!!t.state.running}>▶ Executar</button>
-            <button class="sm" onClick=${() => toggle(t)}>${t.enabled === false ? "Ativar" : "Pausar"}</button>
-            <button class="sm" onClick=${() => r.openWith(["runs"], { task: t.id, q: "" })}>Histórico</button>
-            <button class="sm" onClick=${() => r.open([t.id])}>Editar</button>
+            <button class="sm primary needs-schedules-run" onClick=${() => runNow(tk)} disabled=${!!tk.state.running}>${t("schedules.run_now")}</button>
+            <button class="sm" onClick=${() => toggle(tk)}>${tk.enabled === false ? t("schedules.enable") : t("schedules.pause")}</button>
+            <button class="sm" onClick=${() => r.openWith(["runs"], { task: tk.id, q: "" })}>${t("schedules.history")}</button>
+            <button class="sm" onClick=${() => r.open([tk.id])}>${t("common.edit")}</button>
           </div>
         </div>`)}
       </div>`}
   </div>`;
 
   const runsView = html`<div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar no resultado" count=${shownRuns.length} total=${allRuns.length}
-      selects=${[{ key: "task", label: "Tarefa", value: taskF, options: tasks.map((t) => t.id) },
-        { key: "rstatus", label: "Status", value: runStatusF, options: Object.keys(STATUS) }]} />
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${t("schedules.search_result")} count=${shownRuns.length} total=${allRuns.length}
+      selects=${[{ key: "task", label: t("schedules.task"), value: taskF, options: tasks.map((tk) => tk.id) },
+        { key: "rstatus", label: t("common.status"), value: runStatusF, options: Object.keys(STATUS) }]} />
     <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
       <label class=${"bk-chip" + (unreadF ? " on" : "")}><input type="checkbox" checked=${unreadF}
-        onChange=${() => r.setParams({ unread: unreadF ? "" : "1" })} /> só não lidas (${unread})</label>
+        onChange=${() => r.setParams({ unread: unreadF ? "" : "1" })} /> ${t("schedules.unread_only", { n: unread })}</label>
       <span style="flex:1"></span>
-      ${unread > 0 && html`<button class="sm" onClick=${readAll}>Marcar todas como lidas</button>`}
-      <button class="sm" onClick=${runsRes.reload}>Atualizar</button>
+      ${unread > 0 && html`<button class="sm" onClick=${readAll}>${t("schedules.mark_all_read")}</button>`}
+      <button class="sm" onClick=${runsRes.reload}>${t("common.refresh")}</button>
     </div>
     ${!runsRes.data ? html`<${Spinner} />` : shownRuns.length === 0
-      ? html`<div class="card bk-empty">Nenhuma execução${allRuns.length ? " com esses filtros" : " ainda"}.</div>`
+      ? html`<div class="card bk-empty">${allRuns.length ? t("schedules.no_runs_filtered") : t("schedules.no_runs_yet")}</div>`
       : html`<${DataTable} tableId="schedule-runs" urlSort defaultSort=${{ key: "when", dir: "desc" }}
           rows=${shownRuns.map((x) => ({ ...x, _key: x.task_id + x.run_id }))}
           rowClass=${(x) => (x.unread ? "sc-unread" : "")} onRowClick=${(x) => r.open(["runs", x.task_id, x.run_id])}
           columns=${[
-            { key: "unread", label: "", menuLabel: "Não lida", width: 34, sort: (x) => (x.unread ? 1 : 0), render: (x) => x.unread ? html`<span class="sc-dot" title="não lida"></span>` : "" },
-            { key: "when", label: "Quando", hideable: false, sort: (x) => x.started_at || "", render: (x) => html`<a href=${"#schedules/runs/" + encodeURIComponent(x.task_id) + "/" + x.run_id} onClick=${(e) => e.stopPropagation()}>${fmtTs(x.started_at)}</a>
-              <div class="help">${x.trigger === "manual" ? "manual" : "agendada"}</div>` },
-            { key: "task", label: "Tarefa", sort: (x) => x.task_name || "", render: (x) => x.task_name },
-            { key: "kind", label: "Tipo", sort: true, render: (x) => html`<${KindBadge} kind=${x.kind} />` },
-            { key: "status", label: "Status", sort: (x) => (x.state === "running" ? "running" : x.status || ""), render: (x) => html`${x.state === "running" ? html`<span class="badge accent">rodando…</span>` : html`<${StatusBadge} status=${x.status} />`}
-              ${x.silent && x.status === "ok" ? html` <span class="help">sem novidade</span>` : ""}` },
-            { key: "result", label: "Resultado", tdClass: "sc-excerpt", sort: (x) => x.error || x.excerpt || "", render: (x) => html`${x.error ? html`<span class="err">${x.error}</span> ` : ""}${x.excerpt}` },
+            { key: "unread", label: "", menuLabel: t("schedules.col_unread"), width: 34, sort: (x) => (x.unread ? 1 : 0), render: (x) => x.unread ? html`<span class="sc-dot" title=${t("schedules.unread_dot")}></span>` : "" },
+            { key: "when", label: t("schedules.col_when"), hideable: false, sort: (x) => x.started_at || "", render: (x) => html`<a href=${"#schedules/runs/" + encodeURIComponent(x.task_id) + "/" + x.run_id} onClick=${(e) => e.stopPropagation()}>${fmtTs(x.started_at)}</a>
+              <div class="help">${x.trigger === "manual" ? t("schedules.trigger_manual") : t("schedules.trigger_scheduled")}</div>` },
+            { key: "task", label: t("schedules.task"), sort: (x) => x.task_name || "", render: (x) => x.task_name },
+            { key: "kind", label: t("schedules.type"), sort: true, render: (x) => html`<${KindBadge} kind=${x.kind} />` },
+            { key: "status", label: t("common.status"), sort: (x) => (x.state === "running" ? "running" : x.status || ""), render: (x) => html`${x.state === "running" ? html`<span class="badge accent">${t("schedules.badge_running")}</span>` : html`<${StatusBadge} status=${x.status} />`}
+              ${x.silent && x.status === "ok" ? html` <span class="help">${t("schedules.no_news")}</span>` : ""}` },
+            { key: "result", label: t("schedules.col_result"), tdClass: "sc-excerpt", sort: (x) => x.error || x.excerpt || "", render: (x) => html`${x.error ? html`<span class="err">${x.error}</span> ` : ""}${x.excerpt}` },
           ]} />`}
   </div>`;
 
   return html`<div>
-    <div class="page-title"><h1>Tarefas agendadas</h1>
-      <span class="help">fuso ${timezone}</span>
+    <div class="page-title"><h1>${t("schedules.title")}</h1>
+      <span class="help">${t("schedules.timezone", { tz: timezone })}</span>
       <span style="flex:1"></span>
-      <button class="primary needs-schedules-edit" onClick=${() => r.open(["new"])}>＋ Nova tarefa</button>
+      <button class="primary needs-schedules-edit" onClick=${() => r.open(["new"])}>${t("schedules.new_task_btn")}</button>
     </div>
     <${Tabs} active=${tab} onChange=${(k) => r.openWith(k === "runs" ? ["runs"] : [], { q: "" })} tabs=${[
-      { key: "tasks", label: `Tarefas (${tasks.length})` },
-      { key: "runs", label: "Execuções" + (unread ? ` · ${unread} nova${unread > 1 ? "s" : ""}` : "") },
+      { key: "tasks", label: t("schedules.tab_tasks", { n: tasks.length }) },
+      { key: "runs", label: unread ? t("schedules.tab_runs_unread", { count: unread }) : t("schedules.tab_runs") },
     ]} />
     <div style="margin-top:12px">
-      ${itemSeg && !editing && html`<div class="card">Tarefa '${itemSeg}' não encontrada. <a href="#schedules">Voltar</a></div>`}
+      ${itemSeg && !editing && html`<div class="card">${t("schedules.task_not_found", { id: itemSeg })} <a href="#schedules">${t("common.back")}</a></div>`}
       ${tab === "runs" ? runsView : tasksView}
     </div>
     ${editing && html`<${TaskEditor} key=${itemSeg} initial=${editing.initial} scripts=${scriptsRes.data && scriptsRes.data.scripts}

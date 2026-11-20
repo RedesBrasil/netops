@@ -1,84 +1,84 @@
 ---
 id: secrets-run
-name: Segredos do Cofre de senhas em variáveis de ambiente (nvault)
+name: Password vault secrets in environment variables (nvault)
 type: script
 runtime: python
-description: Roda um comando com chaves/senhas do Cofre de senhas injetadas só no ambiente do processo, sem gravar em arquivo e com a saída mascarada.
+description: Runs a command with keys/passwords from the Password vault injected only into the process environment, without writing them to a file and with masked output.
 env: []
 ---
 
-## O que faz
+## What it does
 
-O script resolve referências `nvault://<ID>/<campo>` para o valor guardado no **Cofre de senhas**
-(console **Inventário → Cofre de senhas**, `network/vault.yaml`). Os valores vão **só para o ambiente do
-processo filho**. Qualquer segredo que apareça na saída (stdout/stderr) é trocado por `***`.
+The script resolves `nvault://<ID>/<field>` references to the value stored in the **Password vault**
+(console **Inventory → Password vault**, `network/vault.yaml`). The values go **only into the environment of the
+child process**. Any secret that shows up in the output (stdout/stderr) is replaced by `***`.
 
-Assim, `.env`, `wrangler.toml`, scripts e a IA usam a chave **sem que o valor fique em disco nem apareça na
-conversa**. Exige o **cofre destrancado**. Cada uso entra na Auditoria do console, com a ação `vault.run`.
+This way `.env`, `wrangler.toml`, scripts and the AI use the key **without the value being on disk or appearing in the
+conversation**. It requires the **vault unlocked**. Each use is recorded in the console Audit, with the action `vault.run`.
 
-- **Referência inteira:** `API_KEY=nvault://3/api-key`.
-- **Referência embutida:** `DATABASE_URL=postgres://app:{{nvault://7/senha}}@db:5432/app`.
-- **Item e campo:** o item é o **ID numérico** dele (coluna ID na lista, URL `#vault/<ID>`). O ID **não muda** se
-  o título mudar. O campo é o nome dele em slug: "API key" vira `api-key`, "Usuário" vira `usuario`.
-  Referência antiga continua valendo: o ID em slug do formato anterior (ex.: `nvault://simple-api/...`) e o nome
-  antigo de um campo renomeado ficam como apelidos. A tela de cada item mostra a referência pronta, com
-  o botão **copiar referência**, e `list` imprime todas. Na aba Claude, o usuário pode mencionar o item com
-  `#senha:<ID>`; a mensagem chega com o bloco "[NetOps — menções]" listando as referências do item.
+- **Whole reference:** `API_KEY=nvault://3/api-key`.
+- **Embedded reference:** `DATABASE_URL=postgres://app:{{nvault://7/senha}}@db:5432/app`.
+- **Item and field:** the item is its **numeric ID** (ID column in the list, URL `#vault/<ID>`). The ID **does not change** if
+  the title changes. The field is its name as a slug: "API key" becomes `api-key`, "Usuário" becomes `usuario`.
+  Old references keep working: the slug ID of the previous format (e.g. `nvault://simple-api/...`) and the old
+  name of a renamed field are kept as aliases. Each item's screen shows the ready-made reference, with
+  the **copy reference** button, and `list` prints them all. In the Claude tab, the user can mention the item with
+  `#senha:<ID>`; the message arrives with the "[NetOps — menções]" block listing the item's references.
 
-## Quando usar
+## When to use
 
-Use sempre que um comando, sistema ou API precisar de uma chave do Cofre de senhas: Cloudflare/Wrangler, API
-do Coolify, `.env` de uma aplicação, `curl` autenticado.
+Use it whenever a command, system or API needs a key from the Password vault: Cloudflare/Wrangler, the Coolify
+API, an application's `.env`, an authenticated `curl`.
 
-**A IA nunca lê o valor**: nada de `cat network/vault.yaml`, nem o endpoint `/reveal`, nem decifrar à mão. Ela
-monta o comando com a referência e roda pelo `nvault`.
+**The AI never reads the value**: no `cat network/vault.yaml`, no `/reveal` endpoint, no decrypting by hand. It
+builds the command with the reference and runs it through `nvault`.
 
-- **Tarefa agendada NÃO usa** o `nvault`, porque o cofre fica trancado sem um humano por perto.
-- **Mascaramento:** cobre vazamento acidental (log, erro, `env`). Ele não esconde o valor transformado
-  (base64, invertido etc.). Nunca transforme nem envie o segredo para outro lugar que não o serviço dele.
+- **Scheduled tasks do NOT use** `nvault`, because the vault stays locked without a human around.
+- **Masking:** covers accidental leaks (log, error, `env`). It does not hide a transformed value
+  (base64, reversed etc.). Never transform the secret nor send it anywhere other than its own service.
 
-## Como usar
+## How to use
 
 ```bash
 nvault run [--env-file F] [--no-dotenv] [--set VAR=REF] [--item ID --prefix P_] -- <comando> [args]
-nvault list                      # itens e referências (nunca mostra valores)
-nvault check [--env-file F]      # confere as referências do .env (não decifra)
+nvault list                      # items and references (never shows values)
+nvault check [--env-file F]      # checks the .env references (does not decrypt)
 ```
 
-`nvault` é o atalho de `python3 scripts/tools/secrets/run.py`, instalado em `~/.local/bin/nvault`.
-Na falta do atalho, use o caminho completo ou instale com
+`nvault` is the shortcut for `python3 scripts/tools/secrets/run.py`, installed in `~/.local/bin/nvault`.
+If the shortcut is missing, use the full path or install it with
 `ln -sf /opt/netops/scripts/tools/secrets/nvault ~/.local/bin/nvault`.
 
-| Argumento | Descrição |
+| Argument | Description |
 |-----------|-----------|
-| `--env-file F` | `.env` com referências (repetível). Sem ele, lê o `./.env` se existir. |
-| `--no-dotenv` | Não lê o `./.env`. |
-| `--set VAR=REF` | Define uma variável a partir de `nvault://<ID>/<campo>`; aceita o atalho `<ID>/<campo>` (ex.: `T=3/api-key`). |
-| `--item <ID>` | Exporta todos os campos do item ("API key" vira `API_KEY`). Use com `--prefix COOLIFY_`. |
+| `--env-file F` | `.env` with references (repeatable). Without it, reads `./.env` if it exists. |
+| `--no-dotenv` | Does not read `./.env`. |
+| `--set VAR=REF` | Sets a variable from `nvault://<ID>/<field>`; accepts the shortcut `<ID>/<field>` (e.g. `T=3/api-key`). |
+| `--item <ID>` | Exports all fields of the item ("API key" becomes `API_KEY`). Use with `--prefix COOLIFY_`. |
 
-Códigos de saída: o do comando. `2` = referência inválida, `3` = cofre trancado (o comando **não** roda),
-`4` = usuário do console sem a permissão `vault.use`.
+Exit codes: the command's own. `2` = invalid reference, `3` = vault locked (the command does **not** run),
+`4` = console user without the `vault.use` permission.
 
 ## Setup
 
-Sem dependências novas. A permissão `vault.use` vale para quem pede pela aba Claude e pelo terminal do console
-(`NETOPS_USER`); o admin já tem.
+No new dependencies. The `vault.use` permission applies to whoever asks through the Claude tab and the console terminal
+(`NETOPS_USER`); the admin already has it.
 
-## Exemplos
+## Examples
 
 ```bash
-# Cloudflare Workers (Wrangler lê CLOUDFLARE_API_TOKEN/CLOUDFLARE_ACCOUNT_ID do ambiente)
-# .env do projeto:  CLOUDFLARE_API_TOKEN=nvault://4/api-key
+# Cloudflare Workers (Wrangler reads CLOUDFLARE_API_TOKEN/CLOUDFLARE_ACCOUNT_ID from the environment)
+# project .env:     CLOUDFLARE_API_TOKEN=nvault://4/api-key
 #                   CLOUDFLARE_ACCOUNT_ID=nvault://4/account-id
 cd /opt/projetos/meu-worker && nvault run -- npx wrangler deploy
 
-# Secret do próprio Worker (o valor fica guardado na Cloudflare)
+# The Worker's own secret (the value is stored at Cloudflare)
 nvault run --set V=4/webhook-secret -- sh -c 'printf %s "$V" | npx wrangler secret put WEBHOOK_SECRET'
 
-# API do Coolify
+# Coolify API
 nvault run --no-dotenv --item 3 --prefix COOLIFY_ -- \
   sh -c 'curl -s -H "Authorization: Bearer $COOLIFY_API_KEY" "$COOLIFY_URL/api/v1/applications"'
 
-# Aplicação com .env cheio de referências
+# Application with a .env full of references
 nvault check --env-file app/.env && nvault run --env-file app/.env -- npm start
 ```

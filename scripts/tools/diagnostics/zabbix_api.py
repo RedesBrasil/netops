@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scrip
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 import requests  # noqa: E402
+from lib import i18n  # noqa: E402
 
 # Adiciona o lib do engine ao path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "engine" / "lib"))
@@ -20,7 +21,7 @@ from inventory import resolve_host
 
 ZABBIX_API_URL = os.environ.get("ZABBIX_URL", "")
 if not ZABBIX_API_URL:
-    sys.exit("Defina ZABBIX_URL no ambiente (ex.: http://zabbix.exemplo.local/zabbix/api_jsonrpc.php).")
+    sys.exit(i18n.t("cli_diagnostics.zabbix_url_missing"))
 
 class ZabbixAPI:
     def __init__(self):
@@ -58,8 +59,8 @@ class ZabbixAPI:
         # Como não temos cred específica, vamos usar Admin/zabbix (padrão)
         # Ou podemos pegar do banco direto via SSH
 
-        print("⚠️  Autenticando no Zabbix...")
-        print("    Para autenticar, vou conectar via SSH e pegar as credenciais")
+        print(i18n.t("cli_diagnostics.zabbix_authenticating"))
+        print(i18n.t("cli_diagnostics.zabbix_auth_via_ssh"))
         return self._authenticate_via_db()
 
     def _authenticate_via_db(self):
@@ -74,11 +75,11 @@ class ZabbixAPI:
                 "password": "zabbix"
             })
             self.auth_token = result
-            print("✓ Autenticado com sucesso!")
+            print(i18n.t("cli_diagnostics.zabbix_auth_ok"))
             return True
         except Exception as e:
-            print(f"✗ Falha na autenticação padrão: {e}")
-            print("  Tentando descobrir senha do Admin via SSH...")
+            print(i18n.t("cli_diagnostics.zabbix_auth_default_failed", error=e))
+            print(i18n.t("cli_diagnostics.zabbix_trying_ssh"))
             return False
 
     def get_host_by_name(self, hostname):
@@ -108,42 +109,42 @@ class ZabbixAPI:
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Interagir com API do Zabbix")
-    parser.add_argument("--host", required=True, help="Nome do host no Zabbix")
-    parser.add_argument("--list-items", action="store_true", help="Listar itens do host")
-    parser.add_argument("--list-triggers", action="store_true", help="Listar triggers do host")
+    parser = argparse.ArgumentParser(description=i18n.t("cli_diagnostics.zabbix_description"))
+    parser.add_argument("--host", required=True, help=i18n.t("cli_diagnostics.zabbix_help_host"))
+    parser.add_argument("--list-items", action="store_true", help=i18n.t("cli_diagnostics.zabbix_help_items"))
+    parser.add_argument("--list-triggers", action="store_true", help=i18n.t("cli_diagnostics.zabbix_help_triggers"))
 
     args = parser.parse_args()
 
     try:
         api = ZabbixAPI()
         if not api.login():
-            print("\n❌ Não foi possível autenticar na API do Zabbix")
-            print("   Vou tentar acessar diretamente via SSH...")
+            print("\n" + i18n.t("cli_diagnostics.zabbix_auth_failed"))
+            print(i18n.t("cli_diagnostics.zabbix_try_direct_ssh"))
             sys.exit(1)
 
         # Busca o host
         host = api.get_host_by_name(args.host)
         if not host:
-            print(f"❌ Host '{args.host}' não encontrado no Zabbix")
+            print(i18n.t("cli_diagnostics.zabbix_host_not_found", host=args.host))
             sys.exit(1)
 
-        print(f"\n✓ Host encontrado: {host['name']} (ID: {host['hostid']})")
+        print("\n" + i18n.t("cli_diagnostics.zabbix_host_found", name=host["name"], id=host["hostid"]))
         print(f"  Status: {'Enabled' if host['status'] == '0' else 'Disabled'}")
 
         if args.list_items:
-            print("\n📊 ITENS DO HOST:")
+            print("\n" + i18n.t("cli_diagnostics.zabbix_items_header"))
             print("-" * 80)
             items = api.get_host_items(host['hostid'])
             for item in items:
                 status = "✓" if item['status'] == '0' else "✗"
                 print(f"{status} [{item['itemid']}] {item['name']}")
                 print(f"    Key: {item['key_']}")
-                print(f"    Último valor: {item.get('lastvalue', 'N/A')}")
+                print(i18n.t("cli_diagnostics.zabbix_last_value", value=item.get("lastvalue", "N/A")))
                 print()
 
         if args.list_triggers:
-            print("\n🔔 TRIGGERS DO HOST:")
+            print("\n" + i18n.t("cli_diagnostics.zabbix_triggers_header"))
             print("-" * 80)
             triggers = api.get_host_triggers(host['hostid'])
             priorities = {0: "Not classified", 1: "Information", 2: "Warning",
@@ -152,13 +153,13 @@ def main():
                 status = "PROBLEM" if trigger['value'] == '1' else "OK"
                 prio = priorities.get(int(trigger['priority']), "Unknown")
                 print(f"[{trigger['triggerid']}] {trigger['description']}")
-                print(f"    Status: {status} | Prioridade: {prio}")
+                print(i18n.t("cli_diagnostics.zabbix_trigger_status", status=status, priority=prio))
                 if trigger.get('items'):
                     print(f"    Item: {trigger['items'][0]['key_']}")
                 print()
 
     except Exception as e:
-        print(f"❌ Erro: {e}")
+        print(i18n.t("cli_diagnostics.zabbix_error", error=e))
         import traceback
         traceback.print_exc()
         sys.exit(1)

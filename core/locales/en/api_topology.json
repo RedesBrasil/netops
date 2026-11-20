@@ -1,0 +1,9 @@
+{
+  "duplicate_link_ids": "duplicate link IDs",
+  "host_id_required": "integer host ID required",
+  "host_not_in_inventory": "host not in the inventory",
+  "link_index_not_exists": "link index {index} does not exist",
+  "link_not_exists": "link does not exist",
+  "migrate_first": "Migrate the inventory and the topology to integer IDs before editing links.",
+  "segment_index_not_exists": "segment index {index} does not exist"
+}

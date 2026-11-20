@@ -4,14 +4,15 @@
 //   #vault[?q=&tpl=]  #vault/new  #vault/<id>  #vault/<id>/edit
 //   #vault/templates  #vault/templates/new  #vault/templates/<id>
 //   #vault/fields     #vault/fields/new     #vault/fields/<nome>
-import { html, useState, api, useResource, useStore, vaultStore, Spinner, Badge, toast, handleError, can, Modal, ConfirmDialog } from "../ui.js";
+import { html, useState, api, useResource, useStore, vaultStore, Spinner, Badge, toast, handleError, can, Modal, ConfirmDialog, t } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
 import { FilterBar, DataTable, Field, PasswordInput, VaultBanner } from "../components.js";
 
-const KIND_LABEL = { secret: "🔒 Segredo", text: "Texto" };
+const KIND_LABEL = { secret: "vault.kind_secret", text: "vault.kind_text" };   // i18n keys, translated at render time
+const kindLabel = (kind) => (KIND_LABEL[kind] ? t(KIND_LABEL[kind]) : kind);
 const MASK = "••••••••";
 // Mesmo slug de lib/pwvault.slugify: referência usada no .env (scripts/tools/secrets/run.py).
-const slug = (t) => String(t || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+const slug = (s) => String(s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/, "") || "item";
 export const vaultRef = (itemId, field) => `nvault://${itemId}/${slug(field)}`;
 
@@ -29,24 +30,24 @@ export function VaultPage() {
   const v = useStore(vaultStore);
   const r = useMenuRoute("vault");
   if (res.loading && !res.data) return html`<${Spinner} />`;
-  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  if (res.error) return html`<div class="card">${t("vault.load_error", { message: res.error.message })}</div>`;
   const unlocked = v.state === "cache" || v.state === "env";
   const [seg] = r.segments;
   const tab = seg === "templates" || seg === "fields" ? seg : "items";
   const tabBtn = (key, label, go) => html`<button class=${tab === key ? "active" : ""} onClick=${go}>${label}</button>`;
   const ctx = { data: res.data, reload: res.reload, r, unlocked };
-  const newBtn = tab === "items" ? html`<button class="primary sm needs-vault-edit" onClick=${() => r.open("new")}>+ Novo item</button>`
-    : tab === "templates" ? html`<button class="primary sm needs-vault-templates" onClick=${() => r.open(["templates", "new"])}>+ Novo template</button>`
-    : html`<button class="primary sm needs-vault-templates" onClick=${() => r.open(["fields", "new"])}>+ Novo campo</button>`;
+  const newBtn = tab === "items" ? html`<button class="primary sm needs-vault-edit" onClick=${() => r.open("new")}>${t("vault.new_item_btn")}</button>`
+    : tab === "templates" ? html`<button class="primary sm needs-vault-templates" onClick=${() => r.open(["templates", "new"])}>${t("vault.new_template_btn")}</button>`
+    : html`<button class="primary sm needs-vault-templates" onClick=${() => r.open(["fields", "new"])}>${t("vault.new_field_btn")}</button>`;
   return html`<div class="vault-page">
-    <div class="page-title"><h1 title="Senhas, chaves de API e logins de sistemas e portais. Acesso a equipamentos fica em Credenciais de hosts.">Cofre de senhas</h1>
+    <div class="page-title"><h1 title=${t("vault.title_hint")}>${t("vault.title")}</h1>
       <span class="spacer"></span>
-      <span class=${"vault-state " + (unlocked ? "ok" : "locked")}>${unlocked ? "destrancado" : "trancado: segredos ocultos"}</span>
+      <span class=${"vault-state " + (unlocked ? "ok" : "locked")}>${unlocked ? t("vault.state_unlocked") : t("vault.state_locked")}</span>
       <${VaultBanner} compact=${true} /></div>
     <div class="tabs">
-      ${tabBtn("items", "Itens", () => r.close())}
-      ${tabBtn("templates", "Templates", () => r.open("templates"))}
-      ${tabBtn("fields", "Campos", () => r.open("fields"))}
+      ${tabBtn("items", t("vault.tab_items"), () => r.close())}
+      ${tabBtn("templates", t("vault.tab_templates"), () => r.open("templates"))}
+      ${tabBtn("fields", t("vault.tab_fields"), () => r.open("fields"))}
       <span class="tabs-actions">${newBtn}</span>
     </div>
     ${tab === "items" && html`<${ItemsTab} ...${ctx} />`}
@@ -59,7 +60,7 @@ export function VaultPage() {
 function ItemsTab({ data, reload, r, unlocked }) {
   const [confirm, setConfirm] = useState(null);
   const { items: all, templates, rev } = data;
-  const tplById = Object.fromEntries(templates.map((t) => [t.id, t]));
+  const tplById = Object.fromEntries(templates.map((tp) => [tp.id, tp]));
   const q = r.params.q || "";
   const tplLabel = r.params.tpl || "";
   const textOf = (it) => it.values.filter((x) => x.kind === "text").map((x) => x.value);
@@ -77,36 +78,36 @@ function ItemsTab({ data, reload, r, unlocked }) {
   };
   const cols = [
     { key: "id", label: "ID", sort: (it) => it.id, render: (it) => it.id },
-    { key: "title", label: "Título", hideable: false, sort: (it) => it.title,
+    { key: "title", label: t("vault.col_title"), hideable: false, sort: (it) => it.title,
       render: (it) => html`<a href=${"#vault/" + encodeURIComponent(it.id)} onClick=${(e) => e.stopPropagation()}><b>${it.title}</b></a>` },
-    { key: "template", label: "Template", sort: (it) => it.template_label || "", render: (it) => it.template_label ? html`<${Badge}>${it.template_label}<//>` : "—" },
-    { key: "visible", label: "Campos visíveis", render: (it) => html`${visibleOf(it).map((x) => html`<span class="vault-kv" key=${x.field}>
+    { key: "template", label: t("vault.col_template"), sort: (it) => it.template_label || "", render: (it) => it.template_label ? html`<${Badge}>${it.template_label}<//>` : "—" },
+    { key: "visible", label: t("vault.col_visible_fields"), render: (it) => html`${visibleOf(it).map((x) => html`<span class="vault-kv" key=${x.field}>
         <span class="muted">${x.field}:</span> ${x.kind === "text" ? x.value : MASK + (unlocked ? "" : " 🔒")}</span>`)}` },
-    { key: "secrets", label: "Segredos", sort: (it) => it.values.filter((x) => x.kind === "secret").length,
+    { key: "secrets", label: t("vault.col_secrets"), sort: (it) => it.values.filter((x) => x.kind === "secret").length,
       render: (it) => { const n = it.values.filter((x) => x.kind === "secret").length; return n ? `🔒 ${n}` : "—"; } },
-    { key: "updated_at", label: "Atualizado", sort: (it) => it.updated_at || "", render: (it) => (it.updated_at || "").replace("T", " ").slice(0, 16) },
-    { key: "updated_by", label: "Por", sort: (it) => it.updated_by || "", render: (it) => it.updated_by || "—" },
+    { key: "updated_at", label: t("vault.col_updated_at"), sort: (it) => it.updated_at || "", render: (it) => (it.updated_at || "").replace("T", " ").slice(0, 16) },
+    { key: "updated_by", label: t("vault.col_updated_by"), sort: (it) => it.updated_by || "", render: (it) => it.updated_by || "—" },
   ];
   return html`<div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar no cofre"
-      selects=${[{ key: "tpl", label: "Template", value: tplLabel, options: tplOptions }]} count=${items.length} total=${all.length} />
-    ${seg && seg !== "new" && !found && html`<div class="card">Item '${seg}' não encontrado. <a href="#vault">Voltar ao cofre</a></div>`}
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${t("vault.search_placeholder")}
+      selects=${[{ key: "tpl", label: t("vault.col_template"), value: tplLabel, options: tplOptions }]} count=${items.length} total=${all.length} />
+    ${seg && seg !== "new" && !found && html`<div class="card">${t("vault.item_not_found", { id: seg })} <a href="#vault">${t("vault.back_to_vault")}</a></div>`}
     <${DataTable} tableId="vault-items" urlSort columns=${cols} rows=${items.map((it) => ({ ...it, _key: it.id }))}
       onRowClick=${(it) => r.open(it.id)}
       actions=${(it) => html`
-        <button class="sm" onClick=${() => r.open(it.id)}>Abrir</button>
-        <button class="sm needs-vault-edit" onClick=${() => r.open([it.id, "edit"])}>Editar</button>
-        <button class="sm danger needs-vault-edit" onClick=${() => setConfirm(it)}>Excluir</button>`}
-      empty="Nenhum item no cofre. Clique em “+ Novo item”." />
+        <button class="sm" onClick=${() => r.open(it.id)}>${t("common.open")}</button>
+        <button class="sm needs-vault-edit" onClick=${() => r.open([it.id, "edit"])}>${t("common.edit")}</button>
+        <button class="sm danger needs-vault-edit" onClick=${() => setConfirm(it)}>${t("common.delete")}</button>`}
+      empty=${t("vault.items_empty")} />
     ${found && sub !== "edit" && html`<${ItemView} key=${found.id} item=${found} tpl=${tplById[found.template]} unlocked=${unlocked}
         onEdit=${() => r.open([found.id, "edit"])} onClose=${() => r.close()} />`}
     ${(seg === "new" || (found && sub === "edit")) && html`<${ItemForm} key=${seg + (sub || "")} item=${found}
         data=${data} unlocked=${unlocked} onClose=${() => (found ? r.open(found.id) : r.close())}
         onSaved=${(saved) => { reload(); r.open(saved.id); }} />`}
-    ${confirm && html`<${ConfirmDialog} title="Excluir item" danger=${true}
-        message=${`Remover '${confirm.title}' (ID ${confirm.id}) do cofre? Os valores são apagados.`} onClose=${() => setConfirm(null)}
+    ${confirm && html`<${ConfirmDialog} title=${t("vault.delete_item_title")} danger=${true}
+        message=${t("vault.delete_item_confirm", { title: confirm.title, id: confirm.id })} onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
-          try { await api.del(`/vault/items/${encodeURIComponent(confirm.id)}`, rev); toast.ok("Item removido"); if (found && found.id === confirm.id) r.close(); reload(); }
+          try { await api.del(`/vault/items/${encodeURIComponent(confirm.id)}`, rev); toast.ok(t("vault.item_removed")); if (found && found.id === confirm.id) r.close(); reload(); }
           catch (e) { handleError(e); } }} />`}
   </div>`;
 }
@@ -133,34 +134,34 @@ function ItemView({ item, tpl, unlocked, onEdit, onClose }) {
   const copyField = async (x) => {
     try {
       const value = x.kind === "text" ? x.value : (shown[x.field] ?? (await api.post(`/vault/items/${encodeURIComponent(item.id)}/reveal`, { field: x.field })).values[x.field]);
-      if (await copy(value)) toast.ok(`${x.field} copiado`); else toast.err("Não consegui copiar");
+      if (await copy(value)) toast.ok(t("vault.field_copied", { field: x.field })); else toast.err(t("vault.copy_failed"));
     } catch (e) { handleError(e); }
   };
-  const secretBtns = (x) => !unlocked ? html`<span class="muted">🔒 destranque o cofre</span>`
-    : !mayReveal ? html`<span class="muted">sem permissão para revelar</span>`
-    : html`<button class="sm" onClick=${() => toggle(x.field)}>${shown[x.field] != null ? "🙈 Ocultar" : "👁 Revelar"}</button>
-        <button class="sm" onClick=${() => copyField(x)}>📋 Copiar</button>`;
+  const secretBtns = (x) => !unlocked ? html`<span class="muted">${t("vault.unlock_to_reveal")}</span>`
+    : !mayReveal ? html`<span class="muted">${t("vault.no_reveal_permission")}</span>`
+    : html`<button class="sm" onClick=${() => toggle(x.field)}>${shown[x.field] != null ? t("vault.hide") : t("vault.reveal")}</button>
+        <button class="sm" onClick=${() => copyField(x)}>${t("vault.copy_btn")}</button>`;
   return html`<${Modal} title=${`${item.title} (ID ${item.id})`} onClose=${onClose} wide=${true}>
-    <div class="help">${item.template_label ? html`Template: <${Badge}>${item.template_label}<//> · ` : ""}
-      Atualizado ${(item.updated_at || "").replace("T", " ").slice(0, 16)} por ${item.updated_by || "—"}</div>
+    <div class="help">${item.template_label ? html`${t("vault.template_prefix")} <${Badge}>${item.template_label}<//> · ` : ""}
+      ${t("vault.updated_by", { when: (item.updated_at || "").replace("T", " ").slice(0, 16), who: item.updated_by || "—" })}</div>
     <div class="vault-fields">
-      ${vals.length === 0 && html`<div class="muted">Sem campos preenchidos.</div>`}
+      ${vals.length === 0 && html`<div class="muted">${t("vault.no_fields")}</div>`}
       ${vals.map((x) => html`<div class="vault-row" key=${x.field}>
         <div class="vault-row-label">${x.field}${x.kind === "secret" ? " 🔒" : ""}</div>
         <div class="vault-row-value"><code>${x.kind === "text" ? x.value : (shown[x.field] ?? MASK)}</code>
-          <div class="vault-ref" title="Use no .env ou em comandos: nvault run -- <comando>">
+          <div class="vault-ref" title=${t("vault.ref_title")}>
             <code>${vaultRef(item.id, x.field)}</code>
-            <button class="sm link-btn" onClick=${async () => { if (await copy(vaultRef(item.id, x.field))) toast.ok("Referência copiada"); }}>copiar referência</button></div></div>
+            <button class="sm link-btn" onClick=${async () => { if (await copy(vaultRef(item.id, x.field))) toast.ok(t("vault.ref_copied")); }}>${t("vault.copy_ref")}</button></div></div>
         <div class="vault-row-actions">${x.kind === "text"
-          ? html`<button class="sm" onClick=${() => copyField(x)}>📋 Copiar</button>` : secretBtns(x)}</div>
+          ? html`<button class="sm" onClick=${() => copyField(x)}>${t("vault.copy_btn")}</button>` : secretBtns(x)}</div>
       </div>`)}
     </div>
-    <div class="help">Para usar em sistemas e na IA sem expor o valor: no <code>.env</code> coloque a referência
-      (ex.: <code>API_KEY=${vaultRef(item.id, vals.find((v) => v.kind === "secret")?.field || "senha")}</code>) e rode
-      <code>nvault run -- &lt;comando&gt;</code> com o cofre destrancado. O valor só entra no processo e sai mascarado.</div>
-    ${item.notes && html`<${Field} label="Notas"><div class="vault-notes">${item.notes}</div><//>`}
-    <div class="modal-actions"><button onClick=${onClose}>Fechar</button>
-      <button class="primary needs-vault-edit" onClick=${onEdit}>Editar</button></div>
+    <div class="help">${t("vault.usage_1")} <code>.env</code> ${t("vault.usage_2")}
+      (${t("vault.usage_eg")} <code>API_KEY=${vaultRef(item.id, vals.find((v) => v.kind === "secret")?.field || t("vault.usage_default_field"))}</code>) ${t("vault.usage_3")}
+      <code>nvault run -- &lt;${t("vault.usage_command")}&gt;</code> ${t("vault.usage_4")}</div>
+    ${item.notes && html`<${Field} label=${t("vault.notes")}><div class="vault-notes">${item.notes}</div><//>`}
+    <div class="modal-actions"><button onClick=${onClose}>${t("common.close")}</button>
+      <button class="primary needs-vault-edit" onClick=${onEdit}>${t("common.edit")}</button></div>
   <//>`;
 }
 
@@ -168,7 +169,7 @@ function ItemForm({ item, data, unlocked, onClose, onSaved }) {
   const isNew = !item;
   const { templates, fields, rev } = data;
   const kindOf = (name) => fields.find((f) => f.name === name)?.kind || "secret";
-  const tplById = Object.fromEntries(templates.map((t) => [t.id, t]));
+  const tplById = Object.fromEntries(templates.map((tp) => [tp.id, tp]));
   const existing = Object.fromEntries((item?.values || []).map((x) => [x.field, x]));
   const rowsFor = (tid, keep = []) => {
     const tf = (tplById[tid]?.fields || []).map((f) => f.field);
@@ -193,7 +194,7 @@ function ItemForm({ item, data, unlocked, onClose, onSaved }) {
   };
   const addField = () => {
     const real = fields.find((f) => f.name.toLowerCase() === addName.trim().toLowerCase());
-    if (!real) { toast.err("Campo não existe. Crie em Templates ou na aba Campos."); return; }
+    if (!real) { toast.err(t("vault.field_unknown")); return; }
     if (!names.includes(real.name)) setNames([...names, real.name]);
     setAddName("");
   };
@@ -201,9 +202,9 @@ function ItemForm({ item, data, unlocked, onClose, onSaved }) {
   const needsUnlock = names.some((n) => kindOf(n) === "secret" && vals[n]);
 
   async function save() {
-    if (!title.trim()) { toast.err("Informe o título"); return; }
-    if (missing.length) { toast.err("Obrigatório(s) vazio(s): " + missing.join(", ")); return; }
-    if (needsUnlock && !unlocked) { toast.err("Destranque o cofre para gravar segredos."); return; }
+    if (!title.trim()) { toast.err(t("vault.title_required")); return; }
+    if (missing.length) { toast.err(t("vault.required_empty", { list: missing.join(", ") })); return; }
+    if (needsUnlock && !unlocked) { toast.err(t("vault.unlock_to_save")); return; }
     const values = names.map((n) => {
       if (kindOf(n) === "secret") return { field: n, value: vals[n] ? vals[n] : (existing[n]?.set ? null : "") };
       return { field: n, value: vals[n] || "" };
@@ -213,41 +214,41 @@ function ItemForm({ item, data, unlocked, onClose, onSaved }) {
       const body = { title, template: template || null, notes, values };
       const saved = isNew ? await api.post("/vault/items", body, rev)
         : await api.put(`/vault/items/${encodeURIComponent(item.id)}`, body, rev);
-      toast.ok(isNew ? "Item criado" : "Item atualizado"); onSaved(saved);
+      toast.ok(isNew ? t("vault.item_created") : t("vault.item_updated")); onSaved(saved);
     } catch (e) { handleError(e); } finally { setBusy(false); }
   }
-  return html`<${Modal} title=${isNew ? "Novo item do cofre" : `Editar ${item.title} (ID ${item.id})`} onClose=${onClose} wide=${true}>
-    <${Field} label="Título *"><input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder="ex.: Portal Claro empresas" /><//>
-    <${Field} label="Template" hint="Define os campos do item. Trocar de template mantém os campos já preenchidos.">
+  return html`<${Modal} title=${isNew ? t("vault.new_item_title") : t("vault.edit_item_title", { title: item.title, id: item.id })} onClose=${onClose} wide=${true}>
+    <${Field} label=${t("vault.field_title")}><input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder=${t("vault.title_placeholder")} /><//>
+    <${Field} label=${t("vault.col_template")} hint=${t("vault.template_hint")}>
       <select value=${template} onChange=${(e) => changeTemplate(e.target.value)}>
-        <option value="">(sem template)</option>
-        ${templates.map((t) => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}
+        <option value="">${t("vault.no_template")}</option>
+        ${templates.map((tp) => html`<option key=${tp.id} value=${tp.id}>${tp.label}</option>`)}
       </select><//>
-    ${!unlocked && html`<div class="vault-banner locked">🔒 Cofre trancado: dá para editar os campos de texto; segredos só com o cofre destrancado.</div>`}
+    ${!unlocked && html`<div class="vault-banner locked">${t("vault.locked_banner")}</div>`}
     ${names.map((n) => {
       const secret = kindOf(n) === "secret";
       const label = `${n}${req.has(n) ? " *" : ""}${secret ? " 🔒" : ""}`;
       const keep = secret && existing[n]?.set;
       return html`<div class="vault-form-row" key=${n}>
-        <${Field} label=${label} hint=${keep ? "Já definido. Deixe em branco para manter; digite para trocar." : null}>
+        <${Field} label=${label} hint=${keep ? t("vault.secret_keep_hint") : null}>
           ${secret
             ? html`<${PasswordInput} autocomplete="new-password" disabled=${!unlocked} value=${vals[n] || ""}
-                placeholder=${keep ? "(mantido)" : ""} onInput=${(e) => setVals({ ...vals, [n]: e.target.value })} />`
+                placeholder=${keep ? t("vault.secret_kept") : ""} onInput=${(e) => setVals({ ...vals, [n]: e.target.value })} />`
             : html`<input value=${vals[n] || ""} onInput=${(e) => setVals({ ...vals, [n]: e.target.value })} />`}
         <//>
-        ${!inTpl.has(n) && html`<button class="sm" title="Remover este campo do item" onClick=${() => {
+        ${!inTpl.has(n) && html`<button class="sm" title=${t("vault.remove_field_title")} onClick=${() => {
           setNames(names.filter((x) => x !== n)); const nv = { ...vals }; delete nv[n]; setVals(nv); }}>✕</button>`}
       </div>`;
     })}
     <div class="vault-add">
-      <input list="vault-fields-dl" placeholder="+ adicionar campo do catálogo" value=${addName}
+      <input list="vault-fields-dl" placeholder=${t("vault.add_field_placeholder")} value=${addName}
         onInput=${(e) => setAddName(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addField(); } }} />
       <datalist id="vault-fields-dl">${fields.filter((f) => !names.includes(f.name)).map((f) => html`<option key=${f.name} value=${f.name} />`)}</datalist>
-      <button class="sm" onClick=${addField} disabled=${!addName.trim()}>Adicionar</button>
+      <button class="sm" onClick=${addField} disabled=${!addName.trim()}>${t("common.add")}</button>
     </div>
-    <${Field} label="Notas"><textarea rows="3" value=${notes} onInput=${(e) => setNotes(e.target.value)} /><//>
-    <div class="modal-actions"><button onClick=${onClose}>Cancelar</button>
-      <button class="primary" disabled=${busy} onClick=${save}>${isNew ? "Criar" : "Salvar"}</button></div>
+    <${Field} label=${t("vault.notes")}><textarea rows="3" value=${notes} onInput=${(e) => setNotes(e.target.value)} /><//>
+    <div class="modal-actions"><button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary" disabled=${busy} onClick=${save}>${isNew ? t("common.create") : t("common.save")}</button></div>
   <//>`;
 }
 
@@ -256,29 +257,29 @@ function TemplatesTab({ data, reload, r }) {
   const [confirm, setConfirm] = useState(null);
   const { templates, rev } = data;
   const [, tid] = r.segments;
-  const found = tid && tid !== "new" ? templates.find((t) => t.id === tid) : null;
+  const found = tid && tid !== "new" ? templates.find((tp) => tp.id === tid) : null;
   const cols = [
-    { key: "label", label: "Template", hideable: false, sort: (t) => t.label,
-      render: (t) => html`<a href=${"#vault/templates/" + encodeURIComponent(t.id)} onClick=${(e) => e.stopPropagation()}><b>${t.label}</b></a>` },
-    { key: "description", label: "Descrição", sort: (t) => t.description || "", render: (t) => t.description || "—" },
-    { key: "fields", label: "Campos", sort: (t) => t.fields.length,
-      render: (t) => t.fields.map((f) => html`<span class="vault-chip" key=${f.field}>${f.field}${f.required ? "*" : ""}${f.kind === "secret" ? " 🔒" : ""}</span>`) },
-    { key: "items", label: "Itens", sort: (t) => t.items, render: (t) => t.items },
+    { key: "label", label: t("vault.col_template"), hideable: false, sort: (tp) => tp.label,
+      render: (tp) => html`<a href=${"#vault/templates/" + encodeURIComponent(tp.id)} onClick=${(e) => e.stopPropagation()}><b>${tp.label}</b></a>` },
+    { key: "description", label: t("common.description"), sort: (tp) => tp.description || "", render: (tp) => tp.description || "—" },
+    { key: "fields", label: t("vault.tab_fields"), sort: (tp) => tp.fields.length,
+      render: (tp) => tp.fields.map((f) => html`<span class="vault-chip" key=${f.field}>${f.field}${f.required ? "*" : ""}${f.kind === "secret" ? " 🔒" : ""}</span>`) },
+    { key: "items", label: t("vault.tab_items"), sort: (tp) => tp.items, render: (tp) => tp.items },
   ];
   return html`<div>
-    <p class="help vault-help">Campos de cada tipo de item; campo novo digitado aqui fica disponível para os outros templates.</p>
-    ${tid && tid !== "new" && !found && html`<div class="card">Template '${tid}' não encontrado. <a href="#vault/templates">Voltar</a></div>`}
-    <${DataTable} tableId="vault-templates" urlSort columns=${cols} rows=${templates.map((t) => ({ ...t, _key: t.id }))}
-      onRowClick=${(t) => r.open(["templates", t.id])}
-      actions=${(t) => html`<button class="sm danger needs-vault-templates" onClick=${() => setConfirm(t)}>Excluir</button>`}
-      empty="Nenhum template." />
+    <p class="help vault-help">${t("vault.templates_help")}</p>
+    ${tid && tid !== "new" && !found && html`<div class="card">${t("vault.template_not_found", { id: tid })} <a href="#vault/templates">${t("common.back")}</a></div>`}
+    <${DataTable} tableId="vault-templates" urlSort columns=${cols} rows=${templates.map((tp) => ({ ...tp, _key: tp.id }))}
+      onRowClick=${(tp) => r.open(["templates", tp.id])}
+      actions=${(tp) => html`<button class="sm danger needs-vault-templates" onClick=${() => setConfirm(tp)}>${t("common.delete")}</button>`}
+      empty=${t("vault.templates_empty")} />
     ${(tid === "new" || found) && html`<${TemplateForm} key=${tid} tpl=${found} data=${data}
         onClose=${() => r.open("templates")} onSaved=${() => { reload(); r.open("templates"); }} />`}
-    ${confirm && html`<${ConfirmDialog} title="Excluir template" danger=${true}
-        message=${`Remover o template '${confirm.label}'? ${confirm.items ? `Os ${confirm.items} item(ns) continuam no cofre, sem template.` : ""}`}
+    ${confirm && html`<${ConfirmDialog} title=${t("vault.delete_template_title")} danger=${true}
+        message=${t("vault.delete_template_confirm", { name: confirm.label, items: confirm.items ? t("vault.delete_template_items", { count: confirm.items }) : "" })}
         onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
-          try { await api.del(`/vault/templates/${encodeURIComponent(confirm.id)}`, rev); toast.ok("Template removido"); reload(); }
+          try { await api.del(`/vault/templates/${encodeURIComponent(confirm.id)}`, rev); toast.ok(t("vault.template_removed")); reload(); }
           catch (e) { handleError(e); } }} />`}
   </div>`;
 }
@@ -298,40 +299,40 @@ function TemplateForm({ tpl, data, onClose, onSaved }) {
     set(i, { field: name, kind: k || rows[i].kind || "secret", known: !!k });
   };
   async function save() {
-    if (!label.trim()) { toast.err("Informe o nome do template"); return; }
-    if (rows.some((x) => !String(x.field || "").trim())) { toast.err("Há campo sem nome"); return; }
+    if (!label.trim()) { toast.err(t("vault.template_name_required")); return; }
+    if (rows.some((x) => !String(x.field || "").trim())) { toast.err(t("vault.field_without_name")); return; }
     const changed = rows.filter((x) => { const k = kindOf(x.field); return k && x.kind && k !== x.kind; });
-    if (changed.length && !confirm(`Mudar o tipo de ${changed.map((x) => x.field).join(", ")} vale para TODOS os templates e itens que usam o campo. Continuar?`)) return;
+    if (changed.length && !confirm(t("vault.kind_change_confirm", { list: changed.map((x) => x.field).join(", ") }))) return;
     setBusy(true);
     try {
       const body = { label, description, fields: rows.map((x) => ({ field: x.field.trim(), kind: x.kind || null, required: !!x.required, visible: !!x.visible })) };
       if (isNew) await api.post("/vault/templates", body, rev);
       else await api.put(`/vault/templates/${encodeURIComponent(tpl.id)}`, body, rev);
-      toast.ok(isNew ? "Template criado" : "Template salvo"); onSaved();
+      toast.ok(isNew ? t("vault.template_created") : t("vault.template_saved")); onSaved();
     } catch (e) { handleError(e); } finally { setBusy(false); }
   }
-  return html`<${Modal} title=${isNew ? "Novo template" : `Template ${tpl.label}`} onClose=${onClose} wide=${true}>
-    <${Field} label="Nome *"><input value=${label} onInput=${(e) => setLabel(e.target.value)} placeholder="ex.: Portal de operadora" /><//>
-    <${Field} label="Descrição"><input value=${description} onInput=${(e) => setDescription(e.target.value)} /><//>
-    <div class="vault-tpl-head"><span>Campo (escolha ou digite um novo)</span><span>Tipo</span><span>Obrigatório</span><span>Visível na lista</span><span></span></div>
+  return html`<${Modal} title=${isNew ? t("vault.new_template_title") : t("vault.template_title", { name: tpl.label })} onClose=${onClose} wide=${true}>
+    <${Field} label=${t("vault.field_name_required")}><input value=${label} onInput=${(e) => setLabel(e.target.value)} placeholder=${t("vault.template_name_placeholder")} /><//>
+    <${Field} label=${t("common.description")}><input value=${description} onInput=${(e) => setDescription(e.target.value)} /><//>
+    <div class="vault-tpl-head"><span>${t("vault.tpl_head_field")}</span><span>${t("vault.col_kind")}</span><span>${t("vault.tpl_head_required")}</span><span>${t("vault.tpl_head_visible")}</span><span></span></div>
     <datalist id="vault-tpl-fields-dl">${fields.map((f) => html`<option key=${f.name} value=${f.name} />`)}</datalist>
     ${rows.map((x, i) => html`<div class="vault-tpl-row" key=${i}>
-      <input list="vault-tpl-fields-dl" value=${x.field} placeholder="ex.: API key" onInput=${(e) => onName(i, e.target.value)} />
+      <input list="vault-tpl-fields-dl" value=${x.field} placeholder=${t("vault.field_name_placeholder")} onInput=${(e) => onName(i, e.target.value)} />
       <select value=${x.kind || kindOf(x.field) || "secret"} onChange=${(e) => set(i, { kind: e.target.value })}
-        title=${kindOf(x.field) ? "O tipo é do campo: mudar aqui vale para todos os templates/itens" : "Campo novo"}>
-        <option value="secret">🔒 Segredo</option><option value="text">Texto puro</option></select>
-      <label><input type="checkbox" checked=${!!x.required} onChange=${(e) => set(i, { required: e.target.checked })} /> obrigatório</label>
-      <label><input type="checkbox" checked=${!!x.visible} onChange=${(e) => set(i, { visible: e.target.checked })} /> visível</label>
+        title=${kindOf(x.field) ? t("vault.kind_shared_title") : t("vault.new_field_title")}>
+        <option value="secret">${t("vault.kind_secret")}</option><option value="text">${t("vault.kind_plain_text")}</option></select>
+      <label><input type="checkbox" checked=${!!x.required} onChange=${(e) => set(i, { required: e.target.checked })} /> ${t("vault.required_check")}</label>
+      <label><input type="checkbox" checked=${!!x.visible} onChange=${(e) => set(i, { visible: e.target.checked })} /> ${t("vault.visible_check")}</label>
       <span class="vault-tpl-btns">
-        <button class="sm" title="Subir" onClick=${() => move(i, -1)}>↑</button>
-        <button class="sm" title="Descer" onClick=${() => move(i, 1)}>↓</button>
-        <button class="sm danger" title="Tirar do template" onClick=${() => setRows(rows.filter((_, j) => j !== i))}>✕</button>
-        ${x.field && !kindOf(x.field) && html`<${Badge} kind="warn">novo<//>`}
+        <button class="sm" title=${t("vault.move_up")} onClick=${() => move(i, -1)}>↑</button>
+        <button class="sm" title=${t("vault.move_down")} onClick=${() => move(i, 1)}>↓</button>
+        <button class="sm danger" title=${t("vault.remove_from_template")} onClick=${() => setRows(rows.filter((_, j) => j !== i))}>✕</button>
+        ${x.field && !kindOf(x.field) && html`<${Badge} kind="warn">${t("vault.new_badge")}<//>`}
       </span>
     </div>`)}
-    <button class="sm" onClick=${() => setRows([...rows, { field: "", kind: "secret", required: false, visible: false }])}>+ Adicionar campo</button>
-    <div class="modal-actions"><button onClick=${onClose}>Cancelar</button>
-      <button class="primary needs-vault-templates" disabled=${busy} onClick=${save}>${isNew ? "Criar" : "Salvar"}</button></div>
+    <button class="sm" onClick=${() => setRows([...rows, { field: "", kind: "secret", required: false, visible: false }])}>${t("vault.add_field_btn")}</button>
+    <div class="modal-actions"><button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary needs-vault-templates" disabled=${busy} onClick=${save}>${isNew ? t("common.create") : t("common.save")}</button></div>
   <//>`;
 }
 
@@ -342,26 +343,26 @@ function FieldsTab({ data, reload, r }) {
   const [, name] = r.segments;
   const found = name && name !== "new" ? fields.find((f) => f.name === name) : null;
   const cols = [
-    { key: "name", label: "Campo", hideable: false, sort: (f) => f.name,
+    { key: "name", label: t("vault.col_field"), hideable: false, sort: (f) => f.name,
       render: (f) => html`<a href=${"#vault/fields/" + encodeURIComponent(f.name)} onClick=${(e) => e.stopPropagation()}><b>${f.name}</b></a>` },
-    { key: "kind", label: "Tipo", sort: (f) => f.kind, render: (f) => KIND_LABEL[f.kind] || f.kind },
-    { key: "templates", label: "Templates", sort: (f) => f.templates, render: (f) => f.templates },
-    { key: "items", label: "Itens", sort: (f) => f.items, render: (f) => f.items },
+    { key: "kind", label: t("vault.col_kind"), sort: (f) => f.kind, render: (f) => kindLabel(f.kind) },
+    { key: "templates", label: t("vault.tab_templates"), sort: (f) => f.templates, render: (f) => f.templates },
+    { key: "items", label: t("vault.tab_items"), sort: (f) => f.items, render: (f) => f.items },
   ];
   return html`<div>
-    <p class="help vault-help">Campos reutilizáveis. O tipo é do campo; obrigatório e visível se escolhem no template.</p>
-    ${name && name !== "new" && !found && html`<div class="card">Campo '${name}' não encontrado. <a href="#vault/fields">Voltar</a></div>`}
+    <p class="help vault-help">${t("vault.fields_help")}</p>
+    ${name && name !== "new" && !found && html`<div class="card">${t("vault.field_not_found", { name })} <a href="#vault/fields">${t("common.back")}</a></div>`}
     <${DataTable} tableId="vault-fields" urlSort columns=${cols} rows=${fields.map((f) => ({ ...f, _key: f.name }))}
       onRowClick=${(f) => r.open(["fields", f.name])}
       actions=${(f) => html`<button class="sm danger needs-vault-templates" disabled=${f.templates || f.items}
-        title=${f.templates || f.items ? "Em uso: tire dos templates/itens antes" : ""} onClick=${() => setConfirm(f)}>Excluir</button>`}
-      empty="Nenhum campo." />
+        title=${f.templates || f.items ? t("vault.field_in_use_title") : ""} onClick=${() => setConfirm(f)}>${t("common.delete")}</button>`}
+      empty=${t("vault.fields_empty")} />
     ${(name === "new" || found) && html`<${FieldForm} key=${name} field=${found} rev=${rev}
         onClose=${() => r.open("fields")} onSaved=${() => { reload(); r.open("fields"); }} />`}
-    ${confirm && html`<${ConfirmDialog} title="Excluir campo" danger=${true} message=${`Remover o campo '${confirm.name}' do catálogo?`}
+    ${confirm && html`<${ConfirmDialog} title=${t("vault.delete_field_title")} danger=${true} message=${t("vault.delete_field_confirm", { name: confirm.name })}
         onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
-          try { await api.del(`/vault/fields/${encodeURIComponent(confirm.name)}`, rev); toast.ok("Campo removido"); reload(); }
+          try { await api.del(`/vault/fields/${encodeURIComponent(confirm.name)}`, rev); toast.ok(t("vault.field_removed")); reload(); }
           catch (e) { handleError(e); } }} />`}
   </div>`;
 }
@@ -374,18 +375,18 @@ function FieldForm({ field, rev, onClose, onSaved }) {
     try {
       if (isNew) await api.post("/vault/fields", { name, kind }, rev);
       else {
-        if (kind !== field.kind && field.items && !confirm(`Converter os valores de ${field.items} item(ns) para ${KIND_LABEL[kind]}? (exige o cofre destrancado)`)) return;
+        if (kind !== field.kind && field.items && !confirm(t("vault.convert_confirm", { count: field.items, kind: kindLabel(kind) }))) return;
         await api.patch(`/vault/fields/${encodeURIComponent(field.name)}`, { name: name !== field.name ? name : null, kind: kind !== field.kind ? kind : null }, rev);
       }
-      toast.ok("Campo salvo"); onSaved();
+      toast.ok(t("vault.field_saved")); onSaved();
     } catch (e) { handleError(e); }
   }
-  return html`<${Modal} title=${isNew ? "Novo campo" : `Campo ${field.name}`} onClose=${onClose}>
-    <${Field} label="Nome" hint=${isNew ? null : "Renomear atualiza todos os templates e itens."}><input value=${name} onInput=${(e) => setName(e.target.value)} placeholder="ex.: API key" /><//>
-    <${Field} label="Tipo"><select value=${kind} onChange=${(e) => setKind(e.target.value)}>
-      <option value="secret">🔒 Segredo (cifrado; só abre com o cofre destrancado)</option>
-      <option value="text">Texto puro (aparece sempre)</option></select><//>
-    <div class="modal-actions"><button onClick=${onClose}>Cancelar</button>
-      <button class="primary needs-vault-templates" disabled=${!name.trim()} onClick=${save}>${isNew ? "Criar" : "Salvar"}</button></div>
+  return html`<${Modal} title=${isNew ? t("vault.new_field_modal_title") : t("vault.field_title_name", { name: field.name })} onClose=${onClose}>
+    <${Field} label=${t("common.name")} hint=${isNew ? null : t("vault.rename_field_hint")}><input value=${name} onInput=${(e) => setName(e.target.value)} placeholder=${t("vault.field_name_placeholder")} /><//>
+    <${Field} label=${t("vault.col_kind")}><select value=${kind} onChange=${(e) => setKind(e.target.value)}>
+      <option value="secret">${t("vault.kind_secret_long")}</option>
+      <option value="text">${t("vault.kind_text_long")}</option></select><//>
+    <div class="modal-actions"><button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary needs-vault-templates" disabled=${!name.trim()} onClick=${save}>${isNew ? t("common.create") : t("common.save")}</button></div>
   <//>`;
 }

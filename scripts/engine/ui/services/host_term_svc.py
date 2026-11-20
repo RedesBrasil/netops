@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import deps
+from lib import i18n
 
 from lib.terminal_access import (  # noqa: E402,F401 — regra única (console + agente)
     DEFAULT_PORTS, TERMINAL_METHODS, TargetError, access_entries, pick_entry)
@@ -63,16 +64,18 @@ def resolve_target(host_id: str, method: str | None, port: int | None,
     try:
         host, _ = resolve_host(_host_ref(host_id), hosts_data, {}, decrypt=False)
     except Exception as exc:  # noqa: BLE001 — id inexistente/ambíguo
-        raise TargetError(f"host '{host_id}' não está no inventário") from exc
+        err = TargetError(i18n.t("api_host_term.not_in_inventory", host_id=host_id))
+        err.not_found = True          # web_launch_svc maps it to 404 (the text is translated)
+        raise err from exc
     if not host.get("mgmt_ip"):
-        raise TargetError("host sem IP de gerência (mgmt_ip)")
+        raise TargetError(i18n.t("api_host_term.no_mgmt_ip"))
     entry = pick_entry((entries_fn or access_entries)(host), method, port)
 
     cred, note, locked = {}, "", False
     name = entry.get("credential")
     raw = (lookup_ci(creds_data.get("credentials") or {}, name) or {}) if name else {}
     if not raw:
-        note = "host sem credencial cadastrada" if not name else f"credencial '{name}' não encontrada"
+        note = i18n.t("api_host_term.no_credential") if not name else i18n.t("api_host_term.credential_not_found", name=name)
     for key in ("username", "password", "secret", "key_file"):
         value = raw.get(key)
         if not isinstance(value, str) or not value:
@@ -80,9 +83,9 @@ def resolve_target(host_id: str, method: str | None, port: int | None,
         try:
             cred[key] = resolve_secret(value)     # decripta só aqui, em memória
         except VaultLocked:
-            locked, note = True, "cofre trancado"
+            locked, note = True, i18n.t("api_host_term.vault_locked")
         except Exception:  # noqa: BLE001 — VaultError (chave errada/cofre corrompido): pede no terminal
-            note = "não foi possível decifrar a credencial — informe a senha manualmente"
+            note = i18n.t("api_host_term.decrypt_failed")
     return host, entry, cred, note, locked
 
 
@@ -258,7 +261,8 @@ async def run_ssh(io: WsIO, host: dict, entry: dict, cred: dict, audit: AuditLog
                 continue
         if password is None and not key_file:
             password = await io.prompt(f"{user}@{ip}'s password: ", echo=False)
-        await io.info(f"Conectando em {user}@{ip}:{port} (SSH){' — autenticação automática' if auto else ''}…")
+        await io.info(i18n.t("api_host_term.connecting_ssh", target=f"{user}@{ip}:{port}")
+                      + (i18n.t("api_host_term.auto_auth") if auto else "") + "…")
         try:
             conn = await asyncssh.connect(
                 ip, port, username=user, password=password or None,
@@ -268,13 +272,13 @@ async def run_ssh(io: WsIO, host: dict, entry: dict, cred: dict, audit: AuditLog
             break
         except asyncssh.PermissionDenied:
             audit.write(f"AUTH FALHOU tentativa={attempt} usuario={user} auto={auto}")
-            await io.info("Acesso negado (usuário/senha)." + (" Informe as credenciais." if auto else ""), "31")
+            await io.info(i18n.t("api_host_term.access_denied") + (" " + i18n.t("api_host_term.enter_credentials") if auto else ""), "31")
             if auto:
                 user = ""       # credencial cadastrada falhou: pede tudo de novo
             password, key_file, auto = None, None, False
         except (OSError, asyncio.TimeoutError, asyncssh.Error) as exc:
             audit.write(f"ERRO conexão: {type(exc).__name__}: {exc}")
-            await io.info(f"Falha ao conectar: {exc or type(exc).__name__}", "31")
+            await io.info(i18n.t("api_host_term.connect_failed", error=exc or type(exc).__name__), "31")
             await io.status("erro")
             return
     del password
@@ -328,14 +332,15 @@ async def run_telnet(io: WsIO, host: dict, entry: dict, cred: dict, audit: Audit
     ip, port = host["mgmt_ip"], entry["port"]
     user, password = cred.get("username") or "", cred.get("password")
     auto = bool(user and password)
-    await io.info(f"Conectando em {ip}:{port} (Telnet){' — login automático' if auto else ''}…")
+    await io.info(i18n.t("api_host_term.connecting_telnet", target=f"{ip}:{port}")
+                  + (i18n.t("api_host_term.auto_login") if auto else "") + "…")
     try:
         reader, writer = await asyncio.wait_for(telnetlib3.open_connection(
             ip, port, encoding=False, term=TERM_TYPE, cols=io.cols, rows=io.rows,
             connect_minwait=0.05, connect_maxwait=1.0), CONNECT_TIMEOUT)
     except (OSError, asyncio.TimeoutError) as exc:
         audit.write(f"ERRO conexão: {type(exc).__name__}: {exc}")
-        await io.info(f"Falha ao conectar: {exc or type(exc).__name__}", "31")
+        await io.info(i18n.t("api_host_term.connect_failed", error=exc or type(exc).__name__), "31")
         await io.status("erro")
         return
     audit.write(f"CONECTADO usuario={user or '(manual)'} auto={auto}")
@@ -413,15 +418,15 @@ async def serve(ws, host_id: str, method: str | None, port: int | None, cols: in
             # Cofre trancado: pede para DESTRANCAR (popup no navegador) em vez da senha do equipamento.
             # Destrancou -> relê a credencial e segue no login automático; cancelou -> login manual.
             while locked and deps.STATE.allow_vault_unlock:
-                await io.info("[netops] Cofre trancado — destranque no popup para entrar com a credencial cadastrada.", "33")
+                await io.info("[netops] " + i18n.t("api_host_term.vault_locked_popup"), "33")
                 await io.status("vault_locked", host=host.get("hostname") or str(host.get("id")),
                                 ip=host["mgmt_ip"], method=entry["method"], port=entry["port"])
                 if await io.wait_vault() != "retry":
-                    note = "cofre continua trancado — informe a senha manualmente"
+                    note = i18n.t("api_host_term.still_locked")
                     break
                 host, entry, cred, note, locked = await asyncio.to_thread(resolve_target, host_id, method, port)
             if locked and not deps.STATE.allow_vault_unlock:
-                note = "cofre trancado (destrancar pela web está desabilitado) — informe a senha manualmente"
+                note = i18n.t("api_host_term.locked_no_web_unlock")
         except TargetError as exc:
             await io.info(f"[netops] {exc}", "31")
             await io.status("erro", error=str(exc))
@@ -445,7 +450,7 @@ async def serve(ws, host_id: str, method: str | None, port: int | None, cols: in
         if audit:
             audit.write(f"ERRO {type(exc).__name__}: {exc}")
         try:
-            await io.info(f"[netops] erro: {exc or type(exc).__name__}", "31")
+            await io.info("[netops] " + i18n.t("api_host_term.error", error=exc or type(exc).__name__), "31")
             await io.status("erro")
         except Exception:  # noqa: BLE001
             pass

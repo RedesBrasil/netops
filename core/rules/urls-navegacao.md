@@ -1,82 +1,82 @@
-# Regra permanente: tudo que se abre ou filtra tem URL própria (console web)
+# Permanent rule: everything that is opened or filtered has its own URL (web console)
 
-Todo agente que criar ou alterar uma tela do console (`scripts/engine/ui/static/js/`) deve ler esta regra.
+Every agent that creates or changes a console screen (`scripts/engine/ui/static/js/`) must read this rule.
 
-## Princípio
+## Principle
 
-O estado de navegação vive na URL, não só no `useState`. Copiar o endereço da barra e abri-lo em
-outra aba (ou após F5) deve reproduzir exatamente a mesma tela.
+Navigation state lives in the URL, not only in `useState`. Copying the address from the bar and opening it in
+another tab (or after F5) must reproduce exactly the same screen.
 
-## Regras
+## Rules
 
-1. **Todo menu = uma URL.** Cada item da sidebar é `#<menu>` (ex.: `#hosts`, `#backups`, `#memory`).
-2. **Todo item aberto = uma URL distinta**, em qualquer menu: host, credencial, mapa, nota de memória,
-   relatório, execução, workflow, agente, script, backup, sessão Claude, etc.
-   - Host A aberto → `#hosts/rt-core-01`; Host B aberto → `#hosts/sw-acesso-02`.
-   - Formato: `#<menu>/<id-estável>` — use o identificador estável (nome/slug/id), nunca índice de lista.
-   - Sub-abas e painéis de detalhe também: `#hosts/rt-core-01/interfaces`.
-3. **Todo filtro, busca, ordenação e página = URL distinta**, em query dentro do hash:
+1. **Every menu = one URL.** Each sidebar item is `#<menu>` (e.g.: `#hosts`, `#backups`, `#memory`).
+2. **Every opened item = a distinct URL**, in any menu: host, credential, map, memory note,
+   report, run, workflow, agent, script, backup, Claude session, etc.
+   - Host A open → `#hosts/rt-core-01`; Host B open → `#hosts/sw-acesso-02`.
+   - Format: `#<menu>/<stable-id>` — use the stable identifier (name/slug/id), never a list index.
+   - Sub-tabs and detail panels too: `#hosts/rt-core-01/interfaces`.
+3. **Every filter, search, sort and page = a distinct URL**, as a query inside the hash:
    `#hosts?vendor=mikrotik&status=down&q=core&sort=name&page=2`.
-   - Só grave valores não-padrão (URL limpa quando nada está filtrado).
-   - Limpar o filtro remove o parâmetro.
-   - Combina com item aberto: `#hosts/rt-core-01?tab=interfaces`.
-4. **Modais, painéis e editores que representam um objeto** (editar host, ver relatório) também têm URL.
-   Confirmações e diálogos efêmeros não precisam.
-5. **Abrir por URL funciona** (deep link): ao carregar, a tela lê o hash e restaura item, aba e filtros;
-   id inexistente mostra "não encontrado" com link de volta ao menu, nunca tela em branco.
-6. **Navegação normal usa histórico**: abrir item/aba → `location.hash = ...` (botão Voltar funciona).
-   Mudança de filtro ao digitar → `history.replaceState` (não polui o histórico).
-7. **Links reais**: listas usam `<a href="#...">`, não `onClick` que só muda estado — permite abrir em
-   nova aba e copiar o link.
-8. **Sem segredos na URL**: nunca coloque senha, token, secret ou conteúdo sensível (constituição §V).
-   Nada de token de acesso na URL — o login é por usuário e senha (sid no header, nunca na URL).
-9. **Compatibilidade**: ao renomear uma rota, redirecione a antiga (ver `topology` → `maps` em `main.js`).
-10. **Helper único**: implemente/reuse um helper central (ex.: `useRoute()` em `js/ui.js`) que faz
-    parse/serialize de `#menu/id?filtros`. Não espalhe `location.hash` manual pelas páginas.
+   - Only store non-default values (clean URL when nothing is filtered).
+   - Clearing the filter removes the parameter.
+   - Combines with an opened item: `#hosts/rt-core-01?tab=interfaces`.
+4. **Modals, panels and editors that represent an object** (edit host, view report) also have a URL.
+   Confirmations and ephemeral dialogs do not need one.
+5. **Opening by URL works** (deep link): on load, the screen reads the hash and restores item, tab and filters;
+   a non-existent id shows "not found" with a link back to the menu, never a blank screen.
+6. **Normal navigation uses history**: opening an item/tab → `location.hash = ...` (the Back button works).
+   A filter change while typing → `history.replaceState` (does not pollute the history).
+7. **Real links**: lists use `<a href="#...">`, not an `onClick` that only changes state — this allows opening in
+   a new tab and copying the link.
+8. **No secrets in the URL**: never put a password, token, secret or sensitive content there (constitution §V).
+   No access token in the URL — login is by user and password (sid in the header, never in the URL).
+9. **Compatibility**: when renaming a route, redirect the old one (see `topology` → `maps` in `main.js`).
+10. **Single helper**: implement/reuse a central helper (e.g.: `useRoute()` in `js/ui.js`) that does the
+    parse/serialize of `#menu/id?filters`. Do not scatter manual `location.hash` across the pages.
 
-## Estado atual (11/11/2026)
+## Current state (11/11/2026)
 
-Todos os menus do console seguem a regra. Helpers: `static/js/route.js` (`useMenuRoute`, `useRoute`, `navigate`,
-`parseRoute`, `buildRoute`, `matchText`) e `FilterBar` em `components.js`; `ResourceTable` aceita `sortState`/`onSortChange`.
+All console menus follow the rule. Helpers: `static/js/route.js` (`useMenuRoute`, `useRoute`, `navigate`,
+`parseRoute`, `buildRoute`, `matchText`) and `FilterBar` in `components.js`; `ResourceTable` accepts `sortState`/`onSortChange`.
 
-| Menu | URL de item | Filtros / parâmetros |
-|------|-------------|----------------------|
+| Menu | Item URL | Filters / parameters |
+|------|----------|----------------------|
 | Hosts | `#hosts/<id>`, `#hosts/new` | `q vendor role group sort dir` |
-| Grupos | `#groups/<nome>`, `/new` | `q vendor role` |
-| Credenciais | `#credentials/<nome>`, `/new`, `/<nome>/password`, `/<nome>/secret` | `q` |
-| Mapas | `#maps/<mapa>` (`#maps` → `#maps/all`) | `host=<id>\|new`, `link=<id>` |
-| Boas práticas / Configurações | `#practices\|configs/<vendor>/<arquivo>`, `/new` | `q vendor` |
-| Workflows / Agentes | `#workflows\|agents/<arquivo>`, `/new` | `q` |
-| Relatórios | `#reports/<arquivo>` | `q` |
-| Execuções | `#runs/<id>` | `q status` |
+| Groups | `#groups/<name>`, `/new` | `q vendor role` |
+| Host credentials | `#credentials/<name>`, `/new`, `/<name>/password`, `/<name>/secret` | `q` |
+| Maps | `#maps/<map>` (`#maps` → `#maps/all`) | `host=<id>\|new`, `link=<id>` |
+| Best practices / Configurations | `#practices\|configs/<vendor>/<file>`, `/new` | `q vendor` |
+| Workflows / Agents | `#workflows\|agents/<file>`, `/new` | `q` |
+| Reports | `#reports/<file>` | `q` |
+| Runs | `#runs/<id>` | `q status` |
 | Backups | `#backups/services[/<id>\|/new]`, `#backups/storage[/<host>]` | `q run file diffa diffb` |
-| Scripts / Skills | abas `#scripts` (Skills) e `#scripts?tab=scripts` (Scripts); `#scripts/<skill>` (página da skill), `#scripts/<skill>/<arquivo>[?tab=scripts]` (script ou `SKILL.md`), `/new` | `tab q location lang sort dir doc` |
-| Tarefas agendadas | `#schedules/<id>`, `#schedules/new`, `#schedules/runs`, `#schedules/runs/<tarefa>/<run>` | `q kind status` (tarefas); `q task rstatus unread` (execuções) |
-| Painel | `#dashboard` (página única) | `range start end model metric` + ordenação da tabela de tarefas |
-| Configuração | `#settings/updates` (painel de atualizações) | — |
+| Scripts / Skills | tabs `#scripts` (Skills) and `#scripts?tab=scripts` (Scripts); `#scripts/<skill>` (skill page), `#scripts/<skill>/<file>[?tab=scripts]` (script or `SKILL.md`), `/new` | `tab q location lang sort dir doc` |
+| Scheduled tasks | `#schedules/<id>`, `#schedules/new`, `#schedules/runs`, `#schedules/runs/<task>/<run>` | `q kind status` (tasks); `q task rstatus unread` (runs) |
+| Dashboard | `#dashboard` (single page) | `range start end model metric` + sorting of the tasks table |
+| Settings | `#settings/updates` (updates panel) | — |
 | Claude Code | `#claude/<id>`, `#claude/new` | — |
-| Usuários | `#users/<login>`, `#users/new`, `#users/<login>/password` | `q group status sort dir` |
-| Grupos de acesso | `#access-groups/<nome>`, `#access-groups/new` | `q sort dir` |
-| Auditoria | página única (lista paginada) | `user action q page sort dir` |
-| Minha conta | `#account` (fora do menu; botão com o nome no topo) | — |
-| Projetos | `#projects` (lista), `#projects/new`, `#projects/<id>` (sessões do projeto), `#projects/<id>/new`, `#projects/<id>/<uuid>` (conversa), `#projects/<id>/files` (arquivos da pasta) | `arquivados=1` (lista de arquivados), `q` (busca nas sessões do projeto); arquivos: `path`, `open`, `q`, `sort`, `hidden` |
-| Memória | `#memory` (=MEMORY.md), `#memory/AGENTS.md`, `#memory/notas`, `#memory/<nota>.md` | `q` (lista de notas) |
-| Terminal | página única (sem item aberto) | — |
-| Arquivos | `#files?path=<pasta>` (cada pasta = uma entrada no histórico; Voltar = pasta anterior) | `path q sort hidden open` (`open=<arquivo>` = editor aberto) |
-| Terminal de host | `#hostterm/<id>?method=&port=` (janela própria) | `fpath` = pasta do painel de arquivos (gravada com replace) |
+| Users | `#users/<login>`, `#users/new`, `#users/<login>/password` | `q group status sort dir` |
+| Access groups | `#access-groups/<name>`, `#access-groups/new` | `q sort dir` |
+| Audit | single page (paginated list) | `user action q page sort dir` |
+| My account | `#account` (outside the menu; button with the name at the top) | — |
+| Projects | `#projects` (list), `#projects/new`, `#projects/<id>` (project sessions), `#projects/<id>/new`, `#projects/<id>/<uuid>` (conversation), `#projects/<id>/files` (folder files) | `arquivados=1` (list of archived), `q` (search in the project sessions); files: `path`, `open`, `q`, `sort`, `hidden` |
+| Memory | `#memory` (=MEMORY.md), `#memory/AGENTS.md`, `#memory/notas`, `#memory/<note>.md` | `q` (list of notes) |
+| Terminal | single page (no opened item) | — |
+| Files | `#files?path=<folder>` (each folder = one history entry; Back = previous folder) | `path q sort hidden open` (`open=<file>` = editor open) |
+| Host terminal | `#hostterm/<id>?method=&port=` (own window) | `fpath` = folder of the files panel (stored with replace) |
 
-**Acessar → Web** (`openWebLaunch`) é uma *ação* (abre aba externa já logada via `POST /api/hosts/<id>/web-launch`), não uma tela do console: não tem hash próprio e nunca coloca ticket/senha na URL.
+**Access → Web** (`openWebLaunch`) is an *action* (opens an external tab already logged in via `POST /api/hosts/<id>/web-launch`), not a console screen: it has no hash of its own and never puts a ticket/password in the URL.
 
-Filtros efêmeros dentro de formulários/modais (ex.: escolher hosts ao editar um serviço de backup) não vivem na URL.
+Ephemeral filters inside forms/modals (e.g.: choosing hosts when editing a backup service) do not live in the URL.
 
-**Teste obrigatório:** `scripts/engine/ui/tests/urls.browser.mjs` (ambiente isolado: `tests/e2e-env.sh up`; ver SKILL.md).
-Ao criar um menu/tela nova, adicione um caso em `CASES` desse teste.
+**Mandatory test:** `scripts/engine/ui/tests/urls.browser.mjs` (isolated environment: `tests/e2e-env.sh up`; see SKILL.md).
+When creating a new menu/screen, add a case in `CASES` of that test.
 
-## Checklist antes de entregar uma tela
+## Checklist before delivering a screen
 
-- [ ] Abrir item A e item B gera URLs diferentes?
-- [ ] Colar a URL em aba nova restaura item, aba e filtros?
-- [ ] Cada filtro/busca/ordenação altera a URL?
-- [ ] Voltar/Avançar do navegador funcionam?
-- [ ] Nenhum segredo na URL?
-- [ ] Teste JS cobre parse/serialize da rota?
+- [ ] Do opening item A and item B generate different URLs?
+- [ ] Does pasting the URL in a new tab restore item, tab and filters?
+- [ ] Does each filter/search/sort change the URL?
+- [ ] Do the browser's Back/Forward work?
+- [ ] No secret in the URL?
+- [ ] Does a JS test cover the parse/serialize of the route?

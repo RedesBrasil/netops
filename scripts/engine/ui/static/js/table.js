@@ -20,6 +20,7 @@
 import { html } from "htm/preact";
 import { useState, useEffect, useRef, useLayoutEffect } from "preact/hooks";
 import { useRoute, navigate } from "./route.js";
+import { t } from "./i18n.js";
 
 import { TL_MIN, ACT, loadTableLayout, saveTableLayout, resolveColumns, moveColumn, sortRows } from "./table-core.js";
 export { loadTableLayout, saveTableLayout, resolveColumns, moveColumn, sortRows } from "./table-core.js";
@@ -53,23 +54,23 @@ function ColumnMenu({ anchor, ordered, isVisible, visibleCount, onToggle, onMove
   const top = Math.min(r.bottom + 4, innerHeight - 80);
   const right = Math.max(8, innerWidth - r.right);
   const name = (c) => c.menuLabel || (typeof c.label === "string" ? c.label : c.key);
-  return html`<div class="rt-menu" ref=${ref} role="dialog" aria-label="Colunas visíveis"
+  return html`<div class="rt-menu" ref=${ref} role="dialog" aria-label=${t("table.columns_visible")}
       style=${`top:${top}px;right:${right}px;max-height:${Math.max(160, innerHeight - top - 12)}px`}>
-    <div class="rt-menu-title">Colunas</div>
+    <div class="rt-menu-title">${t("table.columns")}</div>
     ${ordered.map((c, i) => {
       const on = isVisible(c), locked = c.hideable === false || (on && visibleCount <= 1);
       return html`<div class="rt-menu-row" key=${c.key}>
         <label><input type="checkbox" checked=${on} disabled=${locked} onChange=${() => onToggle(c.key, !on)} />
           <span>${name(c)}</span></label>
         <span class="rt-menu-move">
-          <button type="button" class="sm" title="Mover para a esquerda" aria-label=${`Mover ${name(c)} para a esquerda`}
+          <button type="button" class="sm" title=${t("table.move_left")} aria-label=${t("table.move_col_left", { name: name(c) })}
             disabled=${i === 0} onClick=${() => onMove(i, -1)}>↑</button>
-          <button type="button" class="sm" title="Mover para a direita" aria-label=${`Mover ${name(c)} para a direita`}
+          <button type="button" class="sm" title=${t("table.move_right")} aria-label=${t("table.move_col_right", { name: name(c) })}
             disabled=${i === ordered.length - 1} onClick=${() => onMove(i, 1)}>↓</button>
         </span>
       </div>`;
     })}
-    <div class="rt-menu-foot"><button type="button" class="sm" onClick=${onReset}>Restaurar padrão</button></div>
+    <div class="rt-menu-foot"><button type="button" class="sm" onClick=${onReset}>${t("table.reset")}</button></div>
   </div>`;
 }
 
@@ -101,7 +102,7 @@ export function DataTable(props) {
   });
   const update = (f, persist = true) => setLayout((l) => { const n = f(l); if (persist) saveTableLayout(tableId, n); return n; });
 
-  if (!rows || rows.length === 0) return html`<div class="card"><div class="empty">${empty || "Nada aqui ainda."}</div></div>`;
+  if (!rows || rows.length === 0) return html`<div class="card"><div class="empty">${empty || t("table.empty")}</div></div>`;
 
   const view = sortRows(rows, columns, sort);
   const onHead = (c) => { if (busy.current || !c.sort) return; setSort(sort.key === c.key ? { key: c.key, dir: sort.dir === "asc" ? "desc" : "asc" } : { key: c.key, dir: "asc" }); };
@@ -192,14 +193,14 @@ export function DataTable(props) {
           if (c.pinned) return html`<th key=${c.key} data-col=${c.key} class="rt-th rt-pinned">${c.label}</th>`;
           const cls = ["rt-th", c.sort ? "sortable" : "", drop && drop.key === c.key ? "rt-drop-" + drop.side : ""].filter(Boolean).join(" ");
           return html`<th key=${c.key} data-col=${c.key} class=${cls} aria-sort=${ariaSort(c)} draggable="true"
-              title=${(c.sort ? "Clique para ordenar · " : "") + "arraste para mover a coluna"}
+              title=${(c.sort ? t("table.click_to_sort") : "") + t("table.drag_to_move")}
               onClick=${() => onHead(c)}
               onDragStart=${(e) => onDragStart(e, c.key)} onDragOver=${(e) => onDragOver(e, c.key)}
               onDragLeave=${(e) => { if (!e.currentTarget.contains(e.relatedTarget) && drop && drop.key === c.key) setDrop(null); }}
               onDrop=${(e) => onDrop(e, c.key)} onDragEnd=${onDragEnd}>
             <span class="rt-th-label">${label(c)}</span>
-            <span class="rt-resize" role="separator" aria-orientation="vertical" aria-label=${`Redimensionar coluna ${c.menuLabel || c.label}`}
-              title="Arraste para redimensionar · duplo clique ajusta ao conteúdo" draggable="false"
+            <span class="rt-resize" role="separator" aria-orientation="vertical" aria-label=${t("table.resize_col", { name: c.menuLabel || c.label })}
+              title=${t("table.resize_hint")} draggable="false"
               onPointerDown=${(e) => startResize(e, c.key)} onClick=${(e) => e.stopPropagation()}
               onDblClick=${(e) => autoFit(e, c.key)} onDragStart=${(e) => { e.preventDefault(); e.stopPropagation(); }}></span>
           </th>`;
@@ -207,7 +208,7 @@ export function DataTable(props) {
         <th class="rt-fill"></th>
         <th class="rt-act-th" data-col=${ACT}>
           <button type="button" class="sm rt-cols-btn" ref=${menuBtn} aria-haspopup="dialog" aria-expanded=${menuOpen}
-            title="Escolher, ordenar e reorganizar colunas" onClick=${(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}>⚙ Colunas</button>
+            title=${t("table.columns_title")} onClick=${(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}>${t("table.columns_btn")}</button>
         </th>
       </tr></thead>
       <tbody>

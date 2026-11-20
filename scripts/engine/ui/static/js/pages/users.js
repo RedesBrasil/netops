@@ -2,18 +2,19 @@
 // URLs (core/rules/urls-navegacao.md):
 //   #users[/<login>|/new|/<login>/password][?q=&group=&status=&sort=&dir=]
 //   #access-groups[/<nome>|/new][?q=&sort=&dir=]
-import { html, useState, api, useResource, Spinner, Badge, toast, handleError, useMe, refreshMe } from "../ui.js";
+import { html, useState, api, useResource, Spinner, Badge, toast, handleError, useMe, refreshMe, t, fmtDateTime } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
 import { FilterBar, DataTable, Field, Modal, ConfirmDialog, PasswordInput } from "../components.js";
 
-const fmtTs = (t) => (t ? new Date(t * 1000).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—");
+const fmtTs = (ts) => (ts ? fmtDateTime(ts * 1000, { dateStyle: "short", timeStyle: "short" }) : "—");
 
 function useCatalog() {
   const r = useResource("/access-catalog");
   return r.data || { permissions: [], net_perms: ["read", "create", "edit", "delete"], password_min: 8, multiuser: true };
 }
 
-const NET_LABELS = { read: "Ler e diagnosticar", create: "Criar", edit: "Editar", delete: "Apagar" };
+const NET_LABELS = { read: "users.net_read", create: "users.net_create", edit: "users.net_edit", delete: "users.net_delete" };
+const netLabel = (p) => (NET_LABELS[p] ? t(NET_LABELS[p]) : p);
 
 /* ================================ Usuários ================================ */
 export function UsersPage() {
@@ -26,7 +27,7 @@ export function UsersPage() {
   const status = r.params.status || "";
   const [confirm, setConfirm] = useState(null);
   if (res.loading && !res.data) return html`<${Spinner} />`;
-  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  if (res.error) return html`<div class="card">${t("users.error", { message: res.error.message })}</div>`;
   const { users: all, groups: groupNames, multiuser } = res.data;
   const [seg, sub] = r.segments;
   const found = seg && seg !== "new" ? all.find((u) => u.username === seg) : null;
@@ -37,42 +38,42 @@ export function UsersPage() {
     && (!status || (status === "ativo" ? !u.disabled : u.disabled)));
 
   const cols = [
-    { key: "email", label: "E-mail (login)", hideable: false, sort: (u) => u.email || u.username,
+    { key: "email", label: t("users.col_email"), hideable: false, sort: (u) => u.email || u.username,
       render: (u) => html`<a href=${"#users/" + encodeURIComponent(u.username)} onClick=${(e) => e.stopPropagation()}><b>${u.email || u.username}</b></a>
-        ${me && me.username === u.username ? html` <${Badge}>você<//>` : ""}${!u.email ? html` <${Badge} kind="warn">sem e-mail<//>` : ""}` },
-    { key: "display_name", label: "Nome", sort: true, render: (u) => u.display_name || "—" },
+        ${me && me.username === u.username ? html` <${Badge}>${t("users.you")}<//>` : ""}${!u.email ? html` <${Badge} kind="warn">${t("users.no_email")}<//>` : ""}` },
+    { key: "display_name", label: t("common.name"), sort: true, render: (u) => u.display_name || "—" },
     { key: "username", label: "ID", sort: true, hidden: true, render: (u) => html`<code>${u.username}</code>` },
-    { key: "groups", label: "Grupos", sort: (u) => u.groups.join(","), render: (u) => u.groups.length
-        ? u.groups.map((g) => html`<${Badge} kind=${g === "admin" ? "warn" : ""}>${g}<//> `) : html`<span class="help">sem grupo</span>` },
-    { key: "status", label: "Situação", sort: (u) => (u.disabled ? 2 : u.must_change_password ? 1 : 0),
-      render: (u) => u.disabled ? html`<${Badge} kind="danger">desativado<//>`
-        : u.must_change_password ? html`<${Badge} kind="warn">senha provisória<//>` : html`<${Badge} kind="ok">ativo<//>` },
-    { key: "last_login", label: "Último login", sort: (u) => u.last_login || 0, render: (u) => fmtTs(u.last_login) },
-    { key: "sessions", label: "Sessões", sort: true, render: (u) => String(u.sessions) },
-    { key: "vault_slot", label: "Cofre", sort: (u) => (u.vault_slot ? 1 : 0),
-      render: (u) => (u.vault_slot ? html`<${Badge} kind="ok">🔑 destranca<//>` : html`<span class="help" title="O login cria a chave quando o cofre estiver destrancado">—</span>`) },
-    { key: "last_ip", label: "Último IP", sort: true, hidden: true, render: (u) => u.last_ip || "—" },
-    { key: "created_at", label: "Criado em", sort: (u) => u.created_at || 0, hidden: true, render: (u) => `${fmtTs(u.created_at)} (${u.created_by || "—"})` },
+    { key: "groups", label: t("users.col_groups"), sort: (u) => u.groups.join(","), render: (u) => u.groups.length
+        ? u.groups.map((g) => html`<${Badge} kind=${g === "admin" ? "warn" : ""}>${g}<//> `) : html`<span class="help">${t("users.no_group")}</span>` },
+    { key: "status", label: t("users.col_status"), sort: (u) => (u.disabled ? 2 : u.must_change_password ? 1 : 0),
+      render: (u) => u.disabled ? html`<${Badge} kind="danger">${t("users.status_disabled")}<//>`
+        : u.must_change_password ? html`<${Badge} kind="warn">${t("users.status_temp_password")}<//>` : html`<${Badge} kind="ok">${t("users.status_active")}<//>` },
+    { key: "last_login", label: t("users.col_last_login"), sort: (u) => u.last_login || 0, render: (u) => fmtTs(u.last_login) },
+    { key: "sessions", label: t("users.col_sessions"), sort: true, render: (u) => String(u.sessions) },
+    { key: "vault_slot", label: t("users.col_vault"), sort: (u) => (u.vault_slot ? 1 : 0),
+      render: (u) => (u.vault_slot ? html`<${Badge} kind="ok">${t("users.vault_unlocks")}<//>` : html`<span class="help" title=${t("users.vault_slot_hint")}>—</span>`) },
+    { key: "last_ip", label: t("users.col_last_ip"), sort: true, hidden: true, render: (u) => u.last_ip || "—" },
+    { key: "created_at", label: t("users.col_created"), sort: (u) => u.created_at || 0, hidden: true, render: (u) => `${fmtTs(u.created_at)} (${u.created_by || "—"})` },
   ];
 
   return html`<div>
-    <div class="page-title"><h1>Usuários</h1><span class="spacer"></span>
-      <a class="btn" href="#access-groups">Grupos de acesso</a>
-      <button class="primary" onClick=${() => r.open("new")}>+ Novo usuário</button></div>
-    ${!multiuser && html`<div class="card"><b>Modo senha-mestra.</b> Ainda não há usuários: crie o primeiro
-      administrador (grupo <code>admin</code>). Depois disso o login passa a ser por usuário e senha.</div>`}
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar e-mail ou nome"
-      selects=${[{ key: "group", label: "Grupo", value: group, options: groupNames },
-                 { key: "status", label: "Situação", value: status, options: ["ativo", "desativado"] }]}
+    <div class="page-title"><h1>${t("users.title")}</h1><span class="spacer"></span>
+      <a class="btn" href="#access-groups">${t("users.access_groups")}</a>
+      <button class="primary" onClick=${() => r.open("new")}>${t("users.new_user_btn")}</button></div>
+    ${!multiuser && html`<div class="card"><b>${t("users.master_mode_strong")}</b> ${t("users.master_mode_text")} <code>admin</code>${t("users.master_mode_end")}</div>`}
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${t("users.search_users")}
+      selects=${[{ key: "group", label: t("users.group"), value: group, options: groupNames },
+                 { key: "status", label: t("users.col_status"), value: status,
+                   options: [{ value: "ativo", label: t("users.status_active") }, { value: "desativado", label: t("users.status_disabled") }] }]}
       count=${users.length} total=${all.length} />
-    ${seg && seg !== "new" && !found && html`<div class="card">Usuário '${seg}' não encontrado. <a href="#users">Voltar aos usuários</a></div>`}
+    ${seg && seg !== "new" && !found && html`<div class="card">${t("users.user_not_found", { name: seg })} <a href="#users">${t("users.back_users")}</a></div>`}
     <${DataTable} tableId="users" urlSort columns=${cols} rows=${users.map((u) => ({ ...u, _key: u.username }))}
       onRowClick=${(u) => r.open(u.username)}
       actions=${(u) => html`
-        <button class="sm" onClick=${() => r.open([u.username, "password"])}>Senha…</button>
-        <button class="sm" disabled=${!u.sessions} onClick=${() => setConfirm({ kind: "logout", u })}>Encerrar sessões</button>
-        <button class="sm danger" disabled=${me && me.username === u.username} onClick=${() => setConfirm({ kind: "delete", u })}>Excluir</button>`}
-      empty="Nenhum usuário." />
+        <button class="sm" onClick=${() => r.open([u.username, "password"])}>${t("users.password_btn")}</button>
+        <button class="sm" disabled=${!u.sessions} onClick=${() => setConfirm({ kind: "logout", u })}>${t("users.end_sessions")}</button>
+        <button class="sm danger" disabled=${me && me.username === u.username} onClick=${() => setConfirm({ kind: "delete", u })}>${t("common.delete")}</button>`}
+      empty=${t("users.no_users")} />
 
     ${editing && html`<${UserForm} key=${editing.username || "new"} user=${editing} groups=${groupNames} cat=${cat}
         first=${!multiuser} self=${me && me.username === editing.username}
@@ -80,14 +81,14 @@ export function UsersPage() {
     ${resetting && html`<${ResetPasswordModal} user=${resetting} cat=${cat} onClose=${() => r.close()}
         onSaved=${() => { r.close(); res.reload(); }} />`}
     ${confirm && html`<${ConfirmDialog} danger=${confirm.kind === "delete"}
-        title=${confirm.kind === "delete" ? "Excluir usuário" : "Encerrar sessões"}
-        message=${confirm.kind === "delete" ? `Apagar o usuário ${confirm.u.email || confirm.u.username}? As sessões dele caem na hora.`
-          : `Derrubar as ${confirm.u.sessions} sessão(ões) abertas de ${confirm.u.email || confirm.u.username}?`}
+        title=${confirm.kind === "delete" ? t("users.delete_user") : t("users.end_sessions")}
+        message=${confirm.kind === "delete" ? t("users.delete_user_confirm", { name: confirm.u.email || confirm.u.username })
+          : t("users.logout_confirm", { count: confirm.u.sessions, name: confirm.u.email || confirm.u.username })}
         onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
           try {
-            if (confirm.kind === "delete") { await api.del(`/users/${encodeURIComponent(confirm.u.username)}`); toast.ok("Usuário apagado"); }
-            else { await api.del(`/users/${encodeURIComponent(confirm.u.username)}/sessions`); toast.ok("Sessões encerradas"); }
+            if (confirm.kind === "delete") { await api.del(`/users/${encodeURIComponent(confirm.u.username)}`); toast.ok(t("users.user_deleted")); }
+            else { await api.del(`/users/${encodeURIComponent(confirm.u.username)}/sessions`); toast.ok(t("users.sessions_ended")); }
             res.reload();
           } catch (e) { handleError(e); } }} />`}
   </div>`;
@@ -113,43 +114,43 @@ function UserForm({ user, groups, cat, first, self, onClose, onSaved }) {
     setErrs({});
     try {
       if (isNew) {
-        if (form.password.length < cat.password_min) { setErrs({ password: `Mínimo de ${cat.password_min} caracteres` }); return; }
+        if (form.password.length < cat.password_min) { setErrs({ password: t("users.password_min", { n: cat.password_min }) }); return; }
         if (form.password !== form.password2) return;
         const u = await api.post("/users", {
           email: form.email.trim().toLowerCase(), password: form.password, display_name: form.display_name,
           groups: form.groups, must_change_password: form.must_change_password });
-        toast.ok(`Usuário ${u.email} criado`);
+        toast.ok(t("users.user_created", { email: u.email }));
         if (first) await refreshMe();
         onSaved(u);
       } else {
         const u = await api.patch(`/users/${encodeURIComponent(user.username)}`, {
           display_name: form.display_name, email: form.email.trim().toLowerCase() || undefined, groups: form.groups, disabled: form.disabled,
           must_change_password: form.must_change_password }, user.rev);
-        toast.ok("Usuário atualizado");
+        toast.ok(t("users.user_updated"));
         if (self) await refreshMe();
         onSaved(u);
       }
     } catch (e) { handleError(e); }
   }
   const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim());
-  return html`<${Modal} title=${isNew ? (first ? "Primeiro administrador" : "Novo usuário") : `Usuário ${user.email || user.username}`} onClose=${onClose}>
-    <${Field} label="E-mail" hint=${isNew ? "É o login do usuário." : html`É o login. ID interno: <code>${user.username}</code> (não muda)`}
-        error=${form.email && !emailOk ? "E-mail inválido" : null}>
+  return html`<${Modal} title=${isNew ? (first ? t("users.first_admin") : t("users.new_user")) : t("users.user_title", { name: user.email || user.username })} onClose=${onClose}>
+    <${Field} label=${t("common.email")} hint=${isNew ? t("users.email_hint_new") : html`${t("users.email_hint_edit")} <code>${user.username}</code> ${t("users.email_hint_edit_end")}`}
+        error=${form.email && !emailOk ? t("users.email_invalid") : null}>
       <input type="email" autocapitalize="none" spellcheck="false" value=${form.email} onInput=${(e) => set("email", e.target.value)} /><//>
-    <${Field} label="Nome"><input value=${form.display_name} onInput=${(e) => set("display_name", e.target.value)} /><//>
-    <${Field} label="Grupos de acesso" hint=${first ? "O primeiro usuário precisa ser admin." : html`Permissões efetivas = soma dos grupos. <a href="#access-groups">Ver grupos</a>`}>
+    <${Field} label=${t("common.name")}><input value=${form.display_name} onInput=${(e) => set("display_name", e.target.value)} /><//>
+    <${Field} label=${t("users.access_groups")} hint=${first ? t("users.groups_hint_first") : html`${t("users.groups_hint")} <a href="#access-groups">${t("users.see_groups")}</a>`}>
       <${GroupChecks} value=${form.groups} options=${groups} disabled=${first} onChange=${(v) => set("groups", v)} /><//>
     ${isNew && html`
-      <${Field} label="Senha" error=${errs.password}><${PasswordInput} autocomplete="new-password" value=${form.password} onInput=${(e) => set("password", e.target.value)} /><//>
-      <${Field} label="Confirme a senha" error=${mismatch ? "As senhas não conferem" : null}>
+      <${Field} label=${t("common.password")} error=${errs.password}><${PasswordInput} autocomplete="new-password" value=${form.password} onInput=${(e) => set("password", e.target.value)} /><//>
+      <${Field} label=${t("users.confirm_password")} error=${mismatch ? t("users.password_mismatch") : null}>
         <${PasswordInput} autocomplete="new-password" value=${form.password2} onInput=${(e) => set("password2", e.target.value)} /><//>`}
     ${!first && html`<${Field}><label><input type="checkbox" checked=${form.must_change_password}
-      onChange=${(e) => set("must_change_password", e.target.checked)} /> Senha provisória (troca obrigatória no próximo login)</label><//>`}
+      onChange=${(e) => set("must_change_password", e.target.checked)} /> ${t("users.must_change")}</label><//>`}
     ${!isNew && html`<${Field}><label><input type="checkbox" disabled=${self} checked=${form.disabled}
-      onChange=${(e) => set("disabled", e.target.checked)} /> Desativado (não entra; sessões caem na hora)</label><//>`}
-    ${!isNew && html`<div class="help">Criado em ${fmtTs(user.created_at)} por ${user.created_by || "—"} · último login ${fmtTs(user.last_login)}${user.last_ip ? " de " + user.last_ip : ""} · senha trocada em ${fmtTs(user.password_changed_at)}</div>`}
-    <div class="modal-actions"><button onClick=${onClose}>Cancelar</button>
-      <button class="primary" disabled=${(isNew && (!form.password || mismatch)) || (form.email && !emailOk) || (isNew && !emailOk)} onClick=${save}>${isNew ? "Criar" : "Salvar"}</button></div>
+      onChange=${(e) => set("disabled", e.target.checked)} /> ${t("users.disabled_check")}</label><//>`}
+    ${!isNew && html`<div class="help">${t("users.user_meta", { created: fmtTs(user.created_at), by: user.created_by || "—", last: fmtTs(user.last_login), ip: user.last_ip ? t("users.from_ip", { ip: user.last_ip }) : "", changed: fmtTs(user.password_changed_at) })}</div>`}
+    <div class="modal-actions"><button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary" disabled=${(isNew && (!form.password || mismatch)) || (form.email && !emailOk) || (isNew && !emailOk)} onClick=${save}>${isNew ? t("common.create") : t("common.save")}</button></div>
   <//>`;
 }
 
@@ -162,18 +163,18 @@ function ResetPasswordModal({ user, cat, onClose, onSaved }) {
     if (!v1 || mismatch || short) return;
     try {
       await api.put(`/users/${encodeURIComponent(user.username)}/password`, { password: v1, must_change_password: temp });
-      toast.ok("Senha definida; as sessões do usuário foram encerradas"); onSaved();
+      toast.ok(t("users.password_set")); onSaved();
     } catch (e) { handleError(e); }
   }
-  return html`<${Modal} title=${`Definir senha — ${user.email || user.username}`} onClose=${onClose}>
-    <${Field} label="Nova senha" error=${short ? `Mínimo de ${cat.password_min} caracteres` : null}>
+  return html`<${Modal} title=${t("users.set_password_title", { name: user.email || user.username })} onClose=${onClose}>
+    <${Field} label=${t("users.new_password")} error=${short ? t("users.password_min", { n: cat.password_min }) : null}>
       <${PasswordInput} autocomplete="new-password" value=${v1} onInput=${(e) => setV1(e.target.value)} /><//>
-    <${Field} label="Confirme" error=${mismatch ? "As senhas não conferem" : null}>
+    <${Field} label=${t("users.confirm")} error=${mismatch ? t("users.password_mismatch") : null}>
       <${PasswordInput} autocomplete="new-password" value=${v2} onInput=${(e) => setV2(e.target.value)} /><//>
-    <${Field}><label><input type="checkbox" checked=${temp} onChange=${(e) => setTemp(e.target.checked)} /> Provisória (o usuário troca no próximo login)</label><//>
-    <div class="help">Se o cofre estiver destrancado agora, a chave do cofre do usuário é refeita junto; senão ele a ganha no próximo login com o cofre aberto.</div>
-    <div class="modal-actions"><button onClick=${onClose}>Cancelar</button>
-      <button class="primary" disabled=${!v1 || mismatch || short} onClick=${save}>Definir senha</button></div>
+    <${Field}><label><input type="checkbox" checked=${temp} onChange=${(e) => setTemp(e.target.checked)} /> ${t("users.temporary")}</label><//>
+    <div class="help">${t("users.reset_help")}</div>
+    <div class="modal-actions"><button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary" disabled=${!v1 || mismatch || short} onClick=${save}>${t("users.set_password")}</button></div>
   <//>`;
 }
 
@@ -185,44 +186,42 @@ export function AccessGroupsPage() {
   const q = r.params.q || "";
   const [confirm, setConfirm] = useState(null);
   if (res.loading && !res.data) return html`<${Spinner} />`;
-  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  if (res.error) return html`<div class="card">${t("users.error", { message: res.error.message })}</div>`;
   const { groups: all, users } = res.data;
   const [seg] = r.segments;
   const found = seg && seg !== "new" ? all.find((g) => g.name === seg) : null;
   const editing = seg === "new" ? { __new: true, permissions: [], net_perms: ["read"], members: [] } : found;
   const groups = all.filter((g) => matchText(q, g.name, g.description, g.members.join(" ")));
-  const permCount = (g) => (g.permissions.includes("*") ? "todas" : String(g.permissions.length));
+  const permCount = (g) => (g.permissions.includes("*") ? t("users.perm_all") : String(g.permissions.length));
 
   const cols = [
-    { key: "name", label: "Grupo", hideable: false, sort: true,
-      render: (g) => html`<a href=${"#access-groups/" + encodeURIComponent(g.name)} onClick=${(e) => e.stopPropagation()}><b>${g.name}</b></a>${g.builtin ? html` <${Badge} kind="warn">fixo<//>` : ""}` },
-    { key: "description", label: "Descrição", sort: true, render: (g) => g.description || "—" },
-    { key: "permissions", label: "Permissões", sort: (g) => (g.permissions.includes("*") ? 999 : g.permissions.length), render: permCount },
-    { key: "net_perms", label: "Rede (aba Claude)", sort: (g) => g.net_perms.length,
-      render: (g) => g.net_perms.length === 4 ? html`<${Badge} kind="warn">Full<//>` : g.net_perms.map((p) => html`<${Badge}>${NET_LABELS[p] || p}<//> `) },
-    { key: "members", label: "Membros", sort: (g) => g.members.length, render: (g) => g.members.join(", ") || "—" },
+    { key: "name", label: t("users.group"), hideable: false, sort: true,
+      render: (g) => html`<a href=${"#access-groups/" + encodeURIComponent(g.name)} onClick=${(e) => e.stopPropagation()}><b>${g.name}</b></a>${g.builtin ? html` <${Badge} kind="warn">${t("users.builtin")}<//>` : ""}` },
+    { key: "description", label: t("common.description"), sort: true, render: (g) => g.description || "—" },
+    { key: "permissions", label: t("users.col_permissions"), sort: (g) => (g.permissions.includes("*") ? 999 : g.permissions.length), render: permCount },
+    { key: "net_perms", label: t("users.col_network"), sort: (g) => g.net_perms.length,
+      render: (g) => g.net_perms.length === 4 ? html`<${Badge} kind="warn">Full<//>` : g.net_perms.map((p) => html`<${Badge}>${netLabel(p)}<//> `) },
+    { key: "members", label: t("users.col_members"), sort: (g) => g.members.length, render: (g) => g.members.join(", ") || "—" },
   ];
 
   return html`<div>
-    <div class="page-title"><h1>Grupos de acesso</h1><span class="spacer"></span>
-      <a class="btn" href="#users">Usuários</a>
-      <button class="primary" onClick=${() => r.open("new")}>+ Novo grupo</button></div>
-    <p class="help">O grupo define o que o usuário vê e faz no console. Quem tem acesso a hosts vê todos os
-      hosts. Terminal e arquivos do servidor, configuração, atualização, usuários, auditoria, scripts e tarefas
-      agendadas ficam só com o grupo <b>admin</b>, porque esses recursos rodam com a conta do servidor (e <b>server.admin</b> dá root local).</p>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar grupo ou membro" count=${groups.length} total=${all.length} />
-    ${seg && seg !== "new" && !found && html`<div class="card">Grupo '${seg}' não encontrado. <a href="#access-groups">Voltar aos grupos</a></div>`}
+    <div class="page-title"><h1>${t("users.access_groups")}</h1><span class="spacer"></span>
+      <a class="btn" href="#users">${t("users.users")}</a>
+      <button class="primary" onClick=${() => r.open("new")}>${t("users.new_group_btn")}</button></div>
+    <p class="help">${t("users.groups_help_1")} <b>admin</b>${t("users.groups_help_2")} <b>server.admin</b> ${t("users.groups_help_3")}</p>
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${t("users.search_groups")} count=${groups.length} total=${all.length} />
+    ${seg && seg !== "new" && !found && html`<div class="card">${t("users.group_not_found", { name: seg })} <a href="#access-groups">${t("users.back_groups")}</a></div>`}
     <${DataTable} tableId="access-groups" urlSort columns=${cols} rows=${groups.map((g) => ({ ...g, _key: g.name }))}
       onRowClick=${(g) => r.open(g.name)}
-      actions=${(g) => html`<button class="sm danger" disabled=${g.builtin} onClick=${() => setConfirm(g)}>Excluir</button>`}
-      empty="Nenhum grupo." />
+      actions=${(g) => html`<button class="sm danger" disabled=${g.builtin} onClick=${() => setConfirm(g)}>${t("common.delete")}</button>`}
+      empty=${t("users.no_groups")} />
     ${editing && html`<${GroupForm} key=${editing.name || "new"} group=${editing} cat=${cat} users=${users}
         onClose=${() => r.close()} onSaved=${(g) => { res.reload(); g ? r.open(g.name) : r.close(); }} />`}
-    ${confirm && html`<${ConfirmDialog} danger=${true} title="Excluir grupo"
-        message=${`Apagar o grupo '${confirm.name}'? ${confirm.members.length ? `Os membros (${confirm.members.join(", ")}) perdem as permissões dele.` : ""}`}
+    ${confirm && html`<${ConfirmDialog} danger=${true} title=${t("users.delete_group")}
+        message=${t("users.delete_group_confirm", { name: confirm.name, members: confirm.members.length ? t("users.delete_group_members", { members: confirm.members.join(", ") }) : "" })}
         onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
-          try { await api.del(`/access-groups/${encodeURIComponent(confirm.name)}`); toast.ok("Grupo apagado"); res.reload(); }
+          try { await api.del(`/access-groups/${encodeURIComponent(confirm.name)}`); toast.ok(t("users.group_deleted")); res.reload(); }
           catch (e) { handleError(e); } }} />`}
   </div>`;
 }
@@ -243,37 +242,36 @@ function GroupForm({ group, cat, users, onClose, onSaved }) {
         g = await api.post("/access-groups", { name: form.name.trim().toLowerCase(), description: form.description,
           permissions: form.permissions, net_perms: form.net_perms });
         if (form.members.length) g = await api.patch(`/access-groups/${encodeURIComponent(g.name)}`, { members: form.members }, g.rev);
-        toast.ok(`Grupo ${g.name} criado`);
+        toast.ok(t("users.group_created", { name: g.name }));
       } else {
         const body = { description: form.description, members: form.members };
         if (!fixed) { body.permissions = form.permissions; body.net_perms = form.net_perms; }
         g = await api.patch(`/access-groups/${encodeURIComponent(group.name)}`, body, group.rev);
-        toast.ok("Grupo atualizado");
+        toast.ok(t("users.group_updated"));
       }
       onSaved(g);
     } catch (e) { handleError(e); }
   }
-  return html`<${Modal} wide=${true} title=${isNew ? "Novo grupo de acesso" : `Grupo ${group.name}`} onClose=${onClose}>
-    ${isNew && html`<${Field} label="Nome" hint="2 a 40 caracteres: minúsculas, números, ponto, hífen ou _">
+  return html`<${Modal} wide=${true} title=${isNew ? t("users.new_group") : t("users.group_title", { name: group.name })} onClose=${onClose}>
+    ${isNew && html`<${Field} label=${t("common.name")} hint=${t("users.group_name_hint")}>
       <input autocapitalize="none" spellcheck="false" value=${form.name} onInput=${(e) => set("name", e.target.value)} /><//>`}
-    <${Field} label="Descrição"><input value=${form.description} onInput=${(e) => set("description", e.target.value)} /><//>
-    ${fixed ? html`<div class="card">O grupo <b>admin</b> tem <b>todas</b> as permissões, inclusive as de administração,
-        e <b>Full</b> nos equipamentos. Só os membros podem mudar.</div>`
+    <${Field} label=${t("common.description")}><input value=${form.description} onInput=${(e) => set("description", e.target.value)} /><//>
+    ${fixed ? html`<div class="card">${t("users.admin_fixed_1")} <b>admin</b> ${t("users.admin_fixed_2")} <b>${t("users.admin_fixed_all")}</b> ${t("users.admin_fixed_3")} <b>Full</b> ${t("users.admin_fixed_4")}</div>`
       : html`
-      <${Field} label="Permissões no console">
+      <${Field} label=${t("users.console_perms")}>
         ${areas.map((a) => html`<fieldset key=${a} class="perm-area"><legend>${a}</legend>
           ${grantable.filter((p) => p.area === a).map((p) => html`<label key=${p.key} class="perm-check" title=${p.key}>
             <input type="checkbox" checked=${form.permissions.includes(p.key)} onChange=${(e) => togglePerm(p.key, e.target.checked)} /> ${p.label}</label>`)}
         </fieldset>`)}
       <//>
-      <${Field} label="Teto nos equipamentos (aba Claude)" hint="A aba Claude deste grupo nunca passa disto, nem com aprovação na tela. Terminal de host não é limitado por aqui: libere só a quem pode operar o equipamento.">
+      <${Field} label=${t("users.net_ceiling")} hint=${t("users.net_ceiling_hint")}>
         <div class="perm-checks">${cat.net_perms.map((p) => html`<label key=${p} class="perm-check">
           <input type="checkbox" checked=${form.net_perms.includes(p)}
-            onChange=${(e) => set("net_perms", e.target.checked ? [...form.net_perms, p] : form.net_perms.filter((x) => x !== p))} /> ${NET_LABELS[p] || p}</label>`)}</div>
+            onChange=${(e) => set("net_perms", e.target.checked ? [...form.net_perms, p] : form.net_perms.filter((x) => x !== p))} /> ${netLabel(p)}</label>`)}</div>
       <//>`}
-    <${Field} label="Membros">
+    <${Field} label=${t("users.col_members")}>
       <${GroupChecks} value=${form.members} options=${users} onChange=${(v) => set("members", v)} /><//>
-    <div class="modal-actions"><button onClick=${onClose}>Cancelar</button>
-      <button class="primary" disabled=${isNew && !form.name} onClick=${save}>${isNew ? "Criar" : "Salvar"}</button></div>
+    <div class="modal-actions"><button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary" disabled=${isNew && !form.name} onClick=${save}>${isNew ? t("common.create") : t("common.save")}</button></div>
   <//>`;
 }

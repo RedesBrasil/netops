@@ -7,6 +7,8 @@ from typing import Protocol
 import requests
 import urllib3
 
+from lib import i18n
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)   # equipamentos de gerência: cert autoassinado
 TIMEOUT = 10
 
@@ -62,5 +64,5 @@ def post(url: str, **kw) -> requests.Response:
     try:
         return requests.post(url, verify=False, timeout=TIMEOUT, **kw)
     except requests.RequestException as exc:
-        raise WebLoginError(f"não foi possível conectar em {url.split('/api2')[0].split('/index')[0]}: {type(exc).__name__}",
+        raise WebLoginError(i18n.t("lib_web_login.connect_failed", url=url.split('/api2')[0].split('/index')[0], error=type(exc).__name__),
                             "unreachable") from exc

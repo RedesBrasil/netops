@@ -1,12 +1,12 @@
-# NetOps — Integração multi-IDE
+# NetOps — Multi-IDE integration
 # ============================================================================
-# O NetOps funciona em qualquer IDE de IA. O ponto de entrada universal é o AGENTS.md
-# na raiz — qualquer IDE entende o framework lendo esse arquivo (CLAUDE.md foi aposentado).
-# Adaptado do bloco ide_sync do framework-config.yaml do AIOX.
+# NetOps works in any AI IDE. The universal entry point is the AGENTS.md
+# at the root — any IDE understands the framework by reading that file (CLAUDE.md was retired).
+# Adapted from the ide_sync block of the AIOX framework-config.yaml.
 # ============================================================================
 
 ide_integration:
-  # Fonte da verdade — os agentes e workflows ficam aqui; as IDEs apenas leem.
+  # Source of truth — the agents and workflows live here; the IDEs only read them.
   source:
     agents: "agents/"
     workflows: "workflows/"
@@ -15,24 +15,24 @@ ide_integration:
   targets:
     claude-code:
       enabled: true
-      entrypoint: "AGENTS.md"           # lido automaticamente pelo Claude Code (padrão AGENTS.md)
+      entrypoint: "AGENTS.md"           # read automatically by Claude Code (AGENTS.md standard)
       commands: ".claude/commands/"     # slash commands /netops-audit, /netops-apply-change
-      notes: "Agentes lidos sob demanda de agents/*.agent.md conforme o AGENTS.md instrui."
+      notes: "Agents read on demand from agents/*.agent.md as AGENTS.md instructs."
 
     codex:
       enabled: true
-      entrypoint: "AGENTS.md"           # lido automaticamente pelo Codex
-      notes: "AGENTS.md na raiz é o ponto de entrada completo."
+      entrypoint: "AGENTS.md"           # read automatically by Codex
+      notes: "AGENTS.md at the root is the complete entry point."
 
     cursor:
       enabled: true
       entrypoint: ".cursor/rules/netops.mdc"
-      notes: "Regra do Cursor que carrega o framework e aponta para o AGENTS.md."
+      notes: "Cursor rule that loads the framework and points to AGENTS.md."
 
     antigravity:
       enabled: true
       entrypoint: "AGENTS.md"
-      notes: "O Antigravity lê o AGENTS.md da raiz."
+      notes: "Antigravity reads the AGENTS.md at the root."
 
-  # Princípio: não há build nem sincronização obrigatória. Abrir a pasta na IDE basta.
-  # Os arquivos .claude/ e .cursor/ são finos — só apontam para o core do framework.
+  # Principle: there is no build or mandatory sync. Opening the folder in the IDE is enough.
+  # The .claude/ and .cursor/ files are thin — they only point to the framework core.

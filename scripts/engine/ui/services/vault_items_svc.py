@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 
 import deps
+from lib import i18n
 from lib import pwvault
 from services import yaml_io
 
@@ -43,7 +44,7 @@ def _ik(data: dict, iid) -> int:
     """ID numérico do item (aceita número ou o slug antigo); KeyError se não existe."""
     k = pwvault.find_item(data, iid)
     if k is None:
-        raise KeyError(f"item '{iid}' não existe")
+        raise KeyError(i18n.t("api_vault_items.item_not_exists", id=iid))
     return k
 
 
@@ -125,9 +126,9 @@ def get_item(iid: str) -> dict:
 def _clean_name(name: str) -> str:
     name = " ".join(str(name or "").split())
     if not name:
-        raise _bad("name", "informe o nome do campo")
+        raise _bad("name", i18n.t("api_vault_items.field_name_required"))
     if len(name) > pwvault.FIELD_NAME_MAX:
-        raise _bad("name", f"máximo de {pwvault.FIELD_NAME_MAX} caracteres")
+        raise _bad("name", i18n.t("api_vault_items.max_chars", max=pwvault.FIELD_NAME_MAX))
     return name
 
 
@@ -145,7 +146,7 @@ def _convert_kind(data: dict, name: str, kind: str) -> None:
     """Muda o tipo de um campo e converte os valores já gravados (cifra/decifra)."""
     from lib import vault  # noqa: PLC0415
     if kind not in pwvault.KINDS:
-        raise _bad("kind", "tipo deve ser 'secret' ou 'text'")
+        raise _bad("kind", i18n.t("api_vault_items.bad_kind"))
     if data["fields"][name].get("kind") == kind:
         return
     used = [it for it in data["items"].values() if (it or {}).get("values", {}).get(name) not in (None, "")]
@@ -163,9 +164,9 @@ def create_field(name: str, kind: str, rev: str | None) -> dict:
     data, _ = _load()
     name = _clean_name(name)
     if pwvault.field_key(data["fields"], name):
-        raise _bad("name", f"o campo '{name}' já existe")
+        raise _bad("name", i18n.t("api_vault_items.field_exists", name=name))
     if kind not in pwvault.KINDS:
-        raise _bad("kind", "tipo deve ser 'secret' ou 'text'")
+        raise _bad("kind", i18n.t("api_vault_items.bad_kind"))
     data["fields"][name] = {"kind": kind}
     _save(data, rev)
     return catalog()
@@ -176,14 +177,14 @@ def update_field(name: str, new_name: str | None, kind: str | None, rev: str | N
     data, _ = _load()
     real = pwvault.field_key(data["fields"], name)
     if not real:
-        raise KeyError(f"campo '{name}' não existe")
+        raise KeyError(i18n.t("api_vault_items.field_not_exists", name=name))
     if kind:
         _convert_kind(data, real, kind)
     if new_name is not None:
         new_name = _clean_name(new_name)
         other = pwvault.field_key(data["fields"], new_name)
         if other and other != real:
-            raise _bad("name", f"o campo '{new_name}' já existe")
+            raise _bad("name", i18n.t("api_vault_items.field_exists", name=new_name))
         if new_name != real:
             # o nome antigo vira apelido: referências nvault://<id>/<campo-antigo> continuam resolvendo
             meta = dict(data["fields"][real] or {})
@@ -207,11 +208,11 @@ def delete_field(name: str, rev: str | None) -> dict:
     data, _ = _load()
     real = pwvault.field_key(data["fields"], name)
     if not real:
-        raise KeyError(f"campo '{name}' não existe")
+        raise KeyError(i18n.t("api_vault_items.field_not_exists", name=name))
     use = _field_usage(data)[real]
     if use["templates"] or use["items"]:
         raise deps.ConflictError(yaml_io.file_rev(_path()),
-                                 detail=f"campo em uso por {use['templates']} template(s) e {use['items']} item(ns)")
+                                 detail=i18n.t("api_vault_items.field_in_use", templates=use["templates"], items=use["items"]))
     del data["fields"][real]
     _save(data, rev)
     return catalog()
@@ -223,12 +224,12 @@ def delete_field(name: str, rev: str | None) -> dict:
 def _apply_template(data: dict, tpl: dict, body: dict) -> None:
     label = " ".join(str(body.get("label") or "").split())
     if not label:
-        raise _bad("label", "informe o nome do template")
+        raise _bad("label", i18n.t("api_vault_items.template_name_required"))
     rows, seen = [], set()
     for i, f in enumerate(body.get("fields") or []):
         real = _ensure_field(data, f.get("field") or "", f.get("kind"))
         if real in seen:
-            raise _bad(f"fields.{i}", f"campo '{real}' repetido")
+            raise _bad(f"fields.{i}", i18n.t("api_vault_items.field_repeated", name=real))
         seen.add(real)
         if f.get("kind") and f["kind"] != data["fields"][real].get("kind"):
             _convert_kind(data, real, f["kind"])
@@ -251,7 +252,7 @@ def create_template(body: dict, rev: str | None) -> dict:
 def update_template(tid: str, body: dict, rev: str | None) -> dict:
     data, _ = _load()
     if tid not in data["templates"]:
-        raise KeyError(f"template '{tid}' não existe")
+        raise KeyError(i18n.t("api_vault_items.template_not_exists", id=tid))
     tpl = data["templates"][tid] or {}
     _apply_template(data, tpl, body)
     data["templates"][tid] = tpl
@@ -267,7 +268,7 @@ def delete_template(tid: str, rev: str | None) -> dict:
     """Apaga o template; os itens continuam (com o nome antigo em template_label)."""
     data, _ = _load()
     if tid not in data["templates"]:
-        raise KeyError(f"template '{tid}' não existe")
+        raise KeyError(i18n.t("api_vault_items.template_not_exists", id=tid))
     del data["templates"][tid]
     for it in data["items"].values():
         if (it or {}).get("template") == tid:
@@ -283,19 +284,19 @@ def _apply_item(data: dict, it: dict, body: dict, *, user: str, is_new: bool) ->
     from lib import vault  # noqa: PLC0415
     title = " ".join(str(body.get("title") or "").split())
     if not title:
-        raise _bad("title", "informe o título")
+        raise _bad("title", i18n.t("api_vault_items.title_required"))
     tid = body.get("template") or None
     if tid and tid not in data["templates"]:
-        raise _bad("template", f"template '{tid}' não existe")
+        raise _bad("template", i18n.t("api_vault_items.template_not_exists", id=tid))
     old_vals = dict(it.get("values") or {})
     new_vals: dict = {}
     key = None
     for i, row in enumerate(body.get("values") or []):
         real = pwvault.field_key(data["fields"], row.get("field") or "")
         if not real:
-            raise _bad(f"values.{i}", f"campo '{row.get('field')}' não existe no catálogo")
+            raise _bad(f"values.{i}", i18n.t("api_vault_items.field_not_in_catalog", name=row.get("field")))
         if real in new_vals:
-            raise _bad(f"values.{i}", f"campo '{real}' repetido")
+            raise _bad(f"values.{i}", i18n.t("api_vault_items.field_repeated", name=real))
         value = row.get("value")
         kind = data["fields"][real].get("kind", "secret")
         if value is None:                              # segredo omitido = mantém o atual
@@ -315,7 +316,7 @@ def _apply_item(data: dict, it: dict, body: dict, *, user: str, is_new: bool) ->
         missing = [f["field"] for f in tpl.get("fields") or []
                    if f.get("required") and new_vals.get(f["field"]) in (None, "")]
         if missing:
-            raise _bad("values", "campo(s) obrigatório(s) vazio(s): " + ", ".join(missing))
+            raise _bad("values", i18n.t("api_vault_items.required_empty", fields=", ".join(missing)))
         it["template"], it["template_label"] = tid, tpl.get("label") or tid
     else:
         it.pop("template", None)
@@ -374,7 +375,7 @@ def reveal(iid: str, field: str | None) -> dict:
     if field:
         real = pwvault.find_value_name(data, data["items"][iid], field)   # nome, slug ou nome antigo do campo
         if not real:
-            raise KeyError(f"campo '{field}' sem valor neste item")
+            raise KeyError(i18n.t("api_vault_items.field_no_value", name=field))
         vals = {real: vals[real]}
     key = _key()
     return {"id": iid, "values": {k: vault.decrypt_value(key, v) for k, v in vals.items()}}

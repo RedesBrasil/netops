@@ -1,0 +1,12 @@
+{
+  "already_int": "Inventário já usa IDs inteiros.",
+  "checking": "Verificando a migração automática de IDs dos hosts.",
+  "commit_unconfirmed": "A instalação do código ainda não foi confirmada pelo launcher. Os dados não foram convertidos; verifique o estado da atualização antes de reiniciar.",
+  "completed": "Migração automática de IDs concluída e verificada.",
+  "converting": "Convertendo automaticamente as identidades dos hosts. Aguarde; as edições e conexões interativas estão temporariamente bloqueadas.",
+  "no_inventory": "Nenhum inventário existente para converter.",
+  "preflight_blocked": "Migração automática de IDs bloqueada na pré-validação ({count} problema(s)). Nenhuma referência órfã foi excluída. Corrija os dados indicados pelo dry-run e reinicie para tentar novamente.",
+  "read_only": "Modo somente leitura: migração automática não executada.",
+  "recovery_failed": "Não foi possível concluir ou recuperar a migração automática de IDs. As edições estão bloqueadas para preservar os dados. O baseline e o journal foram mantidos; verifique a recuperação antes de reiniciar.",
+  "waiting_commit": "Aguardando a confirmação da instalação pelo launcher antes de converter os IDs dos hosts."
+}

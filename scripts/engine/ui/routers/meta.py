@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 import deps
+from lib import i18n
 from models import VaultUnlock
 
 router = APIRouter(tags=["meta"])
@@ -61,7 +62,7 @@ def vault_unlock(body: VaultUnlock):
     if not deps.STATE.allow_vault_unlock:
         return JSONResponse(
             {"error": "unlock_disabled",
-             "detail": "Destrancar pela web está desabilitado (--no-vault-unlock). Use o terminal."},
+             "detail": i18n.t("api_meta.unlock_disabled")},
             status_code=403,
         )
     import yaml  # noqa: PLC0415
@@ -69,7 +70,7 @@ def vault_unlock(body: VaultUnlock):
 
     if not deps.CREDS_FILE.exists():
         return JSONResponse(
-            {"error": "vault_uninitialized", "detail": "credentials.yaml não existe.",
+            {"error": "vault_uninitialized", "detail": i18n.t("api_meta.no_credentials_file"),
              "action": "python3 scripts/engine/vault/cli.py init"},
             status_code=409,
         )
@@ -79,7 +80,7 @@ def vault_unlock(body: VaultUnlock):
         key = vault.derive_key(body.master_password, meta)
         vault.verify_key(key, meta)  # VaultWrongKey se a senha estiver errada
     except vault.VaultWrongKey:
-        return JSONResponse({"error": "vault_wrong_key", "detail": "Senha mestra incorreta."}, status_code=401)
+        return JSONResponse({"error": "vault_wrong_key", "detail": i18n.t("api_auth.wrong_master_password")}, status_code=401)
     vault_session.set_session_key(key, body.ttl or vault_session.default_ttl())
     return vault_status()
 
@@ -97,6 +98,7 @@ def config_meta() -> dict:
     """Infos leves p/ o topo da UI: nome da rede + modo do servidor."""
     import yaml  # noqa: PLC0415
     from services import host_migration_svc
+    from lib import i18n as _i18n  # noqa: PLC0415
     network_name = "NetOps"
     if deps.PROJECT_CONFIG.exists():
         try:
@@ -114,4 +116,6 @@ def config_meta() -> dict:
         "claude_enabled": deps.STATE.enable_claude,
         "files_enabled": deps.files_enabled(),
         "host_migration": host_migration_svc.status(),
+        "language": _i18n.instance_language(deps.DATA_ROOT),
+        "languages": _i18n.languages(),
     }

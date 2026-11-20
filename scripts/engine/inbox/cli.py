@@ -30,6 +30,7 @@ if str(ENGINE) not in sys.path:
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
 
+from lib import i18n  # noqa: E402
 from inbox import actions, store  # noqa: E402
 
 
@@ -78,27 +79,27 @@ def cmd_wait(a, root) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Central de Avisos do NetOps")
+    ap = argparse.ArgumentParser(description=i18n.t("cli_inbox.description"))
     ap.add_argument("--data-root", default=None, help=argparse.SUPPRESS)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("add", help="publica um aviso/alerta/pedido de aprovação")
+    p = sub.add_parser("add", help=i18n.t("cli_inbox.help_add"))
     p.add_argument("--title", required=True)
     p.add_argument("--kind", choices=store.KINDS, default="info")
     p.add_argument("--severity", choices=store.SEVERITIES)
     p.add_argument("--body", default="")
-    p.add_argument("--body-file", help="arquivo markdown (ou - p/ stdin)")
+    p.add_argument("--body-file", help=i18n.t("cli_inbox.help_body_file"))
     p.add_argument("--dedupe-key")
     p.add_argument("--expires-hours", type=float)
     p.add_argument("--link")
     p.add_argument("--session-id")
     p.add_argument("--source")
-    p.add_argument("--telegram", action="store_true", help="também avisa no Telegram (network/telegram.yaml)")
+    p.add_argument("--telegram", action="store_true", help=i18n.t("cli_inbox.help_telegram"))
     p.add_argument("--on-approve-command")
     p.add_argument("--on-reject-command")
-    p.add_argument("--on-approve-agent", help="prompt do agente que roda se aprovado (retoma --session-id se houver)")
+    p.add_argument("--on-approve-agent", help=i18n.t("cli_inbox.help_on_approve_agent"))
     p.add_argument("--agent-permissions", choices=("restricted", "full"), default="restricted")
-    p.add_argument("--timeout", type=int, default=15, help="minutos da ação")
+    p.add_argument("--timeout", type=int, default=15, help=i18n.t("cli_inbox.help_timeout"))
 
     p = sub.add_parser("list")
     p.add_argument("--view", choices=store.VIEWS, default="open")

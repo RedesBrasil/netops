@@ -1,30 +1,30 @@
 # ============================================================
-# Exemplo: OSPF básico — MikroTik RouterOS 7.x
-# Testado em: RouterOS 7.x (sintaxe nova de /routing/ospf)
-# Ajuste antes de aplicar: router-id, redes/interfaces e a area.
-# Boa prática: usar area backbone (0.0.0.0) e anunciar só o necessario.
-# Observação: a sintaxe de OSPF mudou do RouterOS 6 para o 7 — este exemplo é v7.
+# Example: basic OSPF — MikroTik RouterOS 7.x
+# Tested on: RouterOS 7.x (new /routing/ospf syntax)
+# Adjust before applying: router-id, networks/interfaces and the area.
+# Best practice: use the backbone area (0.0.0.0) and advertise only what is needed.
+# Note: the OSPF syntax changed from RouterOS 6 to 7 — this example is v7.
 # ============================================================
 
-# --- Instancia OSPF ---
+# --- OSPF instance ---
 /routing/ospf/instance
 add name=ospf-main router-id=10.0.0.1 disabled=no
 
-# --- Area backbone ---
+# --- Backbone area ---
 /routing/ospf/area
 add name=backbone area-id=0.0.0.0 instance=ospf-main disabled=no
 
-# --- Template de interface: quais interfaces participam do OSPF ---
-# 'networks' define as redes que entram no OSPF; ajuste para as suas.
+# --- Interface template: which interfaces take part in OSPF ---
+# 'networks' defines the networks that go into OSPF; adjust to yours.
 /routing/ospf/interface-template
 add area=backbone networks=10.0.0.0/24 interfaces=bridge-core disabled=no
 add area=backbone networks=10.0.1.0/30 interfaces=ether-link-dist passive=no
 
-# --- Interface passiva: anuncia a rede mas nao forma adjacencia (ex.: LAN de acesso) ---
+# --- Passive interface: advertises the network but forms no adjacency (e.g. access LAN) ---
 /routing/ospf/interface-template
 add area=backbone networks=10.0.10.0/24 interfaces=bridge-access passive=yes disabled=no
 
-# --- Conferir ---
-# /routing/ospf/neighbor print      ;# vizinhanças formadas
-# /routing/ospf/lsa print           ;# base de dados de estado de enlace
-# /ip route print where ospf        ;# rotas aprendidas via OSPF
+# --- Verify ---
+# /routing/ospf/neighbor print      ;# neighbors formed
+# /routing/ospf/lsa print           ;# link-state database
+# /ip route print where ospf        ;# routes learned via OSPF

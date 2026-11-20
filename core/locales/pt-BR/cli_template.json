@@ -1,0 +1,6 @@
+{
+  "description": "Descreva o que o script faz.",
+  "help_host_id": "ID inteiro do host no inventário",
+  "help_host": "Hostname único ou alias legado do host",
+  "todo": "TODO: implementar. host={host}"
+}

@@ -7,6 +7,8 @@ cláusula da constituição §VII sobre ferramentas de operador efêmeras.)
 """
 from __future__ import annotations
 
+import re
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -53,7 +55,7 @@ class _WebAccessGate:
         if scope["type"] == "websocket":
             await send({"type": "websocket.close", "code": 4403})
             return
-        body = f"Acesso negado: o IP {ip or 'desconhecido'} não está autorizado a acessar este console.\n".encode()
+        body = (i18n.t("api_app.ip_denied", ip=ip or i18n.t("api_app.unknown_ip")) + "\n").encode()
         await send({"type": "http.response.start", "status": 403, "headers": [
             (b"content-type", b"text/plain; charset=utf-8"), (b"cache-control", b"no-store"),
             (b"content-length", str(len(body)).encode())]})
@@ -70,6 +72,7 @@ class _NoCacheStatic(StaticFiles):
         return resp
 
 import deps
+from lib import i18n
 from routers import (
     setup,
     audio,
@@ -103,6 +106,7 @@ from routers import (
     web_access,
     audit,
 )
+from routers import i18n as i18n_router
 
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 # Endpoints de bootstrap do login — alcançáveis sem sessão (a própria tela de login os chama).
@@ -110,6 +114,8 @@ AUTH_OPEN_PATHS = {"/api/auth/login", "/api/auth/status", "/api/auth/logout", "/
                    "/api/setup/status", "/api/setup/complete"}
 # Primeiro acesso pendente (deps.setup_mode): só isto responde; o resto devolve setup_required.
 SETUP_OPEN_PATHS = {"/api/auth/status", "/api/config/meta", "/api/setup/status", "/api/setup/complete"}
+# Traduções (/api/i18n e /api/i18n/<idioma>): abertas no login e no primeiro acesso (só textos da interface).
+I18N_RE = re.compile(r"^/api/i18n(/[A-Za-z_-]{2,20})?$")
 # Download por link de uso único (routers/files.py): o ticket, emitido só p/ quem está logado, é a autorização.
 AUTH_TICKET_PREFIX = "/api/files/dl/"
 # Com senha provisória (must_change_password) a tela ainda precisa disto p/ abrir.
@@ -151,12 +157,13 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def guard(request: Request, call_next):
         path = request.url.path
+        # Idioma desta requisição (mensagens da API): o do console (X-Netops-Lang) ou o da instalação.
+        from lib import i18n  # noqa: PLC0415
+        i18n.set_context_lang(request.headers.get("x-netops-lang"))
         if path.startswith("/api"):
             # Anti DNS-rebinding: sem login, Host tem que ser loopback/bind/NETOPS_UI_ALLOWED_HOSTS.
             if not _host_ok(request.headers.get("host")):
-                return JSONResponse({"error": "forbidden_host", "detail":
-                    "Host não autorizado e o console está sem login (cofre não inicializado). Inicialize o cofre "
-                    "(scripts/engine/vault/cli.py init) ou defina NETOPS_UI_ALLOWED_HOSTS=<dominio> e reinicie."},
+                return JSONResponse({"error": "forbidden_host", "detail": i18n.t("api_app.forbidden_host")},
                     status_code=403)
             from services import host_migration_svc
             # Meta/status públicos continuam disponíveis antes do login para explicar
@@ -169,14 +176,14 @@ def create_app() -> FastAPI:
                                      "migration": migration}, status_code=503)
             # Primeiro acesso pendente: o console escuta na rede sem cofre nem usuário. Nada abre além do
             # assistente (/api/setup/complete exige o token de uso único gerado pelo instalador).
-            if deps.setup_mode() and path not in SETUP_OPEN_PATHS:
-                return JSONResponse({"error": "setup_required", "detail":
-                    "Primeiro acesso pendente: conclua a configuração inicial pelo link que o instalador mostrou "
-                    "(ou gere outro: python3 scripts/engine/users/cli.py setup-link)."}, status_code=403)
+            if deps.setup_mode() and path not in SETUP_OPEN_PATHS and not I18N_RE.match(path):
+                return JSONResponse({"error": "setup_required", "detail": i18n.t("errors.setup_required")},
+                                    status_code=403)
             # Gate de login: com cofre inicializado ou usuários cadastrados, todo /api exige sessão,
             # exceto a allow-list de bootstrap (login/status/logout/meta) e o download por ticket.
             from services import authz  # noqa: PLC0415
-            open_path = path in AUTH_OPEN_PATHS or (request.method == "GET" and path.startswith(AUTH_TICKET_PREFIX))
+            open_path = path in AUTH_OPEN_PATHS or (request.method == "GET" and (
+                path.startswith(AUTH_TICKET_PREFIX) or I18N_RE.match(path)))
             principal = authz.principal_for_sid(request.headers.get("x-netops-session"))
             request.state.principal = principal
             if not open_path:
@@ -186,19 +193,19 @@ def create_app() -> FastAPI:
                 if principal.must_change_password and not (path.startswith("/api/auth/") or (
                         request.method == "GET" and path in PASSWORD_CHANGE_OPEN)):
                     return JSONResponse({"error": "password_change_required",
-                                         "detail": "Troque a senha provisória antes de continuar."}, status_code=403)
+                                         "detail": i18n.t("errors.password_change_required")}, status_code=403)
                 perm = authz.required_perm(request.method, path[4:])
                 if perm != authz.ROUTER and not principal.can(perm):
                     if request.method in MUTATING:
                         _audit_request(request, 403)      # tentativa negada também fica registrada
                     return JSONResponse({"error": "forbidden", "perm": perm,
-                                         "detail": f"Sem permissão: {authz.perm_label(perm)}."}, status_code=403)
+                                         "detail": i18n.t("errors.forbidden_perm", perm=authz.perm_label(perm))}, status_code=403)
             if request.method in MUTATING:
                 if not _origin_ok(request.headers.get("origin"), request.headers.get("host")):
                     return JSONResponse({"error": "forbidden_origin"}, status_code=403)
                 if deps.STATE.read_only:
                     return JSONResponse(
-                        {"error": "read_only", "detail": "servidor em modo somente-leitura (--read-only)"},
+                        {"error": "read_only", "detail": i18n.t("errors.read_only")},
                         status_code=403,
                     )
 
@@ -207,7 +214,7 @@ def create_app() -> FastAPI:
         allowed_during_update = path in AUTH_OPEN_PATHS or path.startswith("/api/updates/")
         if path.startswith("/api") and not allowed_during_update and (
                 deps.STATE.update_pending or updates_svc.maintenance()):
-            return JSONResponse({"error": "maintenance", "detail": "Atualização em andamento. Aguarde o console reiniciar."}, status_code=503)
+            return JSONResponse({"error": "maintenance", "detail": i18n.t("errors.maintenance")}, status_code=503)
         if is_write:
             deps.STATE.active_writes += 1
         deps.STATE.active_requests += 1
@@ -228,7 +235,7 @@ def create_app() -> FastAPI:
 
     _register_error_handlers(app)
 
-    for mod in (setup, audio, auth, meta, dashboard, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, inbox, terminal, host_term, files, web_launch, claude, projects, updates, web_access, users, github, audit, vault_items):
+    for mod in (setup, i18n_router, audio, auth, meta, dashboard, hosts, credentials, topology, maps, config, memory, knowledge, catalog, scripts, reports, runs, backups, schedules, inbox, terminal, host_term, files, web_launch, claude, projects, updates, web_access, users, github, audit, vault_items):
         app.include_router(mod.router, prefix="/api")
 
     @app.on_event("startup")
@@ -241,6 +248,19 @@ def create_app() -> FastAPI:
         except Exception:  # noqa: BLE001
             import logging
             logging.getLogger("netops").exception("Banco de acesso: falha no arranque")
+
+    @app.on_event("startup")
+    async def _instance_language():
+        # Instalação anterior ao i18n (já configurada, sem instance.language): fixa pt-BR, o idioma em que ela
+        # sempre rodou. Instalação nova (primeiro acesso pendente) não: quem escolhe é o assistente.
+        try:
+            from lib import i18n  # noqa: PLC0415
+            if (not deps.STATE.read_only and i18n.instance_language(deps.DATA_ROOT) is None
+                    and deps.PROJECT_CONFIG.exists() and (deps.vault_initialized() or deps.has_users())):
+                i18n.write_instance_language(i18n.LEGACY_DEFAULT, deps.DATA_ROOT)
+        except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger("netops").exception("Idioma da instalação: falha ao fixar o padrão")
 
     @app.on_event("startup")
     async def _scheduler_cron():

@@ -1,0 +1,19 @@
+{
+  "best_practices": "Best practices",
+  "col_file": "File",
+  "col_title": "Title",
+  "col_topic": "Topic",
+  "col_when": "When to use",
+  "configs": "Configurations",
+  "content": "Content",
+  "created": "File created",
+  "empty": "Empty catalog.",
+  "error": "Error: {message}",
+  "file_name": "File name",
+  "file_name_rename": "File name (change = rename, updates the index)",
+  "files_on_disk": "Files on disk: {files}",
+  "new_file_btn": "+ New file",
+  "new_file_title": "New file ({kind})",
+  "saved": "Saved",
+  "search_file": "Search file"
+}

@@ -1,0 +1,22 @@
+{
+  "all_not_deletable": "the overview network cannot be deleted",
+  "bad_format": "invalid maps.yaml format",
+  "bad_target_map": "target map missing or the same as the current one",
+  "bad_visual_endpoint": "invalid visual connection endpoint",
+  "duplicate_map_ids": "duplicate map IDs",
+  "duplicate_object_ids": "duplicate object IDs",
+  "duplicate_position": "duplicate host position",
+  "duplicate_visual_ids": "duplicate visual connection IDs",
+  "edge_not_in_topology": "link does not exist in the topology, reload the map",
+  "host_link_must_be_real": "a connection between hosts must be registered as a real link",
+  "host_not_in_inventory": "host '{name}' not in the inventory",
+  "id_mismatch": "Map ID differs from the URL",
+  "kind_site_immutable": "the type and site of an existing map cannot change",
+  "merged": "this map was merged into the overview network",
+  "merged_reload": "This map was merged into the overview network. Reload before editing.",
+  "migrate_first": "Migrate the inventory to integer IDs before editing maps and links.",
+  "not_exists": "map does not exist",
+  "rev_required": "map revision required (If-Match)",
+  "saved_bad_format": "map saved with an invalid format",
+  "text_id_required": "every map needs a text ID"
+}

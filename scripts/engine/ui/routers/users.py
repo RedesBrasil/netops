@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 import deps
+from lib import i18n
 from lib import accessdb
 from lib import github_identity as ghid
 from services import authz
@@ -85,7 +86,7 @@ def _audit(request: Request, action: str, target: str, detail: str = "") -> None
 # ----------------------------------------------------------------- catálogo
 @router.get("/access-catalog")
 def access_catalog() -> dict:
-    return {"permissions": accessdb.PERMISSIONS, "net_perms": list(accessdb.NET_PERMS),
+    return {"permissions": accessdb.localized_permissions(), "net_perms": list(accessdb.NET_PERMS),
             "admin_group": accessdb.ADMIN_GROUP, "password_min": accessdb.PASSWORD_MIN,
             "multiuser": deps.has_users()}
 
@@ -112,7 +113,7 @@ def users_create(body: UserCreate, request: Request):
 def users_get(username: str):
     u = accessdb.get_user(_db(), username)
     if not u:
-        raise accessdb.NotFound(f"Usuário '{username}' não encontrado.")
+        raise accessdb.NotFound(i18n.t("api_common.user_not_found", username=username))
     u["session_list"] = accessdb.list_sessions(_db(), u["username"])
     return u
 
@@ -175,7 +176,7 @@ def groups_create(body: GroupCreate, request: Request):
 def groups_get(name: str):
     g = accessdb.get_group(_db(), name)
     if not g:
-        raise accessdb.NotFound(f"Grupo '{name}' não encontrado.")
+        raise accessdb.NotFound(i18n.t("api_users.group_not_found", name=name))
     return g
 
 

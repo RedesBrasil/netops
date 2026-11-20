@@ -3,8 +3,9 @@ import { marked } from "marked";
 import { openTermHref } from "./term-link.js";
 import {
   html, useState, useEffect, useRef, api, Badge, CopyButton, Spinner, Modal,
-  vaultStore, useStore, refreshVault, toast, handleError,
+  vaultStore, useStore, refreshVault, toast, handleError, t, useLocale,
 } from "./ui.js";
+import { loadIndex, loadLocale, languages } from "./i18n.js";
 import { authToken, setAuthToken } from "./api.js";
 import { WysiwygEditor } from "./wysiwyg.js";
 // Re-export dos diálogos base p/ as páginas poderem importar tudo de components.js.
@@ -33,7 +34,7 @@ export function Field({ label, error, hint, tag, children, htmlFor, errorId }) {
 export function EnumSelect({ value, options, onChange, allowInherit, inheritLabel, invalid }) {
   return html`<select class=${invalid ? "invalid" : ""} value=${value ?? ""}
       onChange=${(e) => onChange(e.target.value || null)}>
-    ${allowInherit && html`<option value="">${inheritLabel || "(herdar)"}</option>`}
+    ${allowInherit && html`<option value="">${inheritLabel || t("components.inherit")}</option>`}
     ${!allowInherit && (value == null) && html`<option value="">—</option>`}
     ${(options || []).map((o) => html`<option key=${o} value=${o} selected=${o === value}>${o}</option>`)}
   </select>`;
@@ -62,7 +63,7 @@ export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const form = useRef(null);
-  const fields = { ah: "Host A", bh: "Host B" };
+  const fields = { ah: "components.link_ah_required", bh: "components.link_bh_required" };
   const set = (k, v) => {
     setF(x => ({ ...x, [k]: v }));
     setErrors(x => { const next = { ...x }; delete next[k]; return next; });
@@ -71,10 +72,10 @@ export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
     event.preventDefault();
     if (saving) return;
     const required = Object.fromEntries(Object.entries(fields).filter(([k]) => !f[k] || !/^[1-9]\d*$/.test(f[k]) || !Number.isSafeInteger(Number(f[k])))
-      .map(([k, label]) => [k, `Informe ${label.toLowerCase()}.`]));
+      .map(([k, key]) => [k, t(key)]));
     setErrors(required);
     if (Object.keys(required).length) {
-      toast.err("Selecione os hosts A e B para salvar o enlace.");
+      toast.err(t("components.link_select_hosts"));
       form.current?.querySelector(`#link-${Object.keys(required)[0]}`)?.focus();
       return;
     }
@@ -88,7 +89,7 @@ export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
     try {
       if (isNew) await api.post("/topology/links", body, rev);
       else await api.put(link.id ? `/topology/link/${encodeURIComponent(link.id)}` : `/topology/links/${link.index}`, body, rev);
-      toast.ok("Enlace salvo"); onSaved();
+      toast.ok(t("components.link_saved")); onSaved();
     } catch (e) {
       const keys = { "a/host": "ah", "a/port": "ap", "b/host": "bh", "b/port": "bp" };
       const next = {};
@@ -96,39 +97,39 @@ export function LinkForm({ link, hosts, rev, onClose, onSaved }) {
       setErrors(next);
     } finally { setSaving(false); }
   }
-  return html`<${Modal} title=${isNew ? "Novo enlace" : "Editar enlace"} onClose=${saving ? undefined : onClose}>
+  return html`<${Modal} title=${isNew ? t("components.link_new") : t("components.link_edit")} onClose=${saving ? undefined : onClose}>
     <form ref=${form} onSubmit=${save} noValidate>
-      <p class="help">Selecione os dois hosts. As interfaces são opcionais e podem ser preenchidas depois, por exemplo ether2, sfp1 ou Gi0/1.</p>
-      ${Object.keys(errors).length > 0 && html`<p role="alert">Revise os campos indicados antes de salvar o enlace.</p>`}
+      <p class="help">${t("components.link_help")}</p>
+      ${Object.keys(errors).length > 0 && html`<p role="alert">${t("components.link_review")}</p>`}
       <div class="row">
-        <${Field} label="Host A *" htmlFor="link-ah" error=${errors.ah} errorId="link-ah-error">
+        <${Field} label=${t("components.link_host_a")} htmlFor="link-ah" error=${errors.ah} errorId="link-ah-error">
           <${RefSelect} id="link-ah" required=true invalid=${!!errors.ah} describedBy=${errors.ah ? "link-ah-error" : undefined}
             value=${f.ah} options=${hosts} onChange=${v => set("ah", v || "")} /><//>
-        <${Field} label="Porta A (opcional)" htmlFor="link-ap" error=${errors.ap} errorId="link-ap-error">
+        <${Field} label=${t("components.link_port_a")} htmlFor="link-ap" error=${errors.ap} errorId="link-ap-error">
           <input id="link-ap" value=${f.ap} aria-invalid=${!!errors.ap || undefined} aria-describedby=${errors.ap ? "link-ap-error" : undefined}
-            class=${errors.ap ? "invalid" : ""} placeholder="ex.: ether2" onInput=${e => set("ap", e.target.value)} /><//>
+            class=${errors.ap ? "invalid" : ""} placeholder=${t("components.example", { value: "ether2" })} onInput=${e => set("ap", e.target.value)} /><//>
       </div>
       <div class="row">
-        <${Field} label="Host B *" htmlFor="link-bh" error=${errors.bh} errorId="link-bh-error">
+        <${Field} label=${t("components.link_host_b")} htmlFor="link-bh" error=${errors.bh} errorId="link-bh-error">
           <${RefSelect} id="link-bh" required=true invalid=${!!errors.bh} describedBy=${errors.bh ? "link-bh-error" : undefined}
             value=${f.bh} options=${hosts} onChange=${v => set("bh", v || "")} /><//>
-        <${Field} label="Porta B (opcional)" htmlFor="link-bp" error=${errors.bp} errorId="link-bp-error">
+        <${Field} label=${t("components.link_port_b")} htmlFor="link-bp" error=${errors.bp} errorId="link-bp-error">
           <input id="link-bp" value=${f.bp} aria-invalid=${!!errors.bp || undefined} aria-describedby=${errors.bp ? "link-bp-error" : undefined}
-            class=${errors.bp ? "invalid" : ""} placeholder="ex.: ether1" onInput=${e => set("bp", e.target.value)} /><//>
+            class=${errors.bp ? "invalid" : ""} placeholder=${t("components.example", { value: "ether1" })} onInput=${e => set("bp", e.target.value)} /><//>
       </div>
       <div class="row">
-        <${Field} label="Meio"><${EnumSelect} value=${f.media} options=${["fiber", "copper"]} onChange=${v => set("media", v)} /><//>
-        <${Field} label="Velocidade" htmlFor="link-speed"><input id="link-speed" value=${f.speed} placeholder="ex.: 10G" onInput=${e => set("speed", e.target.value)} /><//>
+        <${Field} label=${t("components.link_media")}><${EnumSelect} value=${f.media} options=${["fiber", "copper"]} onChange=${v => set("media", v)} /><//>
+        <${Field} label=${t("components.link_speed")} htmlFor="link-speed"><input id="link-speed" value=${f.speed} placeholder=${t("components.example", { value: "10G" })} onInput=${e => set("speed", e.target.value)} /><//>
       </div>
-      <${Field} label="Descrição" htmlFor="link-desc"><input id="link-desc" value=${f.desc} onInput=${e => set("desc", e.target.value)} /><//>
-      <div class="modal-actions"><button type="button" disabled=${saving} onClick=${onClose}>Cancelar</button>
-        <button type="submit" class="primary" disabled=${saving}>${saving ? "Salvando…" : "Salvar"}</button></div>
+      <${Field} label=${t("common.description")} htmlFor="link-desc"><input id="link-desc" value=${f.desc} onInput=${e => set("desc", e.target.value)} /><//>
+      <div class="modal-actions"><button type="button" disabled=${saving} onClick=${onClose}>${t("common.cancel")}</button>
+        <button type="submit" class="primary" disabled=${saving}>${saving ? t("common.saving") : t("common.save")}</button></div>
     </form>
   <//>`;
 }
 
 
-export function IconPicker({ value, onChange, error, title = "Ícone do host", defaultLabel = "Padrão", defaultHint = "Padrão: mantém o símbolo atual do dispositivo." }) {
+export function IconPicker({ value, onChange, error, title = t("components.icon_title"), defaultLabel = t("components.icon_default"), defaultHint = t("components.icon_default_hint") }) {
   const [icons, setIcons] = useState([]);
   const [loadError, setLoadError] = useState(false);
   useEffect(() => { api.get("/meta/icons").then(data => setIcons(data.icons)).catch(() => setLoadError(true)); }, []);
@@ -151,7 +152,7 @@ export function IconPicker({ value, onChange, error, title = "Ícone do host", d
         ${chosen ? html`<img src=${chosen.url} alt="" width="28" height="28" />` : html`<span class="host-icon-default" aria-hidden="true">▤</span>`}
         <span class="icon-dd-label">${label}</span><span aria-hidden="true">▾</span>
       </button>
-      ${open && html`<div class="icon-dd-menu" role="listbox" aria-label=${`Escolher ${title.toLowerCase()}`}>
+      ${open && html`<div class="icon-dd-menu" role="listbox" aria-label=${t("components.icon_choose", { title: title.toLowerCase() })}>
         <button type="button" role="option" aria-selected=${!value} class=${"icon-dd-item" + (!value ? " selected" : "")} onClick=${() => pick("")}>
           <span class="host-icon-default" aria-hidden="true">▤</span><span>${defaultLabel}</span></button>
         ${icons.map(icon => html`<button key=${icon.id} type="button" role="option" aria-selected=${value === icon.id}
@@ -161,7 +162,7 @@ export function IconPicker({ value, onChange, error, title = "Ícone do host", d
       </div>`}
     </div>
     <p class="help">${value ? "" : defaultHint}</p>
-    ${loadError && html`<p class="help" role="status">Não foi possível carregar a biblioteca de ícones. A seleção atual será mantida.</p>`}
+    ${loadError && html`<p class="help" role="status">${t("components.icon_load_error")}</p>`}
     ${error && html`<p class="err" role="alert">${error}</p>`}
   </fieldset>`;
 }
@@ -169,7 +170,10 @@ export function IconPicker({ value, onChange, error, title = "Ícone do host", d
 
 /* ---------------------------- FilterBar --------------------------------- */
 // Filtros que vivem na URL: o chamador passa valores e `onChange(patch)` (useMenuRoute().setParams).
-export function FilterBar({ q = "", selects = [], onChange, placeholder = "Buscar", pretty = true, count = null, total = null }) {
+export function FilterBar({ q = "", selects = [], onChange, placeholder = t("common.search"), pretty = true, count = null, total = null }) {
+  // options: strings, or { value, label } when the value (URL) differs from the text shown
+  const opt = (o) => (o && typeof o === "object"
+    ? html`<option key=${o.value} value=${o.value}>${o.label}</option>` : html`<option key=${o} value=${o}>${o}</option>`);
   const active = q || selects.some((s) => s.value);
   const clear = () => onChange({ q: "", ...Object.fromEntries(selects.map((s) => [s.key, ""])) });
   if (pretty) return html`<div class="fb" role="search">
@@ -180,16 +184,16 @@ export function FilterBar({ q = "", selects = [], onChange, placeholder = "Busca
     ${selects.map((s) => html`<label key=${s.key} class=${"fb-select" + (s.value ? " on" : "")}>
       <span class="fb-label">${s.label}</span>
       <select aria-label=${s.label} value=${s.value || ""} onChange=${(e) => onChange({ [s.key]: e.target.value })}>
-        <option value="">Todos</option>${s.options.map((o) => html`<option key=${o} value=${o}>${o}</option>`)}</select>
+        <option value="">${t("components.filter_all")}</option>${s.options.map(opt)}</select>
     </label>`)}
-    ${active && html`<button type="button" class="fb-clear" onClick=${clear}>✕ Limpar filtros</button>`}
-    ${count != null && html`<span class="fb-count">${count}${total != null ? " de " + total : ""}</span>`}
+    ${active && html`<button type="button" class="fb-clear" onClick=${clear}>${t("components.filter_clear_x")}</button>`}
+    ${count != null && html`<span class="fb-count">${total != null ? t("components.filter_count", { shown: count, total }) : count}</span>`}
   </div>`;
   return html`<div class="toolbar filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
     <input type="search" aria-label=${placeholder} placeholder=${placeholder} value=${q} onInput=${(e) => onChange({ q: e.target.value })} />
     ${selects.map((s) => html`<select key=${s.key} aria-label=${s.label} value=${s.value || ""} onChange=${(e) => onChange({ [s.key]: e.target.value })}>
-      <option value="">${s.label}: todos</option>${s.options.map((o) => html`<option key=${o} value=${o}>${o}</option>`)}</select>`)}
-    ${active && html`<button class="sm" onClick=${clear}>Limpar filtros</button>`}
+      <option value="">${t("components.filter_select_all", { label: s.label })}</option>${s.options.map(opt)}</select>`)}
+    ${active && html`<button class="sm" onClick=${clear}>${t("components.filter_clear")}</button>`}
   </div>`;
 }
 
@@ -219,13 +223,13 @@ function sanitize(htmlStr) {
 // Blocos de código ganham cabeçalho com a linguagem e botão "Copiar" (delegação de clique em .md).
 function wrapCodeBlocks(h) {
   return h.replace(/<pre>(<code(?: class="language-([\w+-]+)")?[^>]*>)([\s\S]*?)<\/code><\/pre>/g,
-    (_, open, lang, body) => `<div class="md-codeblock"><div class="md-codehead"><span>${lang || "código"}</span>` +
-      `<button type="button" class="md-copy sm">Copiar</button></div><pre>${open}${body}</code></pre></div>`);
+    (_, open, lang, body) => `<div class="md-codeblock"><div class="md-codehead"><span>${lang || t("components.md_code")}</span>` +
+      `<button type="button" class="md-copy sm">${t("components.md_copy")}</button></div><pre>${open}${body}</code></pre></div>`);
 }
-async function copyText(t) {
-  try { await navigator.clipboard.writeText(t); return true; } catch (_) {}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
   const ta = document.createElement("textarea");
-  ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
   document.body.appendChild(ta); ta.select();
   let ok = false; try { ok = document.execCommand("copy"); } catch (_) {}
   ta.remove(); return ok;
@@ -238,7 +242,7 @@ function linkReports(root) {
     if (el.closest("pre") || el.dataset.report) return;
     const f = el.tagName === "A" ? reportOf(decodeURIComponent(el.getAttribute("href") || "")) : reportOf(el.textContent);
     if (!f) return;
-    el.dataset.report = f; el.classList.add("md-reportlink"); el.title = "Abrir " + f;
+    el.dataset.report = f; el.classList.add("md-reportlink"); el.title = t("components.md_open_report", { file: f });
   });
 }
 function onMdClick(e) {
@@ -251,8 +255,8 @@ function onMdClick(e) {
   if (!btn) return;
   const code = btn.closest(".md-codeblock")?.querySelector("pre");
   copyText(code ? code.innerText.replace(/\n$/, "") : "").then((ok) => {
-    btn.textContent = ok ? "Copiado ✓" : "Falhou";
-    setTimeout(() => { btn.textContent = "Copiar"; }, 1500);
+    btn.textContent = ok ? t("components.md_copied") : t("components.md_copy_failed");
+    setTimeout(() => { btn.textContent = t("components.md_copy"); }, 1500);
   });
 }
 export function MarkdownView({ text }) {
@@ -266,7 +270,7 @@ export function MarkdownView({ text }) {
 export function MarkdownPanel({ text }) {
   const [source, setSource] = useState(false);
   return html`<div>
-    <div class="md-toolbar"><${Toggle} checked=${source} onChange=${setSource} label="Código-fonte" /></div>
+    <div class="md-toolbar"><${Toggle} checked=${source} onChange=${setSource} label=${t("components.md_source")} /></div>
     ${source ? html`<pre class="raw">${text}</pre>` : html`<${MarkdownView} text=${text} />`}
   </div>`;
 }
@@ -277,7 +281,7 @@ export function MarkdownEditor({ value, onChange, tokenBudget }) {
   const tokens = Math.max(1, Math.round((value || "").length / 4));
   const pct = tokenBudget ? Math.min(100, Math.round((tokens / tokenBudget) * 100)) : 0;
   const meterKind = pct > 100 ? "danger" : pct > 85 ? "warn" : "";
-  const modes = [["read", "Ler"], ["visual", "Editar (visual)"], ["raw", "Texto puro"]];
+  const modes = [["read", t("components.md_mode_read")], ["visual", t("components.md_mode_visual")], ["raw", t("components.md_mode_raw")]];
   // Frontmatter YAML (--- … ---) não é Markdown: fica fora do editor visual e é reanexado intacto.
   const fm = (value || "").match(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/);
   const front = fm ? fm[0] : "";
@@ -287,15 +291,15 @@ export function MarkdownEditor({ value, onChange, tokenBudget }) {
       ${modes.map(([k, l]) => html`<button type="button" class=${mode === k ? "on" : ""} onClick=${() => setMode(k)}>${l}</button>`)}
     </div></div>
     ${mode === "visual" ? html`<div>
-        ${front && html`<details class="md-front"><summary>Cabeçalho (frontmatter) — edite em “Texto puro”</summary><pre class="raw">${front}</pre></details>`}
+        ${front && html`<details class="md-front"><summary>${t("components.md_frontmatter_edit")}</summary><pre class="raw">${front}</pre></details>`}
         <${WysiwygEditor} value=${body.replace(/^\n+/, "")} onChange=${(md) => onChange(front + (front ? "\n" : "") + md)} />
       </div>`
       : mode === "raw" ? html`<textarea class="codearea" value=${value} onInput=${(e) => onChange(e.target.value)}></textarea>`
       : html`<div class="card md-readbox">
-          ${front && html`<details class="md-front"><summary>Cabeçalho (frontmatter)</summary><pre class="raw">${front}</pre></details>`}
+          ${front && html`<details class="md-front"><summary>${t("components.md_frontmatter")}</summary><pre class="raw">${front}</pre></details>`}
           <${MarkdownView} text=${body} /></div>`}
     ${tokenBudget && mode !== "read" && html`<div>
-      <div class="help">~${tokens} tokens / orçamento ~${tokenBudget}</div>
+      <div class="help">${t("components.md_tokens", { tokens, budget: tokenBudget })}</div>
       <div class="meter ${meterKind}"><div style=${`width:${Math.min(100, pct)}%`}></div></div>
     </div>`}
   </div>`;
@@ -307,11 +311,11 @@ export function CodeTextEditor({ value, onChange, name = "" }) {
   const [yerr, setYerr] = useState("");
   useEffect(() => {
     if (!isYaml) return setYerr("");
-    const t = setTimeout(async () => {
+    const tm = setTimeout(async () => {
       try { const y = await import("js-yaml"); (y.load || y.default.load)(value || ""); setYerr(""); }
       catch (e) { setYerr(e.message.split("\n")[0]); }
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(tm);
   }, [value, isYaml]);
   const onKey = (e) => {
     if (e.key !== "Tab" || e.ctrlKey || e.altKey || e.metaKey) return;
@@ -322,7 +326,7 @@ export function CodeTextEditor({ value, onChange, name = "" }) {
   };
   return html`<div>
     <textarea class="codearea" spellcheck="false" value=${value} onKeyDown=${onKey} onInput=${(e) => onChange(e.target.value)}></textarea>
-    ${isYaml && html`<div class=${yerr ? "help yaml-bad" : "help yaml-ok"}>${yerr ? "⚠ YAML inválido: " + yerr : "✓ YAML válido"}</div>`}
+    ${isYaml && html`<div class=${yerr ? "help yaml-bad" : "help yaml-ok"}>${yerr ? t("components.yaml_invalid", { error: yerr }) : t("components.yaml_valid")}</div>`}
   </div>`;
 }
 
@@ -335,10 +339,24 @@ export function PasswordInput({ value, onInput, ...rest }) {
   const [show, setShow] = useState(false);
   return html`<span class="pw-wrap">
     <input ...${rest} type=${show ? "text" : "password"} value=${value} onInput=${onInput} />
-    <button type="button" class="pw-eye" tabindex="-1" title=${show ? "Ocultar senha" : "Mostrar senha"}
-      aria-label=${show ? "Ocultar senha" : "Mostrar senha"} onMouseDown=${(e) => e.preventDefault()}
+    <button type="button" class="pw-eye" tabindex="-1" title=${show ? t("components.pw_hide") : t("components.pw_show")}
+      aria-label=${show ? t("components.pw_hide") : t("components.pw_show")} onMouseDown=${(e) => e.preventDefault()}
       onClick=${() => setShow(!show)}>${show ? "🙈" : "👁"}</button>
   </span>`;
+}
+
+// Language switch on the login screen: before login the user may need another language (remembered in this browser).
+function LoginLanguages() {
+  const cur = useLocale();
+  const [list, setList] = useState(languages());
+  useEffect(() => { loadIndex().then((idx) => setList(idx.languages || [])); }, []);
+  if (list.length < 2) return null;
+  return html`<div class="login-langs" role="group" aria-label=${t("common.language")}
+      style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:14px">
+    ${list.map((l) => html`<button type="button" key=${l.code} class="sm ghost" aria-pressed=${l.code === cur}
+      style=${l.code === cur ? "font-weight:700;text-decoration:underline" : ""}
+      onClick=${() => loadLocale(l.code)}>${l.name}</button>`)}
+  </div>`;
 }
 
 export function LoginScreen({ onAuthed, multiuser = false }) {
@@ -361,31 +379,31 @@ export function LoginScreen({ onAuthed, multiuser = false }) {
       setAuthToken(r.auth_token);
       await refreshVault();
       if (authToken() !== r.auth_token) return;
-      if (r.bootstrap) toast.ok(`Administrador criado: entre com ${login} e a senha-mestra. O console agora é multiusuário.`);
+      if (r.bootstrap) toast.ok(t("components.login_admin_created", { login }));
       onAuthed && onAuthed();
     } catch (e2) {
-      if (e2.status === 401) setErr(multiuser ? "E-mail ou senha incorretos." : "Senha mestra incorreta.");
-      else setErr(e2.payload?.detail || e2.message || "Falha ao entrar.");
+      if (e2.status === 401) setErr(multiuser ? t("components.login_bad_credentials") : t("components.master_password_wrong"));
+      else setErr(e2.payload?.detail || e2.message || t("components.login_failed"));
     } finally { setBusy(false); }
   }
 
   return html`<div class="login-screen">
     <form class="login-card" onSubmit=${submit}>
       <div class="login-brand">🔒 NetOps Console</div>
-      <p class="help">${multiuser ? "Acesso protegido. Entre com seu e-mail e senha."
-        : "Primeiro acesso: informe o e-mail do administrador e a senha-mestra do cofre. Esse e-mail vira o seu login."}</p>
+      <p class="help">${multiuser ? t("components.login_help_multiuser") : t("components.login_help_first")}</p>
       <div class="field">
-        <label>${multiuser ? "E-mail" : "E-mail do administrador"}</label>
+        <label>${multiuser ? t("common.email") : t("components.login_admin_email")}</label>
         <input type="email" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus value=${email}
           onInput=${(e) => setEmail(e.target.value)} disabled=${busy} />
       </div>
       <div class="field">
-        <label>${multiuser ? "Senha" : "Senha mestra"}</label>
+        <label>${multiuser ? t("common.password") : t("components.master_password")}</label>
         <${PasswordInput} autocomplete="current-password" value=${pw}
           onInput=${(e) => setPw(e.target.value)} disabled=${busy} />
         ${err && html`<div class="err">${err}</div>`}
       </div>
-      <button type="submit" class="primary" disabled=${busy || !pw || !emailOk}>${busy ? "Entrando…" : "Entrar"}</button>
+      <button type="submit" class="primary" disabled=${busy || !pw || !emailOk}>${busy ? t("components.login_busy") : t("components.login_submit")}</button>
+      <${LoginLanguages} />
     </form>
   </div>`;
 }
@@ -406,30 +424,29 @@ export function UnlockModal({ onClose, reason }) {
       await api.post("/vault/unlock", { master_password: pw });
       setPw("");
       await refreshVault();
-      toast.ok("Cofre destrancado");
+      toast.ok(t("components.vault_unlocked_toast"));
       onClose && onClose();
     } catch (e2) {
-      if (e2.status === 401) setErr("Senha mestra incorreta.");
-      else if (e2.status === 409) setErr(e2.payload?.detail || "Cofre não inicializado — rode 'init' no terminal.");
-      else if (e2.status === 403) setErr(e2.payload?.detail || "Destrancar pela web está desabilitado.");
-      else setErr(e2.message || "Falha ao destrancar.");
+      if (e2.status === 401) setErr(t("components.master_password_wrong"));
+      else if (e2.status === 409) setErr(e2.payload?.detail || t("components.vault_not_initialized"));
+      else if (e2.status === 403) setErr(e2.payload?.detail || t("components.vault_web_unlock_disabled"));
+      else setErr(e2.message || t("components.vault_unlock_failed"));
     } finally { setBusy(false); }
   }
 
-  return html`<${Modal} title="Destrancar o cofre" onClose=${onClose}>
+  return html`<${Modal} title=${t("components.vault_unlock_title")} onClose=${onClose}>
     <form onSubmit=${submit}>
       ${reason && html`<p class="vault-reason">🔒 ${reason}</p>`}
-      <p class="help">A senha-mestra é usada só para derivar a chave nesta sessão; não é gravada,
-        registrada nem devolvida. A sessão vale também para a CLI e os agentes.</p>
+      <p class="help">${t("components.vault_unlock_help")}</p>
       <div class="field">
-        <label>Senha mestra</label>
+        <label>${t("components.master_password")}</label>
         <${PasswordInput} autocomplete="off" autofocus value=${pw}
           onInput=${(e) => setPw(e.target.value)} disabled=${busy} />
         ${err && html`<div class="err">${err}</div>`}
       </div>
       <div class="modal-actions">
-        <button type="button" onClick=${onClose} disabled=${busy}>Cancelar</button>
-        <button type="submit" class="primary" disabled=${busy || !pw}>${busy ? "Destrancando…" : "Destrancar"}</button>
+        <button type="button" onClick=${onClose} disabled=${busy}>${t("common.cancel")}</button>
+        <button type="submit" class="primary" disabled=${busy || !pw}>${busy ? t("components.vault_unlocking") : t("components.vault_unlock")}</button>
       </div>
     </form>
   <//>`;
@@ -440,14 +457,14 @@ export function VaultBanner({ compact = false } = {}) {
   const v = useStore(vaultStore);
   const [tick, setTick] = useState(0);
   const [showUnlock, setShowUnlock] = useState(false);
-  useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { const iv = setInterval(() => setTick((n) => n + 1), 1000); return () => clearInterval(iv); }, []);
 
   const canUnlock = v.allow_unlock !== false;
   async function doLock() {
-    try { await api.post("/vault/lock"); await refreshVault(); toast.info("Cofre trancado"); }
-    catch (e) { toast.err(e.message || "Falha ao trancar"); }
+    try { await api.post("/vault/lock"); await refreshVault(); toast.info(t("components.vault_locked_toast")); }
+    catch (e) { toast.err(e.message || t("components.vault_lock_failed")); }
   }
-  const unlockBtn = canUnlock && html`<button class="sm primary" onClick=${() => setShowUnlock(true)}>Destrancar aqui</button>`;
+  const unlockBtn = canUnlock && html`<button class="sm primary" onClick=${() => setShowUnlock(true)}>${t("components.vault_unlock_here")}</button>`;
   const modal = showUnlock && html`<${UnlockModal} onClose=${() => setShowUnlock(false)} />`;
 
   if (v.state === "loading" || v.state === "cache" || v.state === "env") {
@@ -455,33 +472,33 @@ export function VaultBanner({ compact = false } = {}) {
       const left = Math.max(0, (v.expires_in || 0) - tick);
       const mm = String(Math.floor(left / 60)).padStart(2, "0"), ss = String(left % 60).padStart(2, "0");
       if (compact) return html`<button type="button" class="sm icon-btn vault-icon ok" onClick=${doLock}
-        title=${`Cofre destrancado — expira em ${mm}:${ss}. Clique para trancar agora.`} aria-label="Cofre destrancado: clique para trancar">🔓<span class="mob-label">Trancar o cofre</span></button>`;
-      return html`<div class="vault-banner ok">🔓 Cofre destrancado (sessão) — expira em ${mm}:${ss}
+        title=${t("components.vault_cache_title", { time: `${mm}:${ss}` })} aria-label=${t("components.vault_cache_aria")}>🔓<span class="mob-label">${t("components.vault_lock_mob")}</span></button>`;
+      return html`<div class="vault-banner ok">${t("components.vault_cache_banner", { time: `${mm}:${ss}` })}
         <span class="spacer"></span>
-        <button class="sm" onClick=${doLock}>Trancar</button></div>`;
+        <button class="sm" onClick=${doLock}>${t("components.vault_lock")}</button></div>`;
     }
     if (v.state === "env") return compact
-      ? html`<span class="sm icon-btn vault-icon ok" title="Cofre destrancado pela variável de ambiente (não tranca pela web)">🔓</span>`
-      : html`<div class="vault-banner ok">🔓 Cofre destrancado (variável de ambiente)</div>`;
+      ? html`<span class="sm icon-btn vault-icon ok" title=${t("components.vault_env_title")}>🔓</span>`
+      : html`<div class="vault-banner ok">${t("components.vault_env_banner")}</div>`;
     return null;
   }
 
   const cmd = v.unlock_cmd || "cd /opt/netops && .venv/bin/python3 scripts/engine/vault/cli.py unlock";
   if (compact) return html`<button type="button" class=${"sm icon-btn vault-icon " + (v.state === "insecure" ? "insecure" : "locked")}
-    onClick=${() => canUnlock ? setShowUnlock(true) : toast.info("Destrancar pela web está desabilitado — rode: " + cmd)}
-    title=${(v.state === "insecure" ? "Permissões inseguras no cache do cofre — " + v.detail : "Cofre TRANCADO")
-      + (canUnlock ? ". Clique para destrancar." : "")} aria-label="Cofre trancado: clique para destrancar">${v.state === "insecure" ? "⚠" : "🔒"}<span class="mob-label">Destrancar o cofre</span></button>${modal}`;
+    onClick=${() => canUnlock ? setShowUnlock(true) : toast.info(t("components.vault_web_disabled_run", { cmd }))}
+    title=${(v.state === "insecure" ? t("components.vault_insecure_title", { detail: v.detail }) : t("components.vault_locked_title"))
+      + (canUnlock ? t("components.vault_click_unlock") : "")} aria-label=${t("components.vault_locked_aria")}>${v.state === "insecure" ? "⚠" : "🔒"}<span class="mob-label">${t("components.vault_unlock_title")}</span></button>${modal}`;
   if (v.state === "insecure")
-    return html`<div class="vault-banner insecure">⚠ Permissões inseguras no cache do cofre — ${v.detail}
+    return html`<div class="vault-banner insecure">⚠ ${t("components.vault_insecure_title", { detail: v.detail })}
       ${unlockBtn}
       <span class="spacer"></span>
       ${modal}</div>`;
   // locked / error
   return html`<div class="vault-banner locked">
-    🔒 Cofre <b>TRANCADO</b> — edições de senha desabilitadas.
+    🔒 ${t("components.vault_locked_pre")} <b>${t("components.vault_locked_word")}</b> ${t("components.vault_locked_post")}
     ${unlockBtn}
     <span class="spacer"></span>
-    ${canUnlock && html`<span class="help">ou rode no shell abaixo:</span>`}
+    ${canUnlock && html`<span class="help">${t("components.vault_or_run_shell")}</span>`}
     <code>${cmd}</code><${CopyButton} text=${cmd} />
     ${modal}
   </div>`;
@@ -500,6 +517,6 @@ export function RenameCascadeHint({ refsPath, changed }) {
   const [refs, setRefs] = useState(null);
   useEffect(() => { api.get(refsPath).then((d) => setRefs(d.references || [])).catch(() => setRefs([])); }, [refsPath]);
   if (!changed || !refs || !refs.length) return null;
-  return html`<div class="card rename-refs">⚠ Ao salvar, <b>${refs.length} referência(s)</b> serão atualizadas:
+  return html`<div class="card rename-refs">${t("components.rename_refs_pre")} <b>${t("components.rename_refs_count", { count: refs.length })}</b> ${t("components.rename_refs_post")}
     <ul>${refs.map((r, i) => html`<li key=${i}>${r.label || r.id}</li>`)}</ul></div>`;
 }

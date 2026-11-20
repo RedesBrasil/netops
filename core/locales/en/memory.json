@@ -1,0 +1,18 @@
+{
+  "all_notes": "all notes",
+  "back": "Back to memory",
+  "col_note": "Note",
+  "col_title": "Title",
+  "help_agents": "— project instructions, the first thing every AI (Claude Code, Codex, Cursor) reads. Rules here apply to all sessions.",
+  "help_memory": "— memory index: preferences, network facts and lessons learned (one line per note).",
+  "load_error": "Error loading '{name}': {message}",
+  "no_notes": "No notes.",
+  "not_found": "'{name}' not found.",
+  "note": "Note",
+  "notes_help_1": "Detailed notes in",
+  "notes_help_2": "— the MEMORY.md index points to them.",
+  "saved": "Saved",
+  "search_note": "Search note",
+  "tab_notes": "Notes",
+  "title": "Memory"
+}

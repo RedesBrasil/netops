@@ -11,14 +11,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scrip
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 import requests  # noqa: E402
+from lib import i18n  # noqa: E402
 from collections import defaultdict
 
 ZABBIX_URL = os.environ.get("ZABBIX_URL", "")
 if not ZABBIX_URL:
-    sys.exit("Defina ZABBIX_URL no ambiente (ex.: http://zabbix.exemplo.local/zabbix/api_jsonrpc.php).")
+    sys.exit(i18n.t("cli_zabbix.url_missing"))
 API_TOKEN = os.environ.get("ZABBIX_API_TOKEN", "")
 if not API_TOKEN:
-    sys.exit("Defina ZABBIX_API_TOKEN no ambiente (nunca commitar o token).")
+    sys.exit(i18n.t("cli_zabbix.token_missing"))
+
+# Internal category names (dict keys) -> catalog keys; translated only when printed.
+CATEGORY_KEYS = {"CPU & Load": "cat_cpu", "Memória": "cat_memory", "Disco & Storage": "cat_disk", "Rede": "cat_network",
+                 "Hardware & Sensores": "cat_hardware", "Serviços & Processos": "cat_services", "Outros": "cat_other"}
+
+
+def _cat(name):
+    key = CATEGORY_KEYS.get(name)
+    return i18n.t("cli_zabbix." + key) if key else name
+
 
 def zabbix_request(method, params):
     """Faz requisição à API do Zabbix"""
@@ -35,7 +46,7 @@ def zabbix_request(method, params):
     result = response.json()
 
     if "error" in result:
-        print(f"Erro na API: {result['error']}", file=sys.stderr)
+        print(i18n.t("cli_zabbix.api_error", error=result["error"]), file=sys.stderr)
         sys.exit(1)
 
     return result.get("result")
@@ -43,7 +54,7 @@ def zabbix_request(method, params):
 def main():
     template_name = sys.argv[1] if len(sys.argv) > 1 else "SNMP LINUX"
 
-    print(f"🔍 Analisando template: {template_name}\n")
+    print(i18n.t("cli_zabbix.analyzing", name=template_name) + "\n")
 
     # 1. Buscar o template
     templates = zabbix_request("template.get", {
@@ -52,12 +63,12 @@ def main():
     })
 
     if not templates:
-        print(f"❌ Template '{template_name}' não encontrado")
+        print(i18n.t("cli_zabbix.template_not_found", name=template_name))
         sys.exit(1)
 
     template_id = templates[0]["templateid"]
     print(f"✓ Template ID: {template_id}")
-    print(f"  Nome: {templates[0]['name']}\n")
+    print(i18n.t("cli_zabbix.template_name", name=templates[0]["name"]) + "\n")
 
     # 2. Buscar itens do template
     items = zabbix_request("item.get", {
@@ -66,7 +77,7 @@ def main():
         "sortfield": "name"
     })
 
-    print(f"📊 ITENS MONITORADOS: {len(items)}\n")
+    print(i18n.t("cli_zabbix.items_monitored", count=len(items)) + "\n")
     print("=" * 100)
 
     # Agrupar por categoria (baseado no nome)
@@ -95,7 +106,7 @@ def main():
 
     # Mostrar itens por categoria
     for cat in sorted(categorias.keys()):
-        print(f"\n📁 {cat} ({len(categorias[cat])} itens)")
+        print("\n" + i18n.t("cli_zabbix.category_header", category=_cat(cat), count=len(categorias[cat])))
         print("-" * 100)
 
         for item in categorias[cat]:
@@ -134,11 +145,11 @@ def main():
 
             print(f"  • {item['name']}")
             print(f"    Key: {item['key_']}")
-            print(f"    Tipo: {tipo} | Valor: {vtype}{units} | Intervalo: {item['delay']}")
+            print(i18n.t("cli_zabbix.item_line", type=tipo, value=f"{vtype}{units}", interval=item["delay"]))
 
     # 3. Buscar triggers do template
     print("\n\n" + "=" * 100)
-    print("🚨 TRIGGERS (ALERTAS)")
+    print(i18n.t("cli_zabbix.triggers_header"))
     print("=" * 100)
 
     triggers = zabbix_request("trigger.get", {
@@ -149,38 +160,38 @@ def main():
         "sortorder": "DESC"
     })
 
-    print(f"\nTotal de triggers: {len(triggers)}\n")
+    print("\n" + i18n.t("cli_zabbix.triggers_total", count=len(triggers)) + "\n")
 
     if triggers:
         priority_map = {
-            "0": "Não classificado",
-            "1": "Informação",
-            "2": "Aviso",
-            "3": "Média",
-            "4": "Alta",
-            "5": "Desastre"
+            "0": i18n.t("cli_zabbix.prio_not_classified"),
+            "1": i18n.t("cli_zabbix.prio_information"),
+            "2": i18n.t("cli_zabbix.prio_warning"),
+            "3": i18n.t("cli_zabbix.prio_average"),
+            "4": i18n.t("cli_zabbix.prio_high"),
+            "5": i18n.t("cli_zabbix.prio_disaster")
         }
 
         for trig in triggers:
             prio = priority_map.get(trig["priority"], trig["priority"])
-            status = "✓ ATIVA" if trig["status"] == "0" else "✗ DESABILITADA"
+            status = i18n.t("cli_zabbix.trigger_enabled") if trig["status"] == "0" else i18n.t("cli_zabbix.trigger_disabled")
 
             print(f"🔔 {trig['description']}")
-            print(f"   Prioridade: {prio} | Status: {status}")
-            print(f"   Expressão: {trig['expression']}")
+            print(i18n.t("cli_zabbix.trigger_status", priority=prio, status=status))
+            print(i18n.t("cli_zabbix.trigger_expression", expression=trig["expression"]))
 
             if trig.get("items"):
-                print(f"   Itens relacionados:")
+                print(i18n.t("cli_zabbix.related_items"))
                 for item in trig["items"]:
                     print(f"     - {item['name']} ({item['key_']})")
 
             print()
     else:
-        print("⚠️  Nenhuma trigger configurada neste template!")
+        print(i18n.t("cli_zabbix.no_triggers"))
 
     # 4. Resumo comparativo
     print("\n" + "=" * 100)
-    print("📈 RESUMO COMPARATIVO")
+    print(i18n.t("cli_zabbix.summary_header"))
     print("=" * 100)
 
     items_por_categoria = {cat: len(items) for cat, items in categorias.items()}
@@ -208,7 +219,8 @@ def main():
                     triggers_por_categoria["Outros"] += 1
                 break  # Conta só uma vez por trigger
 
-    print(f"\n{'Categoria':<25} {'Itens':<10} {'Triggers':<10} {'Cobertura':<15} {'Status'}")
+    print(f"\n{i18n.t('cli_zabbix.col_category'):<25} {i18n.t('cli_zabbix.col_items'):<10} {'Triggers':<10} "
+          f"{i18n.t('cli_zabbix.col_coverage'):<15} {'Status'}")
     print("-" * 100)
 
     for cat in sorted(items_por_categoria.keys()):
@@ -222,20 +234,20 @@ def main():
             cobertura = "N/A"
 
         if n_triggers == 0:
-            status = "❌ SEM ALERTAS"
+            status = i18n.t("cli_zabbix.coverage_none")
         elif cobertura_pct < 30:
-            status = "⚠️  BAIXA COBERTURA"
+            status = i18n.t("cli_zabbix.coverage_low")
         elif cobertura_pct < 70:
-            status = "⚡ COBERTURA MÉDIA"
+            status = i18n.t("cli_zabbix.coverage_medium")
         else:
-            status = "✓ BOA COBERTURA"
+            status = i18n.t("cli_zabbix.coverage_good")
 
-        print(f"{cat:<25} {n_items:<10} {n_triggers:<10} {cobertura:<15} {status}")
+        print(f"{_cat(cat):<25} {n_items:<10} {n_triggers:<10} {cobertura:<15} {status}")
 
     print("-" * 100)
     print(f"{'TOTAL':<25} {len(items):<10} {len(triggers):<10}")
 
-    print("\n✨ Análise concluída!\n")
+    print("\n" + i18n.t("cli_zabbix.done") + "\n")
 
 if __name__ == "__main__":
     main()

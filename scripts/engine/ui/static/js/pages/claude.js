@@ -5,7 +5,7 @@
 // e um chat compacto encaixado à direita (ChatDock), que aparece quando você navega para
 // outra rota com uma conversa viva — dá p/ acompanhar o streaming, enviar e aprovar.
 // Protocolo JSON nos dois sentidos (ver scripts/engine/ui/services/claude_svc.py).
-import { html, useState, useEffect, useRef, useCallback, toast, api, refreshVault, can } from "../ui.js";
+import { html, useState, useEffect, useRef, useCallback, toast, api, refreshVault, can, t, fmtDateTime, fmtDate, fmtTime } from "../ui.js";
 import { FileBrowser } from "../file-browser.js";
 import { useDictation, MAX_SECONDS } from "../audio-dictation.js";
 import { createContext } from "preact";
@@ -34,8 +34,8 @@ function openInNewWindow(e, hash) {
 function noAutoscroll(e) { if (e.button === 1) e.preventDefault(); }
 
 async function copySessionLink(id, project = "") {
-  try { await copyClaudeSessionLink(id, project); toast.ok("Link da sessão copiado"); }
-  catch (e) { toast.err(e.message || "Não foi possível copiar o link."); }
+  try { await copyClaudeSessionLink(id, project); toast.ok(t("claude.session_link_copied")); }
+  catch (e) { toast.err(e.message || t("claude.copy_link_failed")); }
 }
 
 // Comandos que a ABA resolve sozinha — NÃO vão para o modelo. `/login` é comando da TUI do
@@ -46,22 +46,24 @@ const LOCAL_SLASH = ["login", "logout", "auth"];
 const LOCAL_SLASH_RE = /^\/(login|logout|auth)\b/i;
 
 // Modos de operação expostos (todos, incl. bypass — decisão do projeto).
+// label/short/desc are translation keys (translated at render time with t()).
 const MODES = [
-  { value: "default", label: "Perguntar antes", short: "Manual", icon: "✋", desc: "Pede aprovação antes de cada ação" },
-  { value: "acceptEdits", label: "Auto-editar", short: "Auto-editar", icon: "‹›", desc: "Edita arquivos sozinho; pergunta o resto" },
-  { value: "plan", label: "Plano (só leitura)", short: "Plano", icon: "☰", desc: "Explora e apresenta um plano antes de editar" },
-  { value: "dontAsk", label: "Não perguntar", short: "Não perguntar", icon: "⌀", desc: "Nega tudo que não estiver pré-aprovado" },
-  { value: "bypassPermissions", label: "Bypass — full-auto ⚠", short: "Bypass", icon: "⚡", desc: "Executa sem pedir aprovação, até comandos perigosos" },
+  { value: "default", label: "claude.mode_default_label", short: "claude.mode_default_short", icon: "✋", desc: "claude.mode_default_desc" },
+  { value: "acceptEdits", label: "claude.mode_accept_edits_label", short: "claude.mode_accept_edits_short", icon: "‹›", desc: "claude.mode_accept_edits_desc" },
+  { value: "plan", label: "claude.mode_plan_label", short: "claude.mode_plan_short", icon: "☰", desc: "claude.mode_plan_desc" },
+  { value: "dontAsk", label: "claude.mode_dont_ask_label", short: "claude.mode_dont_ask_short", icon: "⌀", desc: "claude.mode_dont_ask_desc" },
+  { value: "bypassPermissions", label: "claude.mode_bypass_label", short: "claude.mode_bypass_short", icon: "⚡", desc: "claude.mode_bypass_desc" },
 ];
 
 // Permissões de rede (CRUD) do agente NOS EQUIPAMENTOS (session.py). O backend classifica cada
 // comando (scripts/engine/lib/net_perms.py) e pede aprovação na tela se faltar categoria.
 // Independe do modo acima (que governa arquivos/ferramentas locais). Full = as 4 marcadas.
+// label/short are translation keys (translated at render time); desc = command examples (not translated).
 const NETPERMS = [
-  { value: "read", label: "Ler", short: "L", desc: "print, show, ping" },
-  { value: "create", label: "Criar", short: "C", desc: "add" },
-  { value: "edit", label: "Editar", short: "E", desc: "set, restart, reboot" },
-  { value: "delete", label: "Apagar", short: "A", desc: "remove, no, rm" },
+  { value: "read", label: "claude.np_read", short: "claude.np_read_short", desc: "print, show, ping" },
+  { value: "create", label: "claude.np_create", short: "claude.np_create_short", desc: "add" },
+  { value: "edit", label: "claude.np_edit", short: "claude.np_edit_short", desc: "set, restart, reboot" },
+  { value: "delete", label: "claude.np_delete", short: "claude.np_delete_short", desc: "remove, no, rm" },
 ];
 const NETPERMS_ALL = NETPERMS.map((p) => p.value);
 const npNorm = (arr) => NETPERMS_ALL.filter((v) => Array.isArray(arr) ? arr.includes(v) : true);
@@ -69,16 +71,17 @@ const npFull = (arr) => npNorm(arr).length === NETPERMS_ALL.length;
 const npShort = (arr) => {
   const n = npNorm(arr);
   if (n.length === NETPERMS_ALL.length) return "Full";
-  if (!n.length) return "Nada";
-  if (n.length === 1 && n[0] === "read") return "Só leitura";
-  return NETPERMS.filter((p) => n.includes(p.value)).map((p) => p.short).join("·");
+  if (!n.length) return t("claude.np_none");
+  if (n.length === 1 && n[0] === "read") return t("claude.np_read_only");
+  return NETPERMS.filter((p) => n.includes(p.value)).map((p) => t(p.short)).join("·");
 };
 
 // Catálogo anunciado pelo mesmo CLI/provider que executa a conversa. Se indisponível,
 // o CLI resolve seu próprio padrão; a UI não presume versões ou acesso da conta.
 const MODELS_FALLBACK = [
-  { id: "default", name: "Padrão do Claude Code" },
+  { id: "default", name: "Padrão do Claude Code", nameKey: "claude.model_default_name" },   // nameKey = translated at render
 ];
+const modelName = (m) => (m && m.nameKey ? t(m.nameKey) : (m && m.name) || "");
 
 // Fecha o último item "aberto" (bolha em streaming) antes de empurrar outro tipo.
 // Espelho da fila no navegador (por conversa): se o servidor perder a fila dele (reinício do
@@ -133,7 +136,7 @@ export function ClaudeProvider({ children }) {
   // libera o comando sozinho (`vault_resolved`). Fechar o pop-up só o dispensa; o agente segue
   // aguardando e o pop-up volta ao reabrir/voltar à aba.
   return html`<${ClaudeCtx.Provider} value=${value}>${children}
-    ${value.vaultAsk && html`<${UnlockModal} reason="O agente precisa de uma credencial do cofre para continuar. Destranque para liberar o comando — ele está aguardando."
+    ${value.vaultAsk && html`<${UnlockModal} reason=${t("claude.vault_needed_reason")}
       onClose=${() => value.setVaultAsk(false)} />`}<//>`;
 }
 
@@ -272,7 +275,7 @@ function useClaudeSession() {
     }
     const current = () => request === routeRequestRef.current;
     try {
-      if (route.kind === "invalid") throw new Error("Link de sessão inválido. Escolha uma conversa em Sessões ou abra Nova sessão.");
+      if (route.kind === "invalid") throw new Error(t("claude.invalid_session_link"));
       if (route.kind === "new") { activateSession("", false, route.project || ""); return; }
       if (route.kind === "session") {
         const rp = route.project || "";
@@ -311,8 +314,8 @@ function useClaudeSession() {
       endSession();
       setStatus("erro");
       setItems([{ type: "error", detail: e.status === 404
-        ? "Sessão ou projeto não encontrado. Escolha outra em Sessões ou abra Nova sessão."
-        : e.message || "Não foi possível abrir a sessão. Tente novamente." }]);
+        ? t("claude.session_or_project_not_found")
+        : e.message || t("claude.open_session_failed") }]);
     }
   }
 
@@ -482,8 +485,8 @@ function useClaudeSession() {
           noReconnectRef.current = true;
           setStatus("desconectado");
           setItems((prev) => [...closeOpen(prev), { type: "error", detail: event.code === 4409
-            ? "Esta sessão foi aberta em outra aba. Recarregue para retomá-la aqui."
-            : "Sessão não encontrada. Escolha outra em Sessões ou abra Nova sessão." }]);
+            ? t("claude.session_opened_elsewhere")
+            : t("claude.session_not_found") }]);
           return;
         }
         // Erro TERMINAL (rate limit / modelo inválido): reconectar+retomar em loop só MARTELA o
@@ -581,7 +584,7 @@ function useClaudeSession() {
               const cached = loadQueueCache(sid);
               if (cached.length) {
                 send({ type: "queue_add", texts: cached.map((x) => x.text) });
-                toast.info(cached.length === 1 ? "1 mensagem da fila foi restaurada." : `${cached.length} mensagens da fila foram restauradas.`);
+                toast.info(t("claude.queue_restored", { count: cached.length }));
                 break;   // o servidor responde com a fila real; aí o cache é regravado
               }
             }
@@ -600,10 +603,8 @@ function useClaudeSession() {
           case "queue_restored": {   // turno interrompido/erro: a fila não roda sozinha, volta p/ a caixa
             const texts = (ev.items || []).map((x) => x.text).filter(Boolean);
             if (texts.length) {
-              setInput((cur) => [...texts, cur].filter((t) => t && t.trim()).join("\n\n"));
-              toast.info(texts.length === 1
-                ? "Turno interrompido: a mensagem da fila voltou para a caixa."
-                : `Turno interrompido: ${texts.length} mensagens da fila voltaram para a caixa.`);
+              setInput((cur) => [...texts, cur].filter((x) => x && x.trim()).join("\n\n"));
+              toast.info(t("claude.queue_returned_to_box", { count: texts.length }));
             }
             break;
           }
@@ -629,7 +630,7 @@ function useClaudeSession() {
             setWorking(false);
             if (ev.detail === "too_many_sessions") {   // teto estático do servidor: não martela reconectando
               noReconnectRef.current = true;
-              setItems((prev) => [...closeOpen(prev), { type: "error", detail: "Muitas sessões Claude abertas — feche alguma e tente de novo." }]);
+              setItems((prev) => [...closeOpen(prev), { type: "error", detail: t("claude.too_many_sessions") }]);
               break;
             }
             handleAgentError(ev);
@@ -688,7 +689,7 @@ function useClaudeSession() {
   // Sem `queued`, vai direto: com turno rodando, o agente lê e incorpora no que está fazendo.
   function dispatch(text, queued) {
     setPendingSend(null);
-    if (!send({ type: "prompt", text, queue: !!queued })) { toast.err("Sem conexão"); return false; }
+    if (!send({ type: "prompt", text, queue: !!queued })) { toast.err(t("claude.no_connection")); return false; }
     if (!queued || !working) {
       setItems((prev) => [...prev, { type: "user", text, interjected: working && !queued, ts: Date.now() }]);
       setWorking(true);
@@ -712,7 +713,7 @@ function useClaudeSession() {
   };
 
   function stop() {
-    if (send({ type: "interrupt" })) toast.info("Interrompendo…");
+    if (send({ type: "interrupt" })) toast.info(t("claude.interrupting"));
   }
 
   // `proj` indefinido = continua no projeto atual; "" = aba Claude Code; "<id>" = esse projeto.
@@ -739,7 +740,7 @@ function useClaudeSession() {
     const sid = sessionIdRef.current;
     const it = items[idx];
     if (!sid || !it || it.type !== "user" || forkingRef.current) return;
-    const norm = (t) => String(t || "").replace(/\s+/g, " ").trim();
+    const norm = (s) => String(s || "").replace(/\s+/g, " ").trim();
     const occurrence = items.slice(0, idx).filter((x) => x.type === "user" && norm(x.text) === norm(it.text)).length;
     forkingRef.current = true;
     // Abre a aba nova JÁ no clique (antes do await) para o bloqueador de pop-up não barrar;
@@ -754,12 +755,12 @@ function useClaudeSession() {
         if (win && !win.closed) { win.location.href = location.origin + location.pathname + hash; win.focus && win.focus(); }
         else fallback();
       };
-      if (r && validSessionId(r.id)) { setPre(r.id); toast.ok("Fork aberto em nova aba — prompt no campo"); go(claudeSessionHash(r.id, projectRef.current), () => resumeSession(r.id)); }
-      else if (r && r.first) { setPre("new"); toast.ok("1º prompt — nova conversa em nova aba"); go(claudeNewHash(projectRef.current), () => newSession()); }
-      else { if (win) win.close(); toast.err("Fork falhou"); }
+      if (r && validSessionId(r.id)) { setPre(r.id); toast.ok(t("claude.fork_opened")); go(claudeSessionHash(r.id, projectRef.current), () => resumeSession(r.id)); }
+      else if (r && r.first) { setPre("new"); toast.ok(t("claude.fork_first_prompt")); go(claudeNewHash(projectRef.current), () => newSession()); }
+      else { if (win) win.close(); toast.err(t("claude.fork_failed")); }
     } catch (e) {
       if (win && !win.closed) win.close();
-      toast.err("Fork falhou: " + ((e && e.payload && (e.payload.detail || e.payload.error)) || (e && e.message) || "erro"));
+      toast.err(t("claude.fork_failed_detail", { detail: (e && e.payload && (e.payload.detail || e.payload.error)) || (e && e.message) || t("claude.error_generic") }));
     } finally { forkingRef.current = false; }
   }
 
@@ -772,24 +773,22 @@ function useClaudeSession() {
     const it = items[idx];
     const text = String(newText || "").trim();
     if (!sid || !it || it.type !== "user" || !text || editingRef.current) return false;
-    const norm = (t) => String(t || "").replace(/\s+/g, " ").trim();
+    const norm = (s) => String(s || "").replace(/\s+/g, " ").trim();
     const occurrence = items.slice(0, idx).filter((x) => x.type === "user" && norm(x.text) === norm(it.text)).length;
     const ident = it.uuid ? { uuid: it.uuid } : { text: it.text, occurrence };
     editingRef.current = true;
     try {
       const plan = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/rewind${projQ(projectRef.current)}`, { ...ident, dry: true });
       const n = Math.max(0, (plan.removed_prompts || 1) - 1);
-      const msg = "Salvar e reenviar APAGA este prompt e tudo que veio depois"
-        + (n ? ` (mais ${n} prompt${n > 1 ? "s" : ""} seguinte${n > 1 ? "s" : ""} e as respostas)` : " (a resposta dele)")
-        + ".\nUma cópia de segurança fica no servidor. Continuar?";
+      const msg = n ? t("claude.rewind_confirm_more", { count: n }) : t("claude.rewind_confirm_single");
       if (!window.confirm(msg)) return false;
       const r = await api.post(`/claude/sessions/${encodeURIComponent(sid)}/rewind${projQ(projectRef.current)}`, ident);
       if (r && r.first) { autoSendRef.current = { sid: "", text }; newSession(); }
       else { autoSendRef.current = { sid, text }; activateSession(sid, true); }
-      toast.ok("Conversa cortada neste ponto — gerando nova resposta");
+      toast.ok(t("claude.rewind_done"));
       return true;
     } catch (e) {
-      toast.err("Editar falhou: " + ((e && e.payload && (e.payload.detail || e.payload.error)) || (e && e.message) || "erro"));
+      toast.err(t("claude.edit_failed_detail", { detail: (e && e.payload && (e.payload.detail || e.payload.error)) || (e && e.message) || t("claude.error_generic") }));
       return false;
     } finally { editingRef.current = false; }
   }
@@ -878,11 +877,11 @@ function useClaudeSession() {
     const a = authToken(); if (a) headers["X-Netops-Session"] = a;
     try {
       const res = await fetch("/api/claude/upload" + projQ(projectRef.current), { method: "POST", headers, body: fd });
-      if (!res.ok) { toast.err("Upload falhou (" + res.status + ")"); return; }
+      if (!res.ok) { toast.err(t("claude.upload_failed_status", { status: res.status })); return; }
       const d = await res.json();
       setAttachments((v) => [...v, { path: d.path, name: d.name }]);
-      toast.ok("Anexado: " + d.name);
-    } catch (_) { toast.err("Upload falhou"); }
+      toast.ok(t("claude.attached", { name: d.name }));
+    } catch (_) { toast.err(t("claude.upload_failed")); }
   }
 
   const badge = { pronto: "ok", conectando: "", reconectando: "warn", desconectado: "warn", desabilitado: "danger", erro: "danger" }[status] || "";
@@ -927,10 +926,10 @@ function ReplyQuote({ boxRef }) {
       const rect = r.getBoundingClientRect();
       setPos({ x: Math.min(Math.max(rect.left + rect.width / 2, 50), window.innerWidth - 50), y: Math.max(rect.top - 8, 44), text });
     };
-    let t = null;
-    const later = () => { clearTimeout(t); t = setTimeout(check, 60); };
+    let tm = null;
+    const later = () => { clearTimeout(tm); tm = setTimeout(check, 60); };
     document.addEventListener("selectionchange", later);
-    return () => { document.removeEventListener("selectionchange", later); clearTimeout(t); };
+    return () => { document.removeEventListener("selectionchange", later); clearTimeout(tm); };
   }, []);
   if (!pos) return null;
   const add = () => {
@@ -949,7 +948,7 @@ function ReplyQuote({ boxRef }) {
   };
   return html`<button class="cc-reply-quote" style=${`left:${pos.x}px;top:${pos.y}px`}
     onMouseDown=${(e) => e.preventDefault()} onTouchStart=${(e) => e.stopPropagation()}
-    onClick=${add} title="Citar este trecho no campo de mensagem (sem enviar)">↩ Responder</button>`;
+    onClick=${add} title=${t("claude.reply_quote_title")}>↩ ${t("claude.reply_quote")}</button>`;
 }
 
 function Transcript() {
@@ -964,17 +963,17 @@ function Transcript() {
   return html`<div class="cc-transcript" ref=${scrollRef} onScroll=${onScroll}>
     ${loggedOut && html`<${LoginBanner} auth=${auth} onLogin=${() => setShowAuth(true)} />`}
     ${items.length === 0 && status === "pronto" && !loggedOut && html`<div class="cc-hint help">
-      Pronto. Peça em linguagem natural, use <code>/comandos</code> ou anexe arquivos.
-      Em <b>Plano</b> ele só lê; troque para <b>Perguntar antes</b> p/ aplicar mudanças com confirmação.
+      ${t("claude.hint_ready_1")} <code>${t("claude.hint_ready_commands")}</code> ${t("claude.hint_ready_2")}
+      ${t("claude.hint_ready_3")} <b>${t("claude.mode_plan_short")}</b> ${t("claude.hint_ready_4")} <b>${t("claude.mode_default_label")}</b> ${t("claude.hint_ready_5")}
     </div>`}
     ${status === "desabilitado" && html`<div class="card cc-off">
-      Página Claude Code desabilitada no servidor. Suba com <code>--enable-claude</code> (e sem <code>--read-only</code>).
+      ${t("claude.disabled_on_server_1")} <code>--enable-claude</code> ${t("claude.disabled_on_server_2")} <code>--read-only</code>${t("claude.disabled_on_server_3")}
     </div>`}
     ${groupTools(items).map((g) => g.tools
       ? html`<${ToolGroup} key=${"g" + g.start} tools=${g.tools} />`
       : html`<${Item} key=${g.i} it=${g.it} onPermission=${answerPermission}
       onFork=${sessionId ? () => forkFrom(g.i) : null}
-      onEdit=${sessionId && status === "pronto" ? (t) => editFrom(g.i, t) : null} />`)}
+      onEdit=${sessionId && status === "pronto" ? (txt) => editFrom(g.i, txt) : null} />`)}
     <${ReplyQuote} boxRef=${scrollRef} />
   </div>`;
 }
@@ -1007,7 +1006,7 @@ function AttachThumb({ path }) {
   }, [big]);
   if (isImg && url) return html`<img class="cc-thumb" src=${url} alt=${name} title=${name} onClick=${() => setBig(true)} />
     ${big && html`<div class="cc-lightbox" onClick=${() => setBig(false)}>
-      <button class="cc-lightbox-x" title="Fechar (Esc)" onClick=${() => setBig(false)}>✕ Fechar</button>
+      <button class="cc-lightbox-x" title=${t("claude.close_esc")} onClick=${() => setBig(false)}>✕ ${t("common.close")}</button>
       <img src=${url} alt=${name} onClick=${(e) => e.stopPropagation()} />
     </div>`}`;
   return html`<span class="cc-file-chip" title=${path}>${isImg ? "🖼" : "📎"} ${name}</span>`;
@@ -1017,14 +1016,14 @@ async function copyReply(text) {
   try {
     if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
     else {
-      const t = document.createElement("textarea");
-      t.value = text; t.style.cssText = "position:fixed;opacity:0;top:0;left:0";
-      document.body.appendChild(t); t.select();
-      const ok = document.execCommand("copy"); t.remove();
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand("copy"); ta.remove();
       if (!ok) throw new Error("copy");
     }
-    toast.ok("Resposta copiada");
-  } catch (e) { toast.err("Não foi possível copiar a resposta."); }
+    toast.ok(t("claude.reply_copied"));
+  } catch (e) { toast.err(t("claude.reply_copy_failed")); }
 }
 // Botão direito na resposta (sem texto selecionado) abre um menu com "Copiar resposta".
 // Com texto selecionado, deixa o menu nativo do navegador (copiar seleção).
@@ -1038,27 +1037,27 @@ function replyContextMenu(e, text) {
   m.style.left = Math.min(e.clientX, innerWidth - 190) + "px";
   m.style.top = Math.min(e.clientY, innerHeight - 60) + "px";
   const b = document.createElement("button");
-  b.textContent = "📋 Copiar resposta";
+  b.textContent = "📋 " + t("claude.copy_reply");
   b.onclick = () => { m.remove(); copyReply(String(text)); };
   m.appendChild(b);
   document.body.appendChild(m);
-  const close = (ev) => { if (ev && ev.type === "keydown" && ev.key !== "Escape") return; m.remove(); ["mousedown", "scroll", "keydown", "blur"].forEach((t) => removeEventListener(t, close, true)); };
-  setTimeout(() => ["mousedown", "scroll", "keydown", "blur"].forEach((t) => addEventListener(t, close, true)), 0);
+  const close = (ev) => { if (ev && ev.type === "keydown" && ev.key !== "Escape") return; m.remove(); ["mousedown", "scroll", "keydown", "blur"].forEach((evt) => removeEventListener(evt, close, true)); };
+  setTimeout(() => ["mousedown", "scroll", "keydown", "blur"].forEach((evt) => addEventListener(evt, close, true)), 0);
 }
 // Data/hora discreta no canto da bolha (hoje: só hora; outro dia: dd/mm hh:mm).
 function MsgTime({ ts }) {
   if (!ts) return null;
   const d = new Date(ts);
   if (isNaN(d)) return null;
-  const hm = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const hm = fmtTime(d, { hour: "2-digit", minute: "2-digit" });
   const same = d.toDateString() === new Date().toDateString();
-  const label = same ? hm : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hm}`;
-  return html`<time class="cc-time" title=${d.toLocaleString("pt-BR")}>${label}</time>`;
+  const label = same ? hm : `${fmtDate(d, { day: "2-digit", month: "2-digit" })} ${hm}`;
+  return html`<time class="cc-time" title=${fmtDateTime(d)}>${label}</time>`;
 }
 // Mensagem do usuário com citações numeradas (**[n]** + linhas "> …"): cada citação vira um bloco
 // clicável que rola até a resposta do Claude de onde o trecho saiu e a destaca.
 const QUOTE_RE = /^\*\*\[(\d+)\]\*\*\n((?:>.*(?:\n|$))+)/gm;
-const squash = (t) => (t || "").replace(/\s+/g, "");
+const squash = (s) => (s || "").replace(/\s+/g, "");
 // Localiza no DOM o trecho citado (ignora diferenças de espaço/quebra) e devolve um Range.
 function findQuoteRange(root, quote) {
   const want = squash(quote);
@@ -1066,8 +1065,8 @@ function findQuoteRange(root, quote) {
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes = []; let flat = "";
   for (let n = w.nextNode(); n; n = w.nextNode()) {
-    const t = n.nodeValue;
-    for (let i = 0; i < t.length; i++) if (!/\s/.test(t[i])) { nodes.push([n, i]); flat += t[i]; }
+    const nv = n.nodeValue;
+    for (let i = 0; i < nv.length; i++) if (!/\s/.test(nv[i])) { nodes.push([n, i]); flat += nv[i]; }
   }
   const at = flat.indexOf(want);
   if (at < 0) return null;
@@ -1099,7 +1098,7 @@ function jumpToQuote(el, quote) {
   if (!root) return;
   const want = squash(quote);
   const all = [...root.querySelectorAll(".cc-msg.assistant")].filter((m) => squash(m.textContent).includes(want));
-  if (!all.length) { toast("warn", "Não achei o trecho citado nesta conversa"); return; }
+  if (!all.length) { toast("warn", t("claude.quote_not_found")); return; }
   const me = el.closest(".cc-msg");
   const before = all.filter((m) => me && (m.compareDocumentPosition(me) & Node.DOCUMENT_POSITION_FOLLOWING));
   const target = (before.length ? before : all).slice(-1)[0];
@@ -1137,7 +1136,7 @@ function AssistantMsg({ text, ts, role = "claude" }) {
         if (!nums.has(m[1])) continue;
         frag.append(v.slice(last, m.index));
         const a = document.createElement("a");
-        a.className = "cc-qref"; a.dataset.n = m[1]; a.textContent = m[0]; a.title = "Ver de onde veio (sua citação " + m[1] + ")";
+        a.className = "cc-qref"; a.dataset.n = m[1]; a.textContent = m[0]; a.title = t("claude.qref_title", { n: m[1] });
         frag.append(a); last = m.index + m[0].length; changed = true;
       }
       if (!changed) continue;
@@ -1173,7 +1172,7 @@ function QuotedText({ text }) {
   if (!parts.length) return text;
   if (last < text.length) parts.push({ t: text.slice(last) });
   return parts.map((p) => p.q === undefined ? p.t.replace(/^\n+/, "") : html`<div class="cc-quote" role="button" tabindex="0"
-    title="Ir para a resposta citada"
+    title=${t("claude.go_to_quoted_reply")}
     onClick=${(e) => jumpToQuote(e.currentTarget, p.q)}
     onKeyDown=${(e) => { if (e.key === "Enter") jumpToQuote(e.currentTarget, p.q); }}><b>${p.n}</b><span>${p.q}</span></div>`);
 }
@@ -1186,10 +1185,10 @@ function UserMsg({ text: fullText, tag, ts, onFork, onEdit }) {
   const [busy, setBusy] = useState(false);
   const startEdit = () => { setDraft(refs.length ? rest : text); setEditing(true); };
   async function save() {
-    const t = draft.trim();
-    if (!t || busy) return;
+    const txt = draft.trim();
+    if (!txt || busy) return;
     setBusy(true);
-    const full = [...refs.map((r) => "@" + r), t].join(" ");   // anexos originais seguem junto
+    const full = [...refs.map((r) => "@" + r), txt].join(" ");   // anexos originais seguem junto
     const ok = await onEdit(full);
     setBusy(false);
     if (ok) setEditing(false);
@@ -1198,24 +1197,24 @@ function UserMsg({ text: fullText, tag, ts, onFork, onEdit }) {
     if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
     else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
   };
-  return html`<div class="cc-msg user"><div class="cc-role">você${tag && html` · <em>${tag}</em>`}</div>
+  return html`<div class="cc-msg user"><div class="cc-role">${t("claude.role_you")}${tag && html` · <em>${tag}</em>`}</div>
     ${refs.length > 0 && html`<div class="cc-attach-row user">${refs.map((r) => html`<${AttachThumb} key=${r} path=${r} />`)}</div>`}
     ${editing
       ? html`<div class="cc-edit">
           <textarea class="cc-edit-box" rows=${Math.min(12, Math.max(3, draft.split("\n").length + 1))} value=${draft} autoFocus
             onInput=${(e) => setDraft(e.target.value)} onKeyDown=${onKey} disabled=${busy}></textarea>
-          <div class="cc-edit-note">Salvar apaga tudo que veio depois deste prompt e gera uma nova resposta.</div>
+          <div class="cc-edit-note">${t("claude.edit_note")}</div>
           <div class="cc-edit-actions">
-            <button class="sm" onClick=${() => setEditing(false)} disabled=${busy}>Cancelar</button>
-            <button class="sm primary" onClick=${save} disabled=${busy || !draft.trim()}>${busy ? "Salvando…" : "Salvar e reenviar"}</button>
+            <button class="sm" onClick=${() => setEditing(false)} disabled=${busy}>${t("common.cancel")}</button>
+            <button class="sm primary" onClick=${save} disabled=${busy || !draft.trim()}>${busy ? t("common.saving") : t("claude.save_and_resend")}</button>
           </div>
         </div>`
       : (rest || !refs.length) && html`<div class="cc-usertext"><${QuotedText} text=${refs.length ? rest : text} /></div>`}
     <div class="cc-user-foot">
-      ${onEdit && !editing && html`<button class="cc-fork" title="Editar: apaga este prompt e tudo depois dele nesta conversa e gera uma nova resposta com o texto editado"
-        onClick=${startEdit}>✎ Editar</button>`}
-      ${onFork && !editing && html`<button class="cc-fork" title="Ramificar: abre uma NOVA conversa no ponto ANTES deste prompt, com o texto já no campo (a original continua intacta)"
-        onClick=${onFork}>⑂ Ramificar daqui</button>`}
+      ${onEdit && !editing && html`<button class="cc-fork" title=${t("claude.edit_prompt_title")}
+        onClick=${startEdit}>✎ ${t("common.edit")}</button>`}
+      ${onFork && !editing && html`<button class="cc-fork" title=${t("claude.fork_title")}
+        onClick=${onFork}>⑂ ${t("claude.fork_here")}</button>`}
       <${MsgTime} ts=${ts} /></div></div>`;
 }
 
@@ -1330,11 +1329,11 @@ function Composer() {
     ${slashMatches.length > 0 && html`<div class="cc-slash-menu">
       ${slashMatches.map((c) => html`<button key=${c} class="cc-slash" onClick=${() => setInput("/" + c + " ")}>/${c}</button>`)}
     </div>`}
-    ${mItems.length > 0 && html`<div class="cc-mention-menu" role="listbox" aria-label="Hosts, grupos e senhas">
+    ${mItems.length > 0 && html`<div class="cc-mention-menu" role="listbox" aria-label=${t("claude.mention_menu_label")}>
       ${mItems.map((m, i) => html`<button key=${m.token} role="option" aria-selected=${i === mSel}
           class=${"cc-mention" + (i === mSel ? " sel" : "")}
           onMouseDown=${(e) => e.preventDefault()} onMouseEnter=${() => setMSel(i)} onClick=${() => pickMention(m)}>
-        <span class=${"cc-mention-kind " + m.kind}>${m.kind === "group" ? "group" : m.kind === "senha" ? "🔒 senha" : "host"}</span>
+        <span class=${"cc-mention-kind " + m.kind}>${m.kind === "group" ? "group" : m.kind === "senha" ? "🔒 " + t("claude.mention_kind_secret") : "host"}</span>
         <b>${m.label}</b><small>${m.detail}</small>
       </button>`)}
     </div>`}
@@ -1342,13 +1341,13 @@ function Composer() {
       ${attachments.length > 0 && html`<div class="cc-attach-row">
         ${attachments.map((a) => html`<div class="cc-attach" key=${a.path}>
           <${AttachThumb} path=${a.path} />
-          <button class="cc-attach-x" title="Remover" onClick=${() => setAttachments((v) => v.filter((x) => x.path !== a.path))}>×</button>
+          <button class="cc-attach-x" title=${t("common.remove")} onClick=${() => setAttachments((v) => v.filter((x) => x.path !== a.path))}>×</button>
         </div>`)}
       </div>`}
       <textarea ref=${taRef} rows="1"
         placeholder=${disabled
-          ? "Sem sessão — digite /login para entrar, ou aguarde a reconexão"
-          : (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? "Mensagem (Enter quebra linha · ↑ envia · / comandos · # hosts)" : "Mensagem (Enter envia · Shift+Enter quebra linha · / comandos · # hosts e grupos)")}
+          ? t("claude.placeholder_no_session")
+          : (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? t("claude.placeholder_touch") : t("claude.placeholder_desktop"))}
         value=${input}
         onInput=${(e) => { setInput(e.target.value); syncCaret(e); }} onKeyDown=${onKeyDown} onKeyUp=${syncCaret} onClick=${syncCaret} onPaste=${onPaste}></textarea>
       <div class="cc-composer-bar">
@@ -1356,24 +1355,24 @@ function Composer() {
           <input type="file" multiple ref=${fileRef} style="display:none"
             onChange=${(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; uploadFiles(fs); }} />
           <button class="cc-iconbtn" disabled=${disabled} onClick=${() => fileRef.current && fileRef.current.click()}
-            title="Anexar arquivos (vira @caminho; selecione vários) — ou cole uma imagem com Ctrl+V">+</button>
-          ${dict.phase === "starting" && html`<span class="cc-dict">Abrindo microfone…</span>`}
-          ${dict.phase === "recording" && html`<span class="cc-dict rec"><i class="cc-dict-dot"></i>Gravando ${mmss(dict.elapsed)} / ${mmss(MAX_SECONDS)}
-            <button class="sm primary" onClick=${dict.stop}>Parar</button>
-            <button class="sm" onClick=${dict.cancel}>Cancelar</button></span>`}
-          ${dict.phase === "transcribing" && html`<span class="cc-dict">Transcrevendo áudio…
-            <button class="sm" onClick=${dict.cancel}>Cancelar</button></span>`}
+            title=${t("claude.attach_title")}>+</button>
+          ${dict.phase === "starting" && html`<span class="cc-dict">${t("claude.dict_opening_mic")}</span>`}
+          ${dict.phase === "recording" && html`<span class="cc-dict rec"><i class="cc-dict-dot"></i>${t("claude.dict_recording", { elapsed: mmss(dict.elapsed), max: mmss(MAX_SECONDS) })}
+            <button class="sm primary" onClick=${dict.stop}>${t("claude.stop")}</button>
+            <button class="sm" onClick=${dict.cancel}>${t("common.cancel")}</button></span>`}
+          ${dict.phase === "transcribing" && html`<span class="cc-dict">${t("claude.dict_transcribing")}
+            <button class="sm" onClick=${dict.cancel}>${t("common.cancel")}</button></span>`}
           <${CacheClock} usage=${lastUsage} />
           <${ContextRing} ctx=${ctxUse} />
-          <${Popover} up=${true} btnClass="cc-pill" title="Modelo e esforço"
-            label=${html`${(models.find((m) => m.id === modelSel) || { name: modelSel || "Modelo" }).name}${effort ? html` <em>${EFFORTS.find(([v]) => v === effort)[1]}</em>` : ""}`}>
+          <${Popover} up=${true} btnClass="cc-pill" title=${t("claude.model_and_effort")}
+            label=${html`${modelName(models.find((m) => m.id === modelSel) || { name: modelSel || t("claude.model") })}${effort ? html` <em>${t(EFFORTS.find(([v]) => v === effort)[1])}</em>` : ""}`}>
             ${(close) => html`
-              <div class="cc-pop-title">Selecione o modelo</div>
+              <div class="cc-pop-title">${t("claude.select_model")}</div>
               <div class="cc-pop-scroll">
               ${(modelSel && !models.some((m) => m.id === modelSel) ? [...models, { id: modelSel, name: modelSel }] : models)
                 .map((m) => html`<button key=${m.id} class=${"cc-pop-item" + (m.id === modelSel ? " sel" : "")}
                     onClick=${() => { changeModel(m.id); close(); }}>
-                  <span><b>${m.name}</b>${m.description && html`<small>${m.description}</small>`}</span>
+                  <span><b>${modelName(m)}</b>${m.description && html`<small>${m.description}</small>`}</span>
                   ${m.id === modelSel && html`<i>✓</i>`}
                 </button>`)}
               </div>
@@ -1382,28 +1381,28 @@ function Composer() {
         </div>
         <div class="cc-composer-actions">
           <${Popover} up=${true} align="right" btnClass=${"cc-pill cc-np-pill" + (npFull(netperms) ? "" : " restricted")}
-            title="Permissões de rede: o que o agente pode fazer nos equipamentos"
-            label=${html`<span class="cc-pill-ico">🔐</span><span class="cc-pill-txt"> Rede: ${npShort(netperms)}</span>`}>
+            title=${t("claude.netperms_title")}
+            label=${html`<span class="cc-pill-ico">🔐</span><span class="cc-pill-txt"> ${t("claude.netperms_pill", { perms: npShort(netperms) })}</span>`}>
             ${() => html`<${NetPermsPicker} value=${netperms} max=${netpermsMax} onChange=${changeNetperms} />`}
           <//>
-          <${Popover} up=${true} align="right" btnClass="cc-pill" disabled=${disabled} title="Modo de permissão do agente"
-            label=${html`<span class="cc-pill-ico">${(MODES.find((m) => m.value === mode) || MODES[0]).icon}</span><span class="cc-pill-txt"> ${(MODES.find((m) => m.value === mode) || MODES[0]).short}</span>`}>
+          <${Popover} up=${true} align="right" btnClass="cc-pill" disabled=${disabled} title=${t("claude.mode_title")}
+            label=${html`<span class="cc-pill-ico">${(MODES.find((m) => m.value === mode) || MODES[0]).icon}</span><span class="cc-pill-txt"> ${t((MODES.find((m) => m.value === mode) || MODES[0]).short)}</span>`}>
             ${(close) => html`
-              <div class="cc-pop-title">Modos</div>
+              <div class="cc-pop-title">${t("claude.modes")}</div>
               ${MODES.map((m) => html`<button key=${m.value} class=${"cc-pop-item" + (m.value === mode ? " sel" : "")}
                   onClick=${() => { changeMode(m.value); close(); }}>
                 <span class="cc-pop-ico">${m.icon}</span>
-                <span><b>${m.label}</b><small>${m.desc}</small></span>
+                <span><b>${t(m.label)}</b><small>${t(m.desc)}</small></span>
                 ${m.value === mode && html`<i>✓</i>`}
               </button>`)}
               <${EffortRow} effort=${effort} changeEffort=${changeEffort} />`}
           <//>
           ${dict.configured && dict.phase === "idle" && html`<button class="cc-iconbtn cc-mic" onClick=${dict.start}
-            title="Ditar por voz (transcreve para o campo, sem enviar)" aria-label="Ditar por voz">
+            title=${t("claude.dictate_title")} aria-label=${t("claude.dictate")}>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>`}
-          ${working && html`<button class="cc-send stop" onClick=${stop} title="Parar (Esc)" aria-label="Parar"><i class="cc-stopsq"></i></button>`}
+          ${working && html`<button class="cc-send stop" onClick=${stop} title=${t("claude.stop_esc")} aria-label=${t("claude.stop")}><i class="cc-stopsq"></i></button>`}
           ${(!working || input.trim() || attachments.length > 0) && html`<button class="cc-send" disabled=${cantSend} onClick=${submit}
-            title=${working ? "Enviar durante a execução — escolha: agora ou fila (Enter)" : "Enviar (Enter)"}>↑</button>`}
+            title=${working ? t("claude.send_while_working_title") : t("claude.send_enter")}>↑</button>`}
         </div>
       </div>
     </div>
@@ -1423,15 +1422,15 @@ function SendChoice({ text, onChoose, onCancel }) {
     else if (k === "f") { e.preventDefault(); onChoose(true); }
   }
   const preview = text.length > 140 ? text.slice(0, 140) + "…" : text;
-  return html`<div class="cc-sendchoice" role="dialog" aria-label="Como enviar a mensagem" onKeyDown=${onKey}>
-    <div class="cc-sendchoice-q">O agente está trabalhando. Como enviar esta mensagem?</div>
+  return html`<div class="cc-sendchoice" role="dialog" aria-label=${t("claude.sendchoice_label")} onKeyDown=${onKey}>
+    <div class="cc-sendchoice-q">${t("claude.sendchoice_question")}</div>
     <div class="cc-sendchoice-text">${preview}</div>
     <div class="cc-sendchoice-opts">
       <button ref=${nowRef} class="sm primary" onClick=${() => onChoose(false)}
-        title="O agente lê e incorpora no que está fazendo agora (atalho: A)"><b>Enviar agora</b><small>incorpora na tarefa atual</small></button>
+        title=${t("claude.send_now_title")}><b>${t("claude.send_now")}</b><small>${t("claude.send_now_hint")}</small></button>
       <button class="sm" onClick=${() => onChoose(true)}
-        title="Só executa depois que a tarefa atual terminar por completo (atalho: F)"><b>Colocar na fila</b><small>roda quando a tarefa terminar</small></button>
-      <button class="sm ghost" onClick=${onCancel} title="Voltar a editar (Esc)">Cancelar</button>
+        title=${t("claude.queue_it_title")}><b>${t("claude.queue_it")}</b><small>${t("claude.queue_it_hint")}</small></button>
+      <button class="sm ghost" onClick=${onCancel} title=${t("claude.back_to_edit")}>${t("common.cancel")}</button>
     </div>
   </div>`;
 }
@@ -1512,20 +1511,21 @@ function QueueList({ queue, working, disabled, onRemove, onSendNow, onMove }) {
     ? [...drag.items.filter((x) => queue.some((q) => q.id === x.id)), ...queue.filter((q) => !drag.items.some((x) => x.id === q.id))]
     : queue;
   return html`<div class=${"cc-queue" + (drag ? " dragging" : "")} ref=${listRef}>
-    <div class="cc-queue-head">Na fila (${queue.length}) — ${working ? "roda quando a tarefa atual terminar" : "aguardando: ⚡ envia, ou roda no fim da próxima tarefa"}</div>
+    <div class="cc-queue-head">${t("claude.queue_head", { count: queue.length })} — ${working ? t("claude.queue_head_working") : t("claude.queue_head_idle")}</div>
     ${shown.map((q, i) => html`<div class=${"cc-queue-item" + (drag && drag.id === q.id ? " drag" : "")} key=${q.id} data-qid=${q.id}>
       ${queue.length > 1 && html`<button class="cc-queue-grip" disabled=${disabled}
-        title="Arraste para reordenar (ou ↑/↓ com a alça focada)" aria-label=${"Reordenar: posição " + (i + 1) + " de " + shown.length}
+        title=${t("claude.queue_drag_title")} aria-label=${t("claude.queue_reorder_label", { pos: i + 1, total: shown.length })}
         onPointerDown=${(e) => startDrag(e, q, i)} onKeyDown=${(e) => onGripKey(e, q, i)}>⠿</button>`}
       <span class="cc-queue-n">${i + 1}</span>
       <span class="cc-queue-text" title=${q.text}>${q.text}</span>
-      <button class="cc-iconbtn" disabled=${disabled} title="Enviar agora (o agente incorpora na tarefa atual)" onClick=${() => onSendNow(q.id)}>⚡</button>
-      <button class="cc-iconbtn" disabled=${disabled} title="Tirar da fila" onClick=${() => onRemove(q.id)}>×</button>
+      <button class="cc-iconbtn" disabled=${disabled} title=${t("claude.queue_send_now_title")} onClick=${() => onSendNow(q.id)}>⚡</button>
+      <button class="cc-iconbtn" disabled=${disabled} title=${t("claude.queue_remove")} onClick=${() => onRemove(q.id)}>×</button>
     </div>`)}
   </div>`;
 }
 
-const EFFORTS = [["low", "baixo"], ["medium", "médio"], ["high", "alto"], ["xhigh", "extra"], ["max", "máx"]];
+// [value, translation key] (translated at render time).
+const EFFORTS = [["low", "claude.effort_low"], ["medium", "claude.effort_medium"], ["high", "claude.effort_high"], ["xhigh", "claude.effort_xhigh"], ["max", "claude.effort_max"]];
 const fmtK = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "k" : String(n));
 
 // Popover simples (abre p/ cima, fecha ao clicar fora). `children` é função (close) => conteúdo.
@@ -1550,11 +1550,11 @@ function Popover({ label, children, btnClass, title, up, align, disabled }) {
 function EffortRow({ effort, changeEffort }) {
   const cur = EFFORTS.find(([v]) => v === effort);
   return html`<div class="cc-pop-sep"></div>
-    <div class="cc-effortrow" title="Vale a partir da próxima sessão/relançamento">
-      <span>Esforço${cur ? html` <em>(${cur[1]})</em>` : html` <em>(padrão)</em>`}</span>
+    <div class="cc-effortrow" title=${t("claude.effort_title")}>
+      <span>${t("claude.effort")}${cur ? html` <em>(${t(cur[1])})</em>` : html` <em>(${t("claude.effort_default")})</em>`}</span>
       <span class="cc-dots">
         ${EFFORTS.map(([v, l], i) => html`<button key=${v} class=${"cc-dot" + (v === effort ? " on" : "")}
-          title=${l} onClick=${() => changeEffort(v)}></button>`)}
+          title=${t(l)} onClick=${() => changeEffort(v)}></button>`)}
       </span>
     </div>`;
 }
@@ -1564,7 +1564,7 @@ function ContextRing({ ctx }) {
   if (!ctx || typeof ctx.percentage !== "number") return null;
   const pct = Math.min(100, Math.max(0, ctx.percentage)), r = 7, c = 2 * Math.PI * r;
   return html`<span class=${"cc-ctxring" + (pct >= 85 ? " warn" : "")}
-      title=${`Janela de contexto: ${pct.toFixed(1)}% usado · ${fmtK(ctx.total)} / ${fmtK(ctx.max)} tokens`}>
+      title=${t("claude.context_window_title", { pct: pct.toFixed(1), used: fmtK(ctx.total), max: fmtK(ctx.max) })}>
     <svg width="18" height="18" viewBox="0 0 18 18">
       <circle cx="9" cy="9" r=${r} fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="2.5" />
       <circle cx="9" cy="9" r=${r} fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
@@ -1577,15 +1577,15 @@ function ContextRing({ ctx }) {
 // reinicia a cada requisição — contamos do fim do último turno.
 function CacheClock({ usage }) {
   const [now, setNow] = useState(Date.now());
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { const iv = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(iv); }, []);
   if (!usage || !usage._at || ((usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0)) === 0) return null;
   const ttl = ((usage.cache_creation || {}).ephemeral_1h_input_tokens || 0) > 0 ? 3600 : 300;
   const n = Math.max(0, Math.ceil(ttl - (now - usage._at) / 1000));
   const txt = n >= 3600 ? "1h" : n >= 120 ? Math.ceil(n / 60) + "m" : n + "s";
-  const tip = n > 0 ? `Cache de prompt ativo — cerca de ${Math.ceil(n / 60)} min restantes` : "Cache de prompt expirado — a próxima resposta relê o contexto inteiro (mais lenta e cara)";
+  const tip = n > 0 ? t("claude.cache_active", { min: Math.ceil(n / 60) }) : t("claude.cache_expired");
   return html`<span class=${"cc-cache" + (n === 0 ? " off" : "")} title=${tip}>
     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.5V8l2.3 1.5" stroke-linecap="round"/></svg>
-    ${n > 0 ? txt : "exp."}</span>`;
+    ${n > 0 ? txt : t("claude.cache_expired_short")}</span>`;
 }
 
 // Página cheia; seleção da sessão é controlada pelo fragmento da URL no provider.
@@ -1607,7 +1607,7 @@ export function ClaudeSessionTitle() {
     const v = e.target.checked;
     setDone(v);
     try { await api.put(`/claude/sessions/${encodeURIComponent(s.sessionId)}/completed${projQ(s.project)}`, { completed: v }); }
-    catch (_) { setDone(!v); toast.err("Falha ao salvar a marca de concluída"); }
+    catch (_) { setDone(!v); toast.err(t("claude.completed_save_failed")); }
   }
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -1616,28 +1616,29 @@ export function ClaudeSessionTitle() {
     const v = draft.trim();
     setEditing(false);
     if (!v || v === title) return;
-    try { await api.put(`/claude/sessions/${encodeURIComponent(s.sessionId)}/title${projQ(s.project)}`, { title: v }); setTitle(v.slice(0, 80)); toast.ok("Sessão renomeada"); }
-    catch (_) { toast.err("Falha ao renomear a sessão"); }
+    try { await api.put(`/claude/sessions/${encodeURIComponent(s.sessionId)}/title${projQ(s.project)}`, { title: v }); setTitle(v.slice(0, 80)); toast.ok(t("claude.session_renamed")); }
+    catch (_) { toast.err(t("claude.session_rename_failed")); }
   }
   return html`${validSessionId(s.sessionId) && html`<label class="cc-topbar-chk"
-      title=${done ? "Sessão concluída por completo (clique para desmarcar)" : "Marcar sessão como concluída por completo"}>
-      <input type="checkbox" aria-label="Sessão concluída por completo" checked=${done} onChange=${toggle} />
+      title=${done ? t("claude.session_completed_title") : t("claude.session_mark_completed")}>
+      <input type="checkbox" aria-label=${t("claude.session_completed")} checked=${done} onChange=${toggle} />
     </label>`}${editing
-      ? html`<input class="cc-topbar-title-edit" value=${draft} autoFocus maxlength="120" aria-label="Renomear sessão"
+      ? html`<input class="cc-topbar-title-edit" value=${draft} autoFocus maxlength="120" aria-label=${t("claude.rename_session")}
           onInput=${(e) => setDraft(e.target.value)} onBlur=${commit}
           onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") { setEditing(false); } }} />`
-      : title && html`<span class="cc-topbar-title" title=${title + " — duplo clique para renomear"} onDblClick=${startEdit}>${title}</span><button class="sm cc-sess-ib" style="margin-left:4px" title="Renomear sessão (o nome fica fixo)" aria-label="Renomear sessão" onClick=${startEdit}>✎</button>`}`;
+      : title && html`<span class="cc-topbar-title" title=${t("claude.title_dblclick_rename", { title })} onDblClick=${startEdit}>${title}</span><button class="sm cc-sess-ib" style="margin-left:4px" title=${t("claude.rename_session_title")} aria-label=${t("claude.rename_session")} onClick=${startEdit}>✎</button>`}`;
 }
 
 // Bolinha de status sempre visível na barra do topo (no celular o resto vai p/ a folha "⋯").
 // Bolinha de conexão com o agente: verde = conectado (pronto), amarela piscando = conectando,
 // vermelha = desconectado/erro. O texto fica no tooltip (e para leitor de tela).
-const STATUS_TIP = { pronto: "Agente conectado", conectando: "Conectando ao agente…", reconectando: "Reconectando ao agente…",
-  desconectado: "Agente desconectado — tentando reconectar", desabilitado: "Aba Claude desabilitada", erro: "Erro na conexão com o agente" };
+// Internal status value -> translation key (translated at render time).
+const STATUS_TIP = { pronto: "claude.status_ready", conectando: "claude.status_connecting", reconectando: "claude.status_reconnecting",
+  desconectado: "claude.status_disconnected", desabilitado: "claude.status_disabled", erro: "claude.status_error" };
 function StatusDot({ cls = "" }) {
   const s = useClaude();
   const kind = s.status === "pronto" ? "ok" : (s.status === "conectando" || s.status === "reconectando") ? "wait" : "danger";
-  const tip = STATUS_TIP[s.status] || s.status;
+  const tip = STATUS_TIP[s.status] ? t(STATUS_TIP[s.status]) : s.status;
   return html`<span class=${"cc-conn " + kind + " " + cls} title=${tip} role="status" aria-label=${tip}></span>`;
 }
 export function ClaudeStatusDot() { return html`<${StatusDot} cls="mob-only-dot" />`; }
@@ -1645,7 +1646,7 @@ export function ClaudeStatusDot() { return html`<${StatusDot} cls="mob-only-dot"
 function ProjectFilesToggle({ project }) {
   const [open, setOpen] = useProjectFilesOpen(project);
   return html`<button class=${"sm needs-projects-files" + (open ? " primary" : "")} aria-pressed=${open}
-    onClick=${() => setOpen(!open)} title=${open ? "Fechar os arquivos do projeto" : "Ver os arquivos do projeto ao lado do chat"}>📁 Arquivos</button>`;
+    onClick=${() => setOpen(!open)} title=${open ? t("claude.project_files_close") : t("claude.project_files_open")}>📁 ${t("claude.files")}</button>`;
 }
 
 export function ClaudeTopbarControls() {
@@ -1655,15 +1656,15 @@ export function ClaudeTopbarControls() {
   return html`
     <button class="sm primary" onClick=${(e) => { if (!openInNewWindow(e, claudeNewHash(s.project))) s.newSession(); }}
       onAuxClick=${(e) => openInNewWindow(e, claudeNewHash(s.project))} onMouseDown=${noAutoscroll}
-      title="Encerra esta sessão e abre uma nova (Ctrl+clique abre em nova janela)">＋ Nova sessão</button>
-    <button class="sm cc-sessbtn" onClick=${() => s.setShowSessions(true)} title="Ver e retomar sessões anteriores">Sessões</button>
+      title=${t("claude.new_session_title")}>＋ ${t("claude.new_session")}</button>
+    <button class="sm cc-sessbtn" onClick=${() => s.setShowSessions(true)} title=${t("claude.sessions_title")}>${t("claude.sessions")}</button>
     ${s.project && html`<${ProjectFilesToggle} project=${s.project} />`}
     <${StatusDot} cls="desk-only" />
     <div class="keep-open"><${VaultBanner} compact=${true} /></div>
     ${s.auth && s.auth.available && !s.auth.loggedIn && html`<button class="sm danger" onClick=${() => s.setShowAuth(true)}
-      title="O agente está deslogado — clique para entrar">entrar (/login)</button>`}
-    <button class="sm icon-btn" onClick=${() => s.setShowPrefs(true)} aria-label="Configurações"
-      title="Configurações: conta do agente, modelo, modo de permissão e ditado">⚙<span class="mob-label">Configurações</span></button>`;
+      title=${t("claude.logged_out_title")}>${t("claude.login_short")}</button>`}
+    <button class="sm icon-btn" onClick=${() => s.setShowPrefs(true)} aria-label=${t("claude.settings")}
+      title=${t("claude.settings_title")}>⚙<span class="mob-label">${t("claude.settings")}</span></button>`;
 }
 
 // Painel de arquivos ao lado do chat de um Projeto: FECHADO por padrão, abre pelo botão 📁 da barra.
@@ -1699,13 +1700,13 @@ function ProjectFilesPanel({ project }) {
   }, [project]);
   useEffect(() => { if (st.path) pjFilesSet(project, { path: st.path }); }, [st.path]);
   const setState = (patch) => setSt((s) => ({ ...s, ...patch }));
-  return html`<aside class="cc-files" aria-label="Arquivos do projeto">
+  return html`<aside class="cc-files" aria-label=${t("claude.project_files")}>
     <div class="cc-files-head">
-      <b>📁 Arquivos do projeto</b><span class="spacer"></span>
-      <a class="sm btn" href=${"#projects/" + project + "/files"} title="Abrir em tela cheia">⤢</a>
-      <button class="sm" onClick=${() => setOpen(false)} title="Fechar painel" aria-label="Fechar painel de arquivos">✕</button>
+      <b>📁 ${t("claude.project_files")}</b><span class="spacer"></span>
+      <a class="sm btn" href=${"#projects/" + project + "/files"} title=${t("claude.open_fullscreen")}>⤢</a>
+      <button class="sm" onClick=${() => setOpen(false)} title=${t("claude.close_panel")} aria-label=${t("claude.close_files_panel")}>✕</button>
     </div>
-    ${err ? html`<div class="fm-msg-box err">${err}</div>` : !root ? html`<div class="fm-msg-box">Abrindo…</div>`
+    ${err ? html`<div class="fm-msg-box err">${err}</div>` : !root ? html`<div class="fm-msg-box">${t("claude.opening")}</div>`
       : html`<${FileBrowser} src=${"project:" + project} home=${root} state=${st} setState=${setState} compact />`}
   </aside>`;
 }
@@ -1737,35 +1738,35 @@ function PrefsModal({ prefs, models, onSave, onClose, auth, onAccount }) {
   const [mode, setMd] = useState(prefs.default_mode || "default");
   const [np, setNp] = useState(npNorm(prefs.default_netperms));
   async function save() {
-    try { await onSave({ default_model: model, default_mode: mode, default_netperms: np }); toast.ok("Padrões salvos"); onClose(); }
-    catch (_) { toast.err("Falha ao salvar"); }
+    try { await onSave({ default_model: model, default_mode: mode, default_netperms: np }); toast.ok(t("claude.prefs_saved")); onClose(); }
+    catch (_) { toast.err(t("claude.save_failed")); }
   }
-  return html`<${Modal} title="Configurações" onClose=${onClose}>
+  return html`<${Modal} title=${t("claude.settings")} onClose=${onClose}>
     ${auth && auth.available && html`<div class="cc-prefs-account">
-      <h4>Conta do agente (Claude)</h4>
+      <h4>${t("claude.agent_account_heading")}</h4>
       <div class="cc-prefs-account-row">
-        <span>${auth.loggedIn ? html`👤 <b>${auth.email || auth.authMethod || "conectado"}</b>` : html`<span class="err">Deslogado</span>`}</span>
+        <span>${auth.loggedIn ? html`👤 <b>${auth.email || auth.authMethod || t("claude.connected")}</b>` : html`<span class="err">${t("claude.logged_out_cap")}</span>`}</span>
         <span style="flex:1"></span>
-        <button class=${"sm " + (auth.loggedIn ? "" : "primary")} onClick=${onAccount}>${auth.loggedIn ? "Gerenciar conta" : "Entrar (/login)"}</button>
+        <button class=${"sm " + (auth.loggedIn ? "" : "primary")} onClick=${onAccount}>${auth.loggedIn ? t("claude.manage_account") : t("claude.login_cap")}</button>
       </div>
     </div>`}
-    <h4>Padrões para novas conversas</h4>
-    <${Field} label="Modelo padrão">
+    <h4>${t("claude.defaults_heading")}</h4>
+    <${Field} label=${t("claude.default_model")}>
       <select value=${model} onChange=${(e) => setM(e.target.value)}>
-        <option value="">Automático (Sonnet mais recente)</option>
-        ${models.map((m) => html`<option key=${m.id} value=${m.id}>${m.name}</option>`)}
+        <option value="">${t("claude.default_model_auto")}</option>
+        ${models.map((m) => html`<option key=${m.id} value=${m.id}>${modelName(m)}</option>`)}
       </select><//>
-    <${Field} label="Modo de permissão padrão"
-      hint="Vale só para conversas novas. Ao reabrir uma conversa, ela volta no último modelo e modo usados nela.">
+    <${Field} label=${t("claude.default_mode")}
+      hint=${t("claude.default_mode_hint")}>
       <select value=${mode} onChange=${(e) => setMd(e.target.value)}>
-        ${MODES.map((m) => html`<option key=${m.value} value=${m.value}>${m.label}</option>`)}
+        ${MODES.map((m) => html`<option key=${m.value} value=${m.value}>${t(m.label)}</option>`)}
       </select><//>
-    <${Field} label="Permissões nos equipamentos"
-      hint="Para conversas novas. Desmarcado: pede aprovação.">
+    <${Field} label=${t("claude.default_netperms")}
+      hint=${t("claude.default_netperms_hint")}>
       <${NetPermsPicker} value=${np} onChange=${setNp} compact=${true} /><//>
     <div class="modal-actions">
-      <button onClick=${onClose}>Cancelar</button>
-      <button class="primary" onClick=${save}>Salvar</button>
+      <button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary" onClick=${save}>${t("common.save")}</button>
     </div>
     <${AudioSettings} />
   <//>`;
@@ -1783,7 +1784,7 @@ function AudioSettings() {
   async function call(method, path, body) {
     const r = await fetch("/api/audio/" + path, { method, headers: hdr(), body: body ? JSON.stringify(body) : undefined });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Falha (" + r.status + ")");
+    if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : t("claude.failed_status", { status: r.status }));
     return d;
   }
   const [choices, setChoices] = useState(null);   // contas a escolher quando o token enxerga várias
@@ -1796,27 +1797,27 @@ function AudioSettings() {
   const save = () => run(async () => {
     // token novo sem escolha de conta = redescobre a conta pelo token (não reenvia o ID salvo, que pode ser de outra conta)
     const d = await call("PUT", "config", { account_id: tok && !choices ? "" : aid, token: tok });
-    if (d.needs_account) { setChoices(d.accounts); setAid(d.accounts[0].id); toast.ok("Escolha a conta e salve de novo"); return; }
+    if (d.needs_account) { setChoices(d.accounts); setAid(d.accounts[0].id); toast.ok(t("claude.audio_choose_account")); return; }
     apply(d);
   }, "");
-  const remove = () => run(async () => apply(await call("DELETE", "config")), "Configuração removida");
-  const test = () => run(() => call("POST", "test"), "Token ativo nesta conta");
+  const remove = () => run(async () => apply(await call("DELETE", "config")), t("claude.audio_config_removed"));
+  const test = () => run(() => call("POST", "test"), t("claude.audio_token_active"));
   return html`<div class="cc-audio-cfg">
-    <h4>Transcrição de áudio (ditado)</h4>
+    <h4>${t("claude.audio_heading")}</h4>
     <${Field} label="Cloudflare API Token"
-      hint=${cfg && cfg.has_token ? "Token configurado. Deixe vazio para manter, ou cole outro para substituir." : "Só o token: o Account ID é descoberto sozinho. Permissões: Workers AI Read e Edit."}>
+      hint=${cfg && cfg.has_token ? t("claude.audio_token_hint_set") : t("claude.audio_token_hint_new")}>
       <input type="password" autocomplete="off" value=${tok} onInput=${(e) => setTok(e.target.value)}
-        placeholder=${cfg && cfg.has_token ? "Token configurado" : "Cole o token"} /><//>
-    ${choices && html`<${Field} label="Conta" hint="Este token enxerga mais de uma conta.">
+        placeholder=${cfg && cfg.has_token ? t("claude.audio_token_set") : t("claude.audio_token_paste")} /><//>
+    ${choices && html`<${Field} label=${t("claude.audio_account")} hint=${t("claude.audio_account_hint")}>
       <select value=${aid} onChange=${(e) => setAid(e.target.value)}>
         ${choices.map((c) => html`<option key=${c.id} value=${c.id}>${c.name || c.id}</option>`)}
       </select><//>`}
-    ${cfg && cfg.account_id && !choices && html`<div class="help">Conta: <code class="mono">${cfg.account_id}</code></div>`}
+    ${cfg && cfg.account_id && !choices && html`<div class="help">${t("claude.audio_account_label")} <code class="mono">${cfg.account_id}</code></div>`}
     <div class="modal-actions" style="justify-content:flex-start;flex-wrap:wrap">
-      <a class="btn sm" href=${CF_TOKEN_URL} target="_blank" rel="noopener noreferrer">Criar token na Cloudflare</a>
-      <button class="sm primary" disabled=${busy} onClick=${save}>Salvar</button>
-      <button class="sm" disabled=${busy || !(cfg && cfg.configured)} onClick=${test}>Testar token</button>
-      <button class="sm" disabled=${busy || !(cfg && cfg.has_token)} onClick=${remove}>Remover</button>
+      <a class="btn sm" href=${CF_TOKEN_URL} target="_blank" rel="noopener noreferrer">${t("claude.audio_create_token")}</a>
+      <button class="sm primary" disabled=${busy} onClick=${save}>${t("common.save")}</button>
+      <button class="sm" disabled=${busy || !(cfg && cfg.configured)} onClick=${test}>${t("claude.audio_test_token")}</button>
+      <button class="sm" disabled=${busy || !(cfg && cfg.has_token)} onClick=${remove}>${t("common.remove")}</button>
     </div>
   </div>`;
 }
@@ -1824,14 +1825,14 @@ function AudioSettings() {
 // Aviso no topo da transcrição quando o agente está deslogado — é o que explica a aba morta.
 function LoginBanner({ auth, onLogin }) {
   return html`<div class="card cc-auth-banner">
-    <b>O agente Claude está deslogado.</b>
+    <b>${t("claude.banner_logged_out")}</b>
     <div class="help">
-      A credencial fica em <code class="mono">${(auth.store && auth.store.credentials) || "~/.claude/.credentials.json"}</code>
-      — o store do usuário <b>${(auth.store && auth.store.user) || "?"}</b>, que é quem roda o servidor.
-      Logar por outro usuário (o terminal web, por exemplo) não vale para esta aba.
+      ${t("claude.banner_cred_1")} <code class="mono">${(auth.store && auth.store.credentials) || "~/.claude/.credentials.json"}</code>
+      ${t("claude.banner_cred_2")} <b>${(auth.store && auth.store.user) || "?"}</b>${t("claude.banner_cred_3")}
+      ${t("claude.banner_cred_4")}
     </div>
     <div class="cc-perm-actions">
-      <button class="sm primary" onClick=${onLogin}>Entrar</button>
+      <button class="sm primary" onClick=${onLogin}>${t("claude.login_button")}</button>
     </div>
   </div>`;
 }
@@ -1872,7 +1873,7 @@ function LoginModal({ auth, onClose, onChanged, onRelaunch, onVerifyModels }) {
       else if (ev.type === "done") {
         setResult(ev.status); setPhase("done"); setChecking(false);
         onChanged && onChanged();
-        if (ev.ok) toast.ok("Agente autenticado"); else toast.err("Login não concluído");
+        if (ev.ok) toast.ok(t("claude.agent_authenticated")); else toast.err(t("claude.login_not_completed"));
         try { ws.close(); } catch (_) {}
       }
     };
@@ -1886,8 +1887,8 @@ function LoginModal({ auth, onClose, onChanged, onRelaunch, onVerifyModels }) {
   }
 
   async function doLogout() {
-    try { const d = await api.post("/claude/auth/logout"); setResult(d); onChanged && onChanged(); toast.ok("Agente deslogado"); }
-    catch (_) { toast.err("Falha ao deslogar"); }
+    try { const d = await api.post("/claude/auth/logout"); setResult(d); onChanged && onChanged(); toast.ok(t("claude.agent_logged_out")); }
+    catch (_) { toast.err(t("claude.logout_failed")); }
   }
 
   // Redescobre o catálogo do CLI sem enviar prompt ao modelo.
@@ -1896,9 +1897,9 @@ function LoginModal({ auth, onClose, onChanged, onRelaunch, onVerifyModels }) {
     setCheckingModels(true);
     try {
       const d = onVerifyModels && (await onVerifyModels());
-      toast.ok("Modelos atualizados: " + ((d && d.models && d.models.length) || 0));
+      toast.ok(t("claude.models_updated", { count: (d && d.models && d.models.length) || 0 }));
     } catch (_) {
-      toast.err("Falha ao verificar modelos");
+      toast.err(t("claude.models_verify_failed"));
     } finally {
       setCheckingModels(false);
     }
@@ -1907,84 +1908,83 @@ function LoginModal({ auth, onClose, onChanged, onRelaunch, onVerifyModels }) {
   const cur = result || auth || {};
   const busy = phase === "starting" || phase === "url";
 
-  return html`<${Modal} title="Conta do agente Claude" onClose=${onClose} wide=${true}>
+  return html`<${Modal} title=${t("claude.agent_account_title")} onClose=${onClose} wide=${true}>
     <div class="cc-auth-state">
       ${cur.loggedIn
-        ? html`<span class="badge ok">conectado</span> <b>${cur.email || cur.authMethod || "conta ativa"}</b>
+        ? html`<span class="badge ok">${t("claude.connected")}</span> <b>${cur.email || cur.authMethod || t("claude.account_active")}</b>
                ${cur.subscriptionType ? html` <span class="help">· ${cur.subscriptionType}</span>` : ""}`
-        : html`<span class="badge danger">deslogado</span> <span class="help">${cur.detail || "nenhuma credencial no store"}</span>`}
+        : html`<span class="badge danger">${t("claude.logged_out")}</span> <span class="help">${cur.detail || t("claude.no_credential_in_store")}</span>`}
     </div>
     ${cur.store && html`<div class="help mono cc-auth-store">
-      store: ${cur.store.credentials} (usuário ${cur.store.user})
+      ${t("claude.store_line", { path: cur.store.credentials, user: cur.store.user })}
     </div>`}
 
     ${phase === "idle" && html`<div>
       <div class="modal-actions">
         ${cur.loggedIn && html`<button class="sm" onClick=${verifyModels} disabled=${checkingModels}
-          title="Relê o catálogo do Claude Code instalado, sem enviar mensagem">${checkingModels ? "Verificando…" : "Verificar modelos"}</button>`}
-        ${cur.loggedIn && html`<button class="sm danger" onClick=${doLogout}>Sair da conta</button>`}
-        <button class="sm" onClick=${() => start("console")} title="Cobrança por uso da API (Anthropic Console)">Entrar com API (Console)</button>
-        <button class="primary" onClick=${() => start("claudeai")}>Entrar com assinatura Claude</button>
+          title=${t("claude.verify_models_title")}>${checkingModels ? t("claude.verifying") : t("claude.verify_models")}</button>`}
+        ${cur.loggedIn && html`<button class="sm danger" onClick=${doLogout}>${t("claude.sign_out")}</button>`}
+        <button class="sm" onClick=${() => start("console")} title=${t("claude.login_console_title")}>${t("claude.login_console")}</button>
+        <button class="primary" onClick=${() => start("claudeai")}>${t("claude.login_subscription")}</button>
       </div>
     </div>`}
 
     ${url && phase !== "done" && html`<div class="cc-auth-step">
-      <div><b>1.</b> Abra este endereço no seu navegador e autorize:</div>
+      <div><b>1.</b> ${t("claude.login_step1")}</div>
       <a class="cc-auth-url mono" href=${url} target="_blank" rel="noopener noreferrer">${url}</a>
       <div class="cc-perm-actions">
-        <button class="sm" onClick=${() => { navigator.clipboard?.writeText(url); toast.ok("URL copiada"); }}>Copiar URL</button>
+        <button class="sm" onClick=${() => { navigator.clipboard?.writeText(url); toast.ok(t("claude.url_copied")); }}>${t("claude.copy_url")}</button>
       </div>
-      <div><b>2.</b> Cole aqui o código que a página devolver:</div>
+      <div><b>2.</b> ${t("claude.login_step2")}</div>
       <div class="cc-auth-code">
-        <input type="password" value=${code} autoFocus placeholder="código de autorização"
+        <input type="password" value=${code} autoFocus placeholder=${t("claude.auth_code_placeholder")}
           onInput=${(e) => setCode(e.target.value)}
           onKeyDown=${(e) => { if (e.key === "Enter") sendCode(); }} />
         <button class="primary" disabled=${!code.trim() || checking} onClick=${sendCode}>
-          ${checking ? "Verificando…" : "Concluir"}</button>
+          ${checking ? t("claude.verifying") : t("claude.finish")}</button>
       </div>
     </div>`}
 
-    ${busy && !url && html`<div class="help">Iniciando o fluxo de login…</div>`}
+    ${busy && !url && html`<div class="help">${t("claude.login_starting")}</div>`}
     ${log.length > 0 && html`<pre class="cc-pre">${log.join("\n")}</pre>`}
 
     ${phase === "done" && html`<div class="modal-actions">
       ${cur.loggedIn
         ? html`<button class="primary" onClick=${() => { onRelaunch(); onClose(); }}
-            title="Relança o agente com a credencial nova, retomando esta mesma conversa">
-            Recarregar sessão</button>`
-        : html`<button onClick=${() => setPhase("idle")}>Tentar de novo</button>`}
+            title=${t("claude.reload_session_title")}>
+            ${t("claude.reload_session")}</button>`
+        : html`<button onClick=${() => setPhase("idle")}>${t("common.try_again")}</button>`}
     </div>`}
     ${phase === "error" && html`<div class="modal-actions">
-      <button onClick=${() => setPhase("idle")}>Tentar de novo</button>
+      <button onClick=${() => setPhase("idle")}>${t("common.try_again")}</button>
     </div>`}
   <//>`;
 }
 
 // Limite exige evidência explícita do SDK/API. Erro genérico de modelo permite troca.
 function RateLimitModal({ detail, onClose }) {
-  return html`<${Modal} title="Limite de uso atingido (rate limit)" onClose=${onClose}>
+  return html`<${Modal} title=${t("claude.rate_limit_title")} onClose=${onClose}>
     <div class="cc-model-pick">
       <div class="card cc-model-warn">
-        O serviço informou um <b>limite temporário de uso</b> para esta solicitação.
-        Aguarde antes de tentar novamente.
+        ${t("claude.rate_limit_body_1")} <b>${t("claude.rate_limit_body_2")}</b> ${t("claude.rate_limit_body_3")}
+        ${t("claude.rate_limit_body_4")}
       </div>
-      <p class="help">Consulte o detalhe abaixo para orientações de liberação.
-        O erro não comprova bloqueio dos demais modelos.</p>
+      <p class="help">${t("claude.rate_limit_help")}</p>
       ${detail && html`<p class="cc-model-msg mono">${detail}</p>`}
     </div>
   <//>`;
 }
 
 function ModelPickModal({ detail, current, models, onClose, onPick }) {
-  return html`<${Modal} title="Problema com o modelo" onClose=${onClose}>
+  return html`<${Modal} title=${t("claude.model_problem_title")} onClose=${onClose}>
     <div class="cc-model-pick">
       <p class="cc-model-msg">${detail}</p>
-      <p class="help">Escolha um modelo para trocar e reiniciar a conversa:</p>
+      <p class="help">${t("claude.model_problem_help")}</p>
       <div class="cc-model-opts">
         ${models.map((m) => html`<button key=${m.id}
             class=${"cc-opt" + (m.id === current ? " sel" : "")}
             onClick=${() => onPick(m.id)}>
-          <b>${m.name}</b>
+          <b>${modelName(m)}</b>
         </button>`)}
       </div>
     </div>
@@ -1999,10 +1999,10 @@ export function ChatDock() {
     <div class="chat-dock-head">
       <${StatusDot} />
       <b>Claude Code</b>
-      ${s.working && html`<span class="chat-dock-live">● ao vivo</span>`}
+      ${s.working && html`<span class="chat-dock-live">● ${t("claude.live")}</span>`}
       <span class="spacer"></span>
-      <a class="sm dock-btn" href=${claudeSessionHash(s.sessionId, s.project)} title="Abrir em tela cheia">⤢</a>
-      <button class="sm dock-btn" onClick=${s.endSession} title="Encerrar conversa">✕</button>
+      <a class="sm dock-btn" href=${claudeSessionHash(s.sessionId, s.project)} title=${t("claude.open_fullscreen")}>⤢</a>
+      <button class="sm dock-btn" onClick=${s.endSession} title=${t("claude.end_conversation")}>✕</button>
     </div>
     <${Transcript} />
     <${Composer} />
@@ -2017,7 +2017,7 @@ export function ChatDock() {
 
 // Lista de sessões passadas (retomar / excluir) — com busca por título e conteúdo.
 function SessionsModal({ currentId, onClose, onResume, project = "" }) {
-  return html`<${Modal} title="Sessões anteriores" onClose=${onClose} wide=${true}>
+  return html`<${Modal} title=${t("claude.previous_sessions")} onClose=${onClose} wide=${true}>
     <${SessionsList} currentId=${currentId} project=${project} onResume=${onResume} />
   <//>`;
 }
@@ -2055,7 +2055,7 @@ export function SessionsList({ currentId = "", project = "", onResume, q: qProp,
     e.stopPropagation();
     setBusy(true);
     try { await api.del(`/claude/sessions/${encodeURIComponent(id)}${projQ(project)}`); forgetClaudeSession(id); load(q); }
-    catch (_) { toast.err("Falha ao excluir"); }
+    catch (_) { toast.err(t("claude.delete_failed")); }
     finally { setBusy(false); }
   }
 
@@ -2064,7 +2064,7 @@ export function SessionsList({ currentId = "", project = "", onResume, q: qProp,
     setList((cur) => (cur || []).map((x) => (x.id === id ? { ...x, completed } : x)));
     try { await api.put(`/claude/sessions/${encodeURIComponent(id)}/completed${projQ(project)}`, { completed }); }
     catch (_) {
-      toast.err("Falha ao salvar a marca de concluída");
+      toast.err(t("claude.completed_save_failed"));
       setList((cur) => (cur || []).map((x) => (x.id === id ? { ...x, completed: !completed } : x)));
     }
   }
@@ -2086,36 +2086,36 @@ export function SessionsList({ currentId = "", project = "", onResume, q: qProp,
     try {
       await api.put(`/claude/sessions/${encodeURIComponent(r.id)}/title${projQ(project)}`, { title: v });
       setList((l) => (l || []).map((x) => (x.id === r.id ? { ...x, title: v.slice(0, 80) } : x)));
-      toast.ok("Sessão renomeada");
-    } catch (_) { toast.err("Falha ao renomear a sessão"); }
+      toast.ok(t("claude.session_renamed"));
+    } catch (_) { toast.err(t("claude.session_rename_failed")); }
   }
 
   const term = q.trim();
   const shown = list && onlyPending ? list.filter((x) => !x.completed) : list;
   return html`<div class="cc-sess-wrap">
     <input class="cc-sess-search" type="search" value=${q} autoFocus
-      placeholder="Buscar por título ou conteúdo da conversa…"
+      placeholder=${t("claude.sessions_search_placeholder")}
       onInput=${(e) => setQ(e.target.value)} />
     <label class="cc-sess-filter help" style="display:flex;gap:6px;align-items:center;margin:6px 0">
       <input type="checkbox" checked=${onlyPending} onChange=${(e) => setPending(e.target.checked)} />
-      Mostrar somente as sessões pendentes (não concluídas)
+      ${t("claude.sessions_only_pending")}
     </label>
     ${shown == null
-      ? html`<div class="help">Carregando…</div>`
+      ? html`<div class="help">${t("common.loading")}</div>`
       : shown.length === 0
-      ? html`<div class="help">${onlyPending ? "Nenhuma sessão pendente." : term ? "Nenhuma sessão casa com a busca." : "Nenhuma sessão neste projeto ainda."}</div>`
+      ? html`<div class="help">${onlyPending ? t("claude.sessions_none_pending") : term ? t("claude.sessions_none_match") : t("claude.sessions_none_yet")}</div>`
       : html`<div class="cc-sess-list">
         ${shown.map((s) => html`<div key=${s.id} class=${"cc-sess" + (s.id === currentId ? " atual" : "") + (s.completed ? " concluida" : "")}
             onClick=${(e) => { if (renaming && renaming.id === s.id) return; if (!openInNewWindow(e, claudeSessionHash(s.id, project))) onResume(s.id); }}
             onContextMenu=${(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, s }); }}
             onAuxClick=${(e) => openInNewWindow(e, claudeSessionHash(s.id, project))} onMouseDown=${noAutoscroll}
-            title="Retomar esta sessão (Ctrl+clique ou clique do meio abre em nova aba)">
+            title=${t("claude.session_resume_title")}>
           <span class=${"cc-sess-st " + (s.waiting ? "wait" : s.running ? "run" : "done")}
-            title=${s.waiting ? "Aguardando sua resposta ou aprovação" : s.running ? "Em andamento" : "Finalizada"}
-            aria-label=${s.waiting ? "Aguardando sua resposta ou aprovação" : s.running ? "Em andamento" : "Finalizada"}>${s.waiting ? "!" : s.running ? "" : "✓"}</span>
+            title=${s.waiting ? t("claude.session_waiting") : s.running ? t("claude.session_running") : t("claude.session_finished")}
+            aria-label=${s.waiting ? t("claude.session_waiting") : s.running ? t("claude.session_running") : t("claude.session_finished")}>${s.waiting ? "!" : s.running ? "" : "✓"}</span>
           <div class="cc-sess-main">
             <div class="cc-sess-title">${renaming && renaming.id === s.id
-              ? html`<input class="cc-sess-rename" value=${renaming.draft} autoFocus maxlength="120" aria-label="Renomear sessão"
+              ? html`<input class="cc-sess-rename" value=${renaming.draft} autoFocus maxlength="120" aria-label=${t("claude.rename_session")}
                   onClick=${(e) => e.stopPropagation()} onInput=${(e) => setRenaming({ id: s.id, draft: e.target.value })}
                   onBlur=${commitRename}
                   onKeyDown=${(e) => { e.stopPropagation(); if (e.key === "Enter") e.target.blur(); else if (e.key === "Escape") setRenaming(null); }} />`
@@ -2124,26 +2124,26 @@ export function SessionsList({ currentId = "", project = "", onResume, q: qProp,
               if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.button === 0) {
                 e.preventDefault(); onResume(s.id);
               }
-            }}>${hl(s.title, term)}</a>`}${s.id === currentId ? html` <span class="badge ok">atual</span>` : ""}</div>
+            }}>${hl(s.title, term)}</a>`}${s.id === currentId ? html` <span class="badge ok">${t("claude.current")}</span>` : ""}</div>
             ${s.preview && html`<div class="cc-sess-prev help">${hl(s.preview, term)}</div>`}
             ${s.snippet && html`<div class="cc-sess-snip help">${hl(s.snippet, term)}</div>`}
             <div class="cc-sess-meta help mono">${fmtShort(s.mtime)} · ${(s.id || "").slice(0, 8)}</div>
           </div>
           <div class="cc-sess-acts" onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()}>
-            <label class="cc-sess-chk" title=${s.completed ? "Concluída por completo (clique para desmarcar)" : "Marcar como concluída por completo"}>
-              <input type="checkbox" aria-label="Concluída por completo" checked=${!!s.completed} onChange=${(e) => toggleDone(s.id, e.target.checked)} />
+            <label class="cc-sess-chk" title=${s.completed ? t("claude.completed_title") : t("claude.mark_completed")}>
+              <input type="checkbox" aria-label=${t("claude.completed")} checked=${!!s.completed} onChange=${(e) => toggleDone(s.id, e.target.checked)} />
             </label>
-            <button class="sm cc-sess-ib" title="Renomear sessão (o nome fica fixo)" aria-label="Renomear sessão" onClick=${(e) => { e.stopPropagation(); setRenaming({ id: s.id, draft: s.title }); }}>✎</button>
-            <button class="sm cc-sess-ib" title="Copiar link da sessão" aria-label="Copiar link da sessão" onClick=${(e) => { e.stopPropagation(); copySessionLink(s.id, project); }}>🔗</button>
-            <button class="sm danger cc-sess-ib" disabled=${busy} title="Excluir sessão" aria-label="Excluir sessão" onClick=${(e) => del(s.id, e)}>🗑</button>
+            <button class="sm cc-sess-ib" title=${t("claude.rename_session_title")} aria-label=${t("claude.rename_session")} onClick=${(e) => { e.stopPropagation(); setRenaming({ id: s.id, draft: s.title }); }}>✎</button>
+            <button class="sm cc-sess-ib" title=${t("claude.copy_session_link")} aria-label=${t("claude.copy_session_link")} onClick=${(e) => { e.stopPropagation(); copySessionLink(s.id, project); }}>🔗</button>
+            <button class="sm danger cc-sess-ib" disabled=${busy} title=${t("claude.delete_session")} aria-label=${t("claude.delete_session")} onClick=${(e) => del(s.id, e)}>🗑</button>
           </div>
         </div>`)}
       </div>`}
     ${menu && html`<div class="fm-menu" style=${`left:${Math.min(menu.x, innerWidth - 190)}px;top:${Math.min(menu.y, innerHeight - 130)}px`} onClick=${(e) => e.stopPropagation()}>
-      <button onClick=${() => { const m = menu.s; setMenu(null); setRenaming({ id: m.id, draft: m.title }); }}>Renomear</button>
-      <button onClick=${() => { const m = menu.s; setMenu(null); onResume(m.id); }}>Retomar</button>
-      <button onClick=${() => { const m = menu.s; setMenu(null); copySessionLink(m.id, project); }}>Copiar link</button>
-      <hr /><button class="fm-danger" onClick=${(e) => { const m = menu.s; setMenu(null); del(m.id, e); }}>Excluir</button>
+      <button onClick=${() => { const m = menu.s; setMenu(null); setRenaming({ id: m.id, draft: m.title }); }}>${t("common.rename")}</button>
+      <button onClick=${() => { const m = menu.s; setMenu(null); onResume(m.id); }}>${t("claude.resume")}</button>
+      <button onClick=${() => { const m = menu.s; setMenu(null); copySessionLink(m.id, project); }}>${t("claude.copy_link")}</button>
+      <hr /><button class="fm-danger" onClick=${(e) => { const m = menu.s; setMenu(null); del(m.id, e); }}>${t("common.delete")}</button>
     </div>`}
   </div>`;
 }
@@ -2151,9 +2151,9 @@ export function SessionsList({ currentId = "", project = "", onResume, q: qProp,
 // Realça as ocorrências de `term` em `text` (case-insensitive) com <mark>.
 function hl(text, term) {
   const s = text == null ? "" : String(text);
-  const t = (term || "").trim();
-  if (!t) return s;
-  const low = s.toLowerCase(), qq = t.toLowerCase();
+  const needle = (term || "").trim();
+  if (!needle) return s;
+  const low = s.toLowerCase(), qq = needle.toLowerCase();
   const parts = [];
   let i = 0, k = 0;
   while (true) {
@@ -2166,24 +2166,20 @@ function hl(text, term) {
   return parts;
 }
 
-// "14/11 10:08" (ano só se não for o corrente) — cabe na linha do celular.
+// "14/11 10:08" (ano só se não for o corrente) — cabe na linha do celular. Format follows the active language.
 function fmtShort(ms) {
   if (!ms) return "";
   try {
-    const d = new Date(ms), p2 = (n) => String(n).padStart(2, "0");
-    const y = d.getFullYear() === new Date().getFullYear() ? "" : "/" + d.getFullYear();
-    return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}${y} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    const d = new Date(ms);
+    const opts = { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" };
+    if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+    return fmtDateTime(d, opts);
   } catch (_) { return ""; }
-}
-
-function fmtTime(ms) {
-  if (!ms) return "";
-  try { return new Date(ms).toLocaleString(); } catch (_) { return ""; }
 }
 
 function Item({ it, onPermission, onFork, onEdit }) {
   if (it.type === "user")
-    return html`<${UserMsg} text=${it.text} tag=${it.interjected ? "durante a execução" : it.queued ? "da fila" : ""} ts=${it.ts} onFork=${onFork} onEdit=${onEdit} />`;
+    return html`<${UserMsg} text=${it.text} tag=${it.interjected ? t("claude.tag_interjected") : it.queued ? t("claude.tag_queued") : ""} ts=${it.ts} onFork=${onFork} onEdit=${onEdit} />`;
 
   if (it.type === "assistant")
     return html`<${AssistantMsg} text=${it.text} ts=${it.ts} />`;
@@ -2191,10 +2187,10 @@ function Item({ it, onPermission, onFork, onEdit }) {
   if (it.type === "note")
     return it.title
       ? html`<details class="cc-thinking"><summary>${it.title}</summary><${MarkdownView} text=${it.text} /></details>`
-      : html`<div class="cc-msg assistant" onContextMenu=${(e) => replyContextMenu(e, it.text)}><div class="cc-role">sistema</div><${MarkdownView} text=${it.text} /><${MsgTime} ts=${it.ts} /></div>`;
+      : html`<div class="cc-msg assistant" onContextMenu=${(e) => replyContextMenu(e, it.text)}><div class="cc-role">${t("claude.role_system")}</div><${MarkdownView} text=${it.text} /><${MsgTime} ts=${it.ts} /></div>`;
 
   if (it.type === "thinking")
-    return html`<details class="cc-thinking"><summary>pensando…</summary><pre>${it.text}</pre></details>`;
+    return html`<details class="cc-thinking"><summary>${t("claude.thinking")}</summary><pre>${it.text}</pre></details>`;
 
   if (it.type === "tool") return html`<${ToolCard} it=${it} />`;
 
@@ -2203,26 +2199,26 @@ function Item({ it, onPermission, onFork, onEdit }) {
     if (it.tool === "NetPerms") return html`<${NetPermsCard} it=${it} onPermission=${onPermission} />`;
     const ctx = it.context || {};
     return html`<div class="cc-perm ${it.resolved ? "resolved" : ""}">
-      <div class="cc-perm-head">🔑 permissão: <b>${it.tool}</b>${ctx.title ? " — " + ctx.title : ""}</div>
+      <div class="cc-perm-head">🔑 ${t("claude.permission")} <b>${it.tool}</b>${ctx.title ? " — " + ctx.title : ""}</div>
       <${Collapsible} text=${fmt(it.input)} max=${4} />
-      ${ctx.blocked_path && html`<div class="help">caminho: ${ctx.blocked_path}</div>`}
+      ${ctx.blocked_path && html`<div class="help">${t("claude.path_label", { path: ctx.blocked_path })}</div>`}
       ${it.resolved
-        ? html`<div class="cc-perm-done ${it.decision}">${it.decision === "allow" ? "✓ aprovado" : "✗ negado"}</div>`
+        ? html`<div class="cc-perm-done ${it.decision}">${it.decision === "allow" ? "✓ " + t("claude.approved") : "✗ " + t("claude.denied")}</div>`
         : html`<div class="cc-perm-actions">
-            <button class="sm" onClick=${() => onPermission(it.id, "deny")}>Negar</button>
-            <button class="sm primary" onClick=${() => onPermission(it.id, "allow")}>Aprovar</button>
+            <button class="sm" onClick=${() => onPermission(it.id, "deny")}>${t("claude.deny")}</button>
+            <button class="sm primary" onClick=${() => onPermission(it.id, "allow")}>${t("claude.approve")}</button>
           </div>`}
     </div>`;
   }
 
   if (it.type === "result")
     return html`<div class="cc-result ${it.isError ? "err" : ""}">
-      ${it.cancelled ? "resposta cancelada pelo usuário" : it.isError ? "turno terminou com erro" : "turno concluído"}${typeof it.cost === "number" ? ` · ~$${it.cost.toFixed(4)}` : ""}
+      ${it.cancelled ? t("claude.result_cancelled") : it.isError ? t("claude.result_error") : t("claude.result_done")}${typeof it.cost === "number" ? ` · ~$${it.cost.toFixed(4)}` : ""}
     </div>`;
 
   if (it.type === "error")
     return html`<div class="cc-error">${it.detail}
-      ${it.raw && html`<details class="cc-error-raw"><summary>detalhes técnicos</summary><pre>${it.raw}</pre></details>`}
+      ${it.raw && html`<details class="cc-error-raw"><summary>${t("claude.technical_details")}</summary><pre>${it.raw}</pre></details>`}
     </div>`;
 
   return null;
@@ -2237,29 +2233,29 @@ function NetPermsPicker({ value, onChange, compact, max = null }) {
   const capped = allowed.length < NETPERMS_ALL.length;
   const toggle = (v) => onChange(cur.includes(v) ? cur.filter((x) => x !== v) : npNorm([...cur, v]));
   return html`<div class=${"cc-np" + (compact ? " compact" : "")}>
-    ${!compact && html`<div class="cc-pop-title">Nos equipamentos</div>`}
+    ${!compact && html`<div class="cc-pop-title">${t("claude.on_devices")}</div>`}
     <label class=${"cc-np-row full" + (capped ? " capped" : "")}>
       <input type="checkbox" disabled=${capped} checked=${full} onChange=${() => onChange(full ? [] : NETPERMS_ALL)} />
       <b>Full</b>
     </label>
     ${NETPERMS.map((p) => html`<label key=${p.value} class=${"cc-np-row" + (allowed.includes(p.value) ? "" : " capped")}
-        title=${allowed.includes(p.value) ? "" : "Seu grupo de acesso não permite"}>
+        title=${allowed.includes(p.value) ? "" : t("claude.np_group_denies")}>
       <input type="checkbox" disabled=${!allowed.includes(p.value)} checked=${cur.includes(p.value)} onChange=${() => toggle(p.value)} />
-      <b>${p.label}</b><small>${p.desc}</small>
+      <b>${t(p.label)}</b><small>${p.desc}</small>
     </label>`)}
-    ${!compact && html`<div class="cc-np-help">${capped ? "Desmarcado: pede sua aprovação. Cinza: fora do seu grupo (bloqueado)."
-      : "Desmarcado: pede sua aprovação."}</div>`}
+    ${!compact && html`<div class="cc-np-help">${capped ? t("claude.np_help_capped")
+      : t("claude.np_help")}</div>`}
   </div>`;
 }
 
 // Pedido de aprovação de um comando fora das permissões de rede (hook NetPerms do backend).
 function NetPermsCard({ it, onPermission }) {
   const inp = it.input || {};
-  const lbl = (v) => (NETPERMS.find((p) => p.value === v) || { label: v }).label;
+  const lbl = (v) => { const p = NETPERMS.find((x) => x.value === v); return p ? t(p.label) : v; };
   const missing = inp.missing || [];
   const calls = inp.calls || [];
   return html`<div class="cc-perm cc-np-card ${it.resolved ? "resolved" : ""}">
-    <div class="cc-perm-head">🔐 <b>Fora das permissões</b>
+    <div class="cc-perm-head">🔐 <b>${t("claude.np_outside")}</b>
       ${missing.map((m) => html` <span class="cc-np-badge miss">${lbl(m)}</span>`)}</div>
     ${calls.length ? calls.map((c, i) => html`<div key=${i} class="cc-np-call">
         <div class="help">host ${c.host_id != null ? "#" + c.host_id : (c.host || c.session || "?")}${c.note ? " · " + c.note : ""}</div>
@@ -2270,10 +2266,10 @@ function NetPermsCard({ it, onPermission }) {
       </div>`)
       : html`<${Collapsible} text=${inp.command || ""} max=${4} />`}
     ${it.resolved
-      ? html`<div class="cc-perm-done ${it.decision}">${it.decision === "allow" ? "✓ liberado" : "✗ negado"}</div>`
+      ? html`<div class="cc-perm-done ${it.decision}">${it.decision === "allow" ? "✓ " + t("claude.allowed") : "✗ " + t("claude.denied")}</div>`
       : html`<div class="cc-perm-actions">
-          <button class="sm" onClick=${() => onPermission(it.id, "deny")}>Negar</button>
-          <button class="sm primary" onClick=${() => onPermission(it.id, "allow")}>Aprovar este</button>
+          <button class="sm" onClick=${() => onPermission(it.id, "deny")}>${t("claude.deny")}</button>
+          <button class="sm primary" onClick=${() => onPermission(it.id, "allow")}>${t("claude.approve_this")}</button>
         </div>`}
   </div>`;
 }
@@ -2295,7 +2291,7 @@ function AskQuestion({ it, onPermission }) {
       ${questions.map((q, qi) => html`<div key=${qi} class="cc-ask-q">
         <div class="cc-ask-title">${q.question}</div>
         <div class="cc-perm-done ${it.decision === "allow" ? "allow" : "deny"}">
-          ${it.decision === "allow" ? "✓ " + ((it.answers && it.answers[q.question]) || "respondido") : "✗ pulado"}</div>
+          ${it.decision === "allow" ? "✓ " + ((it.answers && it.answers[q.question]) || t("claude.answered")) : "✗ " + t("claude.skipped")}</div>
       </div>`)}
     </div>`;
   }
@@ -2332,7 +2328,7 @@ function AskQuestion({ it, onPermission }) {
   return html`<div class="cc-ask">
     <div class="cc-perm-head">🔑 <b>${it.tool}</b></div>
     ${questions.map((q, qi) => html`<div key=${qi} class="cc-ask-q">
-      <div class="cc-ask-title">${q.question}${q.multiSelect ? html` <span class="help">(várias)</span>` : ""}</div>
+      <div class="cc-ask-title">${q.question}${q.multiSelect ? html` <span class="help">(${t("claude.multi_select")})</span>` : ""}</div>
       <div class="cc-ask-opts">
         ${(q.options || []).map((o) => html`<button key=${o.label}
             class=${"cc-opt" + (isPicked(qi, o.label, q.multiSelect) ? " sel" : "")}
@@ -2340,14 +2336,14 @@ function AskQuestion({ it, onPermission }) {
           <b>${o.label}</b>${o.description ? html`<span class="cc-opt-desc">${o.description}</span>` : ""}
         </button>`)}
         <button class=${"cc-opt" + (sel[qi] === "__other__" ? " sel" : "")}
-          onClick=${() => pick(qi, "__other__", false)}>Outro…</button>
+          onClick=${() => pick(qi, "__other__", false)}>${t("claude.other_option")}</button>
       </div>
-      ${sel[qi] === "__other__" && html`<input class="cc-ask-other" placeholder="Sua resposta"
+      ${sel[qi] === "__other__" && html`<input class="cc-ask-other" placeholder=${t("claude.your_answer")}
         value=${other[qi] || ""} onInput=${(e) => setOther((s) => ({ ...s, [qi]: e.target.value }))} />`}
     </div>`)}
     <div class="cc-perm-actions">
-      <button class="sm" onClick=${() => onPermission(it.id, "deny")}>Pular</button>
-      <button class="sm primary" disabled=${!answered} onClick=${submit}>Responder</button>
+      <button class="sm" onClick=${() => onPermission(it.id, "deny")}>${t("claude.skip")}</button>
+      <button class="sm primary" disabled=${!answered} onClick=${submit}>${t("claude.submit_answer")}</button>
     </div>
   </div>`;
 }
@@ -2355,16 +2351,16 @@ function AskQuestion({ it, onPermission }) {
 // Texto longo recolhido (prévia de `max` linhas) + botão de expandir — estilo Claude Code.
 function Collapsible({ text, max = 2, kind }) {
   const [open, setOpen] = useState(false);
-  const t = text == null ? "" : String(text);
-  const lines = t.split("\n");
-  const big = lines.length > max || t.length > 400;
-  if (!big) return html`<pre class="cc-pre ${kind || ""}">${t}</pre>`;
+  const body = text == null ? "" : String(text);
+  const lines = body.split("\n");
+  const big = lines.length > max || body.length > 400;
+  if (!big) return html`<pre class="cc-pre ${kind || ""}">${body}</pre>`;
   let preview = lines.slice(0, max).join("\n");
   if (preview.length > 400) preview = preview.slice(0, 400) + " …";
   return html`<div>
-    <pre class="cc-pre ${kind || ""}">${open ? t : preview}</pre>
+    <pre class="cc-pre ${kind || ""}">${open ? body : preview}</pre>
     <button class="cc-expand" onClick=${() => setOpen((o) => !o)}>
-      ${open ? "▾ recolher" : `▸ mostrar tudo (${lines.length} linhas)`}
+      ${open ? "▾ " + t("claude.collapse") : "▸ " + t("claude.show_all", { count: lines.length })}
     </button>
   </div>`;
 }
@@ -2374,7 +2370,7 @@ function primaryString(input) {
   const i = input || {};
   for (const k of ["command", "file_path", "path", "pattern", "query", "url", "prompt", "notebook_path"]) {
     if (typeof i[k] === "string" && i[k]) {
-      if (k === "pattern" && typeof i.path === "string" && i.path) return `${i[k]}  (em ${i.path})`;
+      if (k === "pattern" && typeof i.path === "string" && i.path) return `${i[k]}  (${t("claude.in_path", { path: i.path })})`;
       return i[k];
     }
   }
@@ -2401,17 +2397,17 @@ function ToolGroup({ tools }) {
   const icon = (st) => ({ running: "⏳", done: "✓", error: "✗" }[st] || "•");
   return html`<div class="cc-toolgroup">
     <div class="cc-chips">
-      ${tools.map((t, k) => t.type === "thinking"
-        ? html`<button type="button" key=${k} title="pensando…"
+      ${tools.map((tool, k) => tool.type === "thinking"
+        ? html`<button type="button" key=${k} title=${t("claude.thinking")}
             class="cc-chip think ${open[k] ? "open" : ""}" aria-expanded=${!!open[k]}
-            onClick=${() => toggle(k)}>💭 pensando…</button>`
-        : html`<button type="button" key=${k} title=${primaryString(t.input) || ""}
-            class="cc-chip ${t.tstatus} ${open[k] ? "open" : ""}" aria-expanded=${!!open[k]}
-            onClick=${() => toggle(k)}>${icon(t.tstatus)} ${t.name}</button>`)}
+            onClick=${() => toggle(k)}>💭 ${t("claude.thinking")}</button>`
+        : html`<button type="button" key=${k} title=${primaryString(tool.input) || ""}
+            class="cc-chip ${tool.tstatus} ${open[k] ? "open" : ""}" aria-expanded=${!!open[k]}
+            onClick=${() => toggle(k)}>${icon(tool.tstatus)} ${tool.name}</button>`)}
     </div>
-    ${tools.map((t, k) => open[k] && (t.type === "thinking"
-      ? html`<details class="cc-thinking" open key=${"d" + k}><summary>pensando…</summary><pre>${t.text}</pre></details>`
-      : html`<${ToolCard} key=${"d" + k} it=${t} initialOpen=${true} />`))}
+    ${tools.map((tool, k) => open[k] && (tool.type === "thinking"
+      ? html`<details class="cc-thinking" open key=${"d" + k}><summary>${t("claude.thinking")}</summary><pre>${tool.text}</pre></details>`
+      : html`<${ToolCard} key=${"d" + k} it=${tool} initialOpen=${true} />`))}
   </div>`;
 }
 
@@ -2431,7 +2427,7 @@ function ToolCard({ it, initialOpen = false }) {
         onClick=${() => setOpen((o) => !o)}>
       <span class="cc-tool-ico">${icon}</span><b>${it.name}</b>
       ${headLine && html`<span class="cc-tool-desc mono">${headLine}</span>`}
-      ${!open && resLines > 0 && html`<span class="cc-tool-n">${resLines}\u00a0l</span>`}
+      ${!open && resLines > 0 && html`<span class="cc-tool-n">${t("claude.lines_short", { count: resLines })}</span>`}
       <span class="cc-tool-caret">${open ? "▾" : "▸"}</span>
     </button>
     ${open && html`<div class="cc-tool-body">

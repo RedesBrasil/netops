@@ -1,12 +1,14 @@
 // A fronteira do editor adapta IDs numéricos para os identificadores do React Flow.
+// Loaded as plain source by node tests: no imports; translations via globalThis.netopsT with a fallback.
+const tr = (key, vars, fallback) => { const out = globalThis.netopsT ? globalThis.netopsT(key, vars) : key; return out === key ? fallback : out; };
 export function parseHostId(value) {
   if (typeof value === "string" && /^[1-9]\d*$/.test(value)) value = Number(value);
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new Error("ID inteiro de host inválido");
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new Error(tr("maps.invalid_host_id", null, "ID inteiro de host inválido"));
   return value;
 }
 
 export function nodeHostId(value) {
-  if (typeof value !== "string" || !value.startsWith("host:")) throw new Error("Nó de host inválido");
+  if (typeof value !== "string" || !value.startsWith("host:")) throw new Error(tr("maps.invalid_host_node", null, "Nó de host inválido"));
   return parseHostId(value.slice(5));
 }
 
@@ -18,7 +20,7 @@ export function referenceToNode(ref) {
 export function nodeToReference(node) {
   if (node.startsWith("host:")) return { kind: "host", host_id: nodeHostId(node) };
   if (node.startsWith("object:") && node.length > 7) return { kind: "object", object_id: node.slice(7) };
-  throw new Error("Ponta de conexão inválida");
+  throw new Error(tr("maps.invalid_link_end", null, "Ponta de conexão inválida"));
 }
 
 export function mapToView(map) {

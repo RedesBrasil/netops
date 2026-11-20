@@ -1,29 +1,29 @@
 ---
-id: identificador-unico
-titulo: Título Legível do Guia
+id: unique-identifier
+titulo: Human-Readable Guide Title
 vendor: general
 tags: [tag1, tag2]
 severidade: media
 ---
 
-## Resumo
+## Summary
 
-Para que serve este guia e quando o agente deve consultá-lo. 1 a 2 parágrafos.
+What this guide is for and when the agent should consult it. 1 to 2 paragraphs.
 
 ## Checklist
 
-- [ ] Item verificável 1.
-- [ ] Item verificável 2.
-- [ ] Item verificável 3.
+- [ ] Verifiable item 1.
+- [ ] Verifiable item 2.
+- [ ] Verifiable item 3.
 
-## Detalhamento
+## Details
 
-Explicação de cada item do checklist — o porquê e o risco de não seguir.
+Explanation of each checklist item — the why and the risk of not following it.
 
-## Configuração relacionada
+## Related configuration
 
-Aponta para os exemplos em `config-examples/<vendor>/` que implementam estas práticas.
+Points to the examples in `config-examples/<vendor>/` that implement these practices.
 
-## Referências
+## References
 
-- Documentação oficial / fontes.
+- Official documentation / sources.

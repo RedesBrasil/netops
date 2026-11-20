@@ -1,0 +1,5 @@
+{
+  "decide_admin_only": "Este pedido executa uma ação no servidor ao ser decidido: só administradores podem aprovar ou reprovar.",
+  "ids_list": "lista de ids",
+  "integer_ids": "ids inteiros"
+}

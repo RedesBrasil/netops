@@ -22,6 +22,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from lib import i18n
 from scheduler import store
 
 OUTPUT_LIMIT = 60_000            # bytes guardados de cada saída
@@ -529,10 +530,10 @@ def list_runs(root=None, task_id: str | None = None, limit: int = 300) -> list[d
 
 def read_run(task_id: str, run_id: str, root=None) -> dict:
     if not store.ID_RE.match(task_id or "") or not RUN_ID_RE.match(run_id or ""):
-        raise KeyError("execução inválida")
+        raise KeyError(i18n.t("lib_scheduler.invalid_run"))
     p = store.runs_dir(root) / task_id / f"{run_id}.json"
     if not p.exists():
-        raise KeyError(f"execução '{task_id}/{run_id}' não encontrada")
+        raise KeyError(i18n.t("lib_scheduler.run_not_found", run=f"{task_id}/{run_id}"))
     rec = json.loads(p.read_text(encoding="utf-8"))
     log = p.with_suffix(".log")
     rec["log"] = log.read_text(encoding="utf-8", errors="replace")[-20_000:] if log.exists() else ""
@@ -571,7 +572,7 @@ def overview(root=None) -> dict:
                 nra = n.timestamp() if n else None
             except Exception:  # noqa: BLE001
                 nra = None
-        tasks.append({**t, "kind_label": store.KIND_LABELS.get(t.get("kind"), t.get("kind")),
+        tasks.append({**t, "kind_label": store.kind_label(t.get("kind")),
                       "schedule_label": store.describe_schedule(t),
                       "state": {"next_run_at": nra if t.get("enabled", True) else None,
                                 "last_run_at": ts.get("last_run_at"), "last_status": ts.get("last_status"),

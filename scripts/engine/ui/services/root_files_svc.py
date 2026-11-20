@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 import deps
+from lib import i18n
 from services import files_svc as fsvc
 
 IDLE_SECONDS = 300
@@ -164,5 +165,5 @@ def get(token: str) -> RootSession:
     _sweep()
     s = ROOT_SESSIONS.get(token)
     if s is None:
-        raise fsvc.NotFound("sessão root encerrada (inatividade de 5 min ou fechada) — clique em \"Abrir como root\" de novo")
+        raise fsvc.NotFound(i18n.t("api_files.root_session_closed"))
     return s

@@ -31,6 +31,7 @@ import unicodedata
 from pathlib import Path
 
 import deps
+from lib import i18n
 
 _FILE = deps.RUNS_DIR / "claude" / "projects.json"
 # Preferências POR USUÁRIO do console (ordem e arquivados): {"<username>": {"order": [ids], "archived": [ids]}}.
@@ -98,25 +99,25 @@ def _slug(name: str) -> str:
 def _clean_name(name) -> str:
     n = " ".join(str(name or "").split())[:_MAX_NAME]
     if not n:
-        raise ProjectError("empty_name", "Dê um nome ao projeto.")
+        raise ProjectError("empty_name", i18n.t("api_projects.empty_name"))
     return n
 
 
 def _resolve_dir(path, deny_first: bool = False) -> str:
     raw = str(path or "").strip()
     if not raw or not os.path.isabs(raw):
-        raise ProjectError("bad_path", "Informe o caminho absoluto da pasta (começa com /).")
+        raise ProjectError("bad_path", i18n.t("api_projects.bad_path"))
     p = Path(raw)
     try:
         real = p.resolve(strict=True)
     except (OSError, RuntimeError):
-        raise ProjectError("path_not_found", "Essa pasta não existe no servidor.", 404)
+        raise ProjectError("path_not_found", i18n.t("api_projects.path_not_found"), 404)
     if not real.is_dir():
-        raise ProjectError("not_a_dir", "O caminho informado não é uma pasta.")
+        raise ProjectError("not_a_dir", i18n.t("api_projects.not_a_dir"))
     if deny_first:  # pasta do sistema é recusada pelo motivo certo mesmo quando a conta nem consegue lê-la
         check_allowed(str(real))
     if not os.access(real, os.R_OK | os.X_OK):
-        raise ProjectError("no_access", "O servidor não tem permissão para ler essa pasta.", 403)
+        raise ProjectError("no_access", i18n.t("api_projects.no_access"), 403)
     return str(real)
 
 
@@ -128,18 +129,18 @@ def deny_reason(real: str) -> str | None:
     """Motivo pelo qual a pasta (já resolvida, sem symlink) NÃO pode ser projeto; None = pode."""
     netops = str(Path(deps.NETOPS_ROOT).resolve())
     if _inside(real, netops):
-        return "A pasta do NetOps (e o que está dentro dela) é da aba Claude Code. Escolha outra pasta."
+        return i18n.t("api_projects.deny_netops")
     if _inside(netops, real):
-        return "Essa pasta contém o NetOps. Escolha uma pasta que não inclua a instalação do NetOps."
+        return i18n.t("api_projects.deny_contains_netops")
     if real in _DENY_EXACT or any(_inside(real, d) for d in _DENY_TREE):
-        return "Pasta do sistema não pode ser projeto. Use uma subpasta própria (ex.: " + DEFAULT_BASE + "/meu-projeto)."
+        return i18n.t("api_projects.deny_system", example=DEFAULT_BASE + "/meu-projeto")
     home = str(Path(os.path.expanduser("~")).resolve())
     if home != "/" and _inside(real, home) and real != home:
         first = real[len(home):].lstrip("/").split("/", 1)[0]
         if first.startswith("."):
-            return "Pastas ocultas do usuário do servidor (~/.claude, ~/.ssh...) não podem ser projeto."
+            return i18n.t("api_projects.deny_hidden")
     if real == home:
-        return "A pasta home do usuário do servidor não pode ser projeto. Use uma subpasta."
+        return i18n.t("api_projects.deny_home")
     return None
 
 
@@ -208,7 +209,7 @@ def list_for(user: str) -> list[dict]:
 
 def set_order(user: str, ids) -> list[dict]:
     if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids):
-        raise ProjectError("bad_order", "Envie a lista de ids na ordem desejada.")
+        raise ProjectError("bad_order", i18n.t("api_projects.bad_order"))
     known = {p["id"] for p in list_projects()}
     seen, order = set(), []
     for x in ids:
@@ -226,7 +227,7 @@ def set_order(user: str, ids) -> list[dict]:
 
 def set_archived(user: str, pid: str, archived: bool) -> dict:
     if not get(pid):
-        raise ProjectError("not_found", "Projeto não encontrado.", 404)
+        raise ProjectError("not_found", i18n.t("api_common.project_not_found"), 404)
     with _LOCK:
         d = _prefs_all()
         up = _user_prefs(d, user)
@@ -277,7 +278,7 @@ def _new_folder(parent, folder) -> str:
     """Cria `parent/folder` (pasta nova e vazia), como o "Nova pasta" do VS Code. Devolve o caminho real."""
     name = str(folder or "").strip()
     if not _FOLDER_RE.match(name) or name in (".", ".."):
-        raise ProjectError("bad_folder", "Nome de pasta inválido: use letras, números, ponto, hífen ou _ (sem / nem espaço).")
+        raise ProjectError("bad_folder", i18n.t("api_projects.bad_folder"))
     raw_parent = str(parent or "").strip() or DEFAULT_BASE
     if os.path.isabs(raw_parent):
         raw_parent = os.path.normpath(raw_parent)   # "/opt/projetos/" == "/opt/projetos"
@@ -287,11 +288,11 @@ def _new_folder(parent, folder) -> str:
     target = os.path.join(base, name)
     check_allowed(target)
     if os.path.lexists(target):
-        raise ProjectError("exists", "Já existe algo com esse nome nessa pasta. Use “Pasta existente”.", 409)
+        raise ProjectError("exists", i18n.t("api_projects.exists"), 409)
     try:
         os.mkdir(target, 0o755)
     except OSError as e:
-        raise ProjectError("mkdir_failed", f"Não foi possível criar a pasta: {e.strerror or e}.", 403)
+        raise ProjectError("mkdir_failed", i18n.t("api_projects.mkdir_failed", error=e.strerror or e), 403)
     return str(Path(target).resolve())
 
 
@@ -307,11 +308,11 @@ def create(name, path, *, trust: bool = False, new_folder: str | None = None) ->
     with _LOCK:
         items = _load()
         if len(items) >= _MAX_PROJECTS:
-            raise ProjectError("too_many", "Limite de projetos atingido.")
+            raise ProjectError("too_many", i18n.t("api_projects.too_many"))
         # Dois projetos na mesma pasta dividiriam as mesmas conversas.
         dup = next((p for p in items if real and p["path"] == real), None)
         if dup:
-            raise ProjectError("duplicate_path", f"Essa pasta já é o projeto “{dup.get('name') or dup['id']}”.", 409)
+            raise ProjectError("duplicate_path", i18n.t("api_projects.duplicate_path", name=dup.get("name") or dup["id"]), 409)
         if new_folder:
             real = _new_folder(path, new_folder)
             trusted = True
@@ -340,7 +341,7 @@ def rename(pid: str, name) -> dict:
                 p["name"] = clean
                 _save(items)
                 return _public(p)
-    raise ProjectError("not_found", "Projeto não encontrado.", 404)
+    raise ProjectError("not_found", i18n.t("api_common.project_not_found"), 404)
 
 
 def set_trusted(pid: str, trusted: bool) -> dict:
@@ -351,7 +352,7 @@ def set_trusted(pid: str, trusted: bool) -> dict:
                 p["trusted"] = bool(trusted)
                 _save(items)
                 return _public(p)
-    raise ProjectError("not_found", "Projeto não encontrado.", 404)
+    raise ProjectError("not_found", i18n.t("api_common.project_not_found"), 404)
 
 
 def delete(pid: str) -> bool:
@@ -388,7 +389,7 @@ def browse(path: str | None = None, hidden: bool = False) -> dict:
                 except OSError:
                     continue
     except OSError:
-        raise ProjectError("no_access", "Não foi possível listar essa pasta.", 403)
+        raise ProjectError("no_access", i18n.t("api_projects.list_failed"), 403)
     dirs.sort(key=lambda d: d["name"].lower())
     parent = None if real == "/" else (os.path.dirname(real) or "/")
     # `allowed`/`reason`: o seletor desabilita "Usar esta pasta" onde o servidor recusaria.

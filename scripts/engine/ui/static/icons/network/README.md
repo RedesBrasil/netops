@@ -1,38 +1,38 @@
-# Ícones de rede da Redes Brasil
+# Redes Brasil network icons
 
-Origem: https://github.com/RedesBrasil/network-icons
+Source: https://github.com/RedesBrasil/network-icons
 
-Commit fixado: `3bfe4c177ea78b91846517bd1a6964da3e3f55d3`.
+Pinned commit: `3bfe4c177ea78b91846517bd1a6964da3e3f55d3`.
 
-- Os dez PNGs na raiz são os originais, sem alterações.
-- `catalog.json` é o catálogo original, com nomes, dimensões e SHA-256.
-- `thumbnails/` contém PNGs RGBA de até 128 px, mantendo a proporção e a transparência.
-- `SHA256SUMS` registra os checksums do catálogo, dos originais e das miniaturas locais.
+- The ten PNGs at the root are the originals, unchanged.
+- `catalog.json` is the original catalog, with names, dimensions and SHA-256.
+- `thumbnails/` contains RGBA PNGs of up to 128 px, keeping the aspect ratio and transparency.
+- `SHA256SUMS` records the checksums of the catalog, the originals and the local thumbnails.
 
-Os originais totalizam cerca de 10 MB; as dez miniaturas somam aproximadamente 139 KB.
-O console usa somente as miniaturas no seletor e no mapa. Nenhum arquivo é buscado no GitHub
-ou em CDN ao usar a interface.
+The originals total about 10 MB; the ten thumbnails add up to approximately 139 KB.
+The console uses only the thumbnails in the picker and on the map. No file is fetched from GitHub
+or a CDN when using the interface.
 
-## Origem e permissão de uso
+## Origin and permission of use
 
-O README da revisão acima descreve os ícones como criados para a Redes Brasil com geração
-assistida por IA e orienta baixar e importar os PNGs em editores/aplicações. O repositório
-não declara arquivo de licença nessa revisão. Esta cópia mantém a atribuição e não acrescenta
-uma licença que o projeto de origem não forneceu.
+The README of the revision above describes the icons as created for Redes Brasil with AI-assisted
+generation and instructs to download and import the PNGs into editors/applications. The repository
+does not declare a license file in that revision. This copy keeps the attribution and does not add
+a license that the source project did not provide.
 
-## Atualização reproduzível
+## Reproducible update
 
 ```bash
 python3 scripts/engine/ui/vendor_icons.py
 ```
 
-O script requer Pillow apenas na manutenção, baixa de um commit explícito, confere SHA-256 e
-dimensões de todos os originais e gera as miniaturas. Para atualizar a biblioteca, revise o
-commit e os direitos de uso em `vendor_icons.py`, execute-o e reconstrua o editor:
+The script requires Pillow only for maintenance, downloads from an explicit commit, checks SHA-256 and
+dimensions of all originals and generates the thumbnails. To update the library, review the
+commit and the usage rights in `vendor_icons.py`, run it and rebuild the editor:
 
 ```bash
 npm --prefix scripts/engine/ui/maps run build
 ```
 
-O runtime Python do console não depende de Pillow. Depois do build, atualize os hashes dos
-assets do editor em `static/vendor/VERSIONS.txt`.
+The console's Python runtime does not depend on Pillow. After the build, update the hashes of the
+editor assets in `static/vendor/VERSIONS.txt`.

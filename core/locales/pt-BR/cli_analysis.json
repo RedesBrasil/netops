@@ -1,0 +1,18 @@
+{
+  "diff_description": "Compara dois arquivos de configuração.",
+  "help_before": "Arquivo de config 'antes' (baseline)",
+  "help_after": "Arquivo de config 'depois' (proposta)",
+  "file_not_found": "ERRO: arquivo não encontrado: {path}",
+  "no_differences": "Sem diferenças entre os arquivos.",
+  "diff_summary": "--- Resumo: +{added} linha(s), -{removed} linha(s) ---",
+  "port_open": "porta {port}/tcp aberta",
+  "config_checks_skipped": "Checagens de config não executadas",
+  "no_config_file": "nenhum --config-file informado",
+  "config_match": "trecho: '{excerpt}'",
+  "security_description": "Avaliação de segurança de hosts do inventário.",
+  "help_host_id": "Avaliar o host com este ID inteiro",
+  "help_host": "Nome único ou alias legado do host",
+  "help_all": "Avaliar todos os hosts do inventário",
+  "help_config_file": "Arquivo de config coletada (habilita checks de config)",
+  "assessment_failed": "Falha ao avaliar host"
+}

@@ -1,0 +1,22 @@
+{
+  "alias_not_object": "alias precisa ser um objeto",
+  "alias_not_text": "alias precisa ser texto não vazio",
+  "alias_reserved": "alias '{ref}' reservado para host excluído",
+  "alias_unallocated": "alias aponta para ID ainda não alocado",
+  "aliases_not_list": "aliases precisam ser uma lista",
+  "counter_too_low": "contador deve estar acima de todos os IDs já alocados",
+  "duplicate_alias": "alias duplicado",
+  "duplicate_id": "ID duplicado",
+  "each_host_object": "cada host precisa ser um objeto",
+  "host_id_invalid": "ID de host precisa ser um inteiro positivo até 9007199254740991",
+  "host_id_not_found": "host ID {ref} não está em network/hosts.yaml",
+  "host_not_found": "host '{ref}' não está em network/hosts.yaml",
+  "host_not_object": "host precisa ser um objeto",
+  "hostname_ambiguous": "hostname '{ref}' ambíguo; informe o ID inteiro",
+  "inventory_not_object": "inventário precisa ser um objeto",
+  "legacy_keys_text": "chaves legadas precisam ser texto não vazio",
+  "unknown_inventory_version": "versão de inventário desconhecida",
+  "use_int_or_name": "use um ID inteiro ou um nome/alias textual",
+  "v1_needs_text_keys": "inventário v1 precisa de hosts por chave textual",
+  "v2_needs_list": "inventário v2 precisa de uma lista de hosts"
+}

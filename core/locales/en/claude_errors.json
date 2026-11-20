@@ -1,0 +1,13 @@
+{
+  "agent_failed": "Claude agent failed.",
+  "auth_failed": "Claude authentication failed. Log in again (/login).",
+  "billing": "Credit/billing problem on the Claude account.",
+  "cancelled_by_user": "Response cancelled by the user.",
+  "model_unavailable": "Model unavailable or no access. Choose another model.",
+  "network": "Network error: the connection to Claude dropped mid-response. Try again.",
+  "overloaded": "Claude service overloaded. Try again in a moment.",
+  "process_exited": "The Claude agent exited unexpectedly. Try again.",
+  "rate_limit": "Usage limit reached. Wait a moment and try again.",
+  "server_error": "Claude server error. Try again in a moment.",
+  "too_many_sessions": "Too many Claude sessions open. Close one and try again."
+}

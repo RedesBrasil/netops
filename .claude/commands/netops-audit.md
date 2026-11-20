@@ -1,14 +1,15 @@
 ---
-description: Roda a auditoria de segurança da rede (workflow security-audit)
-argument-hint: "[host ou grupo opcional; vazio = toda a rede]"
+description: Runs the network security audit (security-audit workflow)
+argument-hint: "[optional host or group; empty = the whole network]"
 ---
 
-Você está operando o framework NetOps. Leia `AGENTS.md` na raiz para o contexto completo.
+You are operating the NetOps framework. Read `AGENTS.md` at the root for the full context.
 
-Execute o workflow `workflows/security-audit.workflow.yaml` como o agente `coordinator`.
+Run the `workflows/security-audit.workflow.yaml` workflow as the `coordinator` agent.
 
-Escopo: $ARGUMENTS (se vazio, audite todos os hosts de `network/hosts.yaml`).
+Scope: $ARGUMENTS (if empty, audit all hosts in `network/hosts.yaml`).
 
-Siga os passos do workflow: definir escopo → planejar a coleta → coletar dos dispositivos →
-avaliar segurança → revisar com o usuário → gerar relatório → reflexão. Adote a persona de
-cada agente (`agents/*.agent.md`) em cada passo e respeite `constitution.md`.
+Follow the workflow steps: define the scope → plan the collection → collect from the devices →
+assess security → review with the user → generate the report → reflection. Adopt the persona of
+each agent (`agents/*.agent.md`) at each step and respect `constitution.md`.
+Answer in the user's language.

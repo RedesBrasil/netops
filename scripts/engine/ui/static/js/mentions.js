@@ -9,6 +9,10 @@
 
 export const MENTION_NOTE = "[NetOps — menções]";
 
+// Loaded as plain source by node tests: no imports; globalThis.netopsT with the Portuguese fallback.
+// Only the menu labels are translated; the text sent to the agent (expandMentions/addQuoteNote) stays as is.
+const tr = (key, vars, fallback) => { const out = globalThis.netopsT ? globalThis.netopsT(key, vars) : key; return out === key ? fallback : out; };
+
 const norm = (s) => String(s == null ? "" : s).toLowerCase();
 const tokenName = (s) => String(s).trim().replace(/\s+/g, "_");
 
@@ -62,7 +66,7 @@ export function searchMentions(catalog, query, kind = null, limit = 12) {
   const out = [];
   if (kind !== "host") {
     for (const g of catalog.groups) if (hit(g.name))
-      out.push({ kind: "group", label: g.name, token: g.token, detail: g.members.length + " host(s)", rank: norm(g.name).startsWith(q) ? 0 : 1 });
+      out.push({ kind: "group", label: g.name, token: g.token, detail: tr("mentions.hosts_count", { count: g.members.length }, g.members.length + " host(s)"), rank: norm(g.name).startsWith(q) ? 0 : 1 });
   }
   if (kind !== "group") {
     for (const h of catalog.hosts) if (hit(h.hostname, h.id, h.ip))
@@ -70,7 +74,7 @@ export function searchMentions(catalog, query, kind = null, limit = 12) {
   }
   if (kind !== "host" && kind !== "group") {
     for (const v of catalog.vault || []) if (hit(v.title, String(v.id), v.template))
-      out.push({ kind: "senha", label: `${v.title} (${v.id})`, token: v.token, detail: [v.template, v.fields.length + " campo(s)"].filter(Boolean).join(" · "),
+      out.push({ kind: "senha", label: `${v.title} (${v.id})`, token: v.token, detail: [v.template, tr("mentions.fields_count", { count: v.fields.length }, v.fields.length + " campo(s)")].filter(Boolean).join(" · "),
                  rank: norm(v.title).startsWith(q) || norm(v.id).startsWith(q) ? 1 : 3 });
   }
   out.sort((a, b) => a.rank - b.rank);     // estável: dentro do mesmo rank mantém a ordem (grupos antes de hosts)

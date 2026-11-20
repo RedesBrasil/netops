@@ -1,0 +1,16 @@
+{
+  "bad_kind": "type must be 'secret' or 'text'",
+  "field_exists": "field '{name}' already exists",
+  "field_in_use": "field in use by {templates} template(s) and {items} item(s)",
+  "field_name_required": "enter the field name",
+  "field_no_value": "field '{name}' has no value in this item",
+  "field_not_exists": "field '{name}' does not exist",
+  "field_not_in_catalog": "field '{name}' does not exist in the catalog",
+  "field_repeated": "field '{name}' repeated",
+  "item_not_exists": "item '{id}' does not exist",
+  "max_chars": "at most {max} characters",
+  "required_empty": "required field(s) empty: {fields}",
+  "template_name_required": "enter the template name",
+  "template_not_exists": "template '{id}' does not exist",
+  "title_required": "enter the title"
+}

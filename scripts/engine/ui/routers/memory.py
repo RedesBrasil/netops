@@ -12,6 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 
 import deps
+from lib import i18n
 from services import docs_svc, yaml_io
 
 router = APIRouter(tags=["memory"])
@@ -33,7 +34,7 @@ def _resolve(name: str) -> Path:
     if name == "AGENTS.md":
         return _agents_md()
     if not _NOTE_RE.match(name):
-        raise deps.ValidationFailed([{"loc": "name", "msg": "nome inválido (use <nota>.md)"}])
+        raise deps.ValidationFailed([{"loc": "name", "msg": i18n.t("api_memory.bad_note_name")}])
     return docs_svc.safe_child(deps.MEMORY_DIR, name)
 
 
@@ -68,9 +69,9 @@ def put_memory(body: dict, request: Request):
 def list_memory_files():
     """Índice + AGENTS.md fixos no topo; depois as notas de memory/ (sem backups .bak*)."""
     out = [
-        {"name": "MEMORY.md", "kind": "index", "title": "Índice da memória",
+        {"name": "MEMORY.md", "kind": "index", "title": i18n.t("api_memory.index_title"),
          "exists": deps.MEMORY_MD.exists()},
-        {"name": "AGENTS.md", "kind": "agents", "title": "Instruções do projeto (lido primeiro por toda IA)",
+        {"name": "AGENTS.md", "kind": "agents", "title": i18n.t("api_memory.agents_title"),
          "exists": _agents_md().exists()},
     ]
     if deps.MEMORY_DIR.exists():
@@ -86,7 +87,7 @@ def list_memory_files():
 def get_memory_file(name: str):
     p = _resolve(name)
     if not p.exists():
-        raise KeyError(f"'{name}' não existe")
+        raise KeyError(i18n.t("api_common.quoted_not_exists", name=name))
     return docs_svc.read_text_file(p)
 
 
@@ -95,7 +96,7 @@ def put_memory_file(body: dict, request: Request):
     name = (body.get("name") or "").strip()
     p = _resolve(name)
     if not p.exists():
-        raise KeyError(f"'{name}' não existe")
+        raise KeyError(i18n.t("api_common.quoted_not_exists", name=name))
     text = body.get("text", "")
     new_rev = yaml_io.write_text(p, text, expected=_rev(request), backup=True)
     return {"name": name, "rev": new_rev, "tokens": docs_svc.token_estimate(text)}

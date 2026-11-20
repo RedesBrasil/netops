@@ -1,0 +1,5 @@
+{
+  "artifact_not_exists": "artefato '{path}' não existe",
+  "artifact_not_text": "tipo de artefato não exibível como texto",
+  "run_not_exists": "run '{run_id}' não existe"
+}

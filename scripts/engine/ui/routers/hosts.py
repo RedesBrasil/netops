@@ -5,6 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi import HTTPException
 
+from lib import i18n
+
 from models import GroupCreate, HostCreate, HostUpsert, NodeUpsert, RenameBody
 from services import inventory_svc
 
@@ -26,7 +28,7 @@ def _host_key(value: str):
             raise ValueError("ID inválido")
         return require_host_id(int(value))
     except ValueError:
-        raise HTTPException(422, "ID de host precisa ser um inteiro positivo") from None
+        raise HTTPException(422, i18n.t("api_hosts.bad_host_id")) from None
 
 
 # --------------------------------------------------------------------------- #

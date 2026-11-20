@@ -1,0 +1,15 @@
+{
+  "description": "NetOps scheduled tasks",
+  "help_at": "once: YYYY-MM-DDTHH:MM (task time zone)",
+  "help_cron": "5-field expression, e.g. \"0 9 * * 1-5\" (task time zone)",
+  "help_data_root": "data root (default: the installation)",
+  "help_every": "every N minutes",
+  "help_github_as": "ID of the console user whose GitHub account the agent uses (default: server gh)",
+  "help_prompt": "what the agent must do",
+  "help_script": "command/script (runs with bash, cwd = NetOps root)",
+  "help_timeout": "minutes (default 15)",
+  "no_nested_run": "a scheduled task does not trigger another",
+  "one_schedule_only": "use only one of --cron, --every, --at",
+  "schedule_required": "enter --cron, --every or --at",
+  "tick_fired": "{ts} fired: {ids}"
+}

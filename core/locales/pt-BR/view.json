@@ -1,0 +1,20 @@
+{
+  "artifacts": "Artefatos",
+  "col_report": "Relatório",
+  "col_run": "Execução",
+  "col_size": "Tamanho",
+  "download": "⬇ Baixar",
+  "error": "Erro: {message}",
+  "file_not_found": "arquivo não encontrado",
+  "http_error": "erro {status}",
+  "no_artifacts": "sem artefatos",
+  "no_reports": "Nenhum relatório em reports/.",
+  "no_runs": "Nenhuma execução em runs/ (criadas durante workflows).",
+  "open_failed": "Não foi possível abrir o arquivo.",
+  "open_full": "Abrir em tela cheia",
+  "reports_title": "Relatórios",
+  "run_title": "Execução {id}",
+  "runs_title": "Execuções",
+  "search_report": "Buscar relatório",
+  "search_run": "Buscar execução"
+}

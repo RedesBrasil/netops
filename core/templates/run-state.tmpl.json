@@ -1,8 +1,8 @@
 {
-  "_comment": "Template do estado de uma execucao. Copiado para runs/<id>/state.json e atualizado a cada passo. Adaptado do state.json do OpenSquad.",
-  "run_id": "YYYY-MM-DD-HHMM-tarefa",
+  "_comment": "Template of the state of a run. Copied to runs/<id>/state.json and updated at each step. Adapted from the OpenSquad state.json.",
+  "run_id": "YYYY-MM-DD-HHMM-task",
   "workflow": "security-audit",
-  "request": "texto do pedido do usuario",
+  "request": "text of the user's request",
   "status": "pending",
   "_status_values": "pending | in_progress | completed | failed",
   "started_at": "",
@@ -12,7 +12,7 @@
   "steps": [
     {
       "id": "01",
-      "name": "nome do passo",
+      "name": "step name",
       "agent": "planner",
       "status": "pending",
       "outputs": []

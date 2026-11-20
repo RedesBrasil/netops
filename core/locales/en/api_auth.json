@@ -1,0 +1,12 @@
+{
+  "bad_credentials": "Wrong e-mail or password.",
+  "email_password_required": "Enter e-mail and password.",
+  "master_password_required": "Enter the master password.",
+  "no_auth": "Vault not initialized and no user registered — there is no login to do.",
+  "no_user": "There are no users yet: create the administrator in System → Users.",
+  "same_password": "The new password must be different from the current one.",
+  "throttled": "Too many attempts. Try again in {wait} s.",
+  "vault_uninitialized": "Vault not initialized and no user registered: create the administrator with the CLI scripts/engine/users/cli.py.",
+  "wrong_current_password": "Current password is wrong.",
+  "wrong_master_password": "Wrong master password."
+}

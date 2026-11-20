@@ -80,6 +80,13 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 
 ## Regras essenciais
 
+- **Idioma (INEGOCIÁVEL):** responda **sempre no idioma em que a pessoa escreve** (português → português,
+  inglês → inglês, espanhol → espanhol), qualquer que seja o idioma da instalação. Arquivos gerados **sem conversa**
+  (relatório de tarefa agendada, Central de Avisos, memória) saem no idioma da instalação
+  (`core/config/project-config.yaml` → `instance.language`); relatório pedido numa conversa sai no idioma da conversa.
+- **Textos do console, da API e das CLIs (regra de desenvolvimento):** toda string visível passa por `t()` e vai para
+  `core/locales/<idioma>/*.json` (inglês é a fonte); código, nomes de arquivo e chaves em inglês. Leia `core/rules/i18n.md`.
+
 - **Identificação de equipamentos nas respostas (INEGOCIÁVEL):** ao citar qualquer host, container (CT/VM),
   roteador, switch, servidor ou outro equipamento, **nunca use só o ID**. Escreva sempre **nome (ID)**, com o
   nome primeiro e o número entre parênteses: `SERVIDOR-PROXMOX-01 (host 14)`, `RT-BORDA (host 2)`,

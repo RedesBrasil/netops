@@ -1,36 +1,36 @@
-# Plano: <título da tarefa>
+# Plan: <task title>
 
-## Objetivo
+## Goal
 
-<o que se quer alcançar, em 1-2 frases.>
+<what is to be achieved, in 1-2 sentences.>
 
-## Contexto
+## Context
 
-<o que ler antes: network/hosts.yaml, network/topology.yaml, best-practices/<...>,
+<what to read first: network/hosts.yaml, network/topology.yaml, best-practices/<...>,
 config-examples/<...>, memory/MEMORY.md.>
 
-## Escopo
+## Scope
 
-- **Inclui:** <hosts/serviços envolvidos.>
-- **Fora do escopo:** <o que NÃO será tocado.>
+- **Includes:** <hosts/services involved.>
+- **Out of scope:** <what will NOT be touched.>
 
-## Passos
+## Steps
 
-1. **<agente>** — <o que faz.>
-2. **<agente>** — <o que faz.>
+1. **<agent>** — <what it does.>
+2. **<agent>** — <what it does.>
 3. ...
 
-## Riscos e mitigação
+## Risks and mitigation
 
-| Risco | Mitigação |
-|-------|-----------|
-| <risco> | <como evitar> |
+| Risk | Mitigation |
+|------|------------|
+| <risk> | <how to avoid it> |
 
 ## Rollback
 
-<como desfazer, se a tarefa alterar config. "Não aplicável" se for só coleta.>
+<how to undo it, if the task changes config. "Not applicable" if it is collection only.>
 
-## Critérios de sucesso
+## Success criteria
 
-- <critério verificável 1.>
-- <critério verificável 2.>
+- <verifiable criterion 1.>
+- <verifiable criterion 2.>

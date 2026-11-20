@@ -1,0 +1,12 @@
+{
+  "disabled_on_server": "Terminal desabilitado no servidor. Suba com --enable-terminal (e sem --read-only).",
+  "help_shell": "shell real em /opt/netops · execução de comandos",
+  "reconnect": "Reconectar",
+  "session_ended": "— sessão encerrada —",
+  "status_connected": "conectado",
+  "status_connecting": "conectando",
+  "status_disabled": "desabilitado",
+  "status_disconnected": "desconectado",
+  "status_error": "erro",
+  "title": "Terminal"
+}

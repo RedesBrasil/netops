@@ -5,6 +5,8 @@ Um ticket válido é aceito como "senha" para renovar a sessão do mesmo usuári
 """
 from __future__ import annotations
 
+from lib import i18n
+
 from .base import Handoff, WebLoginError, WebTarget, post
 
 
@@ -15,16 +17,16 @@ class ProxmoxProvider:
         user = username if "@" in username else f"{username}@pam"
         resp = post(f"{target.base}/api2/json/access/ticket", data={"username": user, "password": password})
         if resp.status_code in (401, 403):
-            raise WebLoginError("Proxmox recusou a credencial (usuário/senha/realm)")
+            raise WebLoginError(i18n.t("lib_web_login.proxmox_rejected"))
         if resp.status_code != 200:
             raise WebLoginError(f"Proxmox respondeu HTTP {resp.status_code}", "unreachable")
         try:
             data = resp.json()["data"]
             ticket = data["ticket"]
         except (ValueError, KeyError, TypeError) as exc:
-            raise WebLoginError("resposta inesperada do Proxmox (não parece a API do PVE)", "unreachable") from exc
+            raise WebLoginError(i18n.t("lib_web_login.proxmox_unexpected"), "unreachable") from exc
         if data.get("NeedTFA") or str(ticket).startswith("PVE:!tfa!"):
-            raise WebLoginError("usuário com 2FA: login automático não suportado — entre manualmente", "unsupported")
+            raise WebLoginError(i18n.t("lib_web_login.proxmox_2fa"), "unsupported")
         return Handoff(mode="form_post", action=f"{target.base}/api2/html/access/ticket",
                        fields={"username": user, "password": ticket},
                        then_url=target.base + "/", then_delay_ms=700)

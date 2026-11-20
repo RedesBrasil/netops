@@ -1,0 +1,7 @@
+{
+  "agent_not_exists": "agente '{file}' não existe",
+  "bad_frontmatter": "frontmatter YAML (---) ausente ou inválido",
+  "missing_fields": "campos faltando: {fields}",
+  "missing_workflow_steps": "falta 'workflow:' com 'steps:'",
+  "workflow_not_exists": "workflow '{file}' não existe"
+}

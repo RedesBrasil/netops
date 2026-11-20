@@ -1,5 +1,5 @@
 // Hosts e Grupos (network/hosts.yaml) — formulário ciente de herança de grupo.
-import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
+import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError, t } from "../ui.js";
 import { FilterBar, DataTable, Field, EnumSelect, RefSelect, useEnums, ConfirmDialog, RenameCascadeHint, IconPicker as HostIconPicker } from "../components.js";
 import { Modal, ConflictDialog } from "../ui.js";
 import { useRoute, navigate, useMenuRoute, matchText } from "../route.js";
@@ -8,7 +8,7 @@ import { accessEntries, openEntry, AccessChooser } from "./host-term.js";
 // Padrão de cadastro: tudo em MAIÚSCULAS, exceto site e notes (o backend também força).
 const UP = (v) => typeof v === "string" ? v.toUpperCase() : v;
 const MAX_EXTRA_IPS = 20;  // mesmo teto do backend (models.MAX_EXTRA_IPS)
-const IP_ROLES = ["público", "interno", "VIP", "loopback", "gerência secundária"];  // sugestões; o campo é livre
+const IP_ROLES = () => [t("hosts.ip_role_public"), t("hosts.ip_role_internal"), "VIP", "loopback", t("hosts.ip_role_secondary_mgmt")];  // sugestões; o campo é livre
 const upList = (l) => (l || []).map(UP);
 const UP_KEYS = new Set(["hostname", "group", "vendor", "role", "model", "os", "os_version", "version", "credential", "method"]);
 const MAX_APPS = 10;  // mesmo teto do backend (models.MAX_APPS)
@@ -22,7 +22,7 @@ export const isLocalHost = (h) => String(((h && (h.explicit || h).access) || {})
 const appText = (a) => [a.name, a.version].filter(Boolean).join(" ");  // (credential/method dos métodos ficam em form.accesses)
 const INHERIT = ["vendor", "role", "credential"];
 const MAX_EXTRA_ACCESS = 10;  // mesmo teto do backend (models.MAX_EXTRA_ACCESS)
-const bkLabel = (v) => v === true ? "sim" : v === false ? "não" : "padrão";
+const bkLabel = (v) => v === true ? t("hosts.backup_yes") : v === false ? t("hosts.backup_no") : t("hosts.backup_default");
 
 export function HostsPage() {
   const res = useResource("/hosts");
@@ -37,7 +37,7 @@ export function HostsPage() {
     if (confirm) api.get(`/hosts/${encodeURIComponent(confirm)}/references`).then(setDeleteRefs).catch(handleError);
   }, [confirm]);
   if (res.loading) return html`<${Spinner} />`;
-  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  if (res.error) return html`<div class="card">${t("hosts.load_error", { message: res.error.message })}</div>`;
   const { hosts: allHosts, rev, groups } = res.data;
   const seg = route.segments[0];
   const editing = seg === "new" ? { __new: true } : seg ? allHosts.find((h) => String(h.id) === seg) || null : null;
@@ -56,59 +56,60 @@ export function HostsPage() {
 
   const cols = [
     { key: "id", label: "ID", sort: (r) => String(r.id), render: (r) => html`<span class="mono">${r.id}</span>` },
-    { key: "hostname", label: "Nome do host", hideable: false, sort: (r) => r.explicit.hostname || "", render: (r) => html`<a href=${"#hosts/" + encodeURIComponent(r.id)} onClick=${(e) => e.stopPropagation()}><b>${r.explicit.hostname}</b></a>${isLocalHost(r) ? html` <${Badge} kind="accent" title="Este servidor NetOps (acesso Local, sem SSH)">LOCAL<//>` : ""}` },
+    { key: "hostname", label: t("hosts.col_hostname"), hideable: false, sort: (r) => r.explicit.hostname || "", render: (r) => html`<a href=${"#hosts/" + encodeURIComponent(r.id)} onClick=${(e) => e.stopPropagation()}><b>${r.explicit.hostname}</b></a>${isLocalHost(r) ? html` <${Badge} kind="accent" title=${t("hosts.local_badge_title")}>LOCAL<//>` : ""}` },
     { key: "mgmt_ip", label: "IP", sort: (r) => r.explicit.mgmt_ip || "", render: (r) => html`<span class="mono">${r.explicit.mgmt_ip}</span>` },
     { key: "vendor", label: "Vendor", sort: (r) => r.effective.vendor || "", render: (r) => html`<${Badge} kind="accent">${r.effective.vendor || "?"}<//>` },
     { key: "role", label: "Role", sort: (r) => r.effective.role || "", render: (r) => r.effective.role || "—" },
-    { key: "group", label: "Grupo", sort: (r) => r.explicit.group || "", render: (r) => r.explicit.group || "—" },
-    { key: "os", label: "Sistema", sort: (r) => osText(r.effective) || r.effective.version || "", render: (r) => osText(r.effective)
+    { key: "group", label: t("hosts.col_group"), sort: (r) => r.explicit.group || "", render: (r) => r.explicit.group || "—" },
+    { key: "os", label: t("hosts.col_os"), sort: (r) => osText(r.effective) || r.effective.version || "", render: (r) => osText(r.effective)
         ? html`<span class="os-cell">${r.effective.os}${r.effective.os_version && html` <span class="muted">${r.effective.os_version}</span>`}</span>`
-        : r.effective.version ? html`<span class="muted legacy" title="Campo antigo 'Versão' — edite o host para separar SO e aplicações">${r.effective.version}</span>` : "—" },
-    { key: "apps", label: "Aplicações", sort: (r) => (r.explicit.apps || []).map(appText).join(", "), render: (r) => (r.explicit.apps || []).length
-        ? html`<span class="app-chips">${r.explicit.apps.map((a, i) => html`<span key=${i} class=${"badge app-chip" + (i === 0 ? " accent" : "")} title=${i === 0 ? "Aplicação principal" : ""}>${a.name}${a.version && html` <b>${a.version}</b>`}</span>`)}</span>`
+        : r.effective.version ? html`<span class="muted legacy" title=${t("hosts.legacy_version_title")}>${r.effective.version}</span>` : "—" },
+    { key: "apps", label: t("hosts.col_apps"), sort: (r) => (r.explicit.apps || []).map(appText).join(", "), render: (r) => (r.explicit.apps || []).length
+        ? html`<span class="app-chips">${r.explicit.apps.map((a, i) => html`<span key=${i} class=${"badge app-chip" + (i === 0 ? " accent" : "")} title=${i === 0 ? t("hosts.main_app") : ""}>${a.name}${a.version && html` <b>${a.version}</b>`}</span>`)}</span>`
         : "—" },
-    { key: "access", label: "Acesso", sort: (r) => (r.effective.access || {}).method || "", render: (r) => {
+    { key: "access", label: t("hosts.col_access"), sort: (r) => (r.effective.access || {}).method || "", render: (r) => {
         const a = r.effective.access || {}; const more = (r.explicit.extra_access || []).map((x) => `${x.method}${x.port ? ":" + x.port : ""}`);
-        return html`<span class="mono" title=${more.length ? "Alternativos: " + more.join(", ") : ""}>${a.method || "?"}:${a.port || "?"}${more.length ? ` +${more.length}` : ""}</span>`; } },
+        return html`<span class="mono" title=${more.length ? t("hosts.alternatives_title", { list: more.join(", ") }) : ""}>${a.method || "?"}:${a.port || "?"}${more.length ? ` +${more.length}` : ""}</span>`; } },
     // Ocultas por padrão — o usuário liga em ⚙ Colunas (preferência salva no navegador).
-    { key: "credential", label: "Credencial", hidden: true, sort: (r) => r.effective.credential || "", render: (r) => r.effective.credential || "—" },
-    { key: "model", label: "Modelo", hidden: true, sort: (r) => r.effective.model || "", render: (r) => r.effective.model || "—" },
-    { key: "runs_on", label: "Roda em", hidden: true, sort: (r) => byId[String(r.explicit.runs_on)]?.explicit.hostname || "", render: (r) => {
+    { key: "credential", label: t("hosts.col_credential"), hidden: true, sort: (r) => r.effective.credential || "", render: (r) => r.effective.credential || "—" },
+    { key: "model", label: t("hosts.col_model"), hidden: true, sort: (r) => r.effective.model || "", render: (r) => r.effective.model || "—" },
+    { key: "runs_on", label: t("hosts.col_runs_on"), hidden: true, sort: (r) => byId[String(r.explicit.runs_on)]?.explicit.hostname || "", render: (r) => {
         const p = r.explicit.runs_on != null ? byId[String(r.explicit.runs_on)] : null;
         return p ? html`<a href=${"#hosts/" + encodeURIComponent(p.id)} onClick=${(e) => e.stopPropagation()}>${p.explicit.hostname}</a>` : "—"; } },
     { key: "site", label: "Site", hidden: true, sort: (r) => r.effective.site || "", render: (r) => r.effective.site || "—" },
-    { key: "backup", label: "Backup pré-mudança", hidden: true, sort: (r) => bkLabel(r.effective.backup_before_change), render: (r) => bkLabel(r.effective.backup_before_change) },
-    { key: "notes", label: "Notas", hidden: true, sort: (r) => r.effective.notes || "", render: (r) => html`<span title=${r.effective.notes || ""}>${r.effective.notes || "—"}</span>` },
+    { key: "backup", label: t("hosts.col_backup"), hidden: true, sort: (r) => bkLabel(r.effective.backup_before_change), render: (r) => bkLabel(r.effective.backup_before_change) },
+    { key: "notes", label: t("hosts.col_notes"), hidden: true, sort: (r) => r.effective.notes || "", render: (r) => html`<span title=${r.effective.notes || ""}>${r.effective.notes || "—"}</span>` },
   ];
 
   return html`<div>
-    <div class="page-title"><h1>Hosts</h1><span class="spacer"></span>
-      <button class="primary needs-hosts-edit" onClick=${() => setEditing({ __new: true })}>+ Novo host</button></div>
-    <${FilterBar} q=${q} onChange=${setParams} placeholder="Buscar por ID, nome ou IP" count=${hosts.length} total=${allHosts.length}
+    <div class="page-title"><h1>${t("hosts.title")}</h1><span class="spacer"></span>
+      <button class="primary needs-hosts-edit" onClick=${() => setEditing({ __new: true })}>${t("hosts.new_host_btn")}</button></div>
+    <${FilterBar} q=${q} onChange=${setParams} placeholder=${t("hosts.search_placeholder")} count=${hosts.length} total=${allHosts.length}
       selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: opts((h) => h.effective.vendor) },
                  { key: "role", label: "Role", value: role, options: opts((h) => h.effective.role) },
-                 { key: "group", label: "Grupo", value: group, options: opts((h) => h.explicit.group) },
-                 { key: "os", label: "Sistema", value: os, options: opts((h) => h.effective.os) },
-                 { key: "app", label: "Aplicação", value: app, options: [...new Set(allHosts.flatMap((h) => (h.explicit.apps || []).map((a) => a.name)))].sort() }]} />
-    ${seg && seg !== "new" && !editing && html`<div class="card">Host '${seg}' não encontrado. <a href="#hosts">Voltar aos hosts</a></div>`}
+                 { key: "group", label: t("hosts.col_group"), value: group, options: opts((h) => h.explicit.group) },
+                 { key: "os", label: t("hosts.col_os"), value: os, options: opts((h) => h.effective.os) },
+                 { key: "app", label: t("hosts.filter_app"), value: app, options: [...new Set(allHosts.flatMap((h) => (h.explicit.apps || []).map((a) => a.name)))].sort() }]} />
+    ${seg && seg !== "new" && !editing && html`<div class="card">${t("hosts.not_found", { id: seg })} <a href="#hosts">${t("hosts.back_to_hosts")}</a></div>`}
     <${DataTable} tableId="hosts" urlSort columns=${cols} rows=${hosts.map((h) => ({ ...h, _key: h.id }))}
       onRowClick=${(r) => setEditing(r)}
       actions=${(r) => { const te = accessEntries(r);
         return html`<button class="sm needs-host-terminal" disabled=${!te.length}
-            title=${te.length ? "Acessar (" + te.map((e) => (e.kind === "web" ? "WEB " : "") + e.method.toUpperCase() + ":" + e.port).join(", ") + ")" : "Host sem SSH/Telnet/HTTP(S) cadastrado"}
-            onClick=${() => te.length === 1 ? openEntry(r.id, te[0]) : openAccess(r.id)}>⌨ Acessar</button>
-          ${isLocalHost(r) ? html`<span class="muted" title="Host Local protegido: não pode ser apagado (desative com provision.py disable)">🛡 protegido</span>`
-            : html`<button class="sm danger needs-hosts-edit" onClick=${() => setConfirm(r.id)}>Excluir</button>`}`; }}
-      empty="Nenhum host. Clique em + Novo host." />
+            title=${te.length ? t("hosts.access_title", { list: te.map((e) => (e.kind === "web" ? "WEB " : "") + e.method.toUpperCase() + ":" + e.port).join(", ") }) : t("hosts.no_access_title")}
+            onClick=${() => te.length === 1 ? openEntry(r.id, te[0]) : openAccess(r.id)}>${t("hosts.access_btn")}</button>
+          ${isLocalHost(r) ? html`<span class="muted" title=${t("hosts.protected_title")}>${t("hosts.protected")}</span>`
+            : html`<button class="sm danger needs-hosts-edit" onClick=${() => setConfirm(r.id)}>${t("common.delete")}</button>`}`; }}
+      empty=${t("hosts.empty")} />
 
     ${accessHost && html`<${AccessChooser} host=${accessHost} entries=${accessEntries(accessHost)} onClose=${() => openAccess("")} />`}
     ${editing && html`<${HostForm} host=${editing} groups=${groups} rev=${rev}
         onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
-    ${confirm && html`<${ConfirmDialog} title="Excluir host" danger=true
-        message=${`Remover o host '${hosts.find(h => h.id === confirm)?.explicit.hostname || "selecionado"}' do inventário? Seus enlaces e referências nos mapas também serão removidos. ${deleteRefs ? `${deleteRefs.count} referência(s) afetada(s): ${deleteRefs.references.map(r => r.label).join(', ') || 'nenhuma'}.` : 'Verificando referências…'}`}
+    ${confirm && html`<${ConfirmDialog} title=${t("hosts.delete_title")} danger=true
+        message=${t("hosts.delete_confirm", { name: hosts.find(h => h.id === confirm)?.explicit.hostname || t("hosts.delete_selected_fallback"),
+          refs: deleteRefs ? t("hosts.delete_refs", { count: deleteRefs.count, list: deleteRefs.references.map(r => r.label).join(', ') || t("hosts.delete_refs_none") }) : t("hosts.delete_refs_checking") })}
         onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
-          try { await api.del(`/hosts/${confirm}`, rev); toast.ok("Host removido"); res.reload(); }
+          try { await api.del(`/hosts/${confirm}`, rev); toast.ok(t("hosts.host_removed")); res.reload(); }
           catch (e) { handleError(e); } }} />`}
   </div>`;
 }
@@ -160,9 +161,9 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   function tag(k, accessKey, value = form[k]) {
     const explicitVal = value;
     const isSet = explicitVal !== null && explicitVal !== "" && explicitVal !== undefined;
-    if (isSet) return html`<span class="tag-explicit">explícito</span>`;
+    if (isSet) return html`<span class="tag-explicit">${t("hosts.tag_explicit")}</span>`;
     const v = accessKey ? inhAccess(accessKey) : inh(k);
-    return v ? html`<span class="tag-inherit">herdado de ${form.group}: ${v}</span>` : null;
+    return v ? html`<span class="tag-inherit">${t("hosts.tag_inherited", { group: form.group, value: v })}</span>` : null;
   }
 
   async function save() {
@@ -213,7 +214,7 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
       } else {
         await api.patch(`/hosts/${host.id}`, payload, rev);
       }
-      toast.ok(isNew ? "Host criado" : "Host atualizado");
+      toast.ok(isNew ? t("hosts.host_created") : t("hosts.host_updated"));
       onSaved(savedId);
     } catch (e) {
       if (e.name === "ConflictError" || e.constructor?.name === "ConflictError") return setConflict(true);
@@ -250,108 +251,107 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
   const extraErr = (i) => Object.entries(errors).find(([k]) => k.includes(`/extra_ips/${i}/`))?.[1];
   const extraGeneral = Object.entries(errors).find(([k]) => k.endsWith("/extra_ips") || k === "" || k === "/")?.[1];
 
-  return html`<${Modal} title=${isNew ? "Novo host" : `Editar ${explicit.hostname}`} cls="host-form" onClose=${onClose}>
+  return html`<${Modal} title=${isNew ? t("hosts.form_new_title") : t("hosts.form_edit_title", { name: explicit.hostname })} cls="host-form" onClose=${onClose}>
     <div class="row">
-      <${Field} label="Nome do host" error=${errFor("/hostname")}>
+      <${Field} label=${t("hosts.col_hostname")} error=${errFor("/hostname")}>
         <input value=${form.hostname} onInput=${(e) => set("hostname", e.target.value)} /><//>
-      <${Field} label="IP de gerência" error=${errFor("/mgmt_ip")}>
+      <${Field} label=${t("hosts.field_mgmt_ip")} error=${errFor("/mgmt_ip")}>
         <input value=${form.mgmt_ip} onInput=${(e) => set("mgmt_ip", e.target.value)} /><//>
     </div>
     <div class="field extra-ips">
-      <label>IPs adicionais <span class="muted">(${form.extra_ips.length}/${MAX_EXTRA_IPS}) — só informativo; a conexão usa o IP de gerência</span></label>
-      <datalist id="extra-ip-roles">${IP_ROLES.map((r) => html`<option value=${r}></option>`)}</datalist>
+      <label>${t("hosts.extra_ips_label")} <span class="muted">${t("hosts.extra_ips_hint", { n: form.extra_ips.length, max: MAX_EXTRA_IPS })}</span></label>
+      <datalist id="extra-ip-roles">${IP_ROLES().map((r) => html`<option value=${r}></option>`)}</datalist>
       ${form.extra_ips.map((x, i) => html`<div class="extra-ip-row" key=${i}>
-        <input class="mono" placeholder="IP (ex.: 200.1.2.3/29)" aria-label=${`IP adicional ${i + 1}`} value=${x.ip} onInput=${(e) => setExtra(i, "ip", e.target.value)} />
-        <input list="extra-ip-roles" placeholder="Função" maxlength="40" aria-label=${`Função do IP ${i + 1}`} value=${x.role} onInput=${(e) => setExtra(i, "role", e.target.value)} />
-        <input placeholder="Descrição" maxlength="200" aria-label=${`Descrição do IP ${i + 1}`} value=${x.description} onInput=${(e) => setExtra(i, "description", e.target.value)} />
-        <button type="button" aria-label=${`Remover IP ${i + 1}`} title="Remover" onClick=${() => delExtra(i)}>×</button>
+        <input class="mono" placeholder=${t("hosts.extra_ip_placeholder")} aria-label=${t("hosts.extra_ip_aria", { n: i + 1 })} value=${x.ip} onInput=${(e) => setExtra(i, "ip", e.target.value)} />
+        <input list="extra-ip-roles" placeholder=${t("hosts.ip_role_placeholder")} maxlength="40" aria-label=${t("hosts.ip_role_aria", { n: i + 1 })} value=${x.role} onInput=${(e) => setExtra(i, "role", e.target.value)} />
+        <input placeholder=${t("common.description")} maxlength="200" aria-label=${t("hosts.ip_description_aria", { n: i + 1 })} value=${x.description} onInput=${(e) => setExtra(i, "description", e.target.value)} />
+        <button type="button" aria-label=${t("hosts.remove_ip_aria", { n: i + 1 })} title=${t("common.remove")} onClick=${() => delExtra(i)}>×</button>
         ${extraErr(i) && html`<div class="err">${extraErr(i)}</div>`}
       </div>`)}
-      <div><button type="button" disabled=${form.extra_ips.length >= MAX_EXTRA_IPS} onClick=${addExtra}>+ Adicionar IP</button>
-        ${form.extra_ips.length >= MAX_EXTRA_IPS && html` <span class="muted">Limite de ${MAX_EXTRA_IPS} IPs atingido.</span>`}</div>
+      <div><button type="button" disabled=${form.extra_ips.length >= MAX_EXTRA_IPS} onClick=${addExtra}>${t("hosts.add_ip")}</button>
+        ${form.extra_ips.length >= MAX_EXTRA_IPS && html` <span class="muted">${t("hosts.ip_limit", { max: MAX_EXTRA_IPS })}</span>`}</div>
       ${extraGeneral && html`<div class="err">${extraGeneral}</div>`}
     </div>
-    <${Field} label="Grupo (herança de defaults)">
-      <${RefSelect} value=${form.group} options=${upList(groups)} placeholder="(sem grupo)" onChange=${(v) => set("group", v)} /><//>
+    <${Field} label=${t("hosts.field_group")}>
+      <${RefSelect} value=${form.group} options=${upList(groups)} placeholder=${t("hosts.no_group")} onChange=${(v) => set("group", v)} /><//>
     <div class="row">
       <${Field} label=${html`Vendor ${tag("vendor")}`} error=${errFor("/vendor")}>
         <${EnumSelect} value=${form.vendor} options=${enums?.vendor} allowInherit=${!!form.group}
-          inheritLabel=${`herdar: ${inh("vendor") || "—"}`} onChange=${(v) => set("vendor", v)} /><//>
+          inheritLabel=${t("hosts.inherit_label", { value: inh("vendor") || "—" })} onChange=${(v) => set("vendor", v)} /><//>
       <${Field} label=${html`Role ${tag("role")}`}>
         <${EnumSelect} value=${form.role} options=${enums?.role} allowInherit=${!!form.group}
-          inheritLabel=${`herdar: ${inh("role") || "—"}`} onChange=${(v) => set("role", v)} /><//>
+          inheritLabel=${t("hosts.inherit_label", { value: inh("role") || "—" })} onChange=${(v) => set("role", v)} /><//>
     </div>
-    ${local && html`<div class="card warn" role="note">🛡 <b>Host Local protegido</b> — é este servidor NetOps. O acesso é Local (sem SSH):
-      comandos administrativos usam a conta <span class="mono">netops-admin</span> com a senha do cofre (destranque quando precisar de root).
-      Acesso, credencial, IP e vínculo não podem ser alterados nem o host apagado; para desligar o root local:
+    ${local && html`<div class="card warn" role="note">🛡 <b>${t("hosts.local_note_title")}</b> ${t("hosts.local_note_1")}
+      <span class="mono">netops-admin</span> ${t("hosts.local_note_2")}
       <span class="mono">sudo scripts/engine/localadmin/provision.py disable</span>.</div>`}
     <fieldset class="field access-methods" disabled=${local} style="border:0;padding:0;margin:0;min-width:0">
-      <label>Métodos de acesso <span class="muted">(${form.accesses.length}/${MAX_EXTRA_ACCESS + 1}) — o 1º é o principal; arraste ⠿ para reordenar</span></label>
+      <label>${t("hosts.access_methods_label")} <span class="muted">${t("hosts.access_methods_hint", { n: form.accesses.length, max: MAX_EXTRA_ACCESS + 1 })}</span></label>
       ${form.accesses.map((a, i) => html`<div class=${"access-row" + (drag.from === i ? " dragging" : "") + (drag.over === i && drag.from !== i ? (drag.from < i ? " drop-after" : " drop-before") : "")} key=${i}
         onDragOver=${(e) => { if (drag.from == null) return; e.preventDefault(); if (drag.over !== i) setDrag((d) => ({ ...d, over: i })); }}
         onDrop=${(e) => { e.preventDefault(); dropAcc(i); }}>
-        <span class="access-handle" draggable="true" role="button" aria-label=${`Arrastar método ${i + 1} para reordenar`} title="Arraste para cima/baixo para mudar a prioridade"
+        <span class="access-handle" draggable="true" role="button" aria-label=${t("hosts.drag_method_aria", { n: i + 1 })} title=${t("hosts.drag_method_title")}
           onDragStart=${(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); const row = e.target.closest(".access-row"); if (row) e.dataTransfer.setDragImage(row, 10, 10); setDrag({ from: i, over: i }); }}
           onDragEnd=${() => setDrag({ from: null, over: null })}>⠿</span>
-        <span class="access-rank ${i === 0 ? "primary" : ""}" title=${i === 0 ? "Método principal" : `Alternativo ${i}`}>${i === 0 ? "Principal" : i + 1 + "º"}</span>
+        <span class="access-rank ${i === 0 ? "primary" : ""}" title=${i === 0 ? t("hosts.rank_main_title") : t("hosts.rank_alt_title", { n: i })}>${i === 0 ? t("hosts.rank_main") : t("hosts.rank_nth", { n: i + 1 })}</span>
         <div class="access-fields">
           <div class="access-cell"><${EnumSelect} value=${a.method} options=${enums?.method} allowInherit=${i === 0 && !!form.group}
-            inheritLabel=${`herdar: ${inhAccess("method") || "—"}`} onChange=${(v) => setAcc(i, "method", v)} />
+            inheritLabel=${t("hosts.inherit_label", { value: inhAccess("method") || "—" })} onChange=${(v) => setAcc(i, "method", v)} />
             ${i === 0 && tag("method", "method", a.method)}</div>
-          <div class="access-cell"><input type="number" min="1" max="65535" aria-label=${`Porta do método ${i + 1}`} placeholder=${i === 0 ? (inhAccess("port") ? `porta (herdada: ${inhAccess("port")})` : "porta") : "porta (padrão do método)"}
+          <div class="access-cell"><input type="number" min="1" max="65535" aria-label=${t("hosts.port_aria", { n: i + 1 })} placeholder=${i === 0 ? (inhAccess("port") ? t("hosts.port_inherited", { port: inhAccess("port") }) : t("hosts.port_placeholder")) : t("hosts.port_default")}
             value=${a.port} onInput=${(e) => setAcc(i, "port", e.target.value)} /></div>
           <div class="access-cell"><${RefSelect} value=${a.credential} options=${creds}
-            placeholder=${i === 0 ? (form.group && inh("credential") ? `herdar: ${inh("credential")}` : "(credencial: nenhuma)") : "(credencial: nenhuma)"}
+            placeholder=${i === 0 ? (form.group && inh("credential") ? t("hosts.inherit_label", { value: inh("credential") }) : t("hosts.credential_none")) : t("hosts.credential_none")}
             onChange=${(v) => setAcc(i, "credential", v)} /></div>
         </div>
         ${i > 0 && ["HTTP", "HTTPS"].includes(String(a.method).toUpperCase()) && html`<div class="access-fields" style="margin-top:.4rem">
-          <div class="access-cell"><select aria-label=${`App web do método ${i + 1}`} value=${a.app || ""} onChange=${(e) => setAcc(i, "app", e.target.value)}>
-            <option value="">App: abrir a página (login manual)</option>
-            <option value="proxmox">App: Proxmox (login automático)</option>
-            <option value="zabbix">App: Zabbix (login automático)</option></select></div>
-          <div class="access-cell"><input aria-label=${`Caminho do método ${i + 1}`} placeholder="caminho (ex.: /zabbix)" value=${a.path || ""} onInput=${(e) => setAcc(i, "path", e.target.value)} /></div>
+          <div class="access-cell"><select aria-label=${t("hosts.web_app_aria", { n: i + 1 })} value=${a.app || ""} onChange=${(e) => setAcc(i, "app", e.target.value)}>
+            <option value="">${t("hosts.web_app_manual")}</option>
+            <option value="proxmox">${t("hosts.web_app_proxmox")}</option>
+            <option value="zabbix">${t("hosts.web_app_zabbix")}</option></select></div>
+          <div class="access-cell"><input aria-label=${t("hosts.path_aria", { n: i + 1 })} placeholder=${t("hosts.path_placeholder")} value=${a.path || ""} onInput=${(e) => setAcc(i, "path", e.target.value)} /></div>
         </div>`}
         <div class="access-actions">
-          <button type="button" aria-label=${`Remover método ${i + 1}`} title="Remover" onClick=${() => delAcc(i)}>×</button>
+          <button type="button" aria-label=${t("hosts.remove_method_aria", { n: i + 1 })} title=${t("common.remove")} onClick=${() => delAcc(i)}>×</button>
         </div>
-        ${i > 0 && !a.method && html`<div class="muted">Escolha o método — linha sem método é ignorada ao salvar.</div>`}
+        ${i > 0 && !a.method && html`<div class="muted">${t("hosts.method_missing")}</div>`}
         ${accErr(i) && html`<div class="err">${accErr(i)}</div>`}
       </div>`)}
-      <div><button type="button" disabled=${form.accesses.length > MAX_EXTRA_ACCESS} onClick=${addAcc}>+ Adicionar método de acesso</button></div>
+      <div><button type="button" disabled=${form.accesses.length > MAX_EXTRA_ACCESS} onClick=${addAcc}>${t("hosts.add_access")}</button></div>
     </fieldset>
-    ${isNew && !placement && mapOptions && html`<${Field} label="Também incluir em um mapa adicional">
-      <select value=${mapChoice} onChange=${e => setMapChoice(e.target.value)}><option value="">Só geral e localidade (automático)</option>
+    ${isNew && !placement && mapOptions && html`<${Field} label=${t("hosts.extra_map_label")}>
+      <select value=${mapChoice} onChange=${e => setMapChoice(e.target.value)}><option value="">${t("hosts.extra_map_none")}</option>
         ${mapOptions.maps.filter(m => m.kind === "custom").map(m => html`<option value=${m.id}>${m.name}</option>`)}</select><//>`}
     <fieldset class="sys-box">
-      <legend>Sistema e aplicações</legend>
+      <legend>${t("hosts.sys_legend")}</legend>
       <datalist id="os-suggest">${OS_SUGGEST.map((o) => html`<option value=${o}></option>`)}</datalist>
       <datalist id="app-suggest">${APP_SUGGEST.map((o) => html`<option value=${o}></option>`)}</datalist>
       <div class="sys-grid">
-        <${Field} label="Modelo / tipo"><input placeholder="ex.: RB1100AHX4, LXC, VM KVM" value=${form.model} onInput=${(e) => set("model", e.target.value)} /><//>
-        <${Field} label="Sistema operacional" error=${errFor("/os")}><input list="os-suggest" placeholder="ex.: DEBIAN, ROUTEROS" maxlength="60" value=${form.os} onInput=${(e) => set("os", e.target.value)} /><//>
-        <${Field} label="Versão do SO" error=${errFor("/os_version")}><input class="mono" placeholder="ex.: 12.11, 7.23.4" maxlength="60" value=${form.os_version} onInput=${(e) => set("os_version", e.target.value)} /><//>
-        <${Field} label="Roda em (hospedeiro)" error=${errFor("/runs_on")}>
-          <${RefSelect} value=${form.runs_on} options=${hostOpts} placeholder="(físico / não informado)" onChange=${(v) => set("runs_on", v || "")} /><//>
+        <${Field} label=${t("hosts.field_model")}><input placeholder=${t("hosts.model_placeholder")} value=${form.model} onInput=${(e) => set("model", e.target.value)} /><//>
+        <${Field} label=${t("hosts.field_os")} error=${errFor("/os")}><input list="os-suggest" placeholder=${t("hosts.os_placeholder")} maxlength="60" value=${form.os} onInput=${(e) => set("os", e.target.value)} /><//>
+        <${Field} label=${t("hosts.field_os_version")} error=${errFor("/os_version")}><input class="mono" placeholder=${t("hosts.os_version_placeholder")} maxlength="60" value=${form.os_version} onInput=${(e) => set("os_version", e.target.value)} /><//>
+        <${Field} label=${t("hosts.field_runs_on")} error=${errFor("/runs_on")}>
+          <${RefSelect} value=${form.runs_on} options=${hostOpts} placeholder=${t("hosts.runs_on_placeholder")} onChange=${(v) => set("runs_on", v || "")} /><//>
       </div>
-      ${legacyVersion && html`<div class="legacy-note">Campo antigo <b>Versão</b>: <span class="mono">${legacyVersion}</span> — separe em SO e aplicações; ao salvar com algum deles preenchido, o campo antigo é removido.</div>`}
+      ${legacyVersion && html`<div class="legacy-note">${t("hosts.legacy_note_1")} <b>${t("hosts.legacy_note_field")}</b>: <span class="mono">${legacyVersion}</span> ${t("hosts.legacy_note_2")}</div>`}
       <div class="field apps-list">
-        <label>Aplicações <span class="muted">(${form.apps.length}/${MAX_APPS}) — o que roda em cima do SO; a 1ª é a principal</span></label>
+        <label>${t("hosts.col_apps")} <span class="muted">${t("hosts.apps_hint", { n: form.apps.length, max: MAX_APPS })}</span></label>
         ${form.apps.map((a, i) => html`<div class="app-row" key=${i}>
-          <span class=${"access-rank" + (i === 0 ? " primary" : "")}>${i === 0 ? "Principal" : i + 1 + "º"}</span>
-          <input list="app-suggest" placeholder="Aplicação (ex.: ZABBIX SERVER)" maxlength="60" aria-label=${`Aplicação ${i + 1}`} value=${a.name} onInput=${(e) => setApp(i, "name", e.target.value)} />
-          <input class="mono" placeholder="Versão (ex.: 7.0.32)" maxlength="60" aria-label=${`Versão da aplicação ${i + 1}`} value=${a.version} onInput=${(e) => setApp(i, "version", e.target.value)} />
-          <button type="button" aria-label=${`Remover aplicação ${i + 1}`} title="Remover" onClick=${() => delApp(i)}>×</button>
+          <span class=${"access-rank" + (i === 0 ? " primary" : "")}>${i === 0 ? t("hosts.rank_main") : t("hosts.rank_nth", { n: i + 1 })}</span>
+          <input list="app-suggest" placeholder=${t("hosts.app_placeholder")} maxlength="60" aria-label=${t("hosts.app_aria", { n: i + 1 })} value=${a.name} onInput=${(e) => setApp(i, "name", e.target.value)} />
+          <input class="mono" placeholder=${t("hosts.app_version_placeholder")} maxlength="60" aria-label=${t("hosts.app_version_aria", { n: i + 1 })} value=${a.version} onInput=${(e) => setApp(i, "version", e.target.value)} />
+          <button type="button" aria-label=${t("hosts.remove_app_aria", { n: i + 1 })} title=${t("common.remove")} onClick=${() => delApp(i)}>×</button>
           ${appErr(i) && html`<div class="err">${appErr(i)}</div>`}
         </div>`)}
-        <div><button type="button" disabled=${form.apps.length >= MAX_APPS} onClick=${addApp}>+ Adicionar aplicação</button></div>
+        <div><button type="button" disabled=${form.apps.length >= MAX_APPS} onClick=${addApp}>${t("hosts.add_app")}</button></div>
       </div>
     </fieldset>
-    <${Field} label="Site"><input value=${form.site} onInput=${(e) => set("site", e.target.value)} /><//>
+    <${Field} label=${t("hosts.field_site")}><input value=${form.site} onInput=${(e) => set("site", e.target.value)} /><//>
     <${HostIconPicker} value=${form.icon} onChange=${value => set("icon", value)} error=${errFor("/icon") || errors.icon} />
-    <${Field} label="Notas"><textarea value=${form.notes} onInput=${(e) => set("notes", e.target.value)}></textarea><//>
+    <${Field} label=${t("hosts.col_notes")}><textarea value=${form.notes} onInput=${(e) => set("notes", e.target.value)}></textarea><//>
     <div class="modal-actions">
-      <button onClick=${onClose}>Cancelar</button>
-      <button class="primary needs-hosts-edit" disabled=${saving} onClick=${save}>${saving ? "Salvando…" : isNew ? "Criar" : "Salvar"}</button>
+      <button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary needs-hosts-edit" disabled=${saving} onClick=${save}>${saving ? t("common.saving") : isNew ? t("common.create") : t("common.save")}</button>
     </div>
     ${conflict && html`<${ConflictDialog} onReload=${onSaved} onClose=${() => setConflict(false)} />`}
   <//>`;
@@ -365,7 +365,7 @@ export function GroupsPage() {
   const { q = "", vendor = "", role = "" } = r.params;
   const [confirm, setConfirm] = useState(null);
   if (res.loading) return html`<${Spinner} />`;
-  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  if (res.error) return html`<div class="card">${t("hosts.load_error", { message: res.error.message })}</div>`;
   const { groups: allGroups, rev } = res.data;
   const seg = r.segments[0];
   const editing = seg === "new" ? { __new: true } : seg ? allGroups.find((g) => g.name === seg) || null : null;
@@ -373,30 +373,30 @@ export function GroupsPage() {
   const groups = allGroups.filter((g) => (!vendor || g.fields.vendor === vendor) && (!role || g.fields.role === role) && matchText(q, g.name, g.fields.credential));
   const optsOf = (f) => [...new Set(allGroups.map((g) => g.fields[f]).filter(Boolean))].sort();
   const cols = [
-    { key: "name", label: "Grupo", hideable: false, sort: (r) => r.name || "", render: (r) => html`<a href=${"#groups/" + encodeURIComponent(r.name)} onClick=${(e) => e.stopPropagation()}><b>${r.name}</b></a>` },
+    { key: "name", label: t("hosts.col_group"), hideable: false, sort: (r) => r.name || "", render: (r) => html`<a href=${"#groups/" + encodeURIComponent(r.name)} onClick=${(e) => e.stopPropagation()}><b>${r.name}</b></a>` },
     { key: "vendor", label: "Vendor", sort: (r) => r.fields.vendor || "", render: (r) => r.fields.vendor || "—" },
     { key: "role", label: "Role", sort: (r) => r.fields.role || "", render: (r) => r.fields.role || "—" },
-    { key: "access", label: "Acesso", sort: (r) => (r.fields.access || {}).method || "", render: (r) => { const a = r.fields.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
-    { key: "credential", label: "Credencial", sort: (r) => r.fields.credential || "", render: (r) => r.fields.credential || "—" },
-    { key: "used_by", label: "Hosts", sort: (r) => r.used_by, render: (r) => html`<${Badge}>${r.used_by}<//>` },
+    { key: "access", label: t("hosts.col_access"), sort: (r) => (r.fields.access || {}).method || "", render: (r) => { const a = r.fields.access || {}; return html`<span class="mono">${a.method || "?"}:${a.port || "?"}</span>`; } },
+    { key: "credential", label: t("hosts.col_credential"), sort: (r) => r.fields.credential || "", render: (r) => r.fields.credential || "—" },
+    { key: "used_by", label: t("hosts.title"), sort: (r) => r.used_by, render: (r) => html`<${Badge}>${r.used_by}<//>` },
   ];
   return html`<div>
-    <div class="page-title"><h1>Grupos</h1><span class="spacer"></span>
-      <button class="primary needs-hosts-edit" onClick=${() => setEditing({ __new: true })}>+ Novo grupo</button></div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar grupo" count=${groups.length} total=${allGroups.length}
+    <div class="page-title"><h1>${t("hosts.groups_title")}</h1><span class="spacer"></span>
+      <button class="primary needs-hosts-edit" onClick=${() => setEditing({ __new: true })}>${t("hosts.new_group_btn")}</button></div>
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${t("hosts.search_group")} count=${groups.length} total=${allGroups.length}
       selects=${[{ key: "vendor", label: "Vendor", value: vendor, options: optsOf("vendor") }, { key: "role", label: "Role", value: role, options: optsOf("role") }]} />
-    ${seg && seg !== "new" && !editing && html`<div class="card">Grupo '${seg}' não encontrado. <a href="#groups">Voltar aos grupos</a></div>`}
+    ${seg && seg !== "new" && !editing && html`<div class="card">${t("hosts.group_not_found", { name: seg })} <a href="#groups">${t("hosts.back_to_groups")}</a></div>`}
     <${DataTable} tableId="groups" urlSort columns=${cols} rows=${groups.map((g) => ({ ...g, _key: g.name }))}
       onRowClick=${(r) => setEditing(r)}
-      actions=${(r) => html`<button class="sm danger needs-hosts-edit" onClick=${() => setConfirm(r)}>Excluir</button>`}
-      empty="Nenhum grupo." />
+      actions=${(r) => html`<button class="sm danger needs-hosts-edit" onClick=${() => setConfirm(r)}>${t("common.delete")}</button>`}
+      empty=${t("hosts.groups_empty")} />
     ${editing && html`<${GroupForm} key=${editing.name || "new"} group=${editing} rev=${rev}
         onClose=${() => setEditing(null)} onSaved=${() => { setEditing(null); res.reload(); }} />`}
-    ${confirm && html`<${ConfirmDialog} title="Excluir grupo" danger=true
-        message=${confirm.used_by ? `Grupo em uso por ${confirm.used_by} host(s). Excluir mesmo assim?` : `Excluir o grupo '${confirm.name}'?`}
+    ${confirm && html`<${ConfirmDialog} title=${t("hosts.delete_group_title")} danger=true
+        message=${confirm.used_by ? t("hosts.delete_group_in_use", { count: confirm.used_by }) : t("hosts.delete_group_confirm", { name: confirm.name })}
         onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
-          try { await api.del(`/groups/${confirm.name}?force=${confirm.used_by > 0}`, rev); toast.ok("Grupo removido"); res.reload(); }
+          try { await api.del(`/groups/${confirm.name}?force=${confirm.used_by > 0}`, rev); toast.ok(t("hosts.group_removed")); res.reload(); }
           catch (e) { handleError(e); } }} />`}
   </div>`;
 }
@@ -429,25 +429,25 @@ function GroupForm({ group, rev, onClose, onSaved }) {
         }
         await api.patch(`/groups/${form.name}`, payload, curRev);
       }
-      toast.ok(isNew ? "Grupo criado" : "Grupo atualizado"); onSaved();
+      toast.ok(isNew ? t("hosts.group_created") : t("hosts.group_updated")); onSaved();
     } catch (e) { handleError(e); }
   }
-  return html`<${Modal} title=${isNew ? "Novo grupo" : `Editar ${group.name}`} onClose=${onClose}>
-    <${Field} label=${isNew ? "Nome do grupo" : "Nome (alterar = renomear, atualiza os hosts)"}>
-      <input value=${form.name} placeholder="ex.: mikrotik-core" onInput=${(e) => set("name", e.target.value)} /><//>
+  return html`<${Modal} title=${isNew ? t("hosts.new_group_title") : t("hosts.form_edit_title", { name: group.name })} onClose=${onClose}>
+    <${Field} label=${isNew ? t("hosts.field_group_name") : t("hosts.field_group_rename")}>
+      <input value=${form.name} placeholder=${t("hosts.group_name_placeholder")} onInput=${(e) => set("name", e.target.value)} /><//>
     ${!isNew && html`<${RenameCascadeHint} refsPath=${`/groups/${group.name}/references`} changed=${form.name !== group.name} />`}
     <div class="row">
       <${Field} label="Vendor"><${EnumSelect} value=${form.vendor} options=${enums?.vendor} onChange=${(v) => set("vendor", v)} /><//>
       <${Field} label="Role"><${EnumSelect} value=${form.role} options=${enums?.role} onChange=${(v) => set("role", v)} /><//>
     </div>
     <div class="row">
-      <${Field} label="Método"><${EnumSelect} value=${form.method} options=${enums?.method} onChange=${(v) => set("method", v)} /><//>
-      <${Field} label="Porta"><input type="number" value=${form.port} onInput=${(e) => set("port", e.target.value)} /><//>
+      <${Field} label=${t("hosts.field_method")}><${EnumSelect} value=${form.method} options=${enums?.method} onChange=${(v) => set("method", v)} /><//>
+      <${Field} label=${t("hosts.field_port")}><input type="number" value=${form.port} onInput=${(e) => set("port", e.target.value)} /><//>
     </div>
-    <${Field} label="Credencial"><${RefSelect} value=${form.credential} options=${creds} onChange=${(v) => set("credential", v)} /><//>
+    <${Field} label=${t("hosts.col_credential")}><${RefSelect} value=${form.credential} options=${creds} onChange=${(v) => set("credential", v)} /><//>
     <div class="modal-actions">
-      <button onClick=${onClose}>Cancelar</button>
-      <button class="primary needs-hosts-edit" onClick=${save}>${isNew ? "Criar" : "Salvar"}</button>
+      <button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class="primary needs-hosts-edit" onClick=${save}>${isNew ? t("common.create") : t("common.save")}</button>
     </div>
   <//>`;
 }

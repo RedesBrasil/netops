@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import deps
+from lib import i18n
 
 from lib.terminal_access import TargetError, web_entries  # noqa: E402
 from lib.web_login import APP_BY_VENDOR, WebLoginError, WebTarget, provider_for  # noqa: E402,F401
@@ -41,18 +42,19 @@ def _launch_sync(host_id: str, method: str | None, port: int | None) -> dict:
     try:
         host, entry, cred, note, locked = host_term_svc.resolve_target(host_id, method, port, entries_fn=web_entries)
     except TargetError as exc:
-        raise LaunchError(str(exc), 404 if "inventário" in str(exc) else 400, "bad_target") from exc
+        raise LaunchError(str(exc), 404 if getattr(exc, "not_found", False) or "inventário" in str(exc) else 400,
+                          "bad_target") from exc
     target = WebTarget(entry["method"], host["mgmt_ip"], entry["port"], entry.get("path") or "/")
     provider = provider_for(entry.get("app"))
     manual = {"mode": "open", "then_url": target.url, "then_delay_ms": 0}
     if provider is None:
         _audit(host, entry, "abre URL (app sem login automático)")
-        return {**manual, "note": "app sem login automático: entre manualmente"}
+        return {**manual, "note": i18n.t("api_web_launch.no_autologin")}
     if locked:
-        raise LaunchError("cofre trancado: destranque para o login automático", 423, "vault_locked")
+        raise LaunchError(i18n.t("api_web_launch.vault_locked"), 423, "vault_locked")
     if not (cred.get("username") and cred.get("password")):
         _audit(host, entry, "abre URL (sem credencial)")
-        return {**manual, "note": note or "sem usuário/senha cadastrados: entre manualmente"}
+        return {**manual, "note": note or i18n.t("api_web_launch.no_credential")}
     try:
         handoff = provider.launch(target, cred["username"], cred["password"])
     except WebLoginError as exc:

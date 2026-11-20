@@ -13,6 +13,7 @@ import uuid
 from ruamel.yaml.comments import CommentedMap
 
 import deps
+from lib import i18n
 from lib.host_identity import host_index, require_host_id
 from services import yaml_io
 
@@ -36,7 +37,7 @@ def _require_migrated(data):
     from services import inventory_svc
     hosts, _ = inventory_svc.load_hosts()
     if hosts.get("version") != 2 or data.get("version") != 2:
-        raise deps.ValidationFailed([{"loc": "hosts/version", "msg": "Migre o inventário e a topologia para IDs inteiros antes de editar os enlaces."}])
+        raise deps.ValidationFailed([{"loc": "hosts/version", "msg": i18n.t("api_topology.migrate_first")}])
 
 
 def _validate_link(link):
@@ -45,9 +46,9 @@ def _validate_link(link):
         try:
             ident = require_host_id(link[end]["host"])
         except (ValueError, TypeError, KeyError):
-            raise deps.ValidationFailed([{"loc": f"{end}/host", "msg": "ID inteiro de host obrigatório"}])
+            raise deps.ValidationFailed([{"loc": f"{end}/host", "msg": i18n.t("api_topology.host_id_required")}])
         if ident not in known:
-            raise deps.ValidationFailed([{"loc": f"{end}/host", "msg": "host fora do inventário"}])
+            raise deps.ValidationFailed([{"loc": f"{end}/host", "msg": i18n.t("api_topology.host_not_in_inventory")}])
 
 
 def link_ids(links) -> list[str]:
@@ -63,7 +64,7 @@ def link_ids(links) -> list[str]:
             seen[fingerprint] = ordinal + 1
             value = f"link-{fingerprint}-{ordinal}"
         if value in ids:
-            raise deps.ValidationFailed([{"loc": "links/id", "msg": "IDs de enlace duplicados"}])
+            raise deps.ValidationFailed([{"loc": "links/id", "msg": i18n.t("api_topology.duplicate_link_ids")}])
         ids.append(value)
     return ids
 
@@ -145,7 +146,7 @@ def update_link(index: int, link: dict, rev: str | None) -> dict:
     _validate_link(link)
     links = data.get("links") or []
     if not 0 <= index < len(links):
-        raise KeyError(f"link índice {index} não existe")
+        raise KeyError(i18n.t("api_topology.link_index_not_exists", index=index))
     ensure_link_ids(data)
     node = links[index]
     for key in ("a", "b", "media", "speed", "desc"):
@@ -165,7 +166,7 @@ def delete_link(index: int, rev: str | None) -> dict:
     _require_migrated(data)
     links = data.get("links") or []
     if not 0 <= index < len(links):
-        raise KeyError(f"link índice {index} não existe")
+        raise KeyError(i18n.t("api_topology.link_index_not_exists", index=index))
     ensure_link_ids(data)
     removed = links[index]["id"]
     del links[index]
@@ -195,7 +196,7 @@ def update_segment(index: int, seg: dict, rev: str | None) -> dict:
     _require_migrated(data)
     segs = data.get("segments") or []
     if not 0 <= index < len(segs):
-        raise KeyError(f"segmento índice {index} não existe")
+        raise KeyError(i18n.t("api_topology.segment_index_not_exists", index=index))
     segs[index] = _seg_node(seg)
     yaml_io.write_rt(deps.TOPOLOGY_FILE, y, data, expected=rev, backup=True)
     return load_topology()
@@ -207,7 +208,7 @@ def delete_segment(index: int, rev: str | None) -> dict:
     _require_migrated(data)
     segs = data.get("segments") or []
     if not 0 <= index < len(segs):
-        raise KeyError(f"segmento índice {index} não existe")
+        raise KeyError(i18n.t("api_topology.segment_index_not_exists", index=index))
     del segs[index]
     yaml_io.write_rt(deps.TOPOLOGY_FILE, y, data, expected=rev, backup=True)
     return load_topology()
@@ -245,4 +246,4 @@ def link_index(link_id: str) -> int:
     for i, value in enumerate(link_ids(data.get("links") or [])):
         if value == link_id:
             return i
-    raise KeyError("enlace não existe")
+    raise KeyError(i18n.t("api_topology.link_not_exists"))

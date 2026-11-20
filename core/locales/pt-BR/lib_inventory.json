@@ -1,0 +1,19 @@
+{
+  "access_method_missing": "hosts/{name}: 'access.method' ausente",
+  "cli_description": "Carrega/valida o inventário do NetOps.",
+  "cli_list_help": "Lista os hosts do inventário",
+  "cli_show_help": "Mostra um host resolvido (sem senha)",
+  "cli_show_id_help": "Mostra um host pelo ID inteiro",
+  "cli_validate_help": "Valida hosts.yaml contra o schema",
+  "dir_symlink": "diretório do inventário não pode passar por symlink",
+  "field_missing": "hosts/{name}: campo '{field}' ausente (nem no host nem no grupo)",
+  "invalid": "INVÁLIDO:",
+  "journal_invalid": "journal de migração inválido; verifique symlinks antes de recuperar",
+  "journal_unreadable": "journal de migração ilegível; recupere o baseline antes de continuar",
+  "jsonschema_missing": "jsonschema não instalado (pip install -r requirements.txt)",
+  "migration_incomplete": "migração de IDs incompleta; execute host_id_migration.py recover",
+  "not_found": "ERRO: inventário não encontrado: {path}",
+  "pyyaml_missing": "ERRO: PyYAML não instalado. Rode: pip install -r requirements.txt",
+  "schema_not_found": "schema não encontrado: {path}",
+  "valid": "OK — inventário válido."
+}

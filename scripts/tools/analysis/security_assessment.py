@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # script
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
+from lib import i18n  # noqa: E402
 from diagnostics.portscan import DEFAULT_PORTS, scan_nmap, scan_socket  # noqa: E402
 from lib.inventory import list_hosts, load_inventory, resolve_host  # noqa: E402
 
@@ -48,20 +49,20 @@ def assess_host(name: int | str, host: dict, checks: list[dict], config_text: st
         open_ports = {int(p["port"].split("/")[0]) for p in scan["open_ports"]}
         for c in port_checks:
             if c["porta"] in open_ports:
-                findings.append(_finding(name, c, f"porta {c['porta']}/tcp aberta"))
+                findings.append(_finding(name, c, i18n.t("cli_analysis.port_open", port=c["porta"])))
 
     # --- Checagens por configuração ---
     config_checks = [c for c in checks if c.get("tipo") == "config"]
     if config_checks:
         if config_text is None:
             findings.append({"host": name, "id": "config-checks-skipped", "severidade": "INFO",
-                             "titulo": "Checagens de config não executadas",
-                             "evidencia": "nenhum --config-file informado"})
+                             "titulo": i18n.t("cli_analysis.config_checks_skipped"),
+                             "evidencia": i18n.t("cli_analysis.no_config_file")})
         else:
             for c in config_checks:
                 m = re.search(c["padrao"], config_text)
                 if m:
-                    findings.append(_finding(name, c, f"trecho: '{m.group(0).strip()[:80]}'"))
+                    findings.append(_finding(name, c, i18n.t("cli_analysis.config_match", excerpt=m.group(0).strip()[:80])))
     return findings
 
 
@@ -78,12 +79,12 @@ def _finding(host: int | str, check: dict, evidence: str) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Avaliação de segurança de hosts do inventário.")
+    parser = argparse.ArgumentParser(description=i18n.t("cli_analysis.security_description"))
     selection = parser.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--host-id", type=int, help="Avaliar o host com este ID inteiro")
-    selection.add_argument("--host", help="Nome único ou alias legado do host")
-    selection.add_argument("--all", action="store_true", help="Avaliar todos os hosts do inventário")
-    parser.add_argument("--config-file", help="Arquivo de config coletada (habilita checks de config)")
+    selection.add_argument("--host-id", type=int, help=i18n.t("cli_analysis.help_host_id"))
+    selection.add_argument("--host", help=i18n.t("cli_analysis.help_host"))
+    selection.add_argument("--all", action="store_true", help=i18n.t("cli_analysis.help_all"))
+    parser.add_argument("--config-file", help=i18n.t("cli_analysis.help_config_file"))
     args = parser.parse_args()
 
     hosts_data, _ = load_inventory(include_credentials=False)
@@ -98,7 +99,7 @@ def main() -> int:
             all_findings += assess_host(host.get("id", host["name"]), host, checks, config_text)
         except Exception as exc:  # noqa: BLE001
             all_findings.append({"host": name, "id": "assessment-error", "severidade": "INFO",
-                                 "titulo": "Falha ao avaliar host", "evidencia": str(exc)})
+                                 "titulo": i18n.t("cli_analysis.assessment_failed"), "evidencia": str(exc)})
 
     order = {"CRITICO": 0, "ALTO": 1, "MEDIO": 2, "BAIXO": 3, "INFO": 4}
     all_findings.sort(key=lambda f: order.get(f["severidade"], 9))

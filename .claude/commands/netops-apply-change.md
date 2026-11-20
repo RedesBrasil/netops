@@ -1,15 +1,16 @@
 ---
-description: Planeja e aplica uma mudança de configuração (workflow apply-config-change)
-argument-hint: "<descrição da mudança e host-alvo>"
+description: Plans and applies a configuration change (apply-config-change workflow)
+argument-hint: "<description of the change and target host>"
 ---
 
-Você está operando o framework NetOps. Leia `AGENTS.md` na raiz para o contexto completo.
+You are operating the NetOps framework. Read `AGENTS.md` at the root for the full context.
 
-Execute o workflow `workflows/apply-config-change.workflow.yaml` como o agente `coordinator`.
+Run the `workflows/apply-config-change.workflow.yaml` workflow as the `coordinator` agent.
 
-Mudança pedida: $ARGUMENTS
+Requested change: $ARGUMENTS
 
-Siga os passos do workflow: entender a mudança → capturar baseline → desenhar a config
-proposta + rollback → revisão técnica → aplicar → verificar → registrar → reflexão.
-Respeite `core/rules/connection-safety.md`: sempre baseline + rollback, rollback automático
-em falha. Adote a persona de cada agente (`agents/*.agent.md`) em cada passo.
+Follow the workflow steps: understand the change → capture the baseline → design the proposed
+config + rollback → technical review → apply → verify → record → reflection.
+Respect `core/rules/connection-safety.md`: always baseline + rollback, automatic rollback
+on failure. Adopt the persona of each agent (`agents/*.agent.md`) at each step.
+Answer in the user's language.

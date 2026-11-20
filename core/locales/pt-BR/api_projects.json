@@ -1,0 +1,19 @@
+{
+  "bad_folder": "Nome de pasta inválido: use letras, números, ponto, hífen ou _ (sem / nem espaço).",
+  "bad_order": "Envie a lista de ids na ordem desejada.",
+  "bad_path": "Informe o caminho absoluto da pasta (começa com /).",
+  "deny_contains_netops": "Essa pasta contém o NetOps. Escolha uma pasta que não inclua a instalação do NetOps.",
+  "deny_hidden": "Pastas ocultas do usuário do servidor (~/.claude, ~/.ssh...) não podem ser projeto.",
+  "deny_home": "A pasta home do usuário do servidor não pode ser projeto. Use uma subpasta.",
+  "deny_netops": "A pasta do NetOps (e o que está dentro dela) é da aba Claude Code. Escolha outra pasta.",
+  "deny_system": "Pasta do sistema não pode ser projeto. Use uma subpasta própria (ex.: {example}).",
+  "duplicate_path": "Essa pasta já é o projeto “{name}”.",
+  "empty_name": "Dê um nome ao projeto.",
+  "exists": "Já existe algo com esse nome nessa pasta. Use “Pasta existente”.",
+  "list_failed": "Não foi possível listar essa pasta.",
+  "mkdir_failed": "Não foi possível criar a pasta: {error}.",
+  "no_access": "O servidor não tem permissão para ler essa pasta.",
+  "not_a_dir": "O caminho informado não é uma pasta.",
+  "path_not_found": "Essa pasta não existe no servidor.",
+  "too_many": "Limite de projetos atingido."
+}

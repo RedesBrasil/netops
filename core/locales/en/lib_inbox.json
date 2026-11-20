@@ -1,0 +1,13 @@
+{
+  "action_not_object": "action must be an object",
+  "action_only_approval": "an action only exists in an approval request (kind=approval)",
+  "agent_action_needs_prompt": "an agent action needs a prompt or a session_id to resume",
+  "empty_command": "empty command",
+  "invalid_timestamp": "invalid timestamp",
+  "not_found": "notice #{id} not found",
+  "not_pending": "request #{id} is not pending (status: {status})",
+  "title_required": "title required",
+  "use_approve_reject": "use approve or reject",
+  "use_one_of": "use one of {options}",
+  "use_restricted_full": "use restricted or full"
+}

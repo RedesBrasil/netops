@@ -1,37 +1,37 @@
-# PADRÃO — `planning-examples/`
+# STANDARD — `planning-examples/`
 
-Documentos modelo de planejamento. O agente `planner` consulta esta pasta antes de montar
-um plano novo — para reusar a estrutura e o raciocínio de planos parecidos (REUSE > ADAPT >
-CREATE). Não são planos de uma execução real; são **modelos** de como planejar cada tipo de tarefa.
+Template planning documents. The `planner` agent consults this folder before building
+a new plan — to reuse the structure and the reasoning of similar plans (REUSE > ADAPT >
+CREATE). They are not plans of a real run; they are **templates** of how to plan each type of task.
 
-## Formato (`<nome>.plan.md`)
+## Format (`<name>.plan.md`)
 
 ```markdown
-# Plano: <título>
+# Plan: <title>
 
-## Objetivo
-O que se quer alcançar.
+## Goal
+What is to be achieved.
 
-## Contexto
-O que o planner precisa ler antes (inventário, topologia, best-practices, memória).
+## Context
+What the planner needs to read first (inventory, topology, best-practices, memory).
 
-## Escopo
-Hosts/serviços envolvidos e o que está fora do escopo.
+## Scope
+Hosts/services involved and what is out of scope.
 
-## Passos
-Sequência de passos, cada um com o agente responsável.
+## Steps
+Sequence of steps, each one with the responsible agent.
 
-## Riscos e mitigação
-O que pode dar errado e como evitar.
+## Risks and mitigation
+What can go wrong and how to avoid it.
 
 ## Rollback
-Como desfazer, se a tarefa alterar configuração.
+How to undo it, if the task changes configuration.
 
-## Critérios de sucesso
-Como saber que a tarefa terminou bem.
+## Success criteria
+How to know the task finished well.
 ```
 
-## Como adicionar
+## How to add one
 
-Copie `_TEMPLATE.plan.md`. Sempre que um tipo novo de tarefa for planejado, salve o modelo
-aqui — assim o próximo planejamento parecido já começa pronto (projeto vivo).
+Copy `_TEMPLATE.plan.md`. Whenever a new type of task is planned, save the template
+here — so the next similar planning already starts ready (living project).

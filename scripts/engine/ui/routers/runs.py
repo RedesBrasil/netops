@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 import deps
+from lib import i18n
 from services import docs_svc
 
 router = APIRouter(tags=["runs"])
@@ -36,7 +37,7 @@ def get_run(run_id: str):
     import json  # noqa: PLC0415
     d = docs_svc.safe_child(deps.RUNS_DIR, run_id)
     if not d.exists() or not d.is_dir():
-        raise KeyError(f"run '{run_id}' não existe")
+        raise KeyError(i18n.t("api_runs.run_not_exists", run_id=run_id))
     state = {}
     sf = d / "state.json"
     if sf.exists():
@@ -56,7 +57,7 @@ def get_artifact(run_id: str, path: str):
     d = docs_svc.safe_child(deps.RUNS_DIR, run_id)
     f = docs_svc.safe_child(d, *path.split("/"))
     if not f.exists() or not f.is_file():
-        raise KeyError(f"artefato '{path}' não existe")
+        raise KeyError(i18n.t("api_runs.artifact_not_exists", path=path))
     if f.suffix.lower() not in TEXT_SUFFIXES:
-        raise KeyError("tipo de artefato não exibível como texto")
+        raise KeyError(i18n.t("api_runs.artifact_not_text"))
     return {"path": path, "text": f.read_text(encoding="utf-8", errors="replace")}

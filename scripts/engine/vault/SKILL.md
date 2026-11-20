@@ -1,96 +1,96 @@
 ---
 id: vault
-name: Cofre de Credenciais
+name: Credential vault
 type: script
 runtime: python
-description: Criptografa as senhas de network/credentials.yaml com uma senha-mestra e destranca a sessão.
+description: Encrypts the passwords in network/credentials.yaml with a master password and unlocks the session.
 env: [NETOPS_VAULT_KEY]
 ---
 
-## O que faz
+## What it does
 
-Criptografa em repouso os campos secretos (`password`, `secret`) de
-`network/credentials.yaml`, deixando cada valor como `enc.v1:<token>` (a estrutura e os
-`username` continuam legíveis). A descriptografia acontece **só em memória**, durante a
-sessão, depois de destrancar com a **senha-mestra**.
+Encrypts at rest the secret fields (`password`, `secret`) of
+`network/credentials.yaml`, leaving each value as `enc.v1:<token>` (the structure and the
+`username` values stay readable). Decryption happens **only in memory**, during the
+session, after unlocking with the **master password**.
 
-- **Criptografia:** Fernet (AES-128-CBC + HMAC). **KDF:** Argon2id (fallback Scrypt).
-- **Sessão:** a chave derivada (nunca a senha) fica num arquivo `0600` em RAM
-  (`$XDG_RUNTIME_DIR/netops/session.key`, tmpfs). Re-bloqueia por **inatividade (15 min,
-  configurável)**, no `lock`, ou no logout. Como vive entre processos, funciona tanto pro
-  operador quanto pros agentes de IA (cada comando deles roda num shell novo).
-- **Modo terminal-puro (`--env`):** opcional; a chave vai numa variável de ambiente e morre
-  ao fechar o terminal — mas não é compartilhada com os scripts executados pela IA.
+- **Encryption:** Fernet (AES-128-CBC + HMAC). **KDF:** Argon2id (Scrypt fallback).
+- **Session:** the derived key (never the password) is kept in a `0600` file in RAM
+  (`$XDG_RUNTIME_DIR/netops/session.key`, tmpfs). It re-locks on **inactivity (15 min,
+  configurable)**, on `lock`, or on logout. Since it lives across processes, it works both for the
+  operator and for the AI agents (each of their commands runs in a new shell).
+- **Terminal-only mode (`--env`):** optional; the key goes into an environment variable and dies
+  when the terminal closes — but it is not shared with the scripts run by the AI.
 
-## Cofre de senhas (`network/vault.yaml`)
+## Password vault (`network/vault.yaml`)
 
-O mesmo cofre (senha-mestra e chave da sessão) protege também o **Cofre de senhas** do console
-(**Inventário → Cofre de senhas**, `#vault`): segredos que não são de host, como login de portal, chave de API ou token.
-- **Estrutura:** `fields` é o catálogo de campos reutilizáveis (`kind: secret|text`). `templates` traz os campos de cada
-  template, com `required`/`visible` por template. `items` (chave = ID numérico estável, `next_item_id`, slug antigo em `aliases`) traz os valores; o tipo `secret` vira `enc.v1:` e o `text` fica em claro.
-- **Código:** `scripts/engine/lib/pwvault.py` (formato, padrões, `reencrypt_file`) e
-  `scripts/engine/ui/services/vault_items_svc.py` (CRUD, validação de obrigatório, revelar).
+The same vault (master password and session key) also protects the console's **Password vault**
+(**Inventory → Password vault**, `#vault`): secrets that do not belong to a host, such as a portal login, API key or token.
+- **Structure:** `fields` is the catalog of reusable fields (`kind: secret|text`). `templates` holds the fields of each
+  template, with `required`/`visible` per template. `items` (key = stable numeric ID, `next_item_id`, old slug in `aliases`) holds the values; the `secret` type becomes `enc.v1:` and `text` stays in clear.
+- **Code:** `scripts/engine/lib/pwvault.py` (format, defaults, `reencrypt_file`) and
+  `scripts/engine/ui/services/vault_items_svc.py` (CRUD, required-field validation, reveal).
 - **API:** `/api/vault/catalog`, `/api/vault/fields`, `/api/vault/templates`, `/api/vault/items`,
-  `POST /api/vault/items/<id>/reveal` (só com o cofre destrancado e a permissão `vault.reveal`).
-- `change-password` recifra o `vault.yaml` junto com o `credentials.yaml`.
-- **Usar em comando/`.env` sem expor o valor:** `nvault run -- <cmd>` com as referências `nvault://item/campo` (ver `scripts/tools/secrets/SKILL.md`).
-- **INEGOCIÁVEL:** a IA nunca lê nem decifra os segredos do `vault.yaml`, nem chama o endpoint `/reveal`.
-  Quem consulta é o humano, pela tela. A IA usa as chaves só pelo `nvault`.
+  `POST /api/vault/items/<id>/reveal` (only with the vault unlocked and the `vault.reveal` permission).
+- `change-password` re-encrypts `vault.yaml` together with `credentials.yaml`.
+- **Use in a command/`.env` without exposing the value:** `nvault run -- <cmd>` with the `nvault://item/campo` references (see `scripts/tools/secrets/SKILL.md`).
+- **NON-NEGOTIABLE:** the AI never reads nor decrypts the secrets in `vault.yaml`, nor calls the `/reveal` endpoint.
+  The human looks them up, on screen. The AI uses the keys only through `nvault`.
 
-## Quando usar
+## When to use
 
-- Uma vez, para migrar `credentials.yaml` de texto puro para criptografado (`init` + `encrypt`).
-- No início de cada sessão de trabalho, para destrancar (`unlock`).
-- Para rotacionar uma senha (`set`) ou trocar a senha-mestra (`change-password`).
+- Once, to migrate `credentials.yaml` from plain text to encrypted (`init` + `encrypt`).
+- At the start of each work session, to unlock (`unlock`).
+- To rotate a password (`set`) or change the master password (`change-password`).
 
-A IA **não** roda `init`/`unlock`/`set`/`change-password` (precisam de senha digitada num TTY
-real). A IA pode rodar `status` e `lock`, e os scripts de acesso usam a chave da sessão
-automaticamente.
+The AI does **not** run `init`/`unlock`/`set`/`change-password` (they need a password typed in a real
+TTY). The AI may run `status` and `lock`, and the access scripts use the session key
+automatically.
 
-> **INEGOCIÁVEL — a IA nunca lê o segredo em texto puro.** Descriptografar, ler, imprimir ou
-> copiar um valor de `password`/`secret` é proibido, mesmo com o cofre destrancado. Só os scripts
-> de acesso (`scripts/tools/access/*`) descriptografam, no instante de conectar. A IA conecta
-> invocando esses scripts com `--host <nome>`; nunca chama `resolve_host(decrypt=True)`,
-> `resolve_secret` ou `decrypt_value`, nem lê os campos de segredo. Cofre destrancado libera as
-> FERRAMENTAS a conectar — não a IA a ler senhas. Ver `constitution.md` §V.
+> **NON-NEGOTIABLE — the AI never reads the secret in plain text.** Decrypting, reading, printing or
+> copying a `password`/`secret` value is forbidden, even with the vault unlocked. Only the access
+> scripts (`scripts/tools/access/*`) decrypt, at the moment of connecting. The AI connects
+> by invoking those scripts with `--host <nome>`; it never calls `resolve_host(decrypt=True)`,
+> `resolve_secret` or `decrypt_value`, nor reads the secret fields. An unlocked vault allows the
+> TOOLS to connect — not the AI to read passwords. See `constitution.md` §V.
 
-## Como usar
+## How to use
 
 ```bash
 python3 scripts/engine/vault/cli.py <subcomando> [--file PATH]
 ```
 
-| Subcomando | Faz | Pergunta (oculta) |
-|------------|-----|-------------------|
-| `init` | Cria o bloco `vault:` (salt + verifier) | senha-mestra ×2 |
-| `encrypt` (`migrate`) | Texto puro → `enc.v1:` (idempotente; `--dry-run` simula) | senha-mestra |
-| `set --cred N --field {password,secret}` | Define/rotaciona um campo | senha + valor |
-| `unlock [--ttl SEG] [--env]` | Destranca a sessão | senha-mestra |
-| `lock` | Tranca a sessão (apaga o cache) | — |
-| `status` | Estado do cofre/sessão (exit 0=destrancado, 1=trancado) | — |
-| `change-password` | Troca a senha e re-criptografa tudo | senha antiga + nova ×2 |
+| Subcommand | Does | Asks (hidden) |
+|------------|------|---------------|
+| `init` | Creates the `vault:` block (salt + verifier) | master password ×2 |
+| `encrypt` (`migrate`) | Plain text → `enc.v1:` (idempotent; `--dry-run` simulates) | master password |
+| `set --cred N --field {password,secret}` | Sets/rotates a field | password + value |
+| `unlock [--ttl SEG] [--env]` | Unlocks the session | master password |
+| `lock` | Locks the session (deletes the cache) | — |
+| `status` | Vault/session state (exit 0=unlocked, 1=locked) | — |
+| `change-password` | Changes the password and re-encrypts everything | old password + new ×2 |
 
 ## Setup
 
-Sem dependência nova: `cryptography` (já em `requirements.txt`, presente via `paramiko`) e
-`pyyaml`. Requer `$XDG_RUNTIME_DIR` (tmpfs) para o cache em RAM; sem ele, cai para `/run/user/<uid>`
-e, por último, `/tmp` (com aviso de que pode ser disco).
+No new dependency: `cryptography` (already in `requirements.txt`, present via `paramiko`) and
+`pyyaml`. Requires `$XDG_RUNTIME_DIR` (tmpfs) for the RAM cache; without it, it falls back to `/run/user/<uid>`
+and, as a last resort, `/tmp` (with a warning that it may be disk).
 
-## Exemplos
+## Examples
 
 ```bash
-# Migração inicial (uma vez)
-cp network/credentials.yaml ~/creds.backup.$(date +%F).yaml   # backup fora do repo
+# Initial migration (once)
+cp network/credentials.yaml ~/creds.backup.$(date +%F).yaml   # backup outside the repo
 python3 scripts/engine/vault/cli.py init
 python3 scripts/engine/vault/cli.py encrypt --dry-run
 python3 scripts/engine/vault/cli.py encrypt
 
-# Dia a dia
-python3 scripts/engine/vault/cli.py unlock      # destranca (digita a senha-mestra, sem eco)
-python3 scripts/engine/lib/inventory.py --list  # funciona mesmo trancado (não descriptografa)
-# ... agentes/scripts acessam os equipamentos usando a chave da sessão ...
-python3 scripts/engine/vault/cli.py lock        # tranca ao terminar
+# Day to day
+python3 scripts/engine/vault/cli.py unlock      # unlocks (type the master password, no echo)
+python3 scripts/engine/lib/inventory.py --list  # works even when locked (does not decrypt)
+# ... agents/scripts access the equipment using the session key ...
+python3 scripts/engine/vault/cli.py lock        # lock when done
 
-# Modo terminal-puro (trava ao fechar o terminal; não compartilha com a IA)
+# Terminal-only mode (locks when the terminal closes; not shared with the AI)
 eval "$(python3 scripts/engine/vault/cli.py unlock --env)"
 ```

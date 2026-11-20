@@ -1,0 +1,18 @@
+{
+  "active_work": "Before updating, wait for: {items}.",
+  "active_writes": "Writes in progress. Wait and try again.",
+  "backup_check_failed": "Could not check a backup run.",
+  "backup_running": "device backup in progress",
+  "busy": "Update already in progress.",
+  "confirmed": "Update confirmed. Wait for the console to restart.",
+  "forward_failed": "Could not forward the update to the launcher.",
+  "login_required": "Initialize the vault and log in before updating.",
+  "no_package": "This release has no verifiable official package.",
+  "not_newer": "The selected version is not newer than the installed one.",
+  "pending": "An update or recovery is already pending.",
+  "release_changed": "The latest release changed. Check for updates again.",
+  "request_failed": "Write failure while starting the update. Installation preserved.",
+  "unmanaged": "Start the console with scripts/engine/ui/start.sh to enable update and restart.",
+  "workflow_check_failed": "Could not check a workflow run.",
+  "workflow_running": "workflow in progress"
+}

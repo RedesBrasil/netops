@@ -1,0 +1,16 @@
+{
+  "field_required": "Required field",
+  "forbidden_perm": "Not allowed: {perm}.",
+  "forbidden_short": "Not allowed.",
+  "invalid_value": "Invalid value",
+  "locale_no_user": "There are no users yet: the language is chosen per user after the administrator is created.",
+  "maintenance": "Update in progress. Wait for the console to restart.",
+  "password_change_required": "Change your temporary password before continuing.",
+  "read_only": "server in read-only mode (--read-only)",
+  "setup_required": "First access pending: finish the initial setup using the link the installer printed (or generate another: python3 scripts/engine/users/cli.py setup-link).",
+  "shape_icon_unsupported": "This server does not accept icons on shapes yet. Update NetOps and restart the console on the server. Your changes were not saved.",
+  "unknown_language": "Unsupported language: {lang}",
+  "validation_failed": "Validation failed",
+  "vault_locked_toast": "Vault locked — unlock it in the terminal",
+  "version_conflict": "Version conflict — reload"
+}

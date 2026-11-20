@@ -12,6 +12,8 @@ Espelho em JS: static/js/pages/host-term.js (terminalEntries) — mudar os dois 
 """
 from __future__ import annotations
 
+from lib import i18n
+
 TERMINAL_METHODS = ("ssh", "telnet")
 DEFAULT_PORTS = {"ssh": 22, "telnet": 23}
 
@@ -49,7 +51,7 @@ def pick_entry(entries: list[dict], method: str | None, port: int | None) -> dic
     for entry in entries:
         if (method is None or entry["method"] == method) and (port is None or entry["port"] == port):
             return entry
-    raise TargetError(f"método {method or '?'}{':' + str(port) if port else ''} não está cadastrado neste host")
+    raise TargetError(i18n.t("lib_terminal.method_not_registered", method=f"{method or '?'}{':' + str(port) if port else ''}"))
 
 
 def terminal_url(host_id, entry: dict) -> str:

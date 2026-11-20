@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 import deps
+from lib import i18n
 from services import docs_svc, yaml_io
 
 router = APIRouter(tags=["catalog"])
@@ -19,7 +20,7 @@ def _rev(request: Request) -> str | None:
 
 def _safe(base, name: str):
     if not name.startswith("_") and ("/" in name or name.startswith(".")):
-        raise deps.ValidationFailed([{"loc": "file", "msg": "nome de arquivo inválido"}])
+        raise deps.ValidationFailed([{"loc": "file", "msg": i18n.t("api_common.invalid_filename")}])
     return docs_svc.safe_child(base, name)
 
 
@@ -28,15 +29,15 @@ def _rename_doc(base, file: str, to: str, suffix: str) -> dict:
     é independente do nome do arquivo, então não há cascade."""
     import os  # noqa: PLC0415
     if not to.endswith(suffix):
-        raise deps.ValidationFailed([{"loc": "to", "msg": f"nome deve terminar em {suffix}"}])
+        raise deps.ValidationFailed([{"loc": "to", "msg": i18n.t("api_common.name_must_end", suffix=suffix)}])
     src = _safe(base, file)
     if not src.exists():
-        raise KeyError(f"'{file}' não existe")
+        raise KeyError(i18n.t("api_common.quoted_not_exists", name=file))
     dst = _safe(base, to)
     if dst == src:
-        raise deps.ValidationFailed([{"loc": "to", "msg": "destino igual à origem"}])
+        raise deps.ValidationFailed([{"loc": "to", "msg": i18n.t("api_common.same_target")}])
     if dst.exists():
-        raise deps.ValidationFailed([{"loc": "to", "msg": f"'{to}' já existe"}])
+        raise deps.ValidationFailed([{"loc": "to", "msg": i18n.t("api_common.quoted_exists", name=to)}])
     os.replace(src, dst)
     return {"renamed": {"from": file, "to": to}, "updated": []}
 
@@ -64,7 +65,7 @@ def list_workflows():
 def get_workflow(file: str):
     path = _safe(deps.WORKFLOWS_DIR, file)
     if not path.exists():
-        raise KeyError(f"workflow '{file}' não existe")
+        raise KeyError(i18n.t("api_catalog.workflow_not_exists", file=file))
     return docs_svc.read_text_file(path)
 
 
@@ -81,10 +82,10 @@ def put_workflow(file: str, body: dict, request: Request):
 def create_workflow(body: dict):
     name = body.get("file", "")
     if not name.endswith(".workflow.yaml"):
-        raise deps.ValidationFailed([{"loc": "file", "msg": "nome deve terminar em .workflow.yaml"}])
+        raise deps.ValidationFailed([{"loc": "file", "msg": i18n.t("api_common.name_must_end", suffix=".workflow.yaml")}])
     path = _safe(deps.WORKFLOWS_DIR, name)
     if path.exists():
-        raise deps.ValidationFailed([{"loc": "file", "msg": f"'{name}' já existe"}])
+        raise deps.ValidationFailed([{"loc": "file", "msg": i18n.t("api_common.quoted_exists", name=name)}])
     text = body.get("text", "")
     _validate_workflow(text)
     yaml_io.atomic_write(path, text)
@@ -101,10 +102,10 @@ def _validate_workflow(text: str) -> None:
     try:
         data = yaml.safe_load(text) or {}
     except Exception as exc:
-        raise deps.ValidationFailed([{"loc": "text", "msg": f"YAML inválido: {exc}"}]) from exc
+        raise deps.ValidationFailed([{"loc": "text", "msg": i18n.t("api_common.invalid_yaml", error=exc)}]) from exc
     wf = data.get("workflow")
     if not isinstance(wf, dict) or not wf.get("steps"):
-        raise deps.ValidationFailed([{"loc": "workflow", "msg": "falta 'workflow:' com 'steps:'"}])
+        raise deps.ValidationFailed([{"loc": "workflow", "msg": i18n.t("api_catalog.missing_workflow_steps")}])
 
 
 # --------------------------------------------------------------------------- #
@@ -127,7 +128,7 @@ def list_agents():
 def get_agent(file: str):
     path = _safe(deps.AGENTS_DIR, file)
     if not path.exists():
-        raise KeyError(f"agente '{file}' não existe")
+        raise KeyError(i18n.t("api_catalog.agent_not_exists", file=file))
     info = docs_svc.read_text_file(path)
     info["frontmatter"], _ = docs_svc.split_frontmatter(info["text"])
     return info
@@ -146,10 +147,10 @@ def put_agent(file: str, body: dict, request: Request):
 def create_agent(body: dict):
     name = body.get("file", "")
     if not name.endswith(".agent.md"):
-        raise deps.ValidationFailed([{"loc": "file", "msg": "nome deve terminar em .agent.md"}])
+        raise deps.ValidationFailed([{"loc": "file", "msg": i18n.t("api_common.name_must_end", suffix=".agent.md")}])
     path = _safe(deps.AGENTS_DIR, name)
     if path.exists():
-        raise deps.ValidationFailed([{"loc": "file", "msg": f"'{name}' já existe"}])
+        raise deps.ValidationFailed([{"loc": "file", "msg": i18n.t("api_common.quoted_exists", name=name)}])
     text = body.get("text", "")
     _validate_agent(text)
     yaml_io.atomic_write(path, text)
@@ -164,7 +165,7 @@ def rename_agent(file: str, body: dict):
 def _validate_agent(text: str) -> None:
     fm, _ = docs_svc.split_frontmatter(text)
     if not isinstance(fm, dict):
-        raise deps.ValidationFailed([{"loc": "text", "msg": "frontmatter YAML (---) ausente ou inválido"}])
+        raise deps.ValidationFailed([{"loc": "text", "msg": i18n.t("api_catalog.bad_frontmatter")}])
     missing = [k for k in ("id", "name", "function") if not fm.get(k)]
     if missing:
-        raise deps.ValidationFailed([{"loc": "frontmatter", "msg": f"campos faltando: {', '.join(missing)}"}])
+        raise deps.ValidationFailed([{"loc": "frontmatter", "msg": i18n.t("api_catalog.missing_fields", fields=", ".join(missing))}])

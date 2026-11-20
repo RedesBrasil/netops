@@ -1,27 +1,27 @@
-# Modelo de workflow — copie ao criar um workflow novo. Ver workflows/PADRAO.md.
+# Workflow template — copy it when creating a new workflow. See workflows/PADRAO.md.
 workflow:
-  id: identificador-do-workflow
-  name: Nome Legível do Workflow
+  id: workflow-identifier
+  name: Readable Workflow Name
   description: >-
-    O que este workflow resolve, em uma ou duas frases.
+    What this workflow solves, in one or two sentences.
   triggers:
-    - "frase típica do usuário que dispara este workflow"
-    - "*comando-explicito"
+    - "typical user phrase that triggers this workflow"
+    - "*explicit-command"
 
   steps:
     - id: "01"
-      name: Nome do primeiro passo
+      name: Name of the first step
       type: inline
       agent: coordinator
       inputFiles: [network/hosts.yaml]
-      outputFiles: [runs/${run}/state.json]
+      outputFiles: ["runs/${run}/state.json"]
       instructions: >-
-        O que o agente deve fazer neste passo.
-      qualityCriteria: Como saber se o passo ficou bom.
+        What the agent must do in this step.
+      qualityCriteria: How to know the step went well.
       vetoConditions: []
 
     - id: "02"
-      name: Passo de exemplo (subagente)
+      name: Example step (subagent)
       type: subagent
       agent: planner
       inputFiles: []
@@ -29,11 +29,11 @@ workflow:
       instructions: >-
         ...
 
-    # ... mais passos ...
+    # ... more steps ...
 
     - id: "99"
-      name: Reflexão pós-execução
+      name: Post-run reflection
       type: subagent
       agent: documenter
       instructions: >-
-        Anexar lições como bullets datados em memory/MEMORY.md conforme core/rules/memory-protocol.md.
+        Append lessons as dated bullets to memory/MEMORY.md according to core/rules/memory-protocol.md.

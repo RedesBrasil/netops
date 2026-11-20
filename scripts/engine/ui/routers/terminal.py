@@ -28,6 +28,7 @@ import termios
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 import deps
+from lib import i18n
 
 router = APIRouter()
 
@@ -99,8 +100,7 @@ async def term(ws: WebSocket):
     if drop is False:
         # Servidor roda como root mas o usuário de drop não existe: recusa (ZT — sem shell root).
         await ws.send_bytes(
-            f"\r\n[netops] usuário '{TERM_USER}' não existe neste host — terminal recusado "
-            f"(por segurança, não abrimos um shell root).\r\n".encode()
+            ("\r\n" + i18n.t("api_terminal.no_term_user", user=TERM_USER) + "\r\n").encode()
         )
         await ws.close(code=4500)
         return

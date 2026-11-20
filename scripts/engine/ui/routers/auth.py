@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import deps
+from lib import i18n
 from lib import accessdb
 from services import authz
 
@@ -117,8 +118,7 @@ def auth_login(body: LoginBody, request: Request):
     ip = _ip(request)
     ua = request.headers.get("user-agent", "")
     if not deps.auth_required():
-        return JSONResponse({"error": "no_auth", "detail": "Cofre não inicializado e nenhum usuário cadastrado — "
-                             "não há login a fazer."}, status_code=400)
+        return JSONResponse({"error": "no_auth", "detail": i18n.t("api_auth.no_auth")}, status_code=400)
 
     if deps.has_users():
         login = (body.email or body.username or "").strip().lower()
@@ -127,11 +127,11 @@ def auth_login(body: LoginBody, request: Request):
             # Compat: clientes antigos (scripts/testes) mandam só {master_password} = senha do admin migrado.
             login, password = deps.LEGACY_ADMIN, body.master_password
         if not login or not password:
-            return JSONResponse({"error": "bad_credentials", "detail": "Informe e-mail e senha."}, status_code=401)
+            return JSONResponse({"error": "bad_credentials", "detail": i18n.t("api_auth.email_password_required")}, status_code=401)
         wait = accessdb.login_wait(db, login, ip)
         if wait:
             return JSONResponse({"error": "throttled", "retry_after": wait,
-                                 "detail": f"Muitas tentativas. Tente de novo em {wait} s."},
+                                 "detail": i18n.t("api_auth.throttled", wait=wait)},
                                 status_code=429, headers={"Retry-After": str(wait)})
         try:
             user, kek = accessdb.verify_password(db, login, password)
@@ -139,7 +139,7 @@ def auth_login(body: LoginBody, request: Request):
             accessdb.login_failed(db, login, ip)
             accessdb.audit(db, "login_failed", username=accessdb.login_username(db, login) or "", ip=ip,
                            target=login, detail=ua[:120])
-            return JSONResponse({"error": "bad_credentials", "detail": "E-mail ou senha incorretos."}, status_code=401)
+            return JSONResponse({"error": "bad_credentials", "detail": i18n.t("api_auth.bad_credentials")}, status_code=401)
         accessdb.login_ok(db, login, ip)
         username = user["username"]
         vault_state = _unlock_with_slot(username, kek, body.ttl)
@@ -152,23 +152,22 @@ def auth_login(body: LoginBody, request: Request):
     from lib import vault, vault_session  # noqa: PLC0415
     secret = body.master_password or body.password or ""
     if not secret:
-        return JSONResponse({"error": "bad_password", "detail": "Informe a senha-mestra."}, status_code=401)
+        return JSONResponse({"error": "bad_password", "detail": i18n.t("api_auth.master_password_required")}, status_code=401)
     wait = accessdb.login_wait(db, deps.LEGACY_ADMIN, ip)
     if wait:
         return JSONResponse({"error": "throttled", "retry_after": wait,
-                             "detail": f"Muitas tentativas. Tente de novo em {wait} s."},
+                             "detail": i18n.t("api_auth.throttled", wait=wait)},
                             status_code=429, headers={"Retry-After": str(wait)})
     meta = _vault_meta()   # VaultNotInitialized -> 409 (handler em app.py)
     if meta is None:
-        return JSONResponse({"error": "vault_uninitialized", "detail": "Cofre não inicializado e nenhum usuário "
-                             "cadastrado: crie o administrador pelo CLI scripts/engine/users/cli.py."}, status_code=409)
+        return JSONResponse({"error": "vault_uninitialized", "detail": i18n.t("api_auth.vault_uninitialized")}, status_code=409)
     try:
         key = vault.derive_key(secret, meta)
         vault.verify_key(key, meta)
     except vault.VaultWrongKey:
         accessdb.login_failed(db, deps.LEGACY_ADMIN, ip)
         accessdb.audit(db, "login_failed", username=deps.LEGACY_ADMIN, ip=ip, detail="senha-mestra")
-        return JSONResponse({"error": "bad_password", "detail": "Senha mestra incorreta."}, status_code=401)
+        return JSONResponse({"error": "bad_password", "detail": i18n.t("api_auth.wrong_master_password")}, status_code=401)
     accessdb.login_ok(db, deps.LEGACY_ADMIN, ip)
     created = False
     try:
@@ -210,7 +209,11 @@ def auth_me(request: Request) -> dict:
     p = authz.request_principal(request)
     out = p.public()
     out["multiuser"] = deps.has_users()
-    out["catalog"] = accessdb.PERMISSIONS
+    out["catalog"] = accessdb.localized_permissions()
+    from lib import i18n  # noqa: PLC0415
+    from routers.i18n import user_locale  # noqa: PLC0415
+    out["locale"] = "" if p.legacy else user_locale(p.username)
+    out["instance_language"] = i18n.instance_language(deps.DATA_ROOT)
     if deps.has_users() and not p.legacy:
         u = accessdb.get_user(deps.db_file(), p.username)
         if u:
@@ -227,16 +230,15 @@ def auth_password(body: PasswordChange, request: Request):
     db = deps.db_file()
     p = authz.request_principal(request)
     if not deps.has_users() or p.legacy:
-        return JSONResponse({"error": "no_user", "detail": "Ainda não há usuários: crie o administrador em "
-                             "Sistema → Usuários."}, status_code=409)
+        return JSONResponse({"error": "no_user", "detail": i18n.t("api_auth.no_user")}, status_code=409)
     ip = _ip(request)
     try:
         _user, old_kek = accessdb.verify_password(db, p.username, body.current_password)
     except accessdb.WrongPassword:
         accessdb.login_failed(db, p.username, ip)
-        return JSONResponse({"error": "bad_credentials", "detail": "Senha atual incorreta."}, status_code=401)
+        return JSONResponse({"error": "bad_credentials", "detail": i18n.t("api_auth.wrong_current_password")}, status_code=401)
     if body.new_password == body.current_password:
-        return JSONResponse({"error": "same_password", "detail": "A nova senha precisa ser diferente da atual."},
+        return JSONResponse({"error": "same_password", "detail": i18n.t("api_auth.same_password")},
                             status_code=422)
     meta = _vault_meta()
     vault_key = accessdb.unwrap_vault_slot(accessdb.get_vault_slot(db, p.username), old_kek) or _open_vault_key(meta)

@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(ROOT / "scripts" / "engine"))  # lib.i18n (stdlib only at import)
+from lib import i18n  # noqa: E402  (no request context: messages follow NETOPS_LANG / instance language)
 DATA = ROOT / "runs" / "atendimento-monitor"
 STATE = DATA / "state.json"
 
@@ -123,7 +125,7 @@ def telegram(text: str) -> bool:
         with urllib.request.urlopen(req, timeout=15) as r:
             return r.status == 200
     except Exception as e:
-        print(f"[telegram falhou] {type(e).__name__}", file=sys.stderr)
+        print(i18n.t("cli_diagnostics.monitor_telegram_failed", error=type(e).__name__), file=sys.stderr)
         return False
 
 
@@ -156,28 +158,28 @@ def handle(cfg, st, rec, verdict, notify, investigate) -> None:
         if inc is None and st["bad"] >= a["bad_cycles_to_open"]:
             st["incident"] = {"start": now(), "start_ts": time.time(), "last_reminder": time.time(), "worst": {}}
             if notify:
-                telegram(("🟡 ATENDIMENTO COM LENTIDÃO INTERMITENTE (engasgos repetidos nos últimos 10 min)" if rec.get("intermittent") else "🔴 ATENDIMENTO LENTO/COM PROBLEMA") + f"\n{cfg['url']}\n{summarize(rec)}\n"
-                         + ("🔎 Agente investigador disparado (relatório em seguida)." if investigate and cfg.get("investigate", {}).get("enabled") else ""))
+                telegram((i18n.t("cli_diagnostics.monitor_alert_intermittent") if rec.get("intermittent") else i18n.t("cli_diagnostics.monitor_alert_slow")) + f"\n{cfg['url']}\n{summarize(rec)}\n"
+                         + (i18n.t("cli_diagnostics.monitor_investigator_started") if investigate and cfg.get("investigate", {}).get("enabled") else ""))
             if investigate:
                 launch_investigation(cfg, st, rec)
         elif inc is not None:
             if notify and time.time() - inc["last_reminder"] > a["reminder_minutes"] * 60:
                 inc["last_reminder"] = time.time()
-                telegram(f"🟠 Atendimento ainda com problema desde {inc['start'][11:16]}\n{summarize(rec)}")
+                telegram(i18n.t("cli_diagnostics.monitor_still_failing", since=inc["start"][11:16]) + f"\n{summarize(rec)}")
     else:
         st["good"] += 1; st["bad"] = 0
         if inc is not None and st["good"] >= a["good_cycles_to_close"]:
             mins = (time.time() - inc["start_ts"]) / 60
             st["incident"] = None
             if notify:
-                telegram(f"🟢 Atendimento normalizado (incidente de {mins:.0f} min, início {inc['start'][11:16]})\n{summarize(rec)}")
+                telegram(i18n.t("cli_diagnostics.monitor_recovered", minutes=f"{mins:.0f}", start=inc["start"][11:16]) + f"\n{summarize(rec)}")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cycles", type=int, default=1)
     ap.add_argument("--interval", type=int, default=30)
-    ap.add_argument("--once", action="store_true", help="1 ciclo, imprime e não altera incidente/alertas")
+    ap.add_argument("--once", action="store_true", help=i18n.t("cli_diagnostics.monitor_help_once"))
     ap.add_argument("--no-telegram", action="store_true")
     ap.add_argument("--no-investigate", action="store_true")
     a = ap.parse_args()
@@ -187,7 +189,7 @@ def main() -> int:
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        print("outra instância em execução"); return 0
+        print(i18n.t("cli_diagnostics.monitor_already_running")); return 0
     st = load_state()
     n = 1 if a.once else a.cycles
     for i in range(n):

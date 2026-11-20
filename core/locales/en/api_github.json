@@ -1,0 +1,6 @@
+{
+  "auth_timeout": "timed out waiting for the GitHub authorization",
+  "gh_missing": "GitHub CLI (gh) is not installed on the server.",
+  "login_not_completed": "login not completed",
+  "no_multiuser": "Per-user GitHub only exists with registered users (System → Users). Without them, the agent uses the server's gh."
+}

@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import deps
+from lib import i18n
 
 READ_TEXT_MAX = 5 * 1024 * 1024          # editor: até 5 MiB
 CHUNK = 256 * 1024                         # leitura p/ download/zip
@@ -77,9 +78,9 @@ def norm(path: str | None) -> str:
     """Caminho absoluto normalizado (estilo POSIX). Relativo/NUL/vazio = erro."""
     p = str(path or "")
     if not p or "\x00" in p:
-        raise FsError("caminho vazio ou inválido")
+        raise FsError(i18n.t("api_files.empty_path"))
     if not p.startswith("/"):
-        raise FsError(f"use caminho absoluto (recebido: {p!r})")
+        raise FsError(i18n.t("api_files.absolute_path", path=repr(p)))
     p = posixpath.normpath(p)
     return "/" + p.lstrip("/") if p.startswith("//") else p
 
@@ -87,14 +88,14 @@ def norm(path: str | None) -> str:
 def join(parent: str, name: str) -> str:
     name = str(name or "")
     if not name or name in (".", "..") or "/" in name or "\x00" in name:
-        raise FsError(f"nome inválido: {name!r}")
+        raise FsError(i18n.t("api_files.bad_name", name=repr(name)))
     return norm(posixpath.join(norm(parent), name))
 
 
 def check_mutable(path: str) -> str:
     p = norm(path)
     if p in PROTECTED:
-        raise Denied(f"{p} é protegido: o NetOps não apaga, move nem renomeia a raiz nem pastas de sistema")
+        raise Denied(i18n.t("api_files.protected_system", path=p))
     return p
 
 
@@ -214,8 +215,8 @@ class LocalFS:
         try:
             if not os.path.isdir(p):
                 if os.path.exists(p):
-                    raise FsError(f"não é uma pasta: {p}")
-                raise NotFound(f"pasta não existe: {p}")
+                    raise FsError(i18n.t("api_files.not_a_dir", path=p))
+                raise NotFound(i18n.t("api_files.dir_not_exists", path=p))
             names = os.listdir(p)
         except OSError as exc:
             raise _oserr(exc, p) from exc
@@ -279,12 +280,12 @@ class LocalFS:
             if d == s:
                 return
             if d.startswith(s + "/"):
-                raise FsError("não dá para mover uma pasta para dentro dela mesma")
+                raise FsError(i18n.t("api_files.move_into_self"))
             if os.path.lexists(d):
                 if not overwrite:
-                    raise Exists(f"já existe: {d}")
+                    raise Exists(i18n.t("api_files.exists_path", path=d))
                 if os.path.isdir(d) and not os.path.islink(d):
-                    raise Exists(f"já existe uma pasta com esse nome: {d}")
+                    raise Exists(i18n.t("api_files.dir_exists", path=d))
             try:
                 os.rename(s, d)
             except OSError as exc:
@@ -301,9 +302,9 @@ class LocalFS:
         def go():
             s, d = norm(src), norm(dst)
             if d == s or d.startswith(s + "/"):
-                raise FsError("não dá para copiar uma pasta para dentro dela mesma")
+                raise FsError(i18n.t("api_files.copy_into_self"))
             if os.path.lexists(d):
-                raise Exists(f"já existe: {d}")
+                raise Exists(i18n.t("api_files.exists_path", path=d))
             try:
                 if os.path.isdir(s) and not os.path.islink(s):
                     shutil.copytree(s, d, symlinks=True)
@@ -340,15 +341,15 @@ class LocalFS:
             try:
                 info = os.stat(p)
                 if st.S_ISDIR(info.st_mode):
-                    raise FsError(f"é uma pasta: {p}")
+                    raise FsError(i18n.t("api_files.is_dir", path=p))
                 if info.st_size > limit:
-                    raise FsError(f"arquivo grande demais para o editor ({info.st_size} bytes; limite {limit}) — baixe-o")
+                    raise FsError(i18n.t("api_files.too_big_editor_size", size=info.st_size, limit=limit))
                 with open(p, "rb") as fh:
                     data = fh.read(limit + 1)
             except OSError as exc:
                 raise _oserr(exc, p) from exc
             if len(data) > limit:
-                raise FsError("arquivo grande demais para o editor — baixe-o")
+                raise FsError(i18n.t("api_files.too_big_editor"))
             return data, {"mtime": int(info.st_mtime), "size": info.st_size}
         return await self._run(go)
 
@@ -360,9 +361,9 @@ class LocalFS:
                 info = os.stat(real) if os.path.exists(real) else None
                 if expect and info is not None and (int(info.st_mtime) != int(expect.get("mtime", -1))
                                                     or info.st_size != int(expect.get("size", -1))):
-                    raise Changed("o arquivo mudou no disco desde que foi aberto")
+                    raise Changed(i18n.t("api_files.changed_disk"))
                 if expect and info is None:
-                    raise Changed("o arquivo foi apagado desde que foi aberto")
+                    raise Changed(i18n.t("api_files.deleted_since_open"))
                 tmp = os.path.join(os.path.dirname(real), f".{os.path.basename(real)}.netops-{secrets.token_hex(4)}")
                 with open(tmp, "wb") as fh:
                     fh.write(data)
@@ -390,29 +391,29 @@ class LocalFS:
         def go():
             p = norm(path)
             if p in PROTECTED:
-                raise Denied(f"{p} é protegido")
+                raise Denied(i18n.t("api_files.protected", path=p))
             parent = os.path.dirname(p)
             try:
                 if mkdirs:
                     os.makedirs(parent, exist_ok=True)
                 if offset == 0 and os.path.lexists(p) and not overwrite:
-                    raise Exists(f"já existe: {p}")
+                    raise Exists(i18n.t("api_files.exists_path", path=p))
                 if os.path.isdir(p) and not os.path.islink(p):
-                    raise Exists(f"já existe uma pasta com esse nome: {p}")
+                    raise Exists(i18n.t("api_files.dir_exists", path=p))
                 tmp = self._tmp_for(p, uid)
                 if offset == 0:
                     fh = open(tmp, "wb")
                 else:
                     have = os.path.getsize(tmp) if os.path.exists(tmp) else -1
                     if have != offset:
-                        raise FsError(f"parte fora de ordem (esperado {have}, recebido {offset}); reenvie o arquivo")
+                        raise FsError(i18n.t("api_files.chunk_out_of_order", expected=have, got=offset))
                     fh = open(tmp, "ab")
                 with fh:
                     fh.write(data)
                 if final:
                     if os.path.lexists(p) and not overwrite:
                         os.unlink(tmp)
-                        raise Exists(f"já existe: {p}")
+                        raise Exists(i18n.t("api_files.exists_path", path=p))
                     os.chmod(tmp, 0o644)
                     os.replace(tmp, p)
                     return {"done": True, "size": os.path.getsize(p)}
@@ -497,7 +498,7 @@ class RemoteSession:
                 try:
                     self.sftp = await self.conn.start_sftp_client()
                 except Exception as exc:  # noqa: BLE001 — servidor sem subsistema sftp
-                    self.error = f"este host não oferece SFTP ({exc or type(exc).__name__})"
+                    self.error = i18n.t("api_files.no_sftp", error=exc or type(exc).__name__)
                     raise Unsupported(self.error) from exc
             return self.sftp
 
@@ -541,7 +542,7 @@ def _sftp_err(exc, path: str = "") -> FsError:
             return Unsupported(msg)
         return FsError(msg)
     if isinstance(exc, (asyncssh.Error, OSError, EOFError, ConnectionError)):
-        return FsError(f"conexão SFTP: {exc or type(exc).__name__}")
+        return FsError(i18n.t("api_files.sftp_error", error=exc or type(exc).__name__))
     return FsError(str(exc))
 
 
@@ -637,7 +638,7 @@ class RemoteFS:
         c = await self._c()
         p = norm(path)
         if await self.exists(p):
-            raise Exists(f"já existe: {p}")
+            raise Exists(i18n.t("api_files.exists_path", path=p))
         try:
             await c.mkdir(p)
         except Exception as exc:  # noqa: BLE001
@@ -659,7 +660,7 @@ class RemoteFS:
             await f.close()
         except Exception as exc:  # noqa: BLE001
             if await self.exists(p):
-                raise Exists(f"já existe: {p}") from exc
+                raise Exists(i18n.t("api_files.exists_path", path=p)) from exc
             raise _sftp_err(exc, p) from exc
 
     async def _replace(self, c, src: str, dst: str) -> None:
@@ -679,13 +680,13 @@ class RemoteFS:
         if d == s:
             return
         if d.startswith(s + "/"):
-            raise FsError("não dá para mover uma pasta para dentro dela mesma")
+            raise FsError(i18n.t("api_files.move_into_self"))
         try:
             if await self.exists(d):
                 if not overwrite:
-                    raise Exists(f"já existe: {d}")
+                    raise Exists(i18n.t("api_files.exists_path", path=d))
                 if (await self.stat(d))["type"] == "dir":
-                    raise Exists(f"já existe uma pasta com esse nome: {d}")
+                    raise Exists(i18n.t("api_files.dir_exists", path=d))
                 await self._replace(c, s, d)
             else:
                 await c.rename(s, d)
@@ -696,9 +697,9 @@ class RemoteFS:
         c = await self._c()
         s, d = norm(src), norm(dst)
         if d == s or d.startswith(s + "/"):
-            raise FsError("não dá para copiar uma pasta para dentro dela mesma")
+            raise FsError(i18n.t("api_files.copy_into_self"))
         if await self.exists(d):
-            raise Exists(f"já existe: {d}")
+            raise Exists(i18n.t("api_files.exists_path", path=d))
         try:
             # asyncssh usa a extensão copy-data quando o servidor tem; senão passa os bytes pelo NetOps.
             await c.copy(s, d, recurse=True, preserve=True)
@@ -731,15 +732,15 @@ class RemoteFS:
         try:
             a = await c.stat(p)
             if a.permissions and st.S_ISDIR(a.permissions):
-                raise FsError(f"é uma pasta: {p}")
+                raise FsError(i18n.t("api_files.is_dir", path=p))
             if (a.size or 0) > limit:
-                raise FsError(f"arquivo grande demais para o editor ({a.size} bytes; limite {limit}) — baixe-o")
+                raise FsError(i18n.t("api_files.too_big_editor_size", size=a.size, limit=limit))
             async with c.open(p, "rb") as f:
                 data = await f.read(limit + 1)
         except Exception as exc:  # noqa: BLE001
             raise _sftp_err(exc, p) from exc
         if len(data) > limit:
-            raise FsError("arquivo grande demais para o editor — baixe-o")
+            raise FsError(i18n.t("api_files.too_big_editor"))
         return data, {"mtime": int(a.mtime or 0), "size": a.size or 0}
 
     async def write_bytes(self, path: str, data: bytes, expect: dict | None) -> dict:
@@ -752,9 +753,9 @@ class RemoteFS:
                 a = None
             if expect and a is not None and (int(a.mtime or 0) != int(expect.get("mtime", -1))
                                              or (a.size or 0) != int(expect.get("size", -1))):
-                raise Changed("o arquivo mudou no host desde que foi aberto")
+                raise Changed(i18n.t("api_files.changed_host"))
             if expect and a is None:
-                raise Changed("o arquivo foi apagado desde que foi aberto")
+                raise Changed(i18n.t("api_files.deleted_since_open"))
             tmp = posixpath.join(posixpath.dirname(p), f".{posixpath.basename(p)}.netops-{secrets.token_hex(4)}")
             async with c.open(tmp, "wb") as f:
                 await f.write(data)
@@ -774,27 +775,27 @@ class RemoteFS:
         c = await self._c()
         p = norm(path)
         if p in PROTECTED:
-            raise Denied(f"{p} é protegido")
+            raise Denied(i18n.t("api_files.protected", path=p))
         tmp = posixpath.join(posixpath.dirname(p), f"{UPLOAD_TMP_PREFIX}{uid}")
         try:
             if mkdirs:
                 await self._makedirs(posixpath.dirname(p))
             if offset == 0 and await self.exists(p) and not overwrite:
-                raise Exists(f"já existe: {p}")
+                raise Exists(i18n.t("api_files.exists_path", path=p))
             if offset == 0:
                 async with c.open(tmp, "wb") as f:
                     await f.write(data)
             else:
                 have = (await c.stat(tmp)).size if await self.exists(tmp) else -1
                 if have != offset:
-                    raise FsError(f"parte fora de ordem (esperado {have}, recebido {offset}); reenvie o arquivo")
+                    raise FsError(i18n.t("api_files.chunk_out_of_order", expected=have, got=offset))
                 async with c.open(tmp, "r+b") as f:
                     await f.write(data, offset)
             if final:
                 if await self.exists(p):
                     if not overwrite:
                         await c.remove(tmp)
-                        raise Exists(f"já existe: {p}")
+                        raise Exists(i18n.t("api_files.exists_path", path=p))
                     await self._replace(c, tmp, p)
                 else:
                     await c.rename(tmp, p)
@@ -927,7 +928,7 @@ class ProjectFS:
         return real == self.root or real.startswith(self.root.rstrip("/") + "/")
 
     def _deny(self, p: str):
-        return Denied(f"{p} está fora da pasta do projeto")
+        return Denied(i18n.t("api_files.outside_project", path=p))
 
     def _target(self, path: str) -> str:
         """Conteúdo: segue links até o fim."""
@@ -945,7 +946,7 @@ class ProjectFS:
         if not self._inside(full):
             raise self._deny(p)
         if not allow_root and full == self.root:
-            raise Denied("a pasta do projeto não pode ser apagada, renomeada nem movida")
+            raise Denied(i18n.t("api_files.project_root_protected"))
         return p
 
     async def home(self) -> str:
@@ -1022,14 +1023,14 @@ def backend(src: str | None):
         pid = src[len("project:"):]
         root = projects_svc.path_of(pid)
         if not root:
-            raise NotFound("projeto não encontrado (ou a pasta dele não existe mais)")
+            raise NotFound(i18n.t("api_files.project_not_found"))
         return ProjectFS(_LOCAL, root, pid)
     if src.startswith("root:"):
         from services import root_files_svc  # noqa: PLC0415
         return RemoteFS(root_files_svc.get(src))
     s = SFTP_SESSIONS.get(src)
     if s is None:
-        raise NotFound("sessão SFTP encerrada (o terminal do host foi fechado) — reabra o terminal")
+        raise NotFound(i18n.t("api_files.sftp_session_closed"))
     return RemoteFS(s)
 
 

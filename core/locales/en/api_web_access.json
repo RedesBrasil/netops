@@ -1,0 +1,5 @@
+{
+  "bad_network": "'{value}' is not a valid IP or network (use 10.0.0.0/8, 192.0.2.7, 2001:db8::/32)",
+  "need_network": "With restricted access on, add at least one network.",
+  "self_lockout": "Your current IP ({ip}) would be blocked. Add it (or its network) to the list."
+}

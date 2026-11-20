@@ -363,8 +363,12 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 
 # AGENTS.md é LOCAL de cada instalação (fora do git e do pacote): sem ele, nasce do modelo limpo.
+# Modelo do idioma da instalação (core/templates/<idioma>/), senão o modelo padrão.
 if [ ! -e "$ROOT/AGENTS.md" ] && [ -f "$ROOT/core/templates/AGENTS.tmpl.md" ]; then
-  sed '1,/-->/d' "$ROOT/core/templates/AGENTS.tmpl.md" > "$ROOT/AGENTS.md" 2>/dev/null && chmod 644 "$ROOT/AGENTS.md" || true
+  AGENTS_TPL="$ROOT/core/templates/AGENTS.tmpl.md"
+  INST_LANG="$(sed -n '/^instance:/,/^[^ #]/{s/^  language:[[:space:]]*["'"'"']\{0,1\}\([A-Za-z-]*\).*/\1/p}' "$ROOT/core/config/project-config.yaml" 2>/dev/null | head -1)"
+  [ -n "$INST_LANG" ] && [ -f "$ROOT/core/templates/$INST_LANG/AGENTS.tmpl.md" ] && AGENTS_TPL="$ROOT/core/templates/$INST_LANG/AGENTS.tmpl.md"
+  sed '1,/-->/d' "$AGENTS_TPL" > "$ROOT/AGENTS.md" 2>/dev/null && chmod 644 "$ROOT/AGENTS.md" || true
 fi
 
 PY="$ROOT/.venv/bin/python3"

@@ -8,6 +8,7 @@ from copy import deepcopy
 from pydantic import ValidationError
 
 import deps
+from lib import i18n
 from lib.host_identity import host_index, resolve_reference
 from models import NetworkMap
 from services import inventory_svc, topology_svc, yaml_io
@@ -35,7 +36,7 @@ def _hosts(data=None):
 def _require_migrated():
     data, _ = inventory_svc.load_hosts()
     if data.get("version") != 2:
-        _fail("hosts/version", "Migre o inventário para IDs inteiros antes de editar os mapas e enlaces.")
+        _fail("hosts/version", i18n.t("api_maps.migrate_first"))
 
 
 def _ref_key(ref):
@@ -63,7 +64,7 @@ def _normalise_legacy_maps(data):
             return {"kind": "host", "host_id": identity(value[5:])}
         if isinstance(value, str) and value.startswith("object:"):
             return {"kind": "object", "object_id": value[7:]}
-        _fail("visual_links", "ponta da conexão visual inválida")
+        _fail("visual_links", i18n.t("api_maps.bad_visual_endpoint"))
 
     for m in data["maps"]:
         m["members"] = [identity(value) for value in m.get("members") or []]
@@ -168,12 +169,12 @@ def _document(hosts=None):
     if data is None:
         data = {"version": 2, "maps": []}
     if data.get("version") not in (1, 2) or not isinstance(data.get("maps"), list):
-        _fail("maps", "formato de maps.yaml inválido")
+        _fail("maps", i18n.t("api_maps.bad_format"))
     if any(not isinstance(m, dict) or not isinstance(m.get("id"), str) for m in data["maps"]):
-        _fail("maps", "todo mapa precisa de um ID textual")
+        _fail("maps", i18n.t("api_maps.text_id_required"))
     stored = {m["id"]: m for m in data["maps"]}
     if len(stored) != len(data["maps"]):
-        _fail("maps/id", "IDs de mapa duplicados")
+        _fail("maps/id", i18n.t("api_maps.duplicate_map_ids"))
     if data.get("version") == 1:
         _normalise_legacy_maps(data)
     for m in _default_maps(hosts):
@@ -208,7 +209,7 @@ def snapshot():
         try:
             value = deepcopy(m) if legacy else NetworkMap.model_validate(m).model_dump(exclude_none=True)
         except ValidationError:
-            _fail("maps", "mapa salvo com formato inválido")
+            _fail("maps", i18n.t("api_maps.saved_bad_format"))
         # Alterações externas nos arquivos canônicos não deixam referências mortas
         # no editor. A leitura é pura; a próxima gravação persiste a limpeza.
         value["members"] = [name for name in value.get("members", []) if name in hosts]
@@ -230,36 +231,36 @@ def _validate(m, maps, hosts, links):
     valid_hosts = set(hosts)
     positions = m.get("positions") or []
     if len({p["host_id"] for p in positions}) != len(positions):
-        _fail("positions/host_id", "posição de host duplicada")
+        _fail("positions/host_id", i18n.t("api_maps.duplicate_position"))
     for name in set(m.get("members") or []) | {p["host_id"] for p in positions}:
         if name not in valid_hosts:
-            _fail("hosts", f"host '{name}' fora do inventário")
+            _fail("hosts", i18n.t("api_maps.host_not_in_inventory", name=name))
     map_ids = {item["id"] for item in maps if not item.get("deleted")}
     objects = m.get("objects") or []
     ids = [o["id"] for o in objects]
     if len(ids) != len(set(ids)):
-        _fail("objects/id", "IDs de objeto duplicados")
+        _fail("objects/id", i18n.t("api_maps.duplicate_object_ids"))
     for obj in objects:
         if obj["type"] == "reference" and (obj.get("map_id") not in map_ids or obj["map_id"] == m["id"]):
-            _fail("objects/map_id", "mapa de destino inexistente ou igual ao atual")
+            _fail("objects/map_id", i18n.t("api_maps.bad_target_map"))
     visible = set(host_ids(m, hosts))
     node_ids = {("host", name) for name in visible} | {("object", name) for name in ids}
     for ident in (m.get("edges") or {}):
         if ident not in links:
-            _fail("edges", "enlace não existe na topologia, recarregue o mapa")
+            _fail("edges", i18n.t("api_maps.edge_not_in_topology"))
     visual_ids = [v["id"] for v in m.get("visual_links") or []]
     if len(visual_ids) != len(set(visual_ids)):
-        _fail("visual_links/id", "IDs de conexão visual duplicados")
+        _fail("visual_links/id", i18n.t("api_maps.duplicate_visual_ids"))
     for link in m.get("visual_links") or []:
         if _ref_key(link["source"]) not in node_ids or _ref_key(link["target"]) not in node_ids or link["source"] == link["target"]:
-            _fail("visual_links", "ponta da conexão visual inválida")
+            _fail("visual_links", i18n.t("api_maps.bad_visual_endpoint"))
         if link["source"]["kind"] == "host" and link["target"]["kind"] == "host":
-            _fail("visual_links", "ligação entre hosts precisa ser cadastrada como enlace real")
+            _fail("visual_links", i18n.t("api_maps.host_link_must_be_real"))
 
 
 def _require_rev(rev):
     if not rev:
-        _fail("rev", "revisão do mapa obrigatória (If-Match)")
+        _fail("rev", i18n.t("api_maps.rev_required"))
 
 
 @yaml_io.serialized
@@ -270,10 +271,10 @@ def save_map(m, rev, hosts_rev, topology_rev):
     data, _, y, aliases = _document(hosts)
     if m["id"] in aliases:
         raise deps.ConflictError(yaml_io.file_rev(deps.MAPS_FILE),
-                                 detail="Este mapa foi unificado com Rede geral. Recarregue antes de editar.")
+                                 detail=i18n.t("api_maps.merged_reload"))
     existing = next((item for item in data["maps"] if item["id"] == m["id"]), None)
     if existing and (existing["kind"] != m["kind"] or existing.get("site") != m.get("site")):
-        _fail("kind", "o tipo e a localidade de um mapa existente não podem mudar")
+        _fail("kind", i18n.t("api_maps.kind_site_immutable"))
     if existing:
         # Mantém os comentários do bloco do mapa ao substituir seus campos editáveis.
         for key in list(existing):
@@ -303,14 +304,14 @@ def delete_map(ident, rev):
     _require_rev(rev)
     data, _, y, aliases = _document()
     if ident in aliases:
-        _fail("map", "este mapa foi unificado com Rede geral")
+        _fail("map", i18n.t("api_maps.merged"))
     m = next((m for m in data["maps"] if m["id"] == ident), None)
     if not m:
-        raise KeyError("mapa não existe")
+        raise KeyError(i18n.t("api_maps.not_exists"))
     if m["kind"] == "all" or ident == "all":
-        _fail("map", "a Rede geral não pode ser excluída")
+        _fail("map", i18n.t("api_maps.all_not_deletable"))
     if m.get("deleted"):
-        raise KeyError("mapa não existe")
+        raise KeyError(i18n.t("api_maps.not_exists"))
     # Exclusão suave: o bloco fica no arquivo (e impede a recriação automática do mapa
     # de localidade), mas o mapa deixa de ser exibido e de receber hosts.
     m["deleted"] = True
@@ -332,7 +333,7 @@ def place_host(host_id, placement, hosts_data, writes, checks):
     ident = aliases.get(placement["map_id"], placement["map_id"])
     m = next((m for m in data["maps"] if m["id"] == ident), None)
     if not m:
-        raise KeyError("mapa não existe")
+        raise KeyError(i18n.t("api_maps.not_exists"))
     positions = m.setdefault("positions", [])
     positions[:] = [p for p in positions if p["host_id"] != host_id]
     positions.append({"host_id": host_id, "x": placement["x"], "y": placement["y"]})  # sem z_index: o editor o põe no topo

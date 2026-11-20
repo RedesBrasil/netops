@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, HTTPException, Request
 
 import deps
+from lib import i18n
 from inbox import actions, store
 
 router = APIRouter(tags=["inbox"])
@@ -33,11 +34,11 @@ def _ids(body: dict) -> list[int] | None:
     if ids is None:
         return None
     if not isinstance(ids, list):
-        raise deps.ValidationFailed([{"loc": "ids", "msg": "lista de ids"}])
+        raise deps.ValidationFailed([{"loc": "ids", "msg": i18n.t("api_inbox.ids_list")}])
     try:
         return [int(i) for i in ids]
     except (TypeError, ValueError):
-        raise deps.ValidationFailed([{"loc": "ids", "msg": "ids inteiros"}])
+        raise deps.ValidationFailed([{"loc": "ids", "msg": i18n.t("api_inbox.integer_ids")}])
 
 
 @router.get("/inbox/summary")
@@ -94,8 +95,7 @@ def decide(mid: int, request: Request, body: dict = Body(...)):
     if rec["actionable"]:
         p = authz.request_principal(request)
         if not p.is_admin:
-            raise authz.Forbidden("inbox.decide", "Este pedido executa uma ação no servidor ao ser decidido: "
-                                                  "só administradores podem aprovar ou reprovar.")
+            raise authz.Forbidden("inbox.decide", i18n.t("api_inbox.decide_admin_only"))
     try:
         rec = store.decide(mid, str(body.get("decision") or ""), _user(request), str(body.get("note") or ""),
                            deps.DATA_ROOT)

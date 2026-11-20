@@ -1,27 +1,30 @@
 // Central de Avisos — estado compartilhado (contador), sino do topo e ações reutilizadas pela página #inbox.
 // As mensagens nascem fora do console (tarefas agendadas, scripts e agentes: scripts/engine/inbox/cli.py).
-import { html, useState, useEffect, useRef, api, toast, handleError, createStore, useStore, can, useMe } from "./ui.js";
+import { html, useState, useEffect, useRef, api, toast, handleError, createStore, useStore, can, useMe, t, fmtDateTime } from "./ui.js";
 import { navigate } from "./route.js";
 import { validSessionId } from "./claude-sessions.js";
 
+// Labels are catalog keys (translated at render time with t()); use the *Text helpers below.
 export const KIND = {
-  info: { icon: "ℹ️", label: "Aviso", cls: "ib-k-info" },
-  alert: { icon: "⚠️", label: "Alerta", cls: "ib-k-alert" },
-  approval: { icon: "✋", label: "Aprovação", cls: "ib-k-approval" },
+  info: { icon: "ℹ️", label: "inbox.kind_info", cls: "ib-k-info" },
+  alert: { icon: "⚠️", label: "inbox.kind_alert", cls: "ib-k-alert" },
+  approval: { icon: "✋", label: "inbox.kind_approval", cls: "ib-k-approval" },
 };
-export const SEVERITY = { info: ["info", ""], warning: ["atenção", "warn"], critical: ["crítico", "danger"] };
-export const STATUS = { pending: ["aguardando você", "warn"], approved: ["aprovado", "ok"], rejected: ["reprovado", "danger"], expired: ["expirado", ""] };
-export const SOURCE = { schedule: "tarefa agendada", script: "script", agent: "agente", chat: "aba Claude", system: "sistema" };
+export const SEVERITY = { info: ["inbox.sev_info", ""], warning: ["inbox.sev_warning", "warn"], critical: ["inbox.sev_critical", "danger"] };
+export const STATUS = { pending: ["inbox.status_pending", "warn"], approved: ["inbox.status_approved", "ok"], rejected: ["inbox.status_rejected", "danger"], expired: ["inbox.status_expired", ""] };
+export const SOURCE = { schedule: "inbox.source_schedule", script: "inbox.source_script", agent: "inbox.source_agent", chat: "inbox.source_chat", system: "inbox.source_system" };
+export const sourceText = (src) => (SOURCE[src] ? t(SOURCE[src]) : src);
+export const statusText = (st) => (STATUS[st] ? t(STATUS[st][0]) : st);
 
 export function relTime(s) {
   if (!s) return "";
   const a = Math.max(0, Math.round(Date.now() / 1000 - s));
-  if (a < 60) return "agora";
-  if (a < 3600) return "há " + Math.round(a / 60) + " min";
-  if (a < 86400) return "há " + Math.round(a / 3600) + " h";
-  return "há " + Math.round(a / 86400) + " d";
+  if (a < 60) return t("inbox.rel_now");
+  if (a < 3600) return t("inbox.rel_ago", { v: Math.round(a / 60) + " min" });
+  if (a < 86400) return t("inbox.rel_ago", { v: Math.round(a / 3600) + " h" });
+  return t("inbox.rel_ago", { v: Math.round(a / 86400) + " d" });
 }
-export const fmtTs = (s) => s ? new Date(s * 1000).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "—";
+export const fmtTs = (s) => s ? fmtDateTime(s, { dateStyle: "short", timeStyle: "short" }) : "—";
 
 // ---- contador (sino + menu + título da aba) -------------------------------- //
 export const inboxStore = createStore({ unread: 0, pending: 0, badge: 0, critical: 0 });
@@ -59,11 +62,11 @@ export function useInboxSummary(enabled) {
 export async function decideMsg(msg, decision, note = "") {
   try {
     const r = await api.post(`/inbox/${msg.id}/decision`, { decision, note });
-    toast.ok((decision === "approve" ? "Aprovado" : "Reprovado") + (r.actionable ? " — ação em andamento" : ""));
+    toast.ok((decision === "approve" ? t("inbox.approved_toast") : t("inbox.rejected_toast")) + (r.actionable ? " " + t("inbox.action_in_progress_suffix") : ""));
     inboxChanged();
     return r;
   } catch (e) {
-    if (e.status === 409) { toast.err("Este pedido já foi decidido (ou expirou)."); inboxChanged(); return null; }
+    if (e.status === 409) { toast.err(t("inbox.already_decided")); inboxChanged(); return null; }
     handleError(e); return null;
   }
 }
@@ -77,12 +80,12 @@ export function openInClaude(msg, extra = "") {
   const k = KIND[msg.kind] || KIND.info;
   const body = String(msg.body || msg.body_excerpt || "").trim();
   const sid = validSessionId(msg.session_id || "") ? msg.session_id : "";
-  const head = `Sobre o ${k.label.toLowerCase()} #${msg.id} da Central de Avisos — “${msg.title}”`
-    + (msg.source_label ? ` (origem: ${msg.source_label})` : "")
-    + (msg.status ? ` — situação: ${(STATUS[msg.status] || [msg.status])[0]}` : "") + ".";
+  const head = t("inbox.claude_head", { kind: t(k.label).toLowerCase(), id: msg.id, title: msg.title })
+    + (msg.source_label ? " " + t("inbox.claude_head_source", { source: msg.source_label }) : "")
+    + (msg.status ? " " + t("inbox.claude_head_status", { status: statusText(msg.status) }) : "") + ".";
   const text = sid
     ? `${head}\n\n${extra || ""}`
-    : `${head}\n\n${body.length > 4000 ? body.slice(0, 4000) + "\n…" : body}\n\n(detalhes: python3 scripts/engine/inbox/cli.py get ${msg.id})\n\n${extra || ""}`;
+    : `${head}\n\n${body.length > 4000 ? body.slice(0, 4000) + "\n…" : body}\n\n(${t("inbox.claude_details")} python3 scripts/engine/inbox/cli.py get ${msg.id})\n\n${extra || ""}`;
   try { localStorage.setItem("cc-fork-prefill", JSON.stringify({ id: sid || "new", text, t: Date.now() })); } catch (_) {}
   navigate(sid ? "#claude/" + sid : "#claude/new");
   // Conversa-alvo já aberta (não reativa): o provider aplica o prefill por evento.
@@ -92,15 +95,15 @@ export function openInClaude(msg, extra = "") {
 export function KindBadge({ msg }) {
   const k = KIND[msg.kind] || KIND.info;
   const sev = msg.kind !== "info" && SEVERITY[msg.severity];
-  return html`<span class=${"ib-kind " + k.cls}>${k.icon} ${k.label}</span>${sev && sev[1]
-    ? html` <span class=${"badge " + sev[1]}>${sev[0]}</span>` : ""}`;
+  return html`<span class=${"ib-kind " + k.cls}>${k.icon} ${t(k.label)}</span>${sev && sev[1]
+    ? html` <span class=${"badge " + sev[1]}>${t(sev[0])}</span>` : ""}`;
 }
 export function StatusBadge({ msg }) {
-  if (msg.result && msg.result.state && msg.result.state !== "done") return html`<span class="badge accent">ação rodando…</span>`;
+  if (msg.result && msg.result.state && msg.result.state !== "done") return html`<span class="badge accent">${t("inbox.action_running")}</span>`;
   if (msg.result && msg.result.state === "done" && msg.result.status !== "ok")
-    return html`<span class="badge danger" title=${msg.result.error || ""}>${(STATUS[msg.status] || [""])[0]} · ação falhou</span>`;
-  if (!msg.status) return msg.unread ? html`<span class="badge accent">nova</span>` : html`<span class="help">lida</span>`;
-  const [label, cls] = STATUS[msg.status] || [msg.status, ""];
+    return html`<span class="badge danger" title=${msg.result.error || ""}>${STATUS[msg.status] ? t(STATUS[msg.status][0]) : ""} · ${t("inbox.action_failed_short")}</span>`;
+  if (!msg.status) return msg.unread ? html`<span class="badge accent">${t("inbox.new_badge")}</span>` : html`<span class="help">${t("inbox.read_label")}</span>`;
+  const [label, cls] = STATUS[msg.status] ? [t(STATUS[msg.status][0]), STATUS[msg.status][1]] : [msg.status, ""];
   return html`<span class=${"badge " + cls}>${label}</span>`;
 }
 
@@ -131,41 +134,40 @@ export function InboxBell() {
   const n = s.badge || 0;
   const go = (hash) => { setOpen(false); navigate(hash); };
   const quick = async (e, m, d) => { e.stopPropagation(); await decideMsg(m, d); load(); };
-  const title = n ? `Central de Avisos — ${s.unread} não lida(s), ${s.pending} aguardando aprovação` : "Central de Avisos";
+  const title = n ? t("inbox.bell_title_counts", { unread: s.unread, pending: s.pending }) : t("inbox.title");
   return html`<div class="ib-bell-wrap" ref=${ref}>
     <button type="button" class=${"ib-bell" + (n ? " has" : "") + (s.critical ? " crit" : "")} aria-label=${title} title=${title}
       aria-expanded=${open} onClick=${() => setOpen(!open)}>
       <${BellIcon} />${n > 0 && html`<span class="ib-count">${n > 99 ? "99+" : n}</span>`}
     </button>
-    ${open && html`<div class="ib-pop" role="dialog" aria-label="Central de Avisos">
+    ${open && html`<div class="ib-pop" role="dialog" aria-label=${t("inbox.title")}>
       <div class="ib-pop-head">
-        <b>Central de Avisos</b>
-        <span class="help">${s.pending ? `${s.pending} aguardando você` : s.unread ? `${s.unread} não lida${s.unread > 1 ? "s" : ""}` : "tudo em dia"}</span>
+        <b>${t("inbox.title")}</b>
+        <span class="help">${s.pending ? t("inbox.pop_pending", { n: s.pending }) : s.unread ? t("inbox.pop_unread", { count: s.unread }) : t("inbox.pop_all_clear")}</span>
         <span style="flex:1"></span>
-        ${s.unread > 0 && html`<button class="sm link-btn" onClick=${() => markRead(null).then(load)}>marcar lidas</button>`}
+        ${s.unread > 0 && html`<button class="sm link-btn" onClick=${() => markRead(null).then(load)}>${t("inbox.mark_read_short")}</button>`}
       </div>
       <div class="ib-pop-list">
-        ${items === null ? html`<div class="help ib-pop-empty">Carregando…</div>`
-          : items.length === 0 ? html`<div class="help ib-pop-empty">Nenhum aviso. Quando uma tarefa agendada ou um agente
-              encontrar algo (ou precisar da sua aprovação), aparece aqui.</div>`
+        ${items === null ? html`<div class="help ib-pop-empty">${t("common.loading")}</div>`
+          : items.length === 0 ? html`<div class="help ib-pop-empty">${t("inbox.pop_empty")}</div>`
           : items.map((m) => html`<a key=${m.id} href=${"#inbox/" + m.id} class=${"ib-pop-item" + (m.unread ? " unread" : "") + (m.status === "pending" ? " pending" : "")}
               onClick=${(e) => { e.preventDefault(); go("#inbox/" + m.id); }}>
               <span class="ib-pop-icon">${(KIND[m.kind] || KIND.info).icon}</span>
               <span class="ib-pop-main">
                 <span class="ib-pop-title">${m.title}${m.occurrences > 1 ? html` <span class="help">×${m.occurrences}</span>` : ""}</span>
-                <span class="help">${m.source_label || SOURCE[m.source] || m.source} · ${relTime(m.updated_at)}
-                  ${m.severity === "critical" && m.kind !== "info" ? html` · <b class="err">crítico</b>` : ""}</span>
+                <span class="help">${m.source_label || sourceText(m.source)} · ${relTime(m.updated_at)}
+                  ${m.severity === "critical" && m.kind !== "info" ? html` · <b class="err">${t("inbox.sev_critical")}</b>` : ""}</span>
                 ${m.status === "pending" && html`<span class="ib-pop-btns">
                   ${m.actionable
-                    ? html`<button class="sm primary" onClick=${(e) => { e.preventDefault(); e.stopPropagation(); go("#inbox/" + m.id); }}>Revisar e decidir</button>`
-                    : html`<button class="sm primary needs-inbox-decide" onClick=${(e) => { e.preventDefault(); quick(e, m, "approve"); }}>Aprovar</button>
-                      <button class="sm needs-inbox-decide" onClick=${(e) => { e.preventDefault(); quick(e, m, "reject"); }}>Reprovar</button>`}
+                    ? html`<button class="sm primary" onClick=${(e) => { e.preventDefault(); e.stopPropagation(); go("#inbox/" + m.id); }}>${t("inbox.review_and_decide")}</button>`
+                    : html`<button class="sm primary needs-inbox-decide" onClick=${(e) => { e.preventDefault(); quick(e, m, "approve"); }}>${t("inbox.approve")}</button>
+                      <button class="sm needs-inbox-decide" onClick=${(e) => { e.preventDefault(); quick(e, m, "reject"); }}>${t("inbox.reject")}</button>`}
                 </span>`}
               </span>
-              ${m.unread && html`<span class="sc-dot" title="não lida"></span>`}
+              ${m.unread && html`<span class="sc-dot" title=${t("inbox.unread_dot")}></span>`}
             </a>`)}
       </div>
-      <div class="ib-pop-foot"><a href="#inbox" onClick=${(e) => { e.preventDefault(); go("#inbox"); }}>Abrir a Central de Avisos →</a></div>
+      <div class="ib-pop-foot"><a href="#inbox" onClick=${(e) => { e.preventDefault(); go("#inbox"); }}>${t("inbox.open_inbox_link")}</a></div>
     </div>`}
   </div>`;
 }

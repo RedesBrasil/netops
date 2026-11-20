@@ -1,49 +1,49 @@
-# Catálogo de Boas Práticas
-# O agente lê este índice primeiro e só abre o guia relevante para a tarefa.
-# Adaptado do _catalog.yaml do OpenSquad.
+# Best Practices Catalog
+# The agent reads this index first and opens only the guide relevant to the task.
+# Adapted from OpenSquad's _catalog.yaml.
 
 version: 1
 
-# --- Guias disponíveis ---
+# --- Available guides ---
 guides:
   - id: network-security-audit
-    titulo: "Auditoria de segurança de rede"
+    titulo: "Network security audit"
     vendor: general
     file: general/network-security-audit.md
-    quando_usar: "Avaliar a postura de segurança de qualquer equipamento de rede."
+    quando_usar: "Assess the security posture of any network device."
 
   - id: ssh-hardening
-    titulo: "Hardening de acesso SSH"
+    titulo: "SSH access hardening"
     vendor: general
     file: general/ssh-hardening.md
-    quando_usar: "Revisar/endurecer o acesso administrativo via SSH."
+    quando_usar: "Review/harden administrative access over SSH."
 
   - id: mikrotik-security-hardening
-    titulo: "Hardening de segurança no MikroTik RouterOS"
+    titulo: "MikroTik RouterOS security hardening"
     vendor: mikrotik
     file: mikrotik/security-hardening.md
-    quando_usar: "Endurecer um roteador/switch MikroTik."
+    quando_usar: "Harden a MikroTik router/switch."
 
   - id: mikrotik-firewall
-    titulo: "Boas práticas de firewall no MikroTik"
+    titulo: "MikroTik firewall best practices"
     vendor: mikrotik
     file: mikrotik/firewall.md
-    quando_usar: "Planejar/revisar regras de firewall em MikroTik."
+    quando_usar: "Plan/review firewall rules on MikroTik."
 
   - id: linux-server-hardening
-    titulo: "Hardening de servidor Linux"
+    titulo: "Linux server hardening"
     vendor: linux
     file: linux/server-hardening.md
-    quando_usar: "Endurecer um servidor Linux."
+    quando_usar: "Harden a Linux server."
 
   - id: linux-services-hardening
-    titulo: "Hardening de serviços Linux (Apache, Docker, FTP)"
+    titulo: "Linux services hardening (Apache, Docker, FTP)"
     vendor: linux
     file: linux/services-hardening.md
-    quando_usar: "Revisar serviços expostos num servidor Linux."
+    quando_usar: "Review exposed services on a Linux server."
 
-# --- Status dos vendors ---
-# seed = conteúdo completo já existe | pendente = só estrutura, preencher conforme evolui
+# --- Vendor status ---
+# seed = full content already exists | pendente = structure only, fill in as it evolves
 vendors:
   general:   { status: seed }
   mikrotik:  { status: seed }

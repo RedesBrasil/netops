@@ -26,6 +26,7 @@ sys.path.insert(0, str(HERE))
 
 import common  # noqa: E402
 from common import CREDENTIAL, LOCAL_HOSTNAME, LocalAdminError  # noqa: E402
+from lib import i18n  # noqa: E402
 from lib import runtime_identity as rid  # noqa: E402
 
 ROOT = HERE.parents[2]
@@ -53,7 +54,7 @@ def cmd_exec(a) -> int:
         script = sys.stdin.read() if a.script_file == "-" else Path(a.script_file).read_text()
     argv = a.argv[1:] if a.argv and a.argv[0] == "--" else a.argv
     if not argv and not script:
-        print("ERRO: informe -- <comando> ou --script-file", file=sys.stderr)
+        print(i18n.t("cli_localadmin.exec_usage"), file=sys.stderr)
         return 2
     out = sys.stdout.buffer
     try:
@@ -73,7 +74,7 @@ def ensure_host(root=ROOT) -> int:
     """Cria ou repara o host Local (idempotente). Devolve o ID. Exige layout 2."""
     ident = rid.load(root)
     if not ident:
-        raise SystemExit("ERRO: instalação legada (layout 1)")
+        raise SystemExit(i18n.t("cli_localadmin.legacy_layout"))
     inv, creds = _ui()
     data, rev = inv.load_hosts()
     hosts = data.get("hosts") or []
@@ -117,9 +118,9 @@ def _vault_key(meta: dict) -> bytes:
         try:
             tty = open("/dev/tty", "r+")
         except OSError:
-            raise vault.VaultLocked("cofre trancado e sem terminal para a senha-mestra")
+            raise vault.VaultLocked(i18n.t("cli_localadmin.vault_locked_no_tty"))
         with tty:
-            k = vault.derive_key(getpass.getpass("Senha-mestra do cofre (para gravar a credencial do admin local): ",
+            k = vault.derive_key(getpass.getpass(i18n.t("cli_localadmin.prompt_master"),
                                                  stream=tty), meta)
     vault.verify_key(k, meta)
     return k
@@ -143,29 +144,29 @@ def store_credential(password: str, root=ROOT) -> None:
     token = vault.encrypt_value(key, password)
     lines = vcli._set_field(text.splitlines(), CREDENTIAL, "password", token)
     if lines is None:
-        raise SystemExit("ERRO: credencial não encontrada após criar")
+        raise SystemExit(i18n.t("cli_localadmin.credential_missing"))
     vcli._atomic_write(path, "\n".join(lines) + "\n")
 
 
 def cmd_store_credential(a) -> int:
     if not a.stdin:
-        print("ERRO: use --stdin (a senha nunca vai em argumento)", file=sys.stderr)
+        print(i18n.t("cli_localadmin.use_stdin"), file=sys.stderr)
         return 2
     pw = sys.stdin.readline().rstrip("\n")
     if len(pw) < 16:
-        print("ERRO: senha ausente/curta no stdin", file=sys.stderr)
+        print(i18n.t("cli_localadmin.short_password"), file=sys.stderr)
         return 2
     try:
         store_credential(pw)
     except Exception as e:  # noqa: BLE001
-        print(f"ERRO: {type(e).__name__}: {e}", file=sys.stderr)
+        print(i18n.t("cli_localadmin.error", error=f"{type(e).__name__}: {e}"), file=sys.stderr)
         return 1
-    print(f"OK — {CREDENTIAL} gravada no cofre (valor não exibido).")
+    print(i18n.t("cli_localadmin.credential_stored", cred=CREDENTIAL))
     return 0
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Administração Local do NetOps (conta operacional)")
+    ap = argparse.ArgumentParser(description=i18n.t("cli_localadmin.description"))
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status")
     ex = sub.add_parser("exec")
@@ -181,10 +182,10 @@ def main(argv=None) -> int:
     try:
         ok, msg = rid.current_ok(rid.load(ROOT))
     except rid.IdentityError as e:
-        print(f"ERRO: {e}", file=sys.stderr)
+        print(i18n.t("cli_localadmin.error", error=e), file=sys.stderr)
         return 2
     if not ok:
-        print(f"ERRO: {msg}", file=sys.stderr)
+        print(i18n.t("cli_localadmin.error", error=msg), file=sys.stderr)
         return 2
     return {"status": cmd_status, "exec": cmd_exec, "ensure-host": cmd_ensure_host,
             "store-credential": cmd_store_credential}[a.cmd](a)

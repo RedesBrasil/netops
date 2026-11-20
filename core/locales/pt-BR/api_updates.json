@@ -1,0 +1,18 @@
+{
+  "active_work": "Antes de atualizar, aguarde: {items}.",
+  "active_writes": "Há gravações em andamento. Aguarde e tente novamente.",
+  "backup_check_failed": "Não foi possível verificar uma execução de backup.",
+  "backup_running": "backup de equipamento em andamento",
+  "busy": "Atualização já em andamento.",
+  "confirmed": "Atualização confirmada. Aguarde o reinício do console.",
+  "forward_failed": "Não foi possível encaminhar a atualização ao launcher.",
+  "login_required": "Inicialize o cofre e faça login antes de atualizar.",
+  "no_package": "Esta release não contém pacote oficial verificável.",
+  "not_newer": "A versão selecionada não é superior à instalada.",
+  "pending": "Já existe uma atualização ou recuperação pendente.",
+  "release_changed": "A release mais recente mudou. Verifique atualizações novamente.",
+  "request_failed": "Falha de escrita ao iniciar atualização. Instalação preservada.",
+  "unmanaged": "Inicie o console por scripts/engine/ui/start.sh para habilitar atualização e reinício.",
+  "workflow_check_failed": "Não foi possível verificar uma execução de workflow.",
+  "workflow_running": "workflow em andamento"
+}

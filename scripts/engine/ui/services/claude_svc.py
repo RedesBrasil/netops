@@ -76,6 +76,7 @@ from pathlib import Path
 from fastapi import WebSocket, WebSocketDisconnect
 
 import deps
+from lib import i18n
 from lib import github_identity, net_perms, shell_cmds
 from services import claude_models, claude_prefs, projects_svc
 
@@ -1207,7 +1208,7 @@ class ClaudeWebSession:
             if not t:
                 continue
             if len(self._queue) >= MAX_QUEUE:
-                await self._send({"type": "error", "detail": f"Fila cheia ({MAX_QUEUE} mensagens)."})
+                await self._send({"type": "error", "detail": i18n.t("api_claude.queue_full", max=MAX_QUEUE)})
                 break
             self._queue_seq += 1
             self._queue.append({"id": f"q{self._queue_seq}", "text": t})
@@ -1215,7 +1216,7 @@ class ClaudeWebSession:
 
     async def _enqueue(self, text: str) -> None:
         if len(self._queue) >= MAX_QUEUE:
-            await self._send({"type": "error", "detail": f"Fila cheia ({MAX_QUEUE} mensagens)."})
+            await self._send({"type": "error", "detail": i18n.t("api_claude.queue_full", max=MAX_QUEUE)})
             return
         self._queue_seq += 1
         self._queue.append({"id": f"q{self._queue_seq}", "text": text})
@@ -1267,7 +1268,7 @@ class ClaudeWebSession:
             detail = str(e)
             tail = "\n".join(list(self._stderr_tail)[-8:])
             if tail:
-                detail += f"\n\n— stderr recente do agente —\n{tail}"
+                detail += "\n\n— " + i18n.t("api_claude.recent_stderr") + f" —\n{tail}"
             await self._send({"type": "error", "detail": detail})
             # O leitor do SDK morreu: o subprocesso `claude` segue vivo, mas nenhuma resposta de
             # permissão/hook chega mais — sem isto a sessão ficava "em andamento" para sempre.
@@ -1554,7 +1555,7 @@ def list_project_sessions(limit: int | None = 60, cwd: str | None = None) -> lis
             "running": x.session_id in running,
             "waiting": x.session_id in waiting,
             "completed": x.session_id in completed,
-            "title": (title or "(sem título)")[:80],
+            "title": (title or i18n.t("api_claude.untitled"))[:80],
             "preview": (x.first_prompt or "").strip()[:140],
             "mtime": _real_activity_ts(x.session_id, x.last_modified),
             "created": x.created_at,
@@ -1653,9 +1654,9 @@ _COMPACT_SUMMARY_RE = re.compile(r"^\s*This session is being continued from a pr
 def _tidy_user_text(t: str) -> dict | None:
     """Prompt sintético do CLI (/compact, caveat, resumo) → item amigável; None = prompt humano normal."""
     if t.startswith("[Request interrupted by user"):   # o CLI grava isso como "prompt" ao interromper
-        return {"type": "error", "detail": "Resposta cancelada pelo usuário."}
+        return {"type": "error", "detail": i18n.t("api_claude.cancelled_by_user")}
     if _COMPACT_SUMMARY_RE.match(t):
-        return {"type": "note", "title": "📋 Resumo da conversa anterior (compactada)", "text": t}
+        return {"type": "note", "title": i18n.t("api_claude.compact_summary"), "text": t}
     if not _SYNTHETIC_RE.match(t) and "<local-command-" not in t:
         return None
     tags: dict[str, str] = {}
@@ -1667,7 +1668,7 @@ def _tidy_user_text(t: str) -> dict | None:
     out = tags.get("local-command-stdout") or tags.get("local-command-stderr")
     if out is not None:
         out = re.sub(r"\x1b\[[0-9;]*m", "", out).strip()
-        return {"type": "note", "title": "", "text": out or "(sem saída)"} if out else None
+        return {"type": "note", "title": "", "text": out or i18n.t("api_claude.no_output")} if out else None
     return {"type": "skip"}   # caveat/system-reminder: ruído, não mostrar
 
 
@@ -1902,14 +1903,14 @@ def fork_project_session(sid: str, *, uuid: str | None = None, text: str | None 
                          occurrence: int = 0, title: str | None = None, cwd: str | None = None) -> str:
     """Cria a conversa ramificada (até ANTES do prompt) e devolve o novo sid ("" = 1º prompt). ValueError/FileNotFoundError se inválido."""
     if not _SDK_OK:
-        raise RuntimeError("SDK do Claude indisponível")
+        raise RuntimeError(i18n.t("api_claude.sdk_unavailable"))
     if not project_session_exists(sid, cwd):
         raise FileNotFoundError(sid)
     from claude_agent_sdk import fork_session, get_session_messages  # noqa: PLC0415
     msgs = get_session_messages(sid, directory=_dir(cwd))
     cut = fork_cut_uuid(msgs, uuid=uuid, text=text, occurrence=occurrence)
     if cut is None:
-        raise ValueError("prompt não encontrado no histórico gravado")
+        raise ValueError(i18n.t("api_claude.prompt_not_in_history"))
     if cut == "":
         return ""   # 1º prompt: não há histórico a copiar — o front abre conversa nova
     res = fork_session(sid, directory=_dir(cwd), up_to_message_id=cut,
@@ -1939,14 +1940,14 @@ def rewind_plan(sid: str, *, uuid: str | None = None, text: str | None = None,
                 occurrence: int = 0, cwd: str | None = None) -> dict:
     """Valida o pedido SEM alterar nada. {prompt_uuid, first, removed}; ValueError/FileNotFoundError se inválido."""
     if not _SDK_OK:
-        raise RuntimeError("SDK do Claude indisponível")
+        raise RuntimeError(i18n.t("api_claude.sdk_unavailable"))
     if not project_session_exists(sid, cwd):
         raise FileNotFoundError(sid)
     from claude_agent_sdk import get_session_messages  # noqa: PLC0415
     msgs = get_session_messages(sid, directory=_dir(cwd))
     idx = _find_prompt_index(msgs, uuid=uuid, text=text, occurrence=occurrence)
     if idx is None:
-        raise ValueError("prompt não encontrado no histórico gravado")
+        raise ValueError(i18n.t("api_claude.prompt_not_in_history"))
     removed = sum(1 for m in msgs[idx:] if _prompt_text(m) is not None)   # prompts descartados (inclui o editado)
     return {"prompt_uuid": msgs[idx].uuid, "first": all(_prompt_text(m) is None for m in msgs[:idx]), "removed_prompts": removed,
             "removed_messages": len(msgs) - idx}
@@ -1972,7 +1973,7 @@ def rewind_apply(sid: str, prompt_uuid: str, *, first: bool = False, cwd: str | 
             except Exception:
                 continue
     if cut is None:
-        raise ValueError("prompt não encontrado no transcript")
+        raise ValueError(i18n.t("api_claude.prompt_not_in_transcript"))
     while cut > 0 and '"type":"queue-operation"' in lines[cut - 1].replace(" ", ""):
         cut -= 1   # o enfileiramento do próprio prompt vem logo antes da linha dele
     bdir = Path(deps.NETOPS_ROOT) / "runs" / "copias-seguranca" / "claude-rewind"

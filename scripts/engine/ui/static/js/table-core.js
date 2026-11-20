@@ -42,7 +42,7 @@ export function sortRows(rows, columns, sort) {
   return [...rows].sort((a, b) => {
     const va = val(a), vb = val(b);
     const cmp = typeof va === "number" && typeof vb === "number" ? va - vb
-      : String(va ?? "").localeCompare(String(vb ?? ""), "pt", { numeric: true, sensitivity: "base" });
+      : String(va ?? "").localeCompare(String(vb ?? ""), globalThis.netopsLang || "pt", { numeric: true, sensitivity: "base" });
     return sort.dir === "desc" ? -cmp : cmp;
   });
 }

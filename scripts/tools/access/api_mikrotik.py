@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # script
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
+from lib import i18n  # noqa: E402
 from lib.inventory import NETOPS_ROOT, load_inventory, resolve_host  # noqa: E402
 from lib.transport import open_routeros_api  # noqa: E402
 from lib.cli_runner import canonical_host_id as _canonical_host_id  # noqa: E402
@@ -30,7 +31,7 @@ def query(host_name: int | str, paths: list[str]) -> dict[str, list]:
     hosts_data, creds_data = load_inventory()
     host, cred = resolve_host(host_name, hosts_data, creds_data)
     if (host.get("access") or {}).get("method") != "api":
-        print(f"AVISO: '{host_name}' não está marcado como method:api no inventário.", file=sys.stderr)
+        print(i18n.t("cli_access.api_not_api_method", host=host_name), file=sys.stderr)
 
     conn = open_routeros_api(host, cred)
     results: dict[str, list] = {}
@@ -54,13 +55,13 @@ def _save(host_name: int | str, results: dict[str, list]) -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Consulta a API do MikroTik RouterOS.")
+    parser = argparse.ArgumentParser(description=i18n.t("cli_access.api_description"))
     selection = parser.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--host-id", type=int, help="ID inteiro do host MikroTik no inventário")
-    selection.add_argument("--host", help="Nome único ou alias legado do host MikroTik")
+    selection.add_argument("--host-id", type=int, help=i18n.t("cli_access.api_help_host_id"))
+    selection.add_argument("--host", help=i18n.t("cli_access.api_help_host"))
     parser.add_argument("--path", action="append", default=[], required=True,
-                        help="Path da API, ex.: /ip/service (pode repetir)")
-    parser.add_argument("--save", action="store_true", help="Salva a saída em runs/<id>/collected/")
+                        help=i18n.t("cli_access.api_help_path"))
+    parser.add_argument("--save", action="store_true", help=i18n.t("cli_access.api_help_save"))
     args = parser.parse_args()
     host_ref = args.host_id if args.host_id is not None else args.host
 
@@ -68,12 +69,12 @@ def main() -> int:
         host_ref = _canonical_host_id(host_ref)
         results = query(host_ref, args.path)
     except Exception as exc:  # noqa: BLE001
-        print(f"FALHA ao consultar a API de '{host_ref}': {exc}", file=sys.stderr)
+        print(i18n.t("cli_access.api_query_failed", host=host_ref, error=exc), file=sys.stderr)
         return 1
 
     print(json.dumps(results, indent=2, ensure_ascii=False))
     if args.save:
-        print(f"[salvo] {_save(host_ref, results)}", file=sys.stderr)
+        print(i18n.t("cli_access.api_saved", path=_save(host_ref, results)), file=sys.stderr)
     return 0
 
 

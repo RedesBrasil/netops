@@ -16,7 +16,7 @@ from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
 
 import paramiko, yaml  # noqa: E402
-from lib import taskkeys  # noqa: E402
+from lib import i18n, taskkeys  # noqa: E402
 from lib.inventory import resolve_host  # noqa: E402
 
 
@@ -33,14 +33,14 @@ class Pin(paramiko.MissingHostKeyPolicy):
     def missing_host_key(self, client, hostname, key):
         self.seen = "SHA256:" + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip("=")
         if self.fp and self.seen != self.fp:
-            raise paramiko.SSHException(f"fingerprint do host mudou ({self.seen})")
+            raise paramiko.SSHException(i18n.t("cli_access.task_fingerprint_changed", fingerprint=self.seen))
 
 
 def connect(task: str, host_id: int, timeout: float = 15, learn: bool = False):
     acc = taskkeys.load_access(ROOT, task)
     entry = next((h for h in acc.get("hosts", []) if h["host_id"] == host_id), None)
     if entry is None and not learn:
-        raise SystemExit(f"tarefa '{task}' não tem chave provisionada no host {host_id}")
+        raise SystemExit(i18n.t("cli_access.task_no_key", task=task, host_id=host_id))
     ip, port = target(host_id)
     pin = Pin(entry.get("fingerprint") if entry else None)
     c = paramiko.SSHClient()

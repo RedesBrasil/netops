@@ -1,9 +1,17 @@
 # Changelog do NetOps
 
-## [Não lançado]
+## [2.6.0] - 2026-11-20
 
 ### Novidades
 
+- **NetOps em inglês e português (i18n).** Console, mensagens da API e CLIs passam por `t()` com catálogos em
+  `core/locales/<idioma>/*.json` (inglês é a fonte; chave ausente cai no inglês). Cada usuário escolhe o idioma em
+  **Minha conta → Idioma**; o admin define o da instalação em **Configuração → Idioma da instalação**
+  (`instance.language`). A tela de login tem troca de idioma; datas e números seguem o idioma. Instalação existente
+  fica em `pt-BR` automaticamente. `AGENTS.md` e `memory/MEMORY.md` nascem no idioma escolhido no primeiro acesso
+  (`core/templates/<idioma>/`). A IA responde sempre no idioma de quem escreve. Regras, agentes, workflows e `SKILL.md`
+  (lidos pela IA) passam a ser só em inglês; `README.md` em inglês + `README.pt-BR.md`. Novo idioma = criar
+  `core/locales/<código>/` e registrar em `core/locales/_languages.yaml`, sem mudar código. Regra: `core/rules/i18n.md`.
 - **Instalação sem perguntas + primeiro acesso no navegador.** O `install.sh` não pede mais senha: no fim mostra o link
   `http://IP:porta/#setup?token=...` (uso único, 24 h). No primeiro acesso você escolhe o idioma (English/Português,
   gravado em `instance.language`) e cria o admin (nome, e-mail, senha e confirmação; a senha também é a senha-mestra do
@@ -16,13 +24,6 @@
   conferem pelo loopback; o certificado HTTPS cobre todos os IPs. Instalação existente: rode o instalador de novo
   (grava `0.0.0.0`) e reinicie o console (`start.sh --yes`). Servidor com IP público: o resumo avisa para ligar o
   **Acesso web**.
-
-### Correções
-
-- Instalador: o teste "netops tem sudo" reprovava sempre desde o sudo pelo cofre (agora só reprova grupo
-  administrativo, `NOPASSWD` ou regra fora do `netops-cofre`).
-- Permissões (`privileges/provision.py`): não quebra mais quando ainda não existe `credentials.yaml`.
-
 - **Cofre de senhas (Inventário → Cofre de senhas, `#vault`).** Guarda segredos que **não são de host**, como login de portal, URL com chave de API ou token, para as pessoas consultarem pelo console. O menu antigo vira **Credenciais de hosts** e continua sendo o acesso dos scripts aos equipamentos.
   - **Campos reutilizáveis:** cada campo tem nome e tipo, segredo ou texto puro. Um campo digitado num template vai para o catálogo e fica disponível para escolher nos outros.
   - **Templates:** definem os campos de um item e, em cada um, se é obrigatório (conferido no servidor) e se aparece na lista. Vêm dois prontos, Login e API.
@@ -36,6 +37,24 @@
   - **Permissão e auditoria:** a permissão nova `vault.use` vale para quem pede pela aba Claude ou pelo terminal. Cada uso fica na auditoria como `vault.run`.
 - **Cofre de senhas: ID numérico por item.** A referência passa a ser `nvault://<ID>/<campo>` (ex.: `nvault://3/api-key`), e o ID não muda quando o título muda. Itens do formato anterior (ID em slug) ganham número sozinhos, e o slug antigo continua resolvendo como apelido. Renomear um campo guarda o nome antigo como apelido, então referências antigas não quebram. A lista mostra a coluna ID, e a menção fica `#senha:<ID>`.
 - **Menções `#senha:` na aba Claude.** Digitar `#` lista também os itens do Cofre de senhas, junto com hosts e grupos. No envio, o agente recebe só as referências `nvault://item/campo` de cada campo, nunca o valor, e a instrução de usar `nvault run`. Também corrigido: digitar rápido logo depois de mudar a busca podia engolir a seta ↑/↓ do menu.
+- **Aba Claude: vários anexos de uma vez** e caminhos `reports/*.md|txt|pdf` na resposta viram link que abre o
+  relatório num visualizador com **Baixar**.
+
+### Correções
+
+- Instalador: o teste "netops tem sudo" reprovava sempre desde o sudo pelo cofre (agora só reprova grupo
+  administrativo, `NOPASSWD` ou regra fora do `netops-cofre`).
+- Permissões (`privileges/provision.py`): não quebra mais quando ainda não existe `credentials.yaml`.
+
+### Compatibilidade e dados
+
+- Dados e personalizações preservados. Instalação existente passa a ter `instance.language: pt-BR` no
+  `core/config/project-config.yaml` na primeira subida do console (o visual e as mensagens em português não mudam).
+- O `AGENTS.md` e o `memory/MEMORY.md` locais não são alterados. As regras, agentes, workflows e `SKILL.md` do produto
+  agora são em inglês; a IA continua respondendo em português para quem escreve em português.
+- Traduções em `core/locales/` (dentro de uma pasta que o atualizador já conhece). O `README.pt-BR.md` fica só no
+  repositório. Pacote validado contra o atualizador das versões anteriores.
+- Console em `0.0.0.0` só depois de rodar o instalador de novo; até lá, o endereço configurado continua valendo.
 
 ## [2.5.0] - 2026-11-19
 

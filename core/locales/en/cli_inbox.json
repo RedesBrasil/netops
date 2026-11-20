@@ -1,0 +1,8 @@
+{
+  "description": "NetOps Notification Center",
+  "help_add": "posts a notice/alert/approval request",
+  "help_body_file": "markdown file (or - for stdin)",
+  "help_on_approve_agent": "prompt of the agent that runs if approved (resumes --session-id if any)",
+  "help_telegram": "also notifies on Telegram (network/telegram.yaml)",
+  "help_timeout": "minutes for the action"
+}

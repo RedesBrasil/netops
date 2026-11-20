@@ -55,6 +55,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # script
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()
+from lib import i18n  # noqa: E402
 from lib.inventory import NETOPS_ROOT, load_inventory, resolve_host  # noqa: E402
 
 DEFAULT_IDLE_MINUTES = 5                                              # padrão: 5 min sem comando -> fecha
@@ -106,14 +107,14 @@ def session_dir() -> Path:
         pass
     st = path.lstat()
     if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
-        sys.exit(f"ERRO: {path} não é um diretório próprio seguro — remova-o e tente de novo.")
+        sys.exit(i18n.t("cli_access.session_dir_unsafe", path=path))
     os.chmod(path, 0o700)
     return path
 
 
 def _paths(sid: str) -> tuple[Path, Path]:
     if not sid.replace("-", "").replace("_", "").isalnum():
-        sys.exit(f"ERRO: SESSION_ID inválido: {sid!r}")
+        sys.exit(i18n.t("cli_access.session_id_invalid", sid=repr(sid)))
     d = session_dir()
     return d / f"{sid}.sock", d / f"{sid}.json"
 
@@ -128,14 +129,14 @@ def _canonical(host_ref: int | str) -> dict:
 def _request(sid: str, payload: dict, timeout: float) -> dict:
     sock_path, _ = _paths(sid)
     if not sock_path.exists():
-        raise FileNotFoundError(f"sessão '{sid}' não existe (expirou ou foi fechada) — rode `open` de novo")
+        raise FileNotFoundError(i18n.t("cli_access.session_not_found", sid=sid))
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.settimeout(timeout)
         try:
             s.connect(str(sock_path))
         except (ConnectionRefusedError, FileNotFoundError):
             _cleanup(sid)
-            raise FileNotFoundError(f"sessão '{sid}' morreu — rode `open` de novo") from None
+            raise FileNotFoundError(i18n.t("cli_access.session_died", sid=sid)) from None
         s.sendall(json.dumps(payload).encode())
         s.shutdown(socket.SHUT_WR)
         chunks = []
@@ -187,7 +188,7 @@ class PersistentShell:
         out, _err, rc, done = self._collect(time.time() + self.START_TIMEOUT)
         if not done or rc is None or rc <= 1:
             self.close()
-            raise RuntimeError(f"shell persistente não respondeu ao handshake: {out[-200:]!r}")
+            raise RuntimeError(i18n.t("cli_access.log_handshake_failed", output=repr(out[-200:])))
         self.pid = rc
 
     def alive(self) -> bool:
@@ -352,11 +353,11 @@ class Session:
         try:
             self.shell = PersistentShell(self._transport())
             self.shell_starts += 1
-            self.log(f"shell persistente pid={self.shell.pid}" + (" (REINICIADO: estado anterior perdido)"
+            self.log(i18n.t("cli_access.log_shell_started", pid=self.shell.pid) + (" " + i18n.t("cli_access.log_shell_restarted")
                                                                    if restarted else ""))
         except Exception as exc:  # noqa: BLE001 — shell restrito/sem base64: volta ao canal por comando
             self.shell, self.shell_fallback = None, True
-            self.log(f"shell persistente indisponível ({exc}) — usando canal exec por comando (sem estado)")
+            self.log(i18n.t("cli_access.log_shell_unavailable", error=exc))
         return restarted
 
     def _transport(self):
@@ -410,12 +411,12 @@ class Session:
             res = self.shell.run(cmd, timeout)
         except ShellDied as died:
             out, err, rc = died.args
-            self.log(f"shell terminou durante o comando (exit {rc}) — o próximo comando sobe um shell novo")
+            self.log(i18n.t("cli_access.log_shell_ended", rc=rc))
             self.shell = None
             return {"status": "ok", "output": out.decode(errors="replace"),
                     "stderr": err.decode(errors="replace"), "exit": rc, "shell_ended": True}
         if res.pop("shell_died", False):
-            self.log("shell irrecuperável após timeout — morto; o próximo comando sobe um shell novo")
+            self.log(i18n.t("cli_access.log_shell_killed"))
             self.shell = None
             res["shell_ended"] = True
         if timing and res["status"] == "timeout":
@@ -474,7 +475,7 @@ class Session:
     def run(self, cmd: str, timeout: float, expect: str | None, timing: bool) -> dict:
         reconnected = False
         if not self.alive():
-            self.log("conexão caiu — reconectando antes do comando")
+            self.log(i18n.t("cli_access.log_reconnecting"))
             try:
                 self.conn.disconnect()
             except Exception:  # noqa: BLE001
@@ -526,7 +527,7 @@ def serve(sid: str, host_ref: int | str, method: str, shell: bool) -> int:
         sess = Session(sid, host_ref, method, shell)
         sess.connect()
     except BaseException as exc:  # noqa: BLE001 — inclui SystemExit (cofre trancado etc.)
-        print(f"ERRO {type(exc).__name__}: {exc}", flush=True)
+        print(i18n.t("cli_access.child_error", kind=type(exc).__name__, error=exc), flush=True)
         return 1
 
     os.umask(0o077)
@@ -556,9 +557,9 @@ def serve(sid: str, host_ref: int | str, method: str, shell: bool) -> int:
             now = time.time()
             idle_limit = idle_timeout()
             if now - sess.last_used > idle_limit:
-                sess.log(f"idle-timeout ({idle_limit}s sem comando)"); break
+                sess.log(i18n.t("cli_access.log_idle_timeout", seconds=idle_limit)); break
             if now - sess.started > MAX_LIFETIME:
-                sess.log(f"vida máxima ({MAX_LIFETIME}s)"); break
+                sess.log(i18n.t("cli_access.log_max_lifetime", seconds=MAX_LIFETIME)); break
             try:
                 client, _ = srv.accept()
             except socket.timeout:
@@ -586,7 +587,7 @@ def serve(sid: str, host_ref: int | str, method: str, shell: bool) -> int:
                 elif op == "close":
                     resp, stop["flag"] = {"status": "ok"}, True
                 else:
-                    resp = {"status": "erro", "stderr": f"op desconhecida: {op}"}
+                    resp = {"status": "erro", "stderr": i18n.t("cli_access.unknown_op", op=op)}
                 try:
                     client.settimeout(30)
                     client.sendall(json.dumps(resp).encode())
@@ -649,15 +650,15 @@ def _spawn_session(host: dict, method: str, shell: bool) -> tuple[str | None, st
             break
     if line.startswith("READY "):
         meta = json.loads(line[6:])
-        return sid, (f"[sessão aberta {sid}] host={meta['host']} ip={meta['ip']} modo={meta['mode']} "
-                     f"fecha após {_fmt_idle()} sem comando · log={meta['log']}")
+        return sid, i18n.t("cli_access.session_opened", sid=sid, host=meta["host"], ip=meta["ip"], mode=meta["mode"],
+                           idle=_fmt_idle(), log=meta["log"])
     if proc.poll() is not None or line:
         try:                                   # mensagem de erro multilinha (ex.: cofre trancado + instrução)
             line += proc.stdout.read() or ""
         except Exception:  # noqa: BLE001
             pass
     proc.kill()
-    return None, line.strip() or "timeout no login"
+    return None, line.strip() or i18n.t("cli_access.login_timeout")
 
 
 def acquire_session(host_ref, method: str, shell: bool, force_new: bool = False) -> tuple[str | None, str]:
@@ -670,9 +671,9 @@ def acquire_session(host_ref, method: str, shell: bool, force_new: bool = False)
         if not force_new:
             sid = _find_session(host, method, shell)
             if sid:
-                return sid, f"[sessão reutilizada {sid}] host={host['name']} (sem novo login)"
+                return sid, i18n.t("cli_access.session_reused", sid=sid, host=host["name"])
         if method == "telnet":
-            print("AVISO: Telnet trafega em texto puro. Prefira SSH sempre que possível.", file=sys.stderr)
+            print(i18n.t("cli_access.telnet_warning"), file=sys.stderr)
         return _spawn_session(host, method, shell)
 
 
@@ -681,18 +682,17 @@ def cmd_open(args) -> int:
     try:
         host = _canonical(host_ref)
     except Exception as exc:  # noqa: BLE001
-        print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
+        print(i18n.t("cli_access.host_not_in_inventory", host=host_ref, error=exc), file=sys.stderr)
         return 1
     if _is_local(host):
-        print("FALHA: o host Local não tem sessão persistente (root é por operação). Use exec/run --host-id "
-              f"{host['name']} --command '...'", file=sys.stderr)
+        print(i18n.t("cli_access.local_no_session", host=host["name"]), file=sys.stderr)
         return 2
     sid, msg = acquire_session(host_ref, "telnet" if args.telnet else "ssh", args.shell, args.new)
     if sid:
         print(sid)
         print(msg, file=sys.stderr)
         return 0
-    print(f"FALHA ao abrir sessão em '{host_ref}': {msg}", file=sys.stderr)
+    print(i18n.t("cli_access.open_failed", host=host_ref, error=msg), file=sys.stderr)
     return 1
 
 
@@ -705,11 +705,11 @@ def _print_result(cmd: str, res: dict, multi: bool) -> int | None:
         print(out, end="" if out.endswith("\n") else "\n", flush=True)
     if res.get("stderr"):
         print(res["stderr"], file=sys.stderr, end="" if res["stderr"].endswith("\n") else "\n")
-    extra = " (reconectou antes)" if res.get("reconnected") else ""
+    extra = " " + i18n.t("cli_access.reconnected_before") if res.get("reconnected") else ""
     if res.get("state_reset"):
-        extra += " (AVISO: shell novo — variáveis/cd anteriores foram perdidos)"
+        extra += " " + i18n.t("cli_access.shell_state_lost")
     if res.get("shell_ended"):
-        extra += " (o shell terminou; o próximo comando abre outro no mesmo login)"
+        extra += " " + i18n.t("cli_access.shell_ended")
     print(f"[status={res.get('status')} exit={res.get('exit')} {res.get('seconds')}s{extra}]",
           file=sys.stderr)
     if res.get("status") not in ("ok", "interrompido"):
@@ -736,7 +736,7 @@ def run_local(host: dict, commands: list[str], timeout: int, multi: bool) -> int
     rc = 0
     with open(log_path, "a", encoding="utf-8") as log:
         os.chmod(log_path, 0o600)
-        log.write(f"LOCAL host={host['name']} hostname={host.get('hostname')} (root por operação, sem SSH)\n")
+        log.write(f"LOCAL host={host['name']} hostname={host.get('hostname')} ({i18n.t('cli_access.log_local_root')})\n")
         for cmd in commands:
             if multi:
                 print(f"### {cmd}")
@@ -761,7 +761,7 @@ def run_local(host: dict, commands: list[str], timeout: int, multi: bool) -> int
             log.write(f"$ {cmd}\n{text}\n[exit={end['exit_code']} uid={end['effective_uid']} op={end['operation_id']}]\n")
             status = "timeout" if end.get("timeout") else "ok"
             print(f"[status={status} exit={end['exit_code']} {end.get('duration_s')}s local uid=0 "
-                  f"op={end['operation_id']}{' saída truncada' if end.get('truncated') else ''}]", file=sys.stderr)
+                  f"op={end['operation_id']}{(' ' + i18n.t('cli_access.output_truncated')) if end.get('truncated') else ''}]", file=sys.stderr)
             if end.get("timeout"):
                 return 3
             if end["exit_code"]:
@@ -778,16 +778,16 @@ def cmd_exec(args) -> int:
         try:
             host = _canonical(host_ref)
         except Exception as exc:  # noqa: BLE001
-            print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
+            print(i18n.t("cli_access.host_not_in_inventory", host=host_ref, error=exc), file=sys.stderr)
             return 1
         if _is_local(host):
             if args.telnet or args.shell:
-                print("FALHA: o host Local não usa SSH/Telnet nem shell interativo", file=sys.stderr)
+                print(i18n.t("cli_access.local_no_ssh"), file=sys.stderr)
                 return 2
             return run_local(host, list(args.command), args.timeout, len(args.command) > 1)
         sid, msg = acquire_session(host_ref, "telnet" if args.telnet else "ssh", args.shell)
         if not sid:
-            print(f"FALHA ao abrir sessão em '{host_ref}': {msg}", file=sys.stderr)
+            print(i18n.t("cli_access.open_failed", host=host_ref, error=msg), file=sys.stderr)
             return 1
         print(msg, file=sys.stderr)
     rc = 0
@@ -797,7 +797,7 @@ def cmd_exec(args) -> int:
                                  "expect": args.expect, "timing": args.timing},
                            timeout=args.timeout + CLIENT_SLACK)
         except (FileNotFoundError, OSError, ValueError) as exc:
-            print(f"FALHA: {exc}", file=sys.stderr)
+            print(i18n.t("cli_access.failure", error=exc), file=sys.stderr)
             return 4
         code = _print_result(cmd, res, len(args.command) > 1)
         if code == 3:
@@ -818,26 +818,26 @@ def cmd_run(args) -> int:
     if args.commands_file:
         commands += [ln.strip() for ln in Path(args.commands_file).read_text().splitlines() if ln.strip()]
     if not commands:
-        print("FALHA: informe ao menos um --command ou --commands-file", file=sys.stderr)
+        print(i18n.t("cli_access.no_commands"), file=sys.stderr)
         return 2
     try:
         host = _canonical(host_ref)
     except Exception as exc:  # noqa: BLE001
-        print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
+        print(i18n.t("cli_access.host_not_in_inventory", host=host_ref, error=exc), file=sys.stderr)
         return 1
     if _is_local(host):
         if args.telnet or args.shell:
-            print("FALHA: o host Local não usa SSH/Telnet nem shell interativo", file=sys.stderr)
+            print(i18n.t("cli_access.local_no_ssh"), file=sys.stderr)
             return 2
         return run_local(host, commands, args.timeout, len(commands) > 1)
     method = "telnet" if args.telnet else "ssh"
     if method == "telnet":
-        print("AVISO: Telnet trafega em texto puro. Prefira SSH sempre que possível.", file=sys.stderr)
+        print(i18n.t("cli_access.telnet_warning"), file=sys.stderr)
     try:
         sess = Session(f"run-{secrets.token_hex(3)}", host_ref, method, args.shell)
         sess.connect()
     except BaseException as exc:  # noqa: BLE001 — inclui SystemExit (cofre trancado etc.)
-        print(f"FALHA ao conectar em '{host.get('hostname') or host['name']}': {exc}", file=sys.stderr)
+        print(i18n.t("cli_access.connect_failed", host=host.get("hostname") or host["name"], error=exc), file=sys.stderr)
         return 1
     rc = 0
     try:
@@ -865,10 +865,11 @@ def cmd_list(_args) -> int:
             _cleanup(sid)
             continue
         found = True
-        print(f"{sid}  host={meta['host']} ip={meta['ip']} modo={meta['mode']} "
-              f"cmds={ping.get('commands')} ocioso={ping.get('idle')}s/{ping.get('idle_limit')}s vivo={ping.get('alive')}")
+        print(i18n.t("cli_access.session_list_line", sid=sid, host=meta["host"], ip=meta["ip"], mode=meta["mode"],
+                     cmds=ping.get("commands"), idle=ping.get("idle"), idle_limit=ping.get("idle_limit"),
+                     alive=ping.get("alive")))
     if not found:
-        print("(nenhuma sessão aberta)")
+        print(i18n.t("cli_access.no_sessions"))
     return 0
 
 
@@ -882,15 +883,15 @@ def cmd_close(args) -> int:
         try:
             host = _canonical(host_ref)
         except Exception as exc:  # noqa: BLE001
-            print(f"FALHA: host '{host_ref}' fora do inventário: {exc}", file=sys.stderr)
+            print(i18n.t("cli_access.host_not_in_inventory", host=host_ref, error=exc), file=sys.stderr)
             return 1
         sids = [p.stem for p in session_dir().glob(f"{_host_key(host)}-*.json")]
         if not sids:
-            print(f"(nenhuma sessão aberta para o host {host['name']})")
+            print(i18n.t("cli_access.no_sessions_host", host=host["name"]))
     for sid in sids:
         try:
             _request(sid, {"op": "close"}, timeout=30)
-            print(f"[fechada] {sid}")
+            print(i18n.t("cli_access.session_closed", sid=sid))
         except (OSError, ValueError, FileNotFoundError) as exc:
             _cleanup(sid)
             print(f"[{sid}] {exc}", file=sys.stderr)
@@ -902,52 +903,51 @@ def main() -> int:
         kind, _, ref = sys.argv[3].partition(":")          # preserva o tipo: ID inteiro x nome
         return serve(sys.argv[2], int(ref) if kind == "id" else ref, sys.argv[4], sys.argv[5] == "1")
 
-    parser = argparse.ArgumentParser(description="Acesso a equipamentos do inventário (SSH/Telnet): "
-                                                 "run = lote numa chamada; open/exec/close = sessão persistente.")
+    parser = argparse.ArgumentParser(description=i18n.t("cli_access.session_description"))
     sub = parser.add_subparsers(dest="action", required=True)
 
-    p_run = sub.add_parser("run", help="Conecta, roda o(s) comando(s) e desconecta — numa chamada só")
+    p_run = sub.add_parser("run", help=i18n.t("cli_access.help_run"))
     rsel = p_run.add_mutually_exclusive_group(required=True)
-    rsel.add_argument("--host-id", type=int, help="ID inteiro do host no inventário")
-    rsel.add_argument("--host", help="Nome único ou alias legado do host")
-    p_run.add_argument("--command", action="append", help="Comando (pode repetir)")
-    p_run.add_argument("--commands-file", help="Arquivo com um comando por linha")
-    p_run.add_argument("--telnet", action="store_true", help="Usa Telnet (legado) em vez de SSH")
+    rsel.add_argument("--host-id", type=int, help=i18n.t("cli_access.help_host_id"))
+    rsel.add_argument("--host", help=i18n.t("cli_access.help_host"))
+    p_run.add_argument("--command", action="append", help=i18n.t("cli_access.help_command"))
+    p_run.add_argument("--commands-file", help=i18n.t("cli_access.help_commands_file"))
+    p_run.add_argument("--telnet", action="store_true", help=i18n.t("cli_access.help_telnet"))
     p_run.add_argument("--shell", action="store_true",
-                       help="Linux: shell interativo do Netmiko com PTY (só p/ comando que exige terminal; sem exit code)")
-    p_run.add_argument("--timeout", type=float, default=60, help="Segundos por comando (padrão 60)")
-    p_run.add_argument("--expect", help="Regex do prompt esperado (shell), se ele mudar")
+                       help=i18n.t("cli_access.help_shell"))
+    p_run.add_argument("--timeout", type=float, default=60, help=i18n.t("cli_access.help_timeout"))
+    p_run.add_argument("--expect", help=i18n.t("cli_access.help_expect"))
     p_run.add_argument("--timing", action="store_true",
-                       help="Shell: lê por tempo (comando contínuo/paginado: ping, torch)")
+                       help=i18n.t("cli_access.help_timing"))
 
-    p_open = sub.add_parser("open", help="Reusa a sessão viva do host ou abre uma (imprime o SESSION_ID)")
+    p_open = sub.add_parser("open", help=i18n.t("cli_access.help_open"))
     sel = p_open.add_mutually_exclusive_group(required=True)
-    sel.add_argument("--host-id", type=int, help="ID inteiro do host no inventário")
-    sel.add_argument("--host", help="Nome único ou alias legado do host")
-    p_open.add_argument("--telnet", action="store_true", help="Usa Telnet (legado) em vez de SSH")
+    sel.add_argument("--host-id", type=int, help=i18n.t("cli_access.help_host_id"))
+    sel.add_argument("--host", help=i18n.t("cli_access.help_host"))
+    p_open.add_argument("--telnet", action="store_true", help=i18n.t("cli_access.help_telnet"))
     p_open.add_argument("--shell", action="store_true",
-                        help="Linux: shell interativo do Netmiko com PTY (só p/ comando que exige terminal; sem exit code)")
-    p_open.add_argument("--new", action="store_true", help="Abre outra sessão mesmo havendo uma viva")
+                        help=i18n.t("cli_access.help_shell"))
+    p_open.add_argument("--new", action="store_true", help=i18n.t("cli_access.help_new"))
 
-    p_exec = sub.add_parser("exec", help="Roda comando(s) na sessão do host (reusa ou abre) — MODO PADRÃO")
+    p_exec = sub.add_parser("exec", help=i18n.t("cli_access.help_exec"))
     esel = p_exec.add_mutually_exclusive_group(required=True)
-    esel.add_argument("--host-id", type=int, help="ID do host: reusa a sessão viva dele ou abre uma")
-    esel.add_argument("--host", help="Nome único ou alias legado do host (idem)")
-    esel.add_argument("--session", help="SESSION_ID explícito (de `open`)")
-    p_exec.add_argument("--telnet", action="store_true", help="Com --host-id: sessão Telnet (legado)")
-    p_exec.add_argument("--shell", action="store_true", help="Com --host-id: shell Netmiko com PTY")
-    p_exec.add_argument("--command", action="append", required=True, help="Comando (pode repetir)")
-    p_exec.add_argument("--timeout", type=float, default=60, help="Segundos por comando (padrão 60)")
-    p_exec.add_argument("--expect", help="Regex do prompt esperado (shell), se ele mudar")
+    esel.add_argument("--host-id", type=int, help=i18n.t("cli_access.help_exec_host_id"))
+    esel.add_argument("--host", help=i18n.t("cli_access.help_exec_host"))
+    esel.add_argument("--session", help=i18n.t("cli_access.help_session"))
+    p_exec.add_argument("--telnet", action="store_true", help=i18n.t("cli_access.help_exec_telnet"))
+    p_exec.add_argument("--shell", action="store_true", help=i18n.t("cli_access.help_exec_shell"))
+    p_exec.add_argument("--command", action="append", required=True, help=i18n.t("cli_access.help_command"))
+    p_exec.add_argument("--timeout", type=float, default=60, help=i18n.t("cli_access.help_timeout"))
+    p_exec.add_argument("--expect", help=i18n.t("cli_access.help_expect"))
     p_exec.add_argument("--timing", action="store_true",
-                        help="Shell: lê por tempo (comando contínuo/paginado: ping, torch)")
+                        help=i18n.t("cli_access.help_timing"))
 
-    sub.add_parser("list", help="Lista as sessões abertas")
-    p_close = sub.add_parser("close", help="Fecha sessão(ões)")
+    sub.add_parser("list", help=i18n.t("cli_access.help_list"))
+    p_close = sub.add_parser("close", help=i18n.t("cli_access.help_close"))
     g = p_close.add_mutually_exclusive_group(required=True)
     g.add_argument("--session")
-    g.add_argument("--host-id", type=int, help="Fecha a(s) sessão(ões) deste host")
-    g.add_argument("--host", help="Idem, por nome/alias")
+    g.add_argument("--host-id", type=int, help=i18n.t("cli_access.help_close_host_id"))
+    g.add_argument("--host", help=i18n.t("cli_access.help_close_host"))
     g.add_argument("--all", action="store_true")
 
     args = parser.parse_args()

@@ -8,6 +8,7 @@ export const LineEditing = createContext(null);
 export function StraightEdge(props) {
   const source = useInternalNode(props.source), target = useInternalNode(props.target);
   const editing = useContext(LineEditing);
+  const t = editing.t || (key => key);
   const flow = useReactFlow();
   const { zoom } = useViewport();
   const [draft, setDraft] = useState(null);
@@ -90,26 +91,26 @@ export function StraightEdge(props) {
   const labelY = geometry.labelY + offset.y + (manual ? 0 : autoShift.y);
   return <>
     <g data-straight-count={count} data-straight-index={index} data-orthogonal={route ? 'true' : 'false'} className="nodrag nopan straight-line" {...events('line')}>
-      <title>{`Ligação ${index + 1} de ${count}: ${props.label}. Selecione para ajustar o trajeto.`}</title>
+      <title>{t('map_editor.line_title', { n: index + 1, count, label: props.label })}</title>
       <BaseEdge id={props.id} path={geometry.path} style={{ ...props.style, strokeWidth: active ? 3 : 2, strokeLinejoin: 'miter' }} interactionWidth={28} markerStart={props.markerStart} markerEnd={props.markerEnd} />
     </g>
     <EdgeLabelRenderer>
       <button className={`nodrag nopan line-label ${active ? 'line-label-active' : ''} ${!label && !active ? 'line-label-empty' : ''}`} style={position(labelX, labelY)}
-        data-line-id={props.id} data-line-part="line" aria-label={`Mover ligação ${index + 1}: ${props.label}`}
-        title={route ? 'Arraste para mover os trechos internos' : 'Arraste para deslocar esta linha'} {...events('line')}>{active && <span aria-hidden="true">↔ </span>}{label}</button>
+        data-line-id={props.id} data-line-part="line" aria-label={t('map_editor.move_line_aria', { n: index + 1, label: props.label })}
+        title={route ? t('map_editor.drag_segments_title') : t('map_editor.drag_line_title')} {...events('line')}>{active && <span aria-hidden="true">↔ </span>}{label}</button>
       {active && <>
         {label && <button className="nodrag nopan line-labelmove" style={position(labelX, labelY - 44 / zoom)} data-line-id={props.id} data-line-part="label"
-          aria-label="Mover descrição" title="Arraste para mover só a descrição (setas do teclado: 8 px)" {...events('label')}>✥</button>}
+          aria-label={t('map_editor.move_label_aria')} title={t('map_editor.move_label_title')} {...events('label')}>✥</button>}
         <button className="nodrag nopan line-endpoint" style={position(geometry.start.x, geometry.start.y)} data-line-id={props.id} data-line-part="source"
-          aria-label="Mover ponta A" title="Arraste a ponta A pela borda do host" {...events('source')}>A</button>
+          aria-label={t('map_editor.move_end_aria', { end: 'A' })} title={t('map_editor.move_end_title', { end: 'A' })} {...events('source')}>A</button>
         <button className="nodrag nopan line-endpoint" style={position(geometry.end.x, geometry.end.y)} data-line-id={props.id} data-line-part="target"
-          aria-label="Mover ponta B" title="Arraste a ponta B pela borda do host" {...events('target')}>B</button>
+          aria-label={t('map_editor.move_end_aria', { end: 'B' })} title={t('map_editor.move_end_title', { end: 'B' })} {...events('target')}>B</button>
         {route && geometry.segments.filter(s => s.index > 0 && s.index <= route.tracks.length && s.length > 60 / zoom).map(s =>
           <button key={`segment-${s.index}`} className="nodrag nopan line-segment" style={position(s.x, s.y)} data-line-id={props.id} data-line-part="segment" data-control-index={s.index}
-            aria-label={`Mover trecho ${s.index + 1}`} title="Arraste este trecho para mudar sua posição" {...events('segment', s.index)}>{s.axis === 'x' ? '↕' : '↔'}</button>)}
+            aria-label={t('map_editor.move_segment_aria', { n: s.index + 1 })} title={t('map_editor.move_segment_title')} {...events('segment', s.index)}>{s.axis === 'x' ? '↕' : '↔'}</button>)}
         {route && geometry.points.slice(1, -1).map((p, i) => <button key={`corner-${i + 1}`} className={`nodrag nopan line-corner ${editing.focus?.id === props.id && editing.focus.corner === i + 1 ? 'focused' : ''}`}
           style={position(p.x, p.y)} data-line-id={props.id} data-line-part="corner" data-control-index={i + 1}
-          aria-label={`Mover dobra ${i + 1}`} title="Arraste o canto. Selecione para adicionar ou remover dobras aqui." {...events('corner', i + 1)}>{i + 1}</button>)}
+          aria-label={t('map_editor.move_corner_aria', { n: i + 1 })} title={t('map_editor.move_corner_title')} {...events('corner', i + 1)}>{i + 1}</button>)}
       </>}
     </EdgeLabelRenderer>
   </>;

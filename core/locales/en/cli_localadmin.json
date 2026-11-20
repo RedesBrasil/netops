@@ -1,0 +1,12 @@
+{
+  "credential_missing": "ERROR: credential not found after creating it",
+  "credential_stored": "OK — {cred} stored in the vault (value not shown).",
+  "description": "NetOps Local administration (operational account)",
+  "error": "ERROR: {error}",
+  "exec_usage": "ERROR: enter -- <command> or --script-file",
+  "legacy_layout": "ERROR: legacy installation (layout 1)",
+  "prompt_master": "Vault master password (to store the local admin credential): ",
+  "short_password": "ERROR: password missing/too short on stdin",
+  "use_stdin": "ERROR: use --stdin (the password never goes in an argument)",
+  "vault_locked_no_tty": "vault locked and no terminal for the master password"
+}

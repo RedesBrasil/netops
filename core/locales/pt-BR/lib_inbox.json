@@ -1,0 +1,13 @@
+{
+  "action_not_object": "ação deve ser um objeto",
+  "action_only_approval": "ação só existe em pedido de aprovação (kind=approval)",
+  "agent_action_needs_prompt": "ação de agente precisa de prompt ou de session_id para retomar",
+  "empty_command": "comando vazio",
+  "invalid_timestamp": "timestamp inválido",
+  "not_found": "aviso #{id} não encontrado",
+  "not_pending": "o pedido #{id} não está pendente (situação: {status})",
+  "title_required": "título obrigatório",
+  "use_approve_reject": "use approve ou reject",
+  "use_one_of": "use um de {options}",
+  "use_restricted_full": "use restricted ou full"
+}

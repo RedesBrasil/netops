@@ -1,0 +1,19 @@
+{
+  "invalid_filename": "nome de arquivo inválido",
+  "invalid_path": "caminho inválido",
+  "invalid_vendor": "vendor inválido. Use um de: {vendors}",
+  "invalid_yaml": "YAML inválido: {error}",
+  "name_must_end": "nome deve terminar em {suffix}",
+  "nothing_to_update": "Nada para alterar.",
+  "path_exists": "{path} já existe",
+  "path_not_exists": "{path} não existe",
+  "path_outside": "caminho fora do diretório permitido",
+  "project_not_found": "Projeto não encontrado.",
+  "quoted_exists": "'{name}' já existe",
+  "quoted_not_exists": "'{name}' não existe",
+  "same_name": "o novo nome é igual ao atual",
+  "same_target": "destino igual à origem",
+  "size_limit_mib": "limite de {mib} MiB",
+  "use_kebab_case": "use kebab-case (a-z, 0-9, hífen), começando por letra/dígito",
+  "user_not_found": "Usuário '{username}' não encontrado."
+}

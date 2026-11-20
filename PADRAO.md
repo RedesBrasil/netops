@@ -1,107 +1,110 @@
-# PADRÃO — O Padrão-Mestre do NetOps
+# STANDARD — The NetOps Master Standard
 
-Este é o documento que define **como tudo é organizado e nomeado** no NetOps. Sempre que
-houver dúvida sobre onde colocar algo ou como nomear, a resposta está aqui. Todo agente de
-IA lê este arquivo antes de criar qualquer coisa.
+This is the document that defines **how everything is organized and named** in NetOps. Whenever
+there is a doubt about where to put something or how to name it, the answer is here. Every AI
+agent reads this file before creating anything.
 
-> **Regra de ouro:** estrutura/pastas/arquivos em **inglês**; conteúdo de documentação em
-> **português**. Quando em dúvida, prefira REUSE > ADAPT > CREATE (ver `constitution.md`).
+> **Golden rule:** structure/folders/files in **English**; files read by the AI (agents, workflows, rules,
+> standards, templates, skills) are kept **only in English**, and the AI answers in the user's language
+> (see `core/rules/i18n.md`). Local files of an installation (`AGENTS.md`, `memory/MEMORY.md`) are born in the
+> installation's language. When in doubt, prefer REUSE > ADAPT > CREATE (see `constitution.md`).
 
 ---
 
-## 1. Estrutura de diretórios
+## 1. Directory structure
 
 ```
 netops/
-├── agents/            Definições dos agentes de IA (escopo + função: planejar/executar/testar)
-├── best-practices/    Boas práticas em TEXTO descritivo (pouca ou nenhuma config)
-├── config-examples/   Exemplos de configuração REAIS, por fabricante
-├── scripts/           Scripts Python: acesso (ssh/telnet/api), diagnóstico, cofre e UI
-│   └── ui/            Console web CRUD (FastAPI + Preact sem build) — ferramenta de operador
-│                      efêmera, loopback, stateless. Ver scripts/engine/ui/SKILL.md e constitution.md §VII.
-├── planning-examples/ Documentos modelo de planejamento de tarefas
-├── network/           Inventário: hosts, credenciais e mapa de topologia
-├── workflows/         Pipelines YAML que orquestram os agentes (planejar→executar→testar)
-├── memory/            Memória e auto-aprendizado — o "projeto vivo"
-├── runs/              Saída bruta por execução (git-ignorado)
-├── reports/           Relatórios finais curados (versionados)
-└── core/              Config, schemas, templates e regras do framework
+├── agents/            Definitions of the AI agents (scope + function: plan/execute/test)
+├── best-practices/    Best practices as descriptive TEXT (little or no config)
+├── config-examples/   REAL configuration examples, per vendor
+├── scripts/           Python scripts: access (ssh/telnet/api), diagnostics, vault and UI
+│   └── ui/            CRUD web console (FastAPI + Preact without build) — ephemeral operator
+│                      tool, loopback, stateless. See scripts/engine/ui/SKILL.md and constitution.md §VII.
+├── planning-examples/ Template documents for planning tasks
+├── network/           Inventory: hosts, credentials and topology map
+├── workflows/         YAML pipelines that orchestrate the agents (plan→execute→test)
+├── memory/            Memory and self-learning — the "living project"
+├── runs/              Raw output per run (git-ignored)
+├── reports/           Curated final reports (versioned)
+└── core/              Config, schemas, templates and rules of the framework
 ```
 
-### Distribuição e atualização
+### Distribution and update
 
-Tarefas agendadas vivem em `scripts/engine/scheduler/` (`SKILL.md`): cadastro em `network/schedules.yaml`,
-execuções em `runs/schedules/`, disparo pelo cron do sistema.
+Scheduled tasks live in `scripts/engine/scheduler/` (`SKILL.md`): registry in `network/schedules.yaml`,
+runs in `runs/schedules/`, triggered by the system cron.
 
-O motor de atualização vive em `scripts/engine/update/`, com `SKILL.md`. Estado e snapshots
-privados ficam em `.netops-update/` (git-ignorado). Releases seguem `core/rules/releases.md`,
-com versão única em `core/config/core-config.yaml`, notas em `CHANGELOG.md` e workflow em
-`.github/workflows/release.yml`. Pacotes distribuem somente caminhos autorizados, nunca dados locais.
+The update engine lives in `scripts/engine/update/`, with `SKILL.md`. Private state and snapshots
+stay in `.netops-update/` (git-ignored). Releases follow `core/rules/releases.md`,
+with a single version in `core/config/core-config.yaml`, notes in `CHANGELOG.md` and the workflow in
+`.github/workflows/release.yml`. Packages distribute only authorized paths, never local data.
 
-## 2. Convenções de nomenclatura
+## 2. Naming conventions
 
-| Item | Padrão | Exemplo |
-|------|--------|---------|
-| Pasta | `kebab-case`, inglês | `config-examples/` |
-| Arquivo de agente | `<nome>.agent.md` | `executor.agent.md` |
-| Arquivo de workflow | `<nome>.workflow.yaml` | `security-audit.workflow.yaml` |
-| Boa prática | `<topico>.md` em `best-practices/<vendor-ou-general>/` | `best-practices/mikrotik/firewall.md` |
-| Exemplo de config | `<topico>.<ext-nativa>` em `config-examples/<vendor>/` | `config-examples/mikrotik/ospf.rsc` |
-| Plano modelo | `<nome>.plan.md` | `security-audit.plan.md` |
-| Lição aprendida | bullet datado `AAAA-MM-DD — fato` em `memory/MEMORY.md` | `2026-06-01 — Cofre antes do acesso` |
-| Pasta de execução | `runs/YYYY-MM-DD-HHMM-<tarefa>/` | `runs/2026-05-18-1430-security-audit/` |
-| Nome de equipamento (`hostname` em `network/hosts.yaml`) | **MAIÚSCULAS**, hífen em vez de espaço | `9ROUTER-TEST`, `COOLIFY-FRANCISCO` |
-| Vendor (identificador) | minúsculo, sem espaço | `mikrotik`, `cisco`, `linux`, `unifi` |
+| Item | Standard | Example |
+|------|----------|---------|
+| Folder | `kebab-case`, English | `config-examples/` |
+| Agent file | `<name>.agent.md` | `executor.agent.md` |
+| Workflow file | `<name>.workflow.yaml` | `security-audit.workflow.yaml` |
+| Best practice | `<topic>.md` in `best-practices/<vendor-or-general>/` | `best-practices/mikrotik/firewall.md` |
+| Config example | `<topic>.<native-ext>` in `config-examples/<vendor>/` | `config-examples/mikrotik/ospf.rsc` |
+| Template plan | `<name>.plan.md` | `security-audit.plan.md` |
+| Lesson learned | dated bullet `YYYY-MM-DD — fact` in `memory/MEMORY.md` | `2026-06-01 — Vault before access` |
+| Run folder | `runs/YYYY-MM-DD-HHMM-<task>/` | `runs/2026-05-18-1430-security-audit/` |
+| Equipment name (`hostname` in `network/hosts.yaml`) | **UPPERCASE**, hyphen instead of space | `9ROUTER-TEST`, `COOLIFY-FRANCISCO` |
+| Vendor (identifier) | lowercase, no space | `mikrotik`, `cisco`, `linux`, `unifi` |
 
-Arquivos especiais (prefixo `_`):
-- `_TEMPLATE.*` / `_TEMPLATE/` — modelo a copiar ao criar item novo na pasta.
-- `_catalog.yaml` / `_index.yaml` — índice da pasta, lido pelo agente para descoberta rápida.
-- `PADRAO.md` (dentro de cada pasta) — regras específicas daquela pasta.
+Special files (prefix `_`):
+- `_TEMPLATE.*` / `_TEMPLATE/` — template to copy when creating a new item in the folder.
+- `_catalog.yaml` / `_index.yaml` — index of the folder, read by the agent for quick discovery.
+- `PADRAO.md` (inside each folder) — rules specific to that folder.
 
-## 3. Vendors suportados
+## 3. Supported vendors
 
 `mikrotik`, `unifi`, `ubiquiti`, `cisco`, `huawei`, `proxmox`, `vmware`, `datacom`,
-`linux`, `fiberhome`, `intelbras`, `zabbix` — e os que surgirem. `general` = boas práticas
-cross-vendor (não pertence a um fabricante).
+`linux`, `fiberhome`, `intelbras`, `zabbix` — and any that come up. `general` = cross-vendor
+best practices (does not belong to a vendor).
 
-**Conteúdo seed completo:** `mikrotik` e `linux`. Os demais já têm a pasta e o
-`_TEMPLATE` — preenche-se conforme o projeto vivo evolui.
+**Full seed content:** `mikrotik` and `linux`. The others already have the folder and the
+`_TEMPLATE` — they are filled in as the living project evolves.
 
-## 4. Formato de cada pasta (resumo — detalhe no `PADRAO.md` de cada uma)
+## 4. Format of each folder (summary — detail in the `PADRAO.md` of each one)
 
-- **agents/** — `.agent.md` com 8 seções (Persona, Principles, Operational Framework,
-  Voice Guidance, Output Examples, Anti-Patterns, Quality Criteria, Integration).
-- **best-practices/** — Markdown com front-matter YAML; subpastas por vendor + `general/`;
-  indexado por `_catalog.yaml`. Texto descritivo, comandos só como ilustração.
-- **config-examples/** — arquivos na sintaxe nativa do fabricante (`.rsc`, `.ios`, `.conf`...);
-  subpastas por vendor; indexado por `_index.yaml`. Cada exemplo tem cabeçalho comentado.
-- **scripts/** — cada script tem um `SKILL.md` ao lado descrevendo uso. `lib/` é o núcleo
-  reutilizável; `access/`, `diagnostics/`, `analysis/`, `docs/` são as famílias de script.
-- **planning-examples/** — `.plan.md` mostrando objetivo, escopo, passos, riscos, rollback.
-- **network/**: inventário real git-ignorado (`hosts.yaml`, `credentials.yaml`, `topology.yaml`,
-  `topology.md`, `maps.yaml`); modelos `*.example.yaml` versionados. Layout é apresentação,
-  nunca um segundo cadastro de hosts.
-- **workflows/** — `.workflow.yaml` com `steps` (tipo `subagent`/`inline`/`checkpoint`).
-- **memory/** — um arquivo só: `MEMORY.md` (seções: Preferências, Ambiente e convenções, Lições aprendidas).
-  **Pessoal da instância, git-ignorada:** `memory/`, `reports/`, `runs/`, `backups/`, `network/hosts.yaml`/`credentials.yaml` e
-  `core/config/project-config.yaml` nunca sobem para o repositório do produto (ele é distribuído a outras empresas); quem
-  guarda esses dados é o backup da própria instância. Instalação nova começa com `memory/` vazia e config a partir de
-  `core/config/project-config.example.yaml`. Código, docs e testes do produto não citam empresa, ISP, IP nem host reais: use
-  exemplos genéricos (RFC 5737 `192.0.2.0/24`, `203.0.113.0/24`; RFC 3849 `2001:db8::/32`).
+- **agents/** — `.agent.md` with 8 sections (Persona, Principles, Operating Mode,
+  Tone of Voice, Output Examples, Anti-Patterns, Quality Criteria, Integration).
+- **best-practices/** — Markdown with YAML front-matter; subfolders per vendor + `general/`;
+  indexed by `_catalog.yaml`. Descriptive text, commands only as illustration.
+- **config-examples/** — files in the vendor's native syntax (`.rsc`, `.ios`, `.conf`...);
+  subfolders per vendor; indexed by `_index.yaml`. Each example has a commented header.
+- **scripts/** — each script has a `SKILL.md` next to it describing usage. `lib/` is the reusable
+  core; `access/`, `diagnostics/`, `analysis/`, `docs/` are the script families.
+- **planning-examples/** — `.plan.md` showing goal, scope, steps, risks, rollback.
+- **network/**: real inventory, git-ignored (`hosts.yaml`, `credentials.yaml`, `topology.yaml`,
+  `topology.md`, `maps.yaml`); `*.example.yaml` templates versioned. Layout is presentation,
+  never a second host registry.
+- **workflows/** — `.workflow.yaml` with `steps` (type `subagent`/`inline`/`checkpoint`).
+- **memory/** — a single file: `MEMORY.md` (sections: Preferences, Environment and conventions, Lessons learned, written
+  in the installation's language).
+  **Personal to the instance, git-ignored:** `memory/`, `reports/`, `runs/`, `backups/`, `network/hosts.yaml`/`credentials.yaml` and
+  `core/config/project-config.yaml` never go up to the product repository (it is distributed to other companies); what
+  keeps that data is the backup of the instance itself. A new installation starts with an empty `memory/` and config from
+  `core/config/project-config.example.yaml`. Product code, docs and tests do not mention real companies, ISPs, IPs or hosts: use
+  generic examples (RFC 5737 `192.0.2.0/24`, `203.0.113.0/24`; RFC 3849 `2001:db8::/32`).
 
-## 5. Como adicionar um fabricante novo
+## 5. How to add a new vendor
 
-1. Criar `best-practices/<vendor>/` copiando `best-practices/_TEMPLATE.md`.
-2. Criar `config-examples/<vendor>/` copiando `config-examples/_TEMPLATE/`.
-3. Registrar o vendor em `best-practices/_catalog.yaml` e `config-examples/_index.yaml`.
-4. Adicionar o mapeamento em `scripts/engine/lib/vendor_map.py` (`device_type` Netmiko / driver NAPALM / API).
-5. Adicionar a seção do vendor neste arquivo (item 3).
+1. Create `best-practices/<vendor>/` by copying `best-practices/_TEMPLATE.md`.
+2. Create `config-examples/<vendor>/` by copying `config-examples/_TEMPLATE/`.
+3. Register the vendor in `best-practices/_catalog.yaml` and `config-examples/_index.yaml`.
+4. Add the mapping in `scripts/engine/lib/vendor_map.py` (Netmiko `device_type` / NAPALM driver / API).
+5. Add the vendor section to this file (item 3).
 
-## 6. Como adicionar um aprendizado (projeto vivo)
+## 6. How to add a learning (living project)
 
-1. Durante a reflexão pós-execução, anexar um bullet datado (`AAAA-MM-DD — fato`) em "Lições
-   aprendidas" de `memory/MEMORY.md` — fato declarativo, não ordem.
-2. Se virar conhecimento permanente de um fabricante, promover para `best-practices/` ou
+1. During the post-run reflection, append a dated bullet (`YYYY-MM-DD — fact`) under "Lessons
+   learned" in `memory/MEMORY.md` — a declarative fact, not an order.
+2. If it becomes permanent knowledge about a vendor, promote it to `best-practices/` or
    `config-examples/`.
 
-Ver `core/rules/memory-protocol.md` para o protocolo completo.
+See `core/rules/memory-protocol.md` for the full protocol.

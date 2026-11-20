@@ -2,7 +2,7 @@
 // Usado pelo botão "⌨ Acessar" (pages/host-term.js), por links no markdown (components.js) e pela
 // abertura automática quando o agente da aba Claude responde com o link (pages/claude.js).
 // Sem imports de páginas: evita ciclo components.js <-> host-term.js.
-import { toast } from "./ui.js";
+import { toast, t } from "./ui.js";
 
 // Mesmo nome de janela por host+método+porta: pedir de novo foca a janela que já está aberta.
 export function openTermHref(href, { fallbackHere = false } = {}) {
@@ -27,6 +27,6 @@ export function autoOpenFromText(text, scope = "") {
     if (autoOpened.has(key)) continue;
     autoOpened.add(key);
     if (!openTermHref(href))
-      toast.info("Pop-up bloqueado: clique no link “Abrir terminal” na resposta (ou permita pop-ups para este site).");
+      toast.info(t("host_term.popup_blocked_link"));
   }
 }

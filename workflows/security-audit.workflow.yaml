@@ -1,88 +1,88 @@
 workflow:
   id: security-audit
-  name: Auditoria de Segurança da Rede
+  name: Network Security Audit
   description: >-
-    Coleta a configuração de hosts do inventário e avalia a postura de segurança contra as
-    boas práticas. Produz um relatório priorizado por severidade.
+    Collects the configuration of hosts in the inventory and assesses the security posture against
+    best practices. Produces a report prioritized by severity.
   triggers:
-    - "faça uma avaliação de segurança da minha rede"
-    - "audite a segurança"
+    - "run a security assessment of my network"
+    - "audit the security"
     - "*security-audit"
 
   steps:
     - id: "01"
-      name: Definir escopo e carregar contexto
+      name: Define scope and load context
       type: inline
       agent: coordinator
       inputFiles: [network/hosts.yaml, network/topology.yaml, memory/MEMORY.md]
       outputFiles: ["runs/${run}/state.json"]
       instructions: >-
-        Validar o inventário (python3 scripts/engine/lib/inventory.py --validate). Definir o escopo
-        (todos os hosts ou um subconjunto). Injetar a memória relevante conforme
-        core/rules/memory-protocol.md. Criar runs/${run}/ a partir de core/templates/run-state.tmpl.json.
-      qualityCriteria: Inventário válido; escopo definido; runs/${run}/state.json criado.
-      vetoConditions: ["Inventário inválido contra o schema"]
+        Validate the inventory (python3 scripts/engine/lib/inventory.py --validate). Define the scope
+        (all hosts or a subset). Inject the relevant memory according to
+        core/rules/memory-protocol.md. Create runs/${run}/ from core/templates/run-state.tmpl.json.
+      qualityCriteria: Inventory valid; scope defined; runs/${run}/state.json created.
+      vetoConditions: ["Inventory invalid against the schema"]
 
     - id: "02"
-      name: Planejar a coleta
+      name: Plan the collection
       type: subagent
       agent: planner
       inputFiles: [best-practices/general/network-security-audit.md, best-practices/_catalog.yaml]
       outputFiles: ["runs/${run}/plan.yaml"]
       instructions: >-
-        Para cada host do escopo, listar os comandos read-only de auditoria por fabricante
-        (firewall, serviços, usuários, snmp, versão de firmware). Consultar best-practices/<vendor>/.
-      qualityCriteria: Todo host tem comandos; nenhum comando de escrita no plano.
+        For each host in scope, list the read-only audit commands per vendor
+        (firewall, services, users, snmp, firmware version). Consult best-practices/<vendor>/.
+      qualityCriteria: Every host has commands; no write command in the plan.
 
     - id: "03"
-      name: Coletar dos dispositivos
+      name: Collect from the devices
       type: subagent
       agent: executor
       inputFiles: ["runs/${run}/plan.yaml", network/credentials.yaml]
       outputFiles: ["runs/${run}/collected/*.txt"]
       instructions: >-
-        Pré-requisito: se as credenciais estiverem criptografadas, o cofre precisa estar
-        destrancado (o operador roda 'python3 scripts/engine/vault/cli.py unlock'). Conectar em cada host
-        com scripts/tools/access/session.py (run --host-id <ID> --command ...; api_mikrotik.py se method=api). Modo read-only. Em falha de conexão:
-        registrar o erro e seguir para o próximo host.
-      vetoConditions: ["Host fora de network/hosts.yaml", "Plano contém comando de escrita", "Cofre de credenciais trancado"]
+        Prerequisite: if the credentials are encrypted, the vault must be
+        unlocked (the operator runs 'python3 scripts/engine/vault/cli.py unlock'). Connect to each host
+        with scripts/tools/access/session.py (run --host-id <ID> --command ...; api_mikrotik.py if method=api). Read-only mode. On connection failure:
+        record the error and move on to the next host.
+      vetoConditions: ["Host not in network/hosts.yaml", "Plan contains a write command", "Credential vault locked"]
 
     - id: "04"
-      name: Avaliar segurança
+      name: Assess security
       type: subagent
       agent: tester
       inputFiles: ["runs/${run}/collected/", best-practices/general/network-security-audit.md]
       outputFiles: ["runs/${run}/findings.yaml"]
       instructions: >-
-        Rodar scripts/tools/analysis/security_assessment.py (com --config-file das coletas).
-        Confrontar cada achado com best-practices/. Classificar por severidade
-        CRÍTICO/ALTO/MÉDIO/BAIXO, com evidência e referência.
-      qualityCriteria: Todo host tem veredito; todo achado tem evidência + referência.
+        Run scripts/tools/analysis/security_assessment.py (with --config-file of the collected data).
+        Check each finding against best-practices/. Classify by severity
+        CRITICAL/HIGH/MEDIUM/LOW, with evidence and reference.
+      qualityCriteria: Every host has a verdict; every finding has evidence + reference.
 
     - id: "05"
-      name: Revisar achados com o usuário
+      name: Review findings with the user
       type: checkpoint
       agent: coordinator
       instructions: >-
-        Apresentar o resumo dos achados por severidade. Opções: 1) gerar o relatório
-        completo; 2) aprofundar um host; 3) encerrar.
+        Present the summary of findings by severity. Options: 1) generate the full
+        report; 2) dig deeper into a host; 3) finish.
 
     - id: "06"
-      name: Gerar relatório
+      name: Generate report
       type: subagent
       agent: documenter
       inputFiles: ["runs/${run}/findings.yaml", core/templates/security-report.tmpl.md]
       outputFiles: ["reports/${date}-security-audit.md"]
       instructions: >-
-        Gerar o relatório a partir do template, com sumário executivo e achados priorizados.
-      qualityCriteria: Relatório existe em reports/ com sumário + detalhe + recomendações.
+        Generate the report from the template, with an executive summary and prioritized findings.
+      qualityCriteria: Report exists in reports/ with summary + detail + recommendations.
 
     - id: "99"
-      name: Reflexão pós-execução
+      name: Post-run reflection
       type: subagent
       agent: documenter
       outputFiles: ["memory/MEMORY.md"]
       instructions: >-
-        Anexar as lições (erros de conexão, quirks de fabricante, descobertas) como bullets
-        datados em memory/MEMORY.md conforme core/rules/memory-protocol.md. Marcar state.json
-        como concluído.
+        Append the lessons (connection errors, vendor quirks, discoveries) as dated bullets
+        to memory/MEMORY.md according to core/rules/memory-protocol.md. Mark state.json
+        as completed.

@@ -27,6 +27,7 @@ if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
+from lib import i18n  # noqa: E402
 
 NETOPS_ROOT = Path(__file__).resolve().parents[3]
 HOSTS_FILE = NETOPS_ROOT / "network" / "hosts.yaml"
@@ -118,7 +119,7 @@ def _require_yaml():
         import yaml  # noqa: PLC0415
         return yaml
     except ImportError:
-        sys.exit("ERRO: PyYAML não instalado. Rode: pip install -r requirements.txt")
+        sys.exit(i18n.t("lib_inventory.pyyaml_missing"))
 
 
 def resolve_secret(value):
@@ -147,7 +148,7 @@ def load_inventory(*, include_credentials: bool = True) -> tuple[dict, dict]:
     with inventory_lock(HOSTS_FILE.parent):
         ensure_migration_complete(HOSTS_FILE.parent)
         if not HOSTS_FILE.exists():
-            sys.exit(f"ERRO: inventário não encontrado: {HOSTS_FILE}")
+            sys.exit(i18n.t("lib_inventory.not_found", path=HOSTS_FILE))
         hosts_data = yaml.safe_load(HOSTS_FILE.read_text(encoding="utf-8")) or {}
         creds_data = {}
         if include_credentials and CREDS_FILE.exists():
@@ -207,10 +208,10 @@ def validate() -> tuple[bool, list[str]]:
     try:
         import jsonschema  # noqa: PLC0415
     except ImportError:
-        return False, ["jsonschema não instalado (pip install -r requirements.txt)"]
+        return False, [i18n.t("lib_inventory.jsonschema_missing")]
 
     if not SCHEMA_FILE.exists():
-        return False, [f"schema não encontrado: {SCHEMA_FILE}"]
+        return False, [i18n.t("lib_inventory.schema_not_found", path=SCHEMA_FILE)]
 
     hosts_data, _ = load_inventory(include_credentials=False)
     schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
@@ -234,27 +235,27 @@ def validate() -> tuple[bool, list[str]]:
             continue
         for field in ("vendor", "credential"):
             if not host.get(field):
-                errors.append(f"hosts/{name}: campo '{field}' ausente (nem no host nem no grupo)")
+                errors.append(i18n.t("lib_inventory.field_missing", name=name, field=field))
         if not (host.get("access") or {}).get("method"):
-            errors.append(f"hosts/{name}: 'access.method' ausente")
+            errors.append(i18n.t("lib_inventory.access_method_missing", name=name))
 
     return (not errors), errors
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Carrega/valida o inventário do NetOps.")
-    parser.add_argument("--validate", action="store_true", help="Valida hosts.yaml contra o schema")
-    parser.add_argument("--list", action="store_true", help="Lista os hosts do inventário")
-    parser.add_argument("--show", metavar="HOST", help="Mostra um host resolvido (sem senha)")
-    parser.add_argument("--show-id", type=int, metavar="ID", help="Mostra um host pelo ID inteiro")
+    parser = argparse.ArgumentParser(description=i18n.t("lib_inventory.cli_description"))
+    parser.add_argument("--validate", action="store_true", help=i18n.t("lib_inventory.cli_validate_help"))
+    parser.add_argument("--list", action="store_true", help=i18n.t("lib_inventory.cli_list_help"))
+    parser.add_argument("--show", metavar="HOST", help=i18n.t("lib_inventory.cli_show_help"))
+    parser.add_argument("--show-id", type=int, metavar="ID", help=i18n.t("lib_inventory.cli_show_id_help"))
     args = parser.parse_args()
 
     if args.validate:
         ok, errors = validate()
         if ok:
-            print("OK — inventário válido.")
+            print(i18n.t("lib_inventory.valid"))
             return 0
-        print("INVÁLIDO:")
+        print(i18n.t("lib_inventory.invalid"))
         for e in errors:
             print(f"  - {e}")
         return 1

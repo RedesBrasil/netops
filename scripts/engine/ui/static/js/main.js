@@ -1,7 +1,8 @@
 // Entrypoint: router hash-based + shell (sidebar/topbar/vault banner) + mount.
 import { render } from "preact";
 import { html, useState, useEffect, api } from "./ui.js";
-import { ToastHost, startVaultPolling, refreshMe, useMe, can, permLabel, meStore } from "./ui.js";
+import { ToastHost, startVaultPolling, refreshMe, useMe, can, permLabel, meStore, t, useLocale } from "./ui.js";
+import { initI18n, applyUserLocale } from "./i18n.js";
 import { LoginScreen } from "./components.js";
 import { SetupScreen } from "./pages/setup.js";
 import { authToken, setOnAuthChange, setOnUnauthorized, clearAuthToken } from "./api.js";
@@ -32,37 +33,39 @@ import { isClaudeChatHash } from "./claude-sessions.js";
 
 // perm = permissão exigida (services/authz.py / lib/accessdb.PERMISSIONS); hidden = fora do menu.
 const ROUTES = {
-  hosts: { label: "Hosts", comp: HostsPage, group: "Inventário", perm: "hosts.view" },
-  groups: { label: "Grupos", comp: GroupsPage, group: "Inventário", perm: "hosts.view" },
-  credentials: { label: "Credenciais de hosts", comp: CredentialsPage, group: "Inventário", perm: "credentials.view" },
+  hosts: { labelKey: "nav.hosts", comp: HostsPage, group: "inventory", perm: "hosts.view" },
+  groups: { labelKey: "nav.groups", comp: GroupsPage, group: "inventory", perm: "hosts.view" },
+  credentials: { labelKey: "nav.credentials", comp: CredentialsPage, group: "inventory", perm: "credentials.view" },
   // Cofre de senhas: segredos que não são de host (portais, APIs, tokens) — network/vault.yaml
-  vault: { label: "Cofre de senhas", comp: VaultPage, group: "Inventário", perm: "vault.view" },
-  maps: { label: "Mapas", comp: MapsPage, group: "Inventário", perm: "hosts.view" },
-  memory: { label: "Memória", comp: MemoryPage, group: "Conhecimento", perm: "knowledge.view" },
-  practices: { label: "Boas práticas", comp: BestPracticesPage, group: "Conhecimento", perm: "knowledge.view" },
-  configs: { label: "Configurações", comp: ConfigsPage, group: "Conhecimento", perm: "knowledge.view" },
-  workflows: { label: "Workflows", comp: WorkflowsPage, group: "Conhecimento", perm: "knowledge.view" },
-  agents: { label: "Agentes", comp: AgentsPage, group: "Conhecimento", perm: "knowledge.view" },
-  scripts: { label: "Scripts / Skills", comp: ScriptsPage, group: "Conhecimento", perm: "scripts.view" },
+  vault: { labelKey: "nav.vault", comp: VaultPage, group: "inventory", perm: "vault.view" },
+  maps: { labelKey: "nav.maps", comp: MapsPage, group: "inventory", perm: "hosts.view" },
+  memory: { labelKey: "nav.memory", comp: MemoryPage, group: "knowledge", perm: "knowledge.view" },
+  practices: { labelKey: "nav.practices", comp: BestPracticesPage, group: "knowledge", perm: "knowledge.view" },
+  configs: { labelKey: "nav.configs", comp: ConfigsPage, group: "knowledge", perm: "knowledge.view" },
+  workflows: { labelKey: "nav.workflows", comp: WorkflowsPage, group: "knowledge", perm: "knowledge.view" },
+  agents: { labelKey: "nav.agents", comp: AgentsPage, group: "knowledge", perm: "knowledge.view" },
+  scripts: { labelKey: "nav.scripts", comp: ScriptsPage, group: "knowledge", perm: "scripts.view" },
   // Central de Avisos: alertas/avisos/pedidos de aprovação (tarefas agendadas, scripts, agentes). Também no sino do topo.
-  inbox: { label: "Central de Avisos", comp: InboxPage, group: "Saída", badge: "inbox", perm: "inbox.view" },
-  reports: { label: "Relatórios", comp: ReportsPage, group: "Saída", perm: "knowledge.view" },
-  runs: { label: "Execuções", comp: RunsPage, group: "Saída", perm: "knowledge.view" },
-  backups: { label: "Backups", comp: BackupsPage, group: "Saída", perm: "backups.view" },
-  dashboard: { label: "Painel", comp: DashboardPage, group: "Sistema", perm: "dashboard.view" },
-  schedules: { label: "Tarefas agendadas", comp: SchedulesPage, group: "Sistema", badge: "schedules", perm: "schedules.view" },
-  claude: { label: "Claude Code", comp: ClaudeCodePage, group: "Sistema", flag: "claude_enabled", perm: "claude.use" },
+  inbox: { labelKey: "nav.inbox", comp: InboxPage, group: "output", badge: "inbox", perm: "inbox.view" },
+  reports: { labelKey: "nav.reports", comp: ReportsPage, group: "output", perm: "knowledge.view" },
+  runs: { labelKey: "nav.runs", comp: RunsPage, group: "output", perm: "knowledge.view" },
+  backups: { labelKey: "nav.backups", comp: BackupsPage, group: "output", perm: "backups.view" },
+  dashboard: { labelKey: "nav.dashboard", comp: DashboardPage, group: "system", perm: "dashboard.view" },
+  schedules: { labelKey: "nav.schedules", comp: SchedulesPage, group: "system", badge: "schedules", perm: "schedules.view" },
+  claude: { labelKey: "nav.claude", comp: ClaudeCodePage, group: "system", flag: "claude_enabled", perm: "claude.use" },
   // Sem `group`: não vira item fixo da sidebar. Os itens do grupo "Projetos" são os projetos cadastrados (ver Sidebar).
-  projects: { label: "Projetos", comp: ProjectsPage, flag: "claude_enabled", perm: "claude.use" },
-  terminal: { label: "Terminal", comp: TerminalPage, group: "Sistema", flag: "terminal_enabled", perm: "server.terminal" },
-  files: { label: "Arquivos", comp: FilesPage, group: "Sistema", flag: "files_enabled", perm: "server.files" },
-  settings: { label: "Configuração", comp: SettingsPage, group: "Sistema", perm: "config" },
-  users: { label: "Usuários", comp: UsersPage, group: "Sistema", perm: "users.manage" },
-  "access-groups": { label: "Grupos de acesso", comp: AccessGroupsPage, group: "Sistema", perm: "users.manage" },
-  audit: { label: "Auditoria", comp: AuditPage, group: "Sistema", perm: "audit.view" },
-  account: { label: "Minha conta", comp: AccountPage, group: "Sistema", hidden: true },
+  projects: { labelKey: "nav.projects", comp: ProjectsPage, flag: "claude_enabled", perm: "claude.use" },
+  terminal: { labelKey: "nav.terminal", comp: TerminalPage, group: "system", flag: "terminal_enabled", perm: "server.terminal" },
+  files: { labelKey: "nav.files", comp: FilesPage, group: "system", flag: "files_enabled", perm: "server.files" },
+  settings: { labelKey: "nav.settings", comp: SettingsPage, group: "system", perm: "config" },
+  users: { labelKey: "nav.users", comp: UsersPage, group: "system", perm: "users.manage" },
+  "access-groups": { labelKey: "nav.access_groups", comp: AccessGroupsPage, group: "system", perm: "users.manage" },
+  audit: { labelKey: "nav.audit", comp: AuditPage, group: "system", perm: "audit.view" },
+  account: { labelKey: "nav.account", comp: AccountPage, group: "system", hidden: true },
 };
-const ORDER = ["Inventário", "Conhecimento", "Saída", "Projetos", "Sistema"];
+const ORDER = ["inventory", "knowledge", "output", "projects", "system"];
+const LEGACY_GROUP_IDS = { "Inventário": "inventory", "Conhecimento": "knowledge", "Saída": "output", "Projetos": "projects", "Sistema": "system" };
+const routeLabel = (r) => t(r.labelKey);
 
 function useHash() {
   const readHash = () => {
@@ -121,19 +124,19 @@ function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
   const projSeg = current === "projects" ? (hash.split("?")[0].split("/")[1] || "") : "";   // projeto (ou "new") aberto agora
   // Grupos abertos pelo usuário (persistido). Padrão: lista vazia = todos os grupos recolhidos.
   const [openGroups, setOpenGroups] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("netops_nav_groups") || "[]"); } catch { return []; }
+    try { return JSON.parse(localStorage.getItem("netops_nav_groups") || "[]").map((g) => LEGACY_GROUP_IDS[g] || g); } catch { return []; }
   });
   const toggleGroup = (g) => setOpenGroups((cur) => {
     const next = cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g];
     localStorage.setItem("netops_nav_groups", JSON.stringify(next));
     return next;
   });
-  const groups = ORDER.filter((g) => g === "Projetos" ? showProjects : Object.values(ROUTES).some((r) => r.group === g && routeVisible(r, meta, me)));
+  const groups = ORDER.filter((g) => g === "projects" ? showProjects : Object.values(ROUTES).some((r) => r.group === g && routeVisible(r, meta, me)));
   return html`<nav class=${"sidebar" + (open ? " open" : "")} onClick=${(e) => { if (e.target.closest("a")) onNavigate(); }}>
     ${groups.map((g) => html`<div key=${g} class=${"nav-group" + (openGroups.includes(g) ? " is-open" : "")}>
       <button type="button" class="group-label group-toggle" aria-expanded=${openGroups.includes(g)}
         onClick=${() => toggleGroup(g)}>
-        <span class="group-chevron">${openGroups.includes(g) ? "▾" : "▸"}</span>${g}
+        <span class="group-chevron">${openGroups.includes(g) ? "▾" : "▸"}</span>${t("nav.group_" + g)}
         ${(() => {   // grupo recolhido: mostra a soma dos contadores dos itens dele (não some da vista)
           if (openGroups.includes(g)) return "";
           const n = Object.values(ROUTES).filter((r) => r.group === g && r.badge && routeVisible(r, meta, me)).reduce((a, r) => a + (badges[r.badge] || 0), 0);
@@ -141,14 +144,14 @@ function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
         })()}
       </button>
       ${openGroups.includes(g) && html`<div class="nav-children">
-      ${g === "Projetos" && html`
-        ${projects.map((p) => html`<a key=${p.id} href=${"#projects/" + p.id} title=${p.path + " — segure e arraste para reordenar"}
+      ${g === "projects" && html`
+        ${projects.map((p) => html`<a key=${p.id} href=${"#projects/" + p.id} title=${p.path + " — " + t("nav.drag_to_reorder")}
           ...${projDrag.props(p.id)} class=${(projSeg === p.id ? "active" : "") + projDrag.cls(p.id)}>${p.name}</a>`)}
-        <a href="#projects/new" class=${"needs-projects-manage" + (projSeg === "new" ? " active" : "")}>＋ Novo projeto</a>
-        ${nArchived > 0 && html`<a href="#projects?arquivados=1" class="nav-sub">🗄 Arquivados (${nArchived})</a>`}`}
+        <a href="#projects/new" class=${"needs-projects-manage" + (projSeg === "new" ? " active" : "")}>＋ ${t("nav.new_project")}</a>
+        ${nArchived > 0 && html`<a href="#projects?arquivados=1" class="nav-sub">🗄 ${t("nav.archived", { count: nArchived })}</a>`}`}
       ${openGroups.includes(g) && Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
-        <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${r.label}${r.badge && badges[r.badge] > 0
-          ? html`<span class="nav-badge" title=${r.badge === "inbox" ? "não lidas + aguardando aprovação" : "execuções com resultado não lido"}>${badges[r.badge]}</span>` : ""}</a>`)}
+        <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${routeLabel(r)}${r.badge && badges[r.badge] > 0
+          ? html`<span class="nav-badge" title=${r.badge === "inbox" ? t("nav.badge_inbox") : t("nav.badge_schedules")}>${badges[r.badge]}</span>` : ""}</a>`)}
       </div>`}
     </div>`)}
   </nav>`;
@@ -214,35 +217,35 @@ function Shell({ onLogout, showLogout }) {
   const dockVisible = !isChat && !!(claude && claude.hasSession) && can("claude.use", me);
   return html`<div class=${"shell" + (dockVisible ? " has-dock" : "") + (collapsed ? " nav-collapsed" : "")}>
     <div class="topbar">
-      <button class="sm mob-only nav-toggle" aria-label="Menu" onClick=${() => { setMoreOpen(false); setNavOpen(!navOpen); }}>☰</button>
+      <button class="sm mob-only nav-toggle" aria-label=${t("nav.menu")} onClick=${() => { setMoreOpen(false); setNavOpen(!navOpen); }}>☰</button>
       ${isChat
         ? html`<${ClaudeSessionTitle} />`
         : html`<span class="brand">NetOps Console</span><span class="net">· ${meta.network_name}</span>`}
       <div id="topbar-slot" class="topbar-slot"></div>
       ${isChat && html`<${ClaudeStatusDot} />`}
       <div class="mob-only ib-slot"><${InboxBell} /></div>
-      <button class="sm mob-only more-toggle" aria-label="Ações" onClick=${() => { setNavOpen(false); setMoreOpen(!moreOpen); }}>⋯</button>
+      <button class="sm mob-only more-toggle" aria-label=${t("common.actions")} onClick=${() => { setNavOpen(false); setMoreOpen(!moreOpen); }}>⋯</button>
       <div class=${"topbar-actions" + (moreOpen ? " open" : "")}
         onClick=${(e) => { if (e.target.closest("button") && !e.target.closest(".keep-open")) setMoreOpen(false); }}>
         ${isChat && html`<${ClaudeTopbarControls} />`}
         <div class="keep-open"><${UpdatesControl} part="version" /></div>
         <button class="sm icon-btn" onClick=${() => setTheme(theme === "light" ? "dark" : "light")}
-          title=${theme === "light" ? "Tema escuro" : "Tema claro"} aria-label=${theme === "light" ? "Mudar para o tema escuro" : "Mudar para o tema claro"}>
-          ${theme === "light" ? "🌙" : "☀"}<span class="mob-label">${theme === "light" ? " Tema escuro" : " Tema claro"}</span></button>
-        ${me && showLogout && html`<a class="user-chip" href="#account" title=${"Minha conta — " + (me.display_name || me.username) + " (" + (me.email || me.username) + ") — grupos: " + (me.groups || []).join(", ")}
-          aria-label="Minha conta">👤<span class="mob-label"> ${me.display_name || me.username}</span></a>`}
+          title=${theme === "light" ? t("common.theme_dark") : t("common.theme_light")} aria-label=${theme === "light" ? t("nav.switch_dark") : t("nav.switch_light")}>
+          ${theme === "light" ? "🌙" : "☀"}<span class="mob-label"> ${theme === "light" ? t("common.theme_dark") : t("common.theme_light")}</span></button>
+        ${me && showLogout && html`<a class="user-chip" href="#account" title=${t("nav.user_chip", { name: me.display_name || me.username, email: me.email || me.username, groups: (me.groups || []).join(", ") })}
+          aria-label=${t("common.my_account")}>👤<span class="mob-label"> ${me.display_name || me.username}</span></a>`}
         <div class="desk-only ib-slot"><${InboxBell} /></div>
-        ${showLogout && html`<button class="sm" onClick=${doLogout}>Sair</button>`}
+        ${showLogout && html`<button class="sm" onClick=${doLogout}>${t("common.logout")}</button>`}
       </div>
     </div>
     ${(navOpen || moreOpen) && html`<div class="mob-backdrop" onClick=${() => { setNavOpen(false); setMoreOpen(false); }}></div>`}
     <${Sidebar} current=${route} hash=${hash} meta=${meta} me=${me} open=${navOpen} onNavigate=${() => setNavOpen(false)} />
-    <button class="sidebar-toggle" aria-label=${collapsed ? "Mostrar barra lateral" : "Esconder barra lateral"}
-      title=${collapsed ? "Mostrar barra lateral" : "Esconder barra lateral"} onClick=${() => setCollapsed(!collapsed)}>${collapsed ? "›" : "‹"}</button>
+    <button class="sidebar-toggle" aria-label=${collapsed ? t("nav.sidebar_show") : t("nav.sidebar_hide")}
+      title=${collapsed ? t("nav.sidebar_show") : t("nav.sidebar_hide")} onClick=${() => setCollapsed(!collapsed)}>${collapsed ? "›" : "‹"}</button>
     <main class=${"content" + (route === "maps" ? " maps-content" : "") + (route === "files" ? " files-content" : "")}>
-      ${denied ? html`<div class="card forbidden-card"><h2>Sem permissão</h2>
-          <p>Seu grupo de acesso não libera <b>${target.label}</b> (${permLabel(target.perm, me)}).</p>
-          <p>Peça a um administrador para incluir você num grupo com essa permissão. <a href=${"#" + firstAllowed(meta, me)}>Voltar</a></p></div>`
+      ${denied ? html`<div class="card forbidden-card"><h2>${t("nav.denied_title")}</h2>
+          <p>${t("nav.denied_body", { page: routeLabel(target), perm: permLabel(target.perm, me) })}</p>
+          <p>${t("nav.denied_hint")} <a href=${"#" + firstAllowed(meta, me)}>${t("common.back")}</a></p></div>`
         : forced ? html`<${AccountPage} forced=${true} />` : html`<${Page} />`}
     </main>
     ${dockVisible && html`<${ChatDock} />`}
@@ -262,7 +265,15 @@ function ReportHost() {
   return file ? html`<${ReportView} key=${file} file=${file} fullLink=${true} onClose=${() => setFile(null)} />` : null;
 }
 
+// Refresh /auth/me and switch to the user's language (Minha conta -> Idioma) or the instance language.
+async function refreshMeAndLocale() {
+  const me = await refreshMe();
+  if (me) await applyUserLocale(me);
+  return me;
+}
+
 function Root() {
+  useLocale();   // re-render the whole tree when the language changes
   const [gate, setGate] = useState("loading");   // "loading" | "setup" | "login" | "app"
   const [authRequired, setAuthRequired] = useState(false);
   const [multiuser, setMultiuser] = useState(false);
@@ -291,7 +302,7 @@ function Root() {
         setAuthRequired(!!s.auth_required);
         setMultiuser(!!s.multiuser);
         const needLogin = s.auth_required && !s.authenticated;
-        if (!needLogin) await refreshMe();
+        if (!needLogin) await refreshMeAndLocale();
         else meStore.set(null);
         if (current !== generation) return;
         setGate(needLogin ? "login" : "app");
@@ -309,20 +320,21 @@ function Root() {
   }, []);
 
   if (migration) return html`<div class="boot"><section role=${migration.phase === "failed" ? "alert" : "status"} aria-live="polite">
-    <h1>${migration.phase === "failed" ? "Migração de IDs bloqueada" : "Preparando o NetOps"}</h1>
-    <p>Versão instalada: v${migration.version}</p><p>${migration.detail}</p>
-    ${migration.phase === "failed" && html`<p>O código instalado foi mantido. Os dados não serão descartados nem substituídos para contornar o erro.</p>`}
-    <button onClick=${() => location.reload()}>Verificar novamente</button>
+    <h1>${migration.phase === "failed" ? t("nav.migration_blocked") : t("nav.migration_preparing")}</h1>
+    <p>${t("nav.installed_version", { version: migration.version })}</p><p>${migration.detail}</p>
+    ${migration.phase === "failed" && html`<p>${t("nav.migration_kept")}</p>`}
+    <button onClick=${() => location.reload()}>${t("nav.check_again")}</button>
   </section></div>`;
-  if (gate === "loading") return html`<div class="boot">Carregando NetOps Console…</div>`;
+  if (gate === "loading") return html`<div class="boot">${t("common.loading_console")}</div>`;
   if (gate === "setup") return html`<${SetupScreen}
-    onDone=${async () => { setAuthRequired(true); setMultiuser(true); await refreshMe(); location.hash = "#dashboard"; setGate("app"); }} />`;
+    onDone=${async () => { setAuthRequired(true); setMultiuser(true); await refreshMeAndLocale(); location.hash = "#dashboard"; setGate("app"); }} />`;
   if (gate === "login") return html`<${LoginScreen} multiuser=${multiuser}
-    onAuthed=${async () => { setAuthRequired(true); await refreshMe(); setMultiuser(true); setGate("app"); }} />`;
+    onAuthed=${async () => { setAuthRequired(true); await refreshMeAndLocale(); setMultiuser(true); setGate("app"); }} />`;
   return html`<${App} onLogout=${() => setGate("login")} showLogout=${authRequired} />`;
 }
 
-render(html`<${Root} />`, document.getElementById("app"));
+// Catalog first (first access without a language yet: this browser's language, only to show the choice).
+initI18n({ setup: /^#setup/.test(location.hash) }).finally(() => render(html`<${Root} />`, document.getElementById("app")));
 
 // PWA: service worker (só em contexto seguro: HTTPS ou localhost). Falha aqui nunca afeta o console.
 if ("serviceWorker" in navigator) {

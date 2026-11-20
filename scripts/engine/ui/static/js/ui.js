@@ -2,9 +2,18 @@
 import { html } from "htm/preact";
 import { useState, useEffect, useRef, useCallback, useMemo } from "preact/hooks";
 import { api, ConflictError, ValidationError, VaultLockedError, ForbiddenError } from "./api.js";
+import { t, lang, fmtDateTime, fmtDate, fmtTime, fmtNumber, errorText, onLocaleChange } from "./i18n.js";
 
 export { html, useState, useEffect, useRef, useCallback, useMemo, api };
 export { ConflictError, ValidationError, VaultLockedError, ForbiddenError };
+export { t, lang, fmtDateTime, fmtDate, fmtTime, fmtNumber, errorText };
+
+// Re-render on language change (Minha conta -> Idioma, first-access wizard).
+export function useLocale() {
+  const [l, setL] = useState(lang());
+  useEffect(() => onLocaleChange(setL), []);
+  return l;
+}
 
 /* ----------------------------- store mínimo ----------------------------- */
 export function createStore(initial) {
@@ -36,7 +45,7 @@ toast.info = (m) => toast("info", m);
 export function ToastHost() {
   const list = useStore(toastStore);
   return html`<div class="toast-host">
-    ${list.map((t) => html`<div key=${t.id} class="toast ${t.kind}"><span>${t.message}</span><button class="toast-x" title="Fechar" aria-label="Fechar" onClick=${() => toastStore.set((l) => l.filter((x) => x.id !== t.id))}>✕</button></div>`)}
+    ${list.map((t) => html`<div key=${t.id} class="toast ${t.kind}"><span>${t.message}</span><button class="toast-x" title=${t("common.close")} aria-label=${t("common.close")} onClick=${() => toastStore.set((l) => l.filter((x) => x.id !== t.id))}>✕</button></div>`)}
   </div>`;
 }
 
@@ -74,7 +83,7 @@ export function can(perm, me = meStore.get()) {
 export function useMe() { return useStore(meStore); }
 export function permLabel(perm, me = meStore.get()) {
   const p = (me?.catalog || []).find((x) => x.key === perm);
-  return p ? p.label : "somente administradores";
+  return p ? p.label : t("common.admins_only");
 }
 
 /* ----------------------------- useResource ------------------------------ */
@@ -99,35 +108,35 @@ export function useResource(path, deps = []) {
 export function handleError(e, { onConflict } = {}) {
   if (e instanceof ValidationError) {
     const first = e.fieldErrors[0];
-    toast.err(first ? `${first.loc}: ${first.msg}` : "Validação falhou");
+    toast.err(first ? `${first.loc}: ${first.msg}` : t("errors.validation_failed"));
     return e.fieldErrors;
   }
   if (e instanceof ConflictError) {
-    if (onConflict) onConflict(e); else toast.err(e.payload?.detail || "Conflito de versão — recarregue");
+    if (onConflict) onConflict(e); else toast.err(errorText(e.payload, t("errors.version_conflict")));
     return [];
   }
-  if (e instanceof VaultLockedError) { refreshVault(); toast.err("Cofre trancado — destranque no terminal"); return []; }
+  if (e instanceof VaultLockedError) { refreshVault(); toast.err(t("errors.vault_locked_toast")); return []; }
   if (e instanceof ForbiddenError) {
-    toast.err(e.passwordChange ? "Troque a senha provisória antes de continuar." : (e.message || "Sem permissão."));
+    toast.err(e.passwordChange ? t("errors.password_change_required") : (e.message || t("errors.forbidden_short")));
     return [];
   }
-  toast.err(e.message || "Erro");
+  toast.err(e.message || t("common.error"));
   return [];
 }
 
 /* ----------------------------- componentes ------------------------------ */
-export const Spinner = () => html`<div class="spinner">Carregando…</div>`;
+export const Spinner = () => html`<div class="spinner">${t("common.loading")}</div>`;
 
 export function Badge({ kind, children }) {
   return html`<span class="badge ${kind || ""}">${children}</span>`;
 }
 
-export function CopyButton({ text, label = "Copiar" }) {
+export function CopyButton({ text, label }) {
   const [done, setDone] = useState(false);
   return html`<button class="sm" onClick=${async () => {
     try { await navigator.clipboard.writeText(text); } catch (e) {}
     setDone(true); setTimeout(() => setDone(false), 1500);
-  }}>${done ? "copiado ✓" : label}</button>`;
+  }}>${done ? t("common.copied") : (label || t("common.copy"))}</button>`;
 }
 
 export function Modal({ title, children, onClose, wide, cls = "" }) {
@@ -143,26 +152,26 @@ export function ConfirmDialog({ title, message, danger, onConfirm, onClose }) {
   return html`<${Modal} title=${title} onClose=${onClose}>
     <p>${message}</p>
     <div class="modal-actions">
-      <button onClick=${onClose}>Cancelar</button>
-      <button class=${danger ? "danger" : "primary"} onClick=${() => { onConfirm(); onClose(); }}>Confirmar</button>
+      <button onClick=${onClose}>${t("common.cancel")}</button>
+      <button class=${danger ? "danger" : "primary"} onClick=${() => { onConfirm(); onClose(); }}>${t("common.confirm")}</button>
     </div>
   <//>`;
 }
 
 export function ConflictDialog({ onReload, onClose }) {
-  return html`<${Modal} title="Arquivo mudou no disco" onClose=${onClose}>
-    <p>Este arquivo foi modificado por fora (outro operador ou um agente de IA) desde que você abriu o editor.</p>
+  return html`<${Modal} title=${t("common.file_changed_title")} onClose=${onClose}>
+    <p>${t("common.file_changed_body")}</p>
     <div class="modal-actions">
-      <button class="primary" onClick=${() => { onReload(); onClose(); }}>Recarregar</button>
-      <button onClick=${onClose}>Fechar</button>
+      <button class="primary" onClick=${() => { onReload(); onClose(); }}>${t("common.reload")}</button>
+      <button onClick=${onClose}>${t("common.close")}</button>
     </div>
   <//>`;
 }
 
 export function Tabs({ tabs, active, onChange, actions }) {
   return html`<div class="tabs">
-    ${tabs.map((t) => html`<button key=${t.key} class=${active === t.key ? "active" : ""}
-      onClick=${() => onChange(t.key)}>${t.label}</button>`)}
+    ${tabs.map((tab) => html`<button key=${tab.key} class=${active === tab.key ? "active" : ""}
+      onClick=${() => onChange(tab.key)}>${tab.label}</button>`)}
     ${actions && html`<div class="tabs-actions">${actions}</div>`}
   </div>`;
 }

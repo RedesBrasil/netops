@@ -1,79 +1,80 @@
-# PADRÃO — `scripts/`
+# STANDARD — `scripts/`
 
-Scripts Python que o agente `executor` (acesso) e o `tester` (diagnóstico/análise) invocam
-via terminal. A "inteligência" fica nos agentes; o trabalho técnico determinístico fica aqui.
+Python scripts that the `executor` agent (access) and the `tester` (diagnostics/analysis) invoke
+through the terminal. The "intelligence" stays in the agents; the deterministic technical work stays here.
 
-## Stack padrão de acesso
+## Default access stack
 
-Resposta à pergunta "SSH cru, Paramiko ou Telnet?": **não** use SSH cru nem Telnet como
-padrão. A camada padrão é o **Netmiko** — ele usa Paramiko por baixo, mas já trata
-prompt/paginação e fala com 100+ fabricantes via `device_type`.
+Answer to the question "raw SSH, Paramiko or Telnet?": do **not** use raw SSH or Telnet as the
+default. The default layer is **Netmiko** — it uses Paramiko underneath, but already handles
+prompt/paging and talks to 100+ vendors via `device_type`.
 
-| Camada | Biblioteca | Papel |
-|--------|-----------|-------|
-| SSH/Telnet multi-fabricante | **Netmiko** | Padrão para rodar comandos CLI |
-| Coleta estruturada + diff | **NAPALM** | Cisco/Juniper/Arista — getters e `compare_config` |
-| API MikroTik | **librouteros** | RouterOS via API nativa (dados estruturados) |
-| Scan de portas/segurança | **nmap** (binário) | `portscan.py`, `security_assessment.py` |
+| Layer | Library | Role |
+|-------|---------|------|
+| Multi-vendor SSH/Telnet | **Netmiko** | Default for running CLI commands |
+| Structured collection + diff | **NAPALM** | Cisco/Juniper/Arista — getters and `compare_config` |
+| MikroTik API | **librouteros** | RouterOS via the native API (structured data) |
+| Port/security scan | **nmap** (binary) | `portscan.py`, `security_assessment.py` |
 
-## Estrutura
+## Structure
 
-`scripts/` separa o **motor** do NetOps (infra estática) dos **scripts operacionais**
-(o que o usuário cria/edita). Só os operacionais aparecem na página **Scripts** do console.
+`scripts/` separates the NetOps **engine** (static infrastructure) from the **operational scripts**
+(what the user creates/edits). Only the operational ones appear on the console's **Scripts / Skills** page.
 
-### `engine/` — motor do NetOps (não aparece na UI)
+### `engine/` — NetOps engine (does not appear in the UI)
 
-| Pasta | Conteúdo |
-|-------|----------|
-| `engine/lib/` | Núcleo reutilizável — `inventory.py`, `vendor_map.py`, `transport.py` |
-| `engine/vault/` | Cofre de credenciais — CLI `init`/`encrypt`/`unlock`/`lock`/`status`/`change-password` |
-| `engine/ui/` | Console web (FastAPI + SPA). Subir SEMPRE por `scripts/engine/ui/start.sh` |
+| Folder | Content |
+|--------|---------|
+| `engine/lib/` | Reusable core — `inventory.py`, `vendor_map.py`, `transport.py` |
+| `engine/vault/` | Credential vault — CLI `init`/`encrypt`/`unlock`/`lock`/`status`/`change-password` |
+| `engine/ui/` | Web console (FastAPI + SPA). ALWAYS start it with `scripts/engine/ui/start.sh` |
 
-`engine/update/` contém política de distribuição, cliente GitHub, pacote, snapshot, journal e
-supervisor efêmero de atualização. `SKILL.md` documenta uso e recuperação. Os módulos Python
-seguem a separação de engine, não aparecem como scripts operacionais e nunca conectam em equipamentos.
+`engine/update/` contains the distribution policy, GitHub client, package, snapshot, journal and
+ephemeral update supervisor. `SKILL.md` documents usage and recovery. The Python modules
+follow the engine separation, do not appear as operational scripts and never connect to devices.
 
-### `tools/` — scripts operacionais (CRUD pela UI)
+### `tools/` — operational scripts (CRUD through the UI)
 
-| Pasta | Conteúdo |
-|-------|----------|
-| `tools/access/` | Conexão com equipamentos — `session.py` (único de SSH/Telnet: `run` e `open/exec/close`), `api_mikrotik.py` |
-| `tools/diagnostics/` | Diagnóstico de rede — `portscan.py`, `ping_advanced.py`, `traceroute_advanced.py` |
-| `tools/analysis/` | Análise — `security_assessment.py`, `config_diff.py` |
-| `tools/docs/` | Geração de documentação — `topology_render.py` |
-| `tools/_TEMPLATE/` | Modelo (`SKILL.md` + `script.py`) para criar um script/família novos |
+| Folder | Content |
+|--------|---------|
+| `tools/access/` | Connection to devices — `session.py` (the only one for SSH/Telnet: `run` and `open/exec/close`), `api_mikrotik.py` |
+| `tools/diagnostics/` | Network diagnostics — `portscan.py`, `ping_advanced.py`, `traceroute_advanced.py` |
+| `tools/analysis/` | Analysis — `security_assessment.py`, `config_diff.py` |
+| `tools/docs/` | Documentation generation — `topology_render.py` |
+| `tools/_TEMPLATE/` | Template (`SKILL.md` + `script.py`) to create a new script/family |
 
-## Padrão de um script
+## Standard of a script
 
-- Python 3, executável como `python3 scripts/tools/<familia>/<script>.py [args]`.
-- **Entra sozinho no venv:** logo após o `sys.path.insert` do bootstrap e ANTES de qualquer lib externa,
-  `from lib._venv import ensure_venv; ensure_venv()` (já está no `_TEMPLATE`). Assim ninguém precisa
-  ativar `.venv` nem instalar nada para rodar um script.
-- `argparse` com `--help` claro. Funciona offline (imports de rede são preguiçosos).
-- Lê o inventário sempre via `from lib.inventory import …` (o motor em `engine/lib/`,
-  posto no `sys.path` pelo bootstrap do script) — nunca recebe credencial por argumento.
-- Seleciona identidade numérica por `--host-id <inteiro>`; `--host <hostname-ou-alias>`
-  mantém compatibilidade por nome único. Diagnósticos usam `include_credentials=False`
-  e `resolve_host(..., {}, decrypt=False)`, sem ler ou decifrar credenciais.
-- Saída em JSON ou texto; quando salva, salva em `runs/<id>/`.
-- Cada família tem um `SKILL.md` ao lado descrevendo o uso (formato do OpenSquad); ele
-  aparece como ícone 📄 ao lado dos scripts da família na UI.
+- Python 3, runnable as `python3 scripts/tools/<family>/<script>.py [args]`.
+- **Enters the venv by itself:** right after the bootstrap's `sys.path.insert` and BEFORE any external lib,
+  `from lib._venv import ensure_venv; ensure_venv()` (already in the `_TEMPLATE`). This way nobody needs to
+  activate `.venv` or install anything to run a script.
+- `argparse` with a clear `--help`. Works offline (network imports are lazy).
+- Always reads the inventory via `from lib.inventory import …` (the engine in `engine/lib/`,
+  put on `sys.path` by the script's bootstrap) — never receives a credential as an argument.
+- Selects the numeric identity with `--host-id <integer>`; `--host <hostname-or-alias>`
+  keeps compatibility by unique name. Diagnostics use `include_credentials=False`
+  and `resolve_host(..., {}, decrypt=False)`, without reading or decrypting credentials.
+- Output in JSON or text; when it saves, it saves in `runs/<id>/`.
+- Each family has a `SKILL.md` next to it describing usage (OpenSquad format); it
+  appears as a 📄 icon next to the family's scripts in the UI.
+- Visible messages (help, output, errors) go through `i18n.t()` (see `core/rules/i18n.md`).
 
-## Como adicionar um script
+## How to add a script
 
-Copie `scripts/tools/_TEMPLATE/` (tem `SKILL.md` + `script.py`), implemente, e — se for
-uma família nova — crie o `SKILL.md` da pasta. Ou crie direto pela página **Scripts** do
-console web (botão **+ Novo**, caminho `familia/arquivo.py`).
-
-
-### Editor visual do console
-
-`engine/ui/maps/` contém o editor JSX e seu build de manutenção. É uma exceção isolada à
-SPA sem build: o operador recebe o módulo ESM/CSS já gerado em `static/vendor/`. Não precisa
-de npm para subir o console. Mantém Preact compartilhado e dependências locais pinadas.
-O padrão de uso e estrutura está em `engine/ui/maps/SKILL.md`.
+Copy `scripts/tools/_TEMPLATE/` (it has `SKILL.md` + `script.py`), implement it, and — if it is
+a new family — create the folder's `SKILL.md`. Or create it directly from the **Scripts / Skills** page of the
+web console (**+ New** button, path `family/file.py`).
 
 
-A biblioteca de imagens do editor fica em `engine/ui/static/icons/network/`, com originais,
-catálogo, miniaturas e checksums. `engine/ui/vendor_icons.py` atualiza esses assets a partir
-de uma revisão fixa, sem ser executado no servidor. Ver README local e `engine/ui/SKILL.md`.
+### Visual editor of the console
+
+`engine/ui/maps/` contains the JSX editor and its maintenance build. It is an isolated exception to the
+build-less SPA: the operator receives the ESM/CSS module already generated in `static/vendor/`. npm is not
+needed to start the console. It keeps a shared Preact and pinned local dependencies.
+The usage pattern and structure are in `engine/ui/maps/SKILL.md`.
+
+
+The editor's image library lives in `engine/ui/static/icons/network/`, with originals,
+catalog, thumbnails and checksums. `engine/ui/vendor_icons.py` updates these assets from
+a fixed revision, without being run on the server. See the local README and `engine/ui/SKILL.md`.

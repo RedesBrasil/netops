@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib.vendor_map import netmiko_device_type, resolve_vendor  # noqa: E402
+from lib import i18n  # noqa: E402
 
 DEFAULT_TIMEOUT = 20
 
@@ -25,7 +26,7 @@ def open_cli(host: dict, cred: dict):
     try:
         from netmiko import ConnectHandler
     except ImportError:
-        sys.exit("ERRO: netmiko não instalado. Rode: pip install -r requirements.txt")
+        sys.exit(i18n.t("lib_transport.missing_lib", lib="netmiko"))
 
     method = (host.get("access") or {}).get("method", "ssh")
     params = {
@@ -55,11 +56,11 @@ def open_napalm(host: dict, cred: dict):
     """Abre um driver NAPALM (coleta estruturada / compare_config). Levanta se não suportado."""
     driver_name = resolve_vendor(host.get("vendor")).get("napalm")
     if not driver_name:
-        raise ValueError(f"NAPALM não suporta o fabricante '{host.get('vendor')}'")
+        raise ValueError(i18n.t("lib_transport.napalm_unsupported", vendor=host.get('vendor')))
     try:
         from napalm import get_network_driver
     except ImportError:
-        sys.exit("ERRO: napalm não instalado. Rode: pip install -r requirements.txt")
+        sys.exit(i18n.t("lib_transport.missing_lib", lib="napalm"))
 
     driver = get_network_driver(driver_name)
     dev = driver(
@@ -77,7 +78,7 @@ def open_routeros_api(host: dict, cred: dict):
     try:
         import librouteros
     except ImportError:
-        sys.exit("ERRO: librouteros não instalado. Rode: pip install -r requirements.txt")
+        sys.exit(i18n.t("lib_transport.missing_lib", lib="librouteros"))
 
     port = (host.get("access") or {}).get("port", 8728)
     return librouteros.connect(

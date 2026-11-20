@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import requests
 
+from lib import i18n
+
 from .base import TIMEOUT, Handoff, WebLoginError, WebTarget, post
 
 
@@ -28,11 +30,11 @@ class ZabbixProvider:
         resp = post(f"{root}/index.php", data=fields, allow_redirects=False)
         location = resp.headers.get("Location", "")
         if resp.status_code in (301, 302, 303) and "index_mfa" in location:
-            raise WebLoginError("Zabbix com MFA: login automático não suportado — entre manualmente", "unsupported")
+            raise WebLoginError(i18n.t("lib_web_login.zabbix_mfa"), "unsupported")
         if not (resp.status_code in (301, 302, 303) and "zbx_session" in {c.name for c in resp.cookies}):
             if resp.status_code == 200 and "incorrect" in resp.text.lower():
-                raise WebLoginError("Zabbix recusou a credencial (usuário/senha)")
-            raise WebLoginError(f"Zabbix não iniciou sessão (HTTP {resp.status_code}) — confira a URL base ({target.path})",
+                raise WebLoginError(i18n.t("lib_web_login.zabbix_rejected"))
+            raise WebLoginError(i18n.t("lib_web_login.zabbix_no_session", status=resp.status_code, path=target.path),
                                 "unreachable")
         # sessão de validação descartada (o navegador cria a sua própria no POST abaixo)
         try:
@@ -41,5 +43,5 @@ class ZabbixProvider:
         except requests.RequestException:
             pass
         return Handoff(mode="form_post", action=f"{root}/index.php", fields=fields,
-                       note="http→http: se o console estiver em HTTPS, o navegador pode avisar sobre formulário inseguro"
+                       note=i18n.t("lib_web_login.zabbix_http_note")
                        if target.scheme == "http" else "")

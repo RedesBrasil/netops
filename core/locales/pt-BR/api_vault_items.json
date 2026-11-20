@@ -1,0 +1,16 @@
+{
+  "bad_kind": "tipo deve ser 'secret' ou 'text'",
+  "field_exists": "o campo '{name}' já existe",
+  "field_in_use": "campo em uso por {templates} template(s) e {items} item(ns)",
+  "field_name_required": "informe o nome do campo",
+  "field_no_value": "campo '{name}' sem valor neste item",
+  "field_not_exists": "campo '{name}' não existe",
+  "field_not_in_catalog": "campo '{name}' não existe no catálogo",
+  "field_repeated": "campo '{name}' repetido",
+  "item_not_exists": "item '{id}' não existe",
+  "max_chars": "máximo de {max} caracteres",
+  "required_empty": "campo(s) obrigatório(s) vazio(s): {fields}",
+  "template_name_required": "informe o nome do template",
+  "template_not_exists": "template '{id}' não existe",
+  "title_required": "informe o título"
+}

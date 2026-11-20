@@ -1,0 +1,19 @@
+{
+  "access_denied": "Acesso negado (usuário/senha).",
+  "auto_auth": " — autenticação automática",
+  "auto_login": " — login automático",
+  "connect_failed": "Falha ao conectar: {error}",
+  "connecting_ssh": "Conectando em {target} (SSH)",
+  "connecting_telnet": "Conectando em {target} (Telnet)",
+  "credential_not_found": "credencial '{name}' não encontrada",
+  "decrypt_failed": "não foi possível decifrar a credencial — informe a senha manualmente",
+  "enter_credentials": "Informe as credenciais.",
+  "error": "erro: {error}",
+  "locked_no_web_unlock": "cofre trancado (destrancar pela web está desabilitado) — informe a senha manualmente",
+  "no_credential": "host sem credencial cadastrada",
+  "no_mgmt_ip": "host sem IP de gerência (mgmt_ip)",
+  "not_in_inventory": "host '{host_id}' não está no inventário",
+  "still_locked": "cofre continua trancado — informe a senha manualmente",
+  "vault_locked": "cofre trancado",
+  "vault_locked_popup": "Cofre trancado — destranque no popup para entrar com a credencial cadastrada."
+}

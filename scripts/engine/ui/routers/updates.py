@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 import deps
+from lib import i18n
 from services import updates_svc
 from update.common import UpdateError
 
@@ -45,17 +46,17 @@ def check_updates():
 async def apply_update(body: ApplyUpdate, request: Request):
     if not deps.auth_required() or not deps.auth_session_valid(request.headers.get("x-netops-session")):
         # Permissão (`updates`, só admin) já foi checada no middleware; aqui só exige login de verdade.
-        return JSONResponse({"error": "auth_required", "detail": "Inicialize o cofre e faça login antes de atualizar."}, status_code=401)
+        return JSONResponse({"error": "auth_required", "detail": i18n.t("api_updates.login_required")}, status_code=401)
     if not body.confirm:
         return JSONResponse({"error": "confirmation_required"}, status_code=422)
     if deps.STATE.update_pending or updates_svc.maintenance():
-        return JSONResponse({"error": "busy", "detail": "Atualização já em andamento."}, status_code=409)
+        return JSONResponse({"error": "busy", "detail": i18n.t("api_updates.busy")}, status_code=409)
     deps.STATE.update_pending = True
     try:
         deadline = asyncio.get_running_loop().time() + 30
         while deps.STATE.active_writes or deps.STATE.active_requests > 1:
             if asyncio.get_running_loop().time() >= deadline:
-                raise UpdateError("active_writes", "Há gravações em andamento. Aguarde e tente novamente.")
+                raise UpdateError("active_writes", i18n.t("api_updates.active_writes"))
             await asyncio.sleep(0.05)
         return await run_in_threadpool(updates_svc.request_update, body.release_id)
     except UpdateError as exc:

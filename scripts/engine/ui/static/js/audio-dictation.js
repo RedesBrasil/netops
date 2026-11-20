@@ -1,6 +1,6 @@
 // Ditado por voz: grava OGG/Opus no navegador (opus-recorder), manda ao backend e devolve o texto.
 // Uma "session" por gravação; respostas atrasadas/canceladas são ignoradas. Ver /api/audio/*.
-import { useState, useEffect, useRef, useCallback } from "./ui.js";
+import { useState, useEffect, useRef, useCallback, t } from "./ui.js";
 import { authToken } from "./api.js";
 
 export const MAX_SECONDS = 600;
@@ -13,7 +13,7 @@ function loadRecorder() {
     const s = document.createElement("script");
     s.src = BASE + "recorder.min.js";
     s.onload = () => ok();
-    s.onerror = () => { loading = null; no(new Error("Não foi possível carregar o gravador.")); };
+    s.onerror = () => { loading = null; no(new Error(t("dictation.recorder_load_failed"))); };
     document.head.appendChild(s);
   });
   return loading;
@@ -31,9 +31,9 @@ async function upload(blob, signal) {
   const headers = {}; const a = authToken(); if (a) headers["X-Netops-Session"] = a;
   const res = await fetch("/api/audio/transcribe", { method: "POST", headers, body: form, signal });
   const out = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof out.detail === "string" ? out.detail : `Falha ao transcrever o áudio (HTTP ${res.status}).`);
+  if (!res.ok) throw new Error(typeof out.detail === "string" ? out.detail : t("dictation.transcribe_failed_http", { status: res.status }));
   const text = typeof out.transcription === "string" ? out.transcription.trim() : "";
-  if (!text) throw new Error("O áudio não gerou uma transcrição.");
+  if (!text) throw new Error(t("dictation.empty_transcription"));
   return text;
 }
 
@@ -42,7 +42,7 @@ async function upload(blob, signal) {
 const NATIVE_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm", "audio/mp4;codecs=mp4a.40.2", "audio/mp4"];
 function nativeMime() {
   if (typeof window.MediaRecorder !== "function" || typeof MediaRecorder.isTypeSupported !== "function") return "";
-  return NATIVE_TYPES.find((t) => { try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; } }) || "";
+  return NATIVE_TYPES.find((type) => { try { return MediaRecorder.isTypeSupported(type); } catch (_) { return false; } }) || "";
 }
 
 // Adaptador com a mesma interface usada do opus-recorder (start/stop/close/onstop).
@@ -50,7 +50,7 @@ async function nativeRecorder(mime, onBlob) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   });
-  const release = () => stream.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+  const release = () => stream.getTracks().forEach((track) => { try { track.stop(); } catch (_) {} });
   let mr;
   try { mr = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32000 }); }
   catch (e) { release(); throw e; }
@@ -107,7 +107,7 @@ export function useDictation({ conversationId, onText, onError }) {
   const start = useCallback(async () => {
     if (sessionRef.current) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      cb.current.onError("Este navegador não permite gravar áudio (use HTTPS ou localhost).");
+      cb.current.onError(t("dictation.browser_unsupported"));
       return;
     }
     const s = { cancelled: false, controller: new AbortController(), conversationId: convRef.current, recorder: null, timer: 0 };
@@ -115,14 +115,14 @@ export function useDictation({ conversationId, onText, onError }) {
     try {
       const handle = async (blob) => {
         if (s.cancelled || sessionRef.current !== s) return;
-        if (!blob.size) { cb.current.onError("A gravação está vazia."); reset(s); return; }
+        if (!blob.size) { cb.current.onError(t("dictation.recording_empty")); reset(s); return; }
         setPhase("transcribing");
         try {
           const text = await upload(blob, s.controller.signal);
           if (s.cancelled || sessionRef.current !== s || convRef.current !== s.conversationId) return;
           cb.current.onText(text);
         } catch (e) {
-          if (e.name !== "AbortError" && !s.cancelled && sessionRef.current === s) cb.current.onError(e.message || "Falha ao transcrever o áudio.");
+          if (e.name !== "AbortError" && !s.cancelled && sessionRef.current === s) cb.current.onError(e.message || t("dictation.transcribe_failed"));
         } finally { reset(s); }
       };
       const mime = nativeMime();
@@ -154,9 +154,9 @@ export function useDictation({ conversationId, onText, onError }) {
     } catch (e) {
       teardown(s); reset(s);
       const denied = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
-      cb.current.onError(denied ? "Permissão do microfone negada. Libere o acesso no navegador."
-        : (e && e.name === "NotFoundError") ? "Nenhum microfone encontrado."
-        : (e && e.message) || "Não foi possível iniciar a gravação.");
+      cb.current.onError(denied ? t("dictation.mic_denied")
+        : (e && e.name === "NotFoundError") ? t("dictation.mic_not_found")
+        : (e && e.message) || t("dictation.start_failed"));
     }
   }, [teardown, reset]);
 

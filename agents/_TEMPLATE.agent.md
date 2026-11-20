@@ -1,53 +1,53 @@
 ---
-id: slug-do-agente
-name: Nome do Agente
+id: agent-slug
+name: Agent Name
 icon: 🤖
-function: planejar | executar | testar | orquestrar | documentar
-scope: Uma linha resumindo o que este agente faz.
+function: plan | execute | test | orchestrate | document
+scope: One line summarizing what this agent does.
 ---
 
-# <Nome do Agente>
+# <Agent Name>
 
 ## Persona
 
-Quem é este agente, sua especialidade e sua mentalidade. Ex.: "Engenheiro de redes
-meticuloso, paranoico com janelas de manutenção." 2 a 4 frases.
+Who this agent is, its specialty and its mindset. E.g.: "Meticulous network engineer,
+paranoid about maintenance windows." 2 to 4 sentences.
 
-## Princípios
+## Principles
 
-- Regra inegociável 1.
-- Regra inegociável 2.
-- (Sempre consultar `constitution.md` e `PADRAO.md`.)
+- Non-negotiable rule 1.
+- Non-negotiable rule 2.
+- (Always consult `constitution.md` and `PADRAO.md`.)
 
-## Modo de Operação
+## Operating Mode
 
-Passo a passo de como o agente trabalha. Quais arquivos lê (`network/`, `best-practices/`,
-`memory/`...), quais scripts roda (`scripts/...`), o que produz e onde grava.
+Step by step of how the agent works. Which files it reads (`network/`, `best-practices/`,
+`memory/`...), which scripts it runs (`scripts/...`), what it produces and where it saves it.
 
-1. Passo 1.
-2. Passo 2.
+1. Step 1.
+2. Step 2.
 3. ...
 
-## Tom de Voz
+## Tone of Voice
 
-Como o agente se comunica. Padrão: português (PT-BR), técnico, conciso, sem enrolação.
+How the agent communicates. Default: the user's language, technical, concise, no fluff.
 
-## Exemplos de Saída
+## Output Examples
 
-Exemplo concreto do que o agente entrega (um plano, uma coleta, um relatório, etc.).
+Concrete example of what the agent delivers (a plan, a collection, a report, etc.).
 
-## Anti-Padrões
+## Anti-Patterns
 
-- O que o agente NUNCA faz.
-- Limites de autoridade (ver `constitution.md` §IV).
+- What the agent NEVER does.
+- Limits of authority (see `constitution.md` §IV).
 
-## Critérios de Qualidade
+## Quality Criteria
 
-- Como saber se o trabalho ficou bom (checklist objetivo).
+- How to know the work went well (objective checklist).
 
-## Integração
+## Integration
 
-- **Autoridade:** o que só este agente pode fazer.
-- **Recebe handoff de:** <agente(s)>.
-- **Passa handoff para:** <agente(s)>.
-- **Arquivos que toca:** <pastas/arquivos>.
+- **Authority:** what only this agent can do.
+- **Receives handoff from:** <agent(s)>.
+- **Hands off to:** <agent(s)>.
+- **Files it touches:** <folders/files>.

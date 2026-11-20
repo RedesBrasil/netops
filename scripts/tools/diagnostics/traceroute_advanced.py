@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))            # script
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine"))  # scripts/engine (lib)
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
+from lib import i18n  # noqa: E402
 
 
 def resolve_target(host: int | str | None, target: str | None) -> str:
@@ -30,7 +31,7 @@ def resolve_target(host: int | str | None, target: str | None) -> str:
         hosts_data, _ = load_inventory(include_credentials=False)
         resolved, _ = resolve_host(host, hosts_data, {}, decrypt=False)
         return resolved.get("mgmt_ip") or resolved.get("hostname")
-    raise SystemExit("informe --host-id, --host ou --target")
+    raise SystemExit(i18n.t("cli_diagnostics.target_required"))
 
 
 def trace(target: str, max_hops: int) -> str:
@@ -44,26 +45,26 @@ def trace(target: str, max_hops: int) -> str:
         if shutil.which(cmd[0]):
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=max_hops * 5 + 30)
             return f"$ {' '.join(cmd)}\n{proc.stdout}{proc.stderr}"
-    raise FileNotFoundError("nenhuma ferramenta de traceroute encontrada (traceroute/tracepath/mtr)")
+    raise FileNotFoundError(i18n.t("cli_diagnostics.trace_no_tool"))
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Traceroute avançado (traceroute/tracepath/mtr).")
+    parser = argparse.ArgumentParser(description=i18n.t("cli_diagnostics.trace_description"))
     selection = parser.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--host-id", type=int, help="ID inteiro do host no inventário")
-    selection.add_argument("--host", help="Nome único ou alias legado do host")
-    selection.add_argument("--target", help="IP ou nome direto")
-    parser.add_argument("--max-hops", type=int, default=30, help="Máximo de saltos (padrão 30)")
+    selection.add_argument("--host-id", type=int, help=i18n.t("cli_diagnostics.help_host_id"))
+    selection.add_argument("--host", help=i18n.t("cli_diagnostics.help_host"))
+    selection.add_argument("--target", help=i18n.t("cli_diagnostics.help_target"))
+    parser.add_argument("--max-hops", type=int, default=30, help=i18n.t("cli_diagnostics.help_max_hops"))
     args = parser.parse_args()
 
     target = resolve_target(args.host_id if args.host_id is not None else args.host, args.target)
     try:
         print(trace(target, args.max_hops))
     except FileNotFoundError as exc:
-        print(f"ERRO: {exc}. Instale com: sudo apt install traceroute", file=sys.stderr)
+        print(i18n.t("cli_diagnostics.trace_install", error=exc), file=sys.stderr)
         return 1
     except subprocess.TimeoutExpired:
-        print(f"ERRO: traceroute a {target} excedeu o tempo.", file=sys.stderr)
+        print(i18n.t("cli_diagnostics.trace_timeout", target=target), file=sys.stderr)
         return 1
     return 0
 

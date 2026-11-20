@@ -1,0 +1,16 @@
+{
+  "click_to_sort": "Click to sort · ",
+  "columns": "Columns",
+  "columns_btn": "⚙ Columns",
+  "columns_title": "Choose, sort and rearrange columns",
+  "columns_visible": "Visible columns",
+  "drag_to_move": "drag to move the column",
+  "empty": "Nothing here yet.",
+  "move_col_left": "Move {name} left",
+  "move_col_right": "Move {name} right",
+  "move_left": "Move left",
+  "move_right": "Move right",
+  "reset": "Restore default",
+  "resize_col": "Resize column {name}",
+  "resize_hint": "Drag to resize · double-click fits the content"
+}

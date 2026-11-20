@@ -1,0 +1,5 @@
+{
+  "help_data_root": "Installation that contains network/, backups/ and runs/",
+  "method_no_export": "MikroTik via {method} does not export config — register SSH access",
+  "only_mikrotik": "pilot: MikroTik only (vendor={vendor})"
+}

@@ -1,0 +1,12 @@
+{
+  "already_int": "Inventory already uses integer IDs.",
+  "checking": "Checking the automatic host ID migration.",
+  "commit_unconfirmed": "The code installation has not been confirmed by the launcher yet. The data was not converted; check the update state before restarting.",
+  "completed": "Automatic ID migration completed and verified.",
+  "converting": "Converting the host identities automatically. Please wait; edits and interactive connections are temporarily blocked.",
+  "no_inventory": "No existing inventory to convert.",
+  "preflight_blocked": "Automatic ID migration blocked in the pre-check ({count} problem(s)). No orphan reference was deleted. Fix the data reported by the dry-run and restart to try again.",
+  "read_only": "Read-only mode: automatic migration not run.",
+  "recovery_failed": "Could not complete or recover the automatic ID migration. Edits are blocked to preserve the data. The baseline and the journal were kept; check the recovery before restarting.",
+  "waiting_commit": "Waiting for the launcher to confirm the installation before converting the host IDs."
+}

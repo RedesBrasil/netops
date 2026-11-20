@@ -1,0 +1,5 @@
+{
+  "decide_admin_only": "This request runs an action on the server when decided: only administrators can approve or reject it.",
+  "ids_list": "list of ids",
+  "integer_ids": "integer ids"
+}

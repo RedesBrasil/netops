@@ -1,97 +1,97 @@
 workflow:
   id: apply-config-change
-  name: Aplicar Mudança de Configuração
+  name: Apply Configuration Change
   description: >-
-    Planeja, revisa, aplica e verifica uma mudança de configuração em um ou mais
-    equipamentos. Sempre com baseline + rollback (ver core/rules/connection-safety.md).
+    Plans, reviews, applies and verifies a configuration change on one or more
+    devices. Always with baseline + rollback (see core/rules/connection-safety.md).
   triggers:
-    - "configure OSPF no MikroTik"
-    - "altere a configuração de"
+    - "configure OSPF on the MikroTik"
+    - "change the configuration of"
     - "*apply-change"
 
   steps:
     - id: "01"
-      name: Entender a mudança e carregar contexto
+      name: Understand the change and load context
       type: inline
       agent: coordinator
       inputFiles: [network/hosts.yaml, network/topology.yaml, memory/MEMORY.md]
       outputFiles: ["runs/${run}/state.json"]
       instructions: >-
-        Capturar a intenção, os hosts-alvo e o fabricante. Injetar memória relevante.
-        Confirmar a janela de manutenção em memory/MEMORY.md. Criar runs/${run}/.
-      qualityCriteria: Hosts-alvo e tipo de mudança identificados.
+        Capture the intent, the target hosts and the vendor. Inject relevant memory.
+        Confirm the maintenance window in memory/MEMORY.md. Create runs/${run}/.
+      qualityCriteria: Target hosts and type of change identified.
 
     - id: "02"
-      name: Capturar estado atual (baseline)
+      name: Capture current state (baseline)
       type: subagent
       agent: executor
       outputFiles: ["runs/${run}/collected/<host>.before.txt"]
       instructions: >-
-        Pré-requisito: se as credenciais estiverem criptografadas, o cofre precisa estar
-        destrancado (o operador roda 'python3 scripts/engine/vault/cli.py unlock'). Conexão read-only.
-        Capturar a configuração atual da área que será alterada — necessário para o diff e o rollback.
-      vetoConditions: ["Host fora de network/hosts.yaml", "Cofre de credenciais trancado"]
+        Prerequisite: if the credentials are encrypted, the vault must be
+        unlocked (the operator runs 'python3 scripts/engine/vault/cli.py unlock'). Read-only connection.
+        Capture the current configuration of the area that will be changed — needed for the diff and the rollback.
+      vetoConditions: ["Host not in network/hosts.yaml", "Credential vault locked"]
 
     - id: "03"
-      name: Desenhar a config proposta e o rollback
+      name: Design the proposed config and the rollback
       type: subagent
       agent: planner
       inputFiles: [config-examples/, best-practices/, memory/MEMORY.md]
       outputFiles: ["runs/${run}/proposals/<host>.change.txt", "runs/${run}/proposals/<host>.rollback.txt"]
       instructions: >-
-        Reusar os exemplos de config-examples/<vendor>/ (REUSE > ADAPT > CREATE). Produzir os
-        comandos de aplicação E os de rollback. Avaliar risco de lockout (gerência/firewall).
-      qualityCriteria: Existe change.txt e rollback.txt para cada host; rollback testável.
-      vetoConditions: ["Proposta sem rollback correspondente"]
+        Reuse the examples in config-examples/<vendor>/ (REUSE > ADAPT > CREATE). Produce the
+        apply commands AND the rollback commands. Assess the lockout risk (management/firewall).
+      qualityCriteria: There is a change.txt and a rollback.txt for each host; rollback is testable.
+      vetoConditions: ["Proposal without a matching rollback"]
 
     - id: "04"
-      name: Revisão técnica
+      name: Technical review
       type: subagent
       agent: tester
       inputFiles: ["runs/${run}/proposals/", config-examples/, best-practices/]
       outputFiles: ["runs/${run}/findings.yaml"]
       instructions: >-
-        Validar a sintaxe contra o fabricante (config-examples/<vendor>/). Conferir impacto
-        na topologia. Rodar scripts/tools/analysis/config_diff.py (before x proposta). Veredito
-        APROVADO / RESSALVAS / REPROVADO.
-      vetoConditions: ["Sintaxe inválida para o fabricante", "Risco de perda de gerência sem proteção"]
+        Validate the syntax against the vendor (config-examples/<vendor>/). Check the impact
+        on the topology. Run scripts/tools/analysis/config_diff.py (before x proposal). Verdict
+        APPROVED / CAVEATS / REJECTED.
+      vetoConditions: ["Invalid syntax for the vendor", "Risk of losing management access without protection"]
 
     - id: "05"
-      name: Aplicar a mudança
+      name: Apply the change
       type: subagent
       agent: executor
       inputFiles: ["runs/${run}/proposals/<host>.change.txt"]
       outputFiles: ["runs/${run}/collected/<host>.after.txt"]
       instructions: >-
-        Aplicar a config. Capturar o estado pós-mudança. Se qualquer comando falhar ou a
-        conectividade de gerência cair, executar <host>.rollback.txt automaticamente e parar.
-      vetoConditions: ["Veredito do tester == REPROVADO"]
+        Apply the config. Capture the post-change state. If any command fails or
+        management connectivity drops, run <host>.rollback.txt automatically and stop.
+      vetoConditions: ["Tester verdict == REJECTED"]
 
     - id: "06"
-      name: Verificação pós-mudança
+      name: Post-change verification
       type: subagent
       agent: tester
       inputFiles: ["runs/${run}/collected/<host>.before.txt", "runs/${run}/collected/<host>.after.txt"]
       instructions: >-
-        Confirmar que a mudança teve o efeito esperado e não quebrou conectividade
-        (scripts/tools/diagnostics/). Se falhou: recomendar/acionar rollback.
-      qualityCriteria: Efeito da mudança confirmado; conectividade preservada.
+        Confirm that the change had the expected effect and did not break connectivity
+        (scripts/tools/diagnostics/). If it failed: recommend/trigger the rollback.
+      qualityCriteria: Effect of the change confirmed; connectivity preserved.
 
     - id: "07"
-      name: Registrar a mudança
+      name: Record the change
       type: subagent
       agent: documenter
       inputFiles: [core/templates/change-record.tmpl.md]
       outputFiles: ["reports/${date}-change-<host>.md"]
       instructions: >-
-        Gerar o registro de mudança (antes/depois, diff, quem/quando, resultado).
+        Generate the change record (before/after, diff, who/when, result).
 
     - id: "99"
-      name: Reflexão pós-execução
+      name: Post-run reflection
       type: subagent
       agent: documenter
       outputFiles: ["memory/MEMORY.md"]
       instructions: >-
-        Anexar as lições como bullets datados em memory/MEMORY.md, conforme
-        core/rules/memory-protocol.md. Se descobriu um quirk do fabricante, considerar
-        promovê-lo para best-practices/ ou config-examples/. Marcar state.json como concluído.
+        Append the lessons as dated bullets to memory/MEMORY.md, according to
+        core/rules/memory-protocol.md. If a vendor quirk was discovered, consider
+        promoting it to best-practices/ or config-examples/. Mark state.json as completed.

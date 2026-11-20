@@ -1,8 +1,11 @@
 // Erros do SDK: disponibilidade no catálogo não comprova acesso nem limite de uso.
+// Loaded as plain source by node tests: no imports; globalThis.netopsT with the Portuguese fallback.
+const tr = (key, vars, fallback) => { const out = globalThis.netopsT ? globalThis.netopsT(key, vars) : key; return out === key ? fallback : out; };
+
 export function claudeErrorDetail(event) {
   const messages = [event.detail, ...(Array.isArray(event.errors) ? event.errors : []), event.result];
   return [...new Set(messages.filter((s) => typeof s === "string" && s.trim()))].join("\n")
-    || (event.api_error_status ? `API Error: HTTP ${event.api_error_status}` : "Falha no agente Claude.");
+    || (event.api_error_status ? `API Error: HTTP ${event.api_error_status}` : tr("claude_errors.agent_failed", null, "Falha no agente Claude."));
 }
 
 export function classifyClaudeError(event) {
@@ -26,19 +29,19 @@ export function friendlyClaudeError(event, { interrupted = false } = {}) {
   const status = Number(event.api_error_status);
   const code = event.error_code;
   if (interrupted || /interrupted by user|request was aborted|\babort(ed)?\b|cancel+ed/i.test(detail))
-    return "Resposta cancelada pelo usuário.";
+    return tr("claude_errors.cancelled_by_user", null, "Resposta cancelada pelo usuário.");
   if (status === 429 || code === "rate_limit" || /rate.?limit|too many requests|usage limit/i.test(detail))
-    return "Limite de uso atingido. Aguarde um pouco e tente de novo.";
+    return tr("claude_errors.rate_limit", null, "Limite de uso atingido. Aguarde um pouco e tente de novo.");
   if (status === 401 || status === 403 || code === "authentication_failed" || /authenticat|invalid api key|oauth|not logged in|\/login/i.test(detail))
-    return "Falha de autenticação no Claude. Faça login de novo (/login).";
+    return tr("claude_errors.auth_failed", null, "Falha de autenticação no Claude. Faça login de novo (/login).");
   if (code === "billing_error" || /credit balance|billing/i.test(detail))
-    return "Problema de crédito/cobrança na conta do Claude.";
-  if (classifyClaudeError(event) === "model") return "Modelo indisponível ou sem acesso. Escolha outro modelo.";
-  if (status === 529 || /overloaded/i.test(detail)) return "Serviço do Claude sobrecarregado. Tente novamente em instantes.";
-  if (status >= 500 || code === "server_error") return "Erro no servidor do Claude. Tente novamente em instantes.";
+    return tr("claude_errors.billing", null, "Problema de crédito/cobrança na conta do Claude.");
+  if (classifyClaudeError(event) === "model") return tr("claude_errors.model_unavailable", null, "Modelo indisponível ou sem acesso. Escolha outro modelo.");
+  if (status === 529 || /overloaded/i.test(detail)) return tr("claude_errors.overloaded", null, "Serviço do Claude sobrecarregado. Tente novamente em instantes.");
+  if (status >= 500 || code === "server_error") return tr("claude_errors.server_error", null, "Erro no servidor do Claude. Tente novamente em instantes.");
   if (/ede_diagnostic|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|network|fetch failed|connection (error|closed|reset|lost)|stream (ended|closed)|timed? ?out/i.test(detail))
-    return "Erro de rede: a conexão com o Claude caiu no meio da resposta. Tente novamente.";
-  if (/too many sessions|too_many_sessions/i.test(detail)) return "Muitas sessões Claude abertas. Feche alguma e tente de novo.";
-  if (/process (exited|terminated)|exit code|CLI/i.test(detail)) return "O agente Claude foi encerrado inesperadamente. Tente novamente.";
-  return "Falha no agente Claude.";
+    return tr("claude_errors.network", null, "Erro de rede: a conexão com o Claude caiu no meio da resposta. Tente novamente.");
+  if (/too many sessions|too_many_sessions/i.test(detail)) return tr("claude_errors.too_many_sessions", null, "Muitas sessões Claude abertas. Feche alguma e tente de novo.");
+  if (/process (exited|terminated)|exit code|CLI/i.test(detail)) return tr("claude_errors.process_exited", null, "O agente Claude foi encerrado inesperadamente. Tente novamente.");
+  return tr("claude_errors.agent_failed", null, "Falha no agente Claude.");
 }

@@ -1,28 +1,28 @@
-# SKILL — Hooks do Claude Code (guarda NetOps)
+# SKILL — Claude Code hooks (NetOps guard)
 
-`guard-netops.sh` é um hook `PreToolUse` (Bash) do Claude Code. Ele bloqueia:
+`guard-netops.sh` is a Claude Code `PreToolUse` (Bash) hook. It blocks:
 
-- **alteração em equipamento via `session.py run|exec` sem `change.py begin`**, ou seja, backup antes de alterar
-  (ver `AGENTS.md`).
+- **changes to equipment via `session.py run|exec` without `change.py begin`**, i.e. backup before changing
+  (see `AGENTS.md`).
 
-## Onde fica e por quê
+## Where it lives and why
 
-O script e o modelo `claude-settings.json` ficam aqui, em `scripts/engine/hooks/`, porque esse caminho entra no
-pacote de release e é aceito pelo atualizador de **qualquer** versão instalada. Um pacote com arquivos em
-`.claude/hooks/` seria recusado (`protected_path`) pelos atualizadores até a 2.3.1.
+The script and the `claude-settings.json` template live here, in `scripts/engine/hooks/`, because this path is part of
+the release package and is accepted by the updater of **any** installed version. A package with files in
+`.claude/hooks/` would be rejected (`protected_path`) by updaters up to 2.3.1.
 
-O `.claude/settings.json` do projeto só aponta para cá:
+The project's `.claude/settings.json` only points here:
 `bash "$CLAUDE_PROJECT_DIR/scripts/engine/hooks/guard-netops.sh"`.
 
-## Instalar ou conferir
+## Install or check
 
 ```bash
-python3 scripts/engine/hooks/install_claude_hooks.py           # mescla o hook no .claude/settings.json
-python3 scripts/engine/hooks/install_claude_hooks.py --check   # exit 1 se faltar ou estiver desatualizado
+python3 scripts/engine/hooks/install_claude_hooks.py           # merges the hook into .claude/settings.json
+python3 scripts/engine/hooks/install_claude_hooks.py --check   # exit 1 if missing or outdated
 ```
 
-A mesclagem é idempotente. Ela preserva tudo o que já existe no `settings.json` (tema, permissões e outros hooks) e
-troca entradas antigas que apontavam para `.claude/hooks/guard-netops.sh`. O `install.sh` roda isso na
-instalação e no reparo.
+The merge is idempotent. It preserves everything already in `settings.json` (theme, permissions and other hooks) and
+replaces old entries that pointed to `.claude/hooks/guard-netops.sh`. `install.sh` runs it on
+install and on repair.
 
-Teste: `scripts/engine/ui/tests/test_claude_hooks.py`.
+Test: `scripts/engine/ui/tests/test_claude_hooks.py`.

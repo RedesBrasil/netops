@@ -1,39 +1,39 @@
-# Regra — Handoff entre Agentes
+# Rule — Handoff between Agents
 
-Como o contexto passa de um agente para o outro dentro de um workflow. Adaptado do modelo
-de handoff do AIOX.
+How context passes from one agent to another inside a workflow. Adapted from the AIOX
+handoff model.
 
-## Princípio
+## Principle
 
-Quando o `coordinator` delega um passo, o agente que entra recebe **apenas duas coisas**:
+When the `coordinator` delegates a step, the incoming agent receives **only two things**:
 
-1. **Seu próprio perfil completo** — o `.agent.md` correspondente (persona, princípios,
-   modo de operação).
-2. **O artefato de handoff** do agente anterior — preenchido a partir de
+1. **Its own full profile** — the matching `.agent.md` (persona, principles,
+   operating mode).
+2. **The handoff artifact** from the previous agent — filled in from
    `core/templates/agent-handoff.tmpl.yaml`.
 
-O agente que entra **não** recebe a persona nem o histórico completo do agente anterior —
-só o resumo compacto. Isso mantém o contexto enxuto e barato.
+The incoming agent does **not** receive the persona or the full history of the previous agent —
+only the compact summary. This keeps the context lean and cheap.
 
-## Procedimento
+## Procedure
 
-1. Ao terminar seu passo, o agente preenche o template de handoff: o que decidiu, quais
-   arquivos tocou, bloqueios em aberto e o que o próximo deve fazer.
-2. O artefato preenchido **deve ter menos de 500 tokens**. Se passar, resuma mais.
-3. O `coordinator` adota a persona do próximo agente e entrega a ele o artefato.
-4. O artefato vivo da execução fica em `runs/<id>/handoff.yaml` (sobrescrito a cada passo).
+1. When it finishes its step, the agent fills in the handoff template: what it decided, which
+   files it touched, open blockers and what the next one must do.
+2. The filled-in artifact **must be under 500 tokens**. If it goes over, summarize more.
+3. The `coordinator` adopts the persona of the next agent and gives it the artifact.
+4. The live artifact of the run stays in `runs/<id>/handoff.yaml` (overwritten at each step).
 
-## Limites
+## Limits
 
-- Decisões: máx. 5 · Arquivos modificados: máx. 10 · Bloqueios: máx. 3.
-- `next_action`: no máximo 2 frases.
-- Retêm-se no máximo 3 resumos encadeados; o mais antigo é descartado.
+- Decisions: max. 5 · Files modified: max. 10 · Blockers: max. 3.
+- `next_action`: at most 2 sentences.
+- At most 3 chained summaries are kept; the oldest one is discarded.
 
-## Cadeia padrão
+## Default chain
 
 ```
 coordinator → planner → executor → tester → documenter → coordinator
 ```
 
-Desvios possíveis: `tester → planner/executor` (quando algo precisa ser corrigido) e
-`planner → tester` (quando uma proposta de config deve ser revisada antes de aplicar).
+Possible detours: `tester → planner/executor` (when something needs fixing) and
+`planner → tester` (when a config proposal must be reviewed before applying).

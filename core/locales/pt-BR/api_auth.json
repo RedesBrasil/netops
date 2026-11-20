@@ -1,0 +1,12 @@
+{
+  "bad_credentials": "E-mail ou senha incorretos.",
+  "email_password_required": "Informe e-mail e senha.",
+  "master_password_required": "Informe a senha-mestra.",
+  "no_auth": "Cofre não inicializado e nenhum usuário cadastrado — não há login a fazer.",
+  "no_user": "Ainda não há usuários: crie o administrador em Sistema → Usuários.",
+  "same_password": "A nova senha precisa ser diferente da atual.",
+  "throttled": "Muitas tentativas. Tente de novo em {wait} s.",
+  "vault_uninitialized": "Cofre não inicializado e nenhum usuário cadastrado: crie o administrador pelo CLI scripts/engine/users/cli.py.",
+  "wrong_current_password": "Senha atual incorreta.",
+  "wrong_master_password": "Senha mestra incorreta."
+}

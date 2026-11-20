@@ -28,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
+from lib import i18n  # noqa: E402
 
 NETOPS_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CREDS = NETOPS_ROOT / "network" / "credentials.yaml"
@@ -46,7 +47,7 @@ def _read(path: Path) -> str:
 def _load(path: Path) -> tuple[str, dict]:
     import yaml  # noqa: PLC0415
     if not path.exists():
-        sys.exit(f"ERRO: arquivo não encontrado: {path}")
+        sys.exit(i18n.t("cli_vault.file_not_found", path=path))
     text = _read(path)
     return text, (yaml.safe_load(text) or {})
 
@@ -196,7 +197,7 @@ def _set_field(lines: list[str], cred: str, field: str, token: str) -> list[str]
 # --------------------------------------------------------------------------- #
 # Obtenção da chave (sessão -> prompt)
 # --------------------------------------------------------------------------- #
-def _key_for_meta(meta: dict, prompt: str = "Senha mestra: ") -> bytes:
+def _key_for_meta(meta: dict, prompt: str | None = None) -> bytes:
     from lib import vault, vault_session  # noqa: PLC0415
     try:
         k = vault_session.get_session_key()
@@ -205,10 +206,8 @@ def _key_for_meta(meta: dict, prompt: str = "Senha mestra: ") -> bytes:
     except vault.VaultError:
         pass
     if not sys.stdin.isatty():
-        raise vault.VaultError(
-            "Precisa de um terminal interativo (getpass) ou do cofre destrancado."
-        )
-    key = vault.derive_key(getpass.getpass(prompt), meta)
+        raise vault.VaultError(i18n.t("cli_vault.needs_tty_or_unlocked"))
+    key = vault.derive_key(getpass.getpass(prompt or i18n.t("cli_vault.prompt_master")), meta)
     vault.verify_key(key, meta)
     return key
 
@@ -222,25 +221,25 @@ def cmd_init(args) -> int:
     if path.exists():
         _text, data = _load(path)
         if data.get("vault"):
-            print("ERRO: cofre já inicializado. Use 'change-password'.", file=sys.stderr)
+            print(i18n.t("cli_vault.already_initialized"), file=sys.stderr)
             return 1
         text = _text
     else:
         text = "version: 1\n\ncredentials: {}\n"
     if not sys.stdin.isatty():
-        print("ERRO: 'init' precisa de um terminal interativo.", file=sys.stderr)
+        print(i18n.t("cli_vault.needs_tty", cmd="init"), file=sys.stderr)
         return 1
-    pw1 = getpass.getpass("Nova senha mestra: ")
+    pw1 = getpass.getpass(i18n.t("cli_vault.prompt_new_master"))
     if not pw1:
-        print("ERRO: senha vazia.", file=sys.stderr)
+        print(i18n.t("cli_vault.empty_password"), file=sys.stderr)
         return 1
-    if pw1 != getpass.getpass("Confirme a senha mestra: "):
-        print("ERRO: as senhas não conferem.", file=sys.stderr)
+    if pw1 != getpass.getpass(i18n.t("cli_vault.prompt_confirm_master")):
+        print(i18n.t("cli_vault.passwords_mismatch"), file=sys.stderr)
         return 1
     meta, _key = vault.build_meta(pw1)
     _atomic_write(path, _set_vault_block(text, meta))
-    print(f"OK — cofre inicializado em {path}.")
-    print("Próximo passo: python3 scripts/engine/vault/cli.py encrypt")
+    print(i18n.t("cli_vault.initialized", path=path))
+    print(i18n.t("cli_vault.next_step", cmd="python3 scripts/engine/vault/cli.py encrypt"))
     return 0
 
 
@@ -259,14 +258,14 @@ def cmd_encrypt(args) -> int:
         token = vault.encrypt_value(key, plain)
         if not args.dry_run:
             lines[i] = _emit(m.group("indent"), m.group("key"), token, _split_comment(m.group("val")))
-        changed.append(f"{m.group('key')} (linha {i + 1})")
+        changed.append(i18n.t("cli_vault.field_line", key=m.group('key'), line=i + 1))
     if args.dry_run:
-        print(f"[dry-run] {len(changed)} valor(es) em texto puro seriam criptografados:")
+        print(i18n.t("cli_vault.dry_run_header", count=len(changed)))
         for c in changed:
             print("  -", c)
         return 0
     _atomic_write(path, "\n".join(lines) + "\n")
-    print(f"OK — {len(changed)} valor(es) criptografados em {path}.")
+    print(i18n.t("cli_vault.encrypted", count=len(changed), path=path))
     return 0
 
 
@@ -277,23 +276,19 @@ def cmd_set(args) -> int:
     meta = vault.load_meta(data)
     key = _key_for_meta(meta)
     if not sys.stdin.isatty():
-        print("ERRO: 'set' precisa de um terminal interativo.", file=sys.stderr)
+        print(i18n.t("cli_vault.needs_tty", cmd="set"), file=sys.stderr)
         return 1
-    val = getpass.getpass(f"Valor para {args.cred}.{args.field}: ")
-    if val != getpass.getpass("Confirme: "):
-        print("ERRO: valores não conferem.", file=sys.stderr)
+    val = getpass.getpass(i18n.t("cli_vault.prompt_value", field=f"{args.cred}.{args.field}"))
+    if val != getpass.getpass(i18n.t("cli_vault.prompt_confirm")):
+        print(i18n.t("cli_vault.values_mismatch"), file=sys.stderr)
         return 1
     token = vault.encrypt_value(key, val)
     new_lines = _set_field(text.splitlines(), args.cred, args.field, token)
     if new_lines is None:
-        print(
-            f"ERRO: credencial '{args.cred}' não encontrada. "
-            "Adicione-a (texto puro) e rode 'encrypt'.",
-            file=sys.stderr,
-        )
+        print(i18n.t("cli_vault.cred_not_found", cred=args.cred), file=sys.stderr)
         return 1
     _atomic_write(path, "\n".join(new_lines) + "\n")
-    print(f"OK — {args.cred}.{args.field} atualizado e criptografado.")
+    print(i18n.t("cli_vault.field_set", field=f"{args.cred}.{args.field}"))
     return 0
 
 
@@ -303,40 +298,28 @@ def cmd_unlock(args) -> int:
     _text, data = _load(path)
     meta = vault.load_meta(data)
     if not sys.stdin.isatty():
-        print(
-            "ERRO: 'unlock' precisa de um terminal interativo (getpass).\n"
-            "Peça ao operador para destrancar o cofre nesta máquina.",
-            file=sys.stderr,
-        )
+        print(i18n.t("cli_vault.unlock_needs_tty"), file=sys.stderr)
         return 1
-    key = vault.derive_key(getpass.getpass("Senha mestra: "), meta)
+    key = vault.derive_key(getpass.getpass(i18n.t("cli_vault.prompt_master")), meta)
     vault.verify_key(key, meta)
     ttl = args.ttl or vault_session.default_ttl()
     if args.env:
         print(f"export {vault_session.ENV_KEY}={vault_session.encode_key(key)}")
-        print(
-            "# Cofre destrancado SÓ neste shell (modo terminal-puro).\n"
-            '# Uso: eval "$(python3 scripts/engine/vault/cli.py unlock --env)"',
-            file=sys.stderr,
-        )
+        print(i18n.t("cli_vault.env_unlocked_hint", cmd='eval "$(python3 scripts/engine/vault/cli.py unlock --env)"'), file=sys.stderr)
         return 0
     p, fallback = vault_session.set_session_key(key, ttl)
-    print(f"OK — cofre destrancado. Re-bloqueia após {ttl // 60} min de inatividade, no logout, ou com 'lock'.")
+    print(i18n.t("cli_vault.unlocked", minutes=ttl // 60))
     if fallback:
-        print(f"AVISO: cache em {p} pode estar em disco (sem XDG_RUNTIME_DIR/tmpfs).", file=sys.stderr)
+        print(i18n.t("cli_vault.cache_on_disk", path=p), file=sys.stderr)
     return 0
 
 
 def cmd_lock(args) -> int:
     from lib import vault_session  # noqa: PLC0415
     existed = vault_session.clear_session()
-    print("OK — cofre trancado." if existed else "Já estava trancado.")
+    print(i18n.t("cli_vault.locked") if existed else i18n.t("cli_vault.already_locked"))
     if os.environ.get(vault_session.ENV_KEY):
-        print(
-            f"AVISO: {vault_session.ENV_KEY} ainda está setada neste shell; "
-            f"rode 'unset {vault_session.ENV_KEY}' ou feche o terminal.",
-            file=sys.stderr,
-        )
+        print(i18n.t("cli_vault.env_still_set", var=vault_session.ENV_KEY), file=sys.stderr)
     return 0
 
 
@@ -353,25 +336,25 @@ def cmd_status(args) -> int:
                 enc += 1
             else:
                 plain += 1
-    print(f"Arquivo: {path}")
-    print(f"Cofre inicializado: {'sim' if initialized else 'não'}")
-    print(f"Campos secretos: {enc} criptografado(s), {plain} em texto puro")
+    print(i18n.t("cli_vault.status_file", path=path))
+    print(i18n.t("cli_vault.status_initialized", value=i18n.t("cli_vault.yes") if initialized else i18n.t("cli_vault.no")))
+    print(i18n.t("cli_vault.status_fields", enc=enc, plain=plain))
 
     st = vault_session.session_status()
     state = st["state"]
     if state == "cache":
         secs = st["expires_in"]
-        print(f"Sessão: DESTRANCADO (cache, expira em {secs // 60}m{secs % 60:02d}s)")
+        print(i18n.t("cli_vault.status_unlocked_cache", expires=f"{secs // 60}m{secs % 60:02d}s"))
         if st.get("fallback"):
-            print(f"  cache: {st['path']} (em disco)")
+            print(i18n.t("cli_vault.status_cache_disk", path=st["path"]))
         return 0
     if state == "env":
-        print(f"Sessão: DESTRANCADO (variável {vault_session.ENV_KEY})")
+        print(i18n.t("cli_vault.status_unlocked_env", var=vault_session.ENV_KEY))
         return 0
     if state == "insecure":
-        print(f"Sessão: PERMISSÕES INSEGURAS — {st['detail']}")
+        print(i18n.t("cli_vault.status_insecure", detail=st["detail"]))
         return 2
-    print("Sessão: TRANCADO")
+    print(i18n.t("cli_vault.status_locked"))
     return 1
 
 
@@ -381,16 +364,16 @@ def cmd_change_password(args) -> int:
     text, data = _load(path)
     meta = vault.load_meta(data)
     if not sys.stdin.isatty():
-        print("ERRO: 'change-password' precisa de um terminal interativo.", file=sys.stderr)
+        print(i18n.t("cli_vault.needs_tty", cmd="change-password"), file=sys.stderr)
         return 1
-    old_key = vault.derive_key(getpass.getpass("Senha mestra atual: "), meta)
+    old_key = vault.derive_key(getpass.getpass(i18n.t("cli_vault.prompt_current_master")), meta)
     vault.verify_key(old_key, meta)
-    new1 = getpass.getpass("Nova senha mestra: ")
+    new1 = getpass.getpass(i18n.t("cli_vault.prompt_new_master"))
     if not new1:
-        print("ERRO: senha vazia.", file=sys.stderr)
+        print(i18n.t("cli_vault.empty_password"), file=sys.stderr)
         return 1
-    if new1 != getpass.getpass("Confirme a nova senha: "):
-        print("ERRO: as senhas não conferem.", file=sys.stderr)
+    if new1 != getpass.getpass(i18n.t("cli_vault.prompt_confirm_new")):
+        print(i18n.t("cli_vault.passwords_mismatch"), file=sys.stderr)
         return 1
     new_meta, new_key = vault.build_meta(new1)
     lines = text.splitlines()
@@ -409,8 +392,7 @@ def cmd_change_password(args) -> int:
     if pw_text is not None:
         _atomic_write(pw_path, pw_text)
     vault_session.clear_session()
-    print(f"OK — senha mestra trocada; {count + pw_count} segredo(s) re-criptografado(s) "
-          f"({pw_count} do Cofre de senhas). Sessão re-trancada.")
+    print(i18n.t("cli_vault.password_changed", total=count + pw_count, pw=pw_count))
     return 0
 
 
@@ -418,28 +400,28 @@ def cmd_change_password(args) -> int:
 # argparse
 # --------------------------------------------------------------------------- #
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="vault", description="Cofre de credenciais do NetOps.")
+    parser = argparse.ArgumentParser(prog="vault", description=i18n.t("cli_vault.description"))
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--file", type=Path, default=DEFAULT_CREDS,
-        help="Arquivo de credenciais (default: network/credentials.yaml)",
+        help=i18n.t("cli_vault.help_file"),
     )
 
-    sub.add_parser("init", parents=[common], help="Define a senha-mestra (cria o bloco 'vault:')")
+    sub.add_parser("init", parents=[common], help=i18n.t("cli_vault.help_init"))
     enc = sub.add_parser("encrypt", parents=[common], aliases=["migrate"],
-                         help="Criptografa valores em texto puro -> enc.v1: (idempotente)")
-    enc.add_argument("--dry-run", action="store_true", help="Só mostra o que mudaria")
-    st = sub.add_parser("set", parents=[common], help="Define/rotaciona um campo secreto")
-    st.add_argument("--cred", required=True, help="Nome da credencial (ex.: cred_mikrotik_admin)")
-    st.add_argument("--field", required=True, choices=list(SECRET_FIELDS), help="Campo a definir")
-    un = sub.add_parser("unlock", parents=[common], help="Destranca a sessão")
-    un.add_argument("--ttl", type=int, default=0, help="TTL de inatividade em segundos (default: config/900)")
-    un.add_argument("--env", action="store_true", help="Modo terminal-puro: imprime export NETOPS_VAULT_KEY")
-    sub.add_parser("lock", parents=[common], help="Tranca a sessão (apaga o cache)")
-    sub.add_parser("status", parents=[common], help="Estado do cofre e da sessão")
-    sub.add_parser("change-password", parents=[common], help="Troca a senha-mestra e re-criptografa")
+                         help=i18n.t("cli_vault.help_encrypt"))
+    enc.add_argument("--dry-run", action="store_true", help=i18n.t("cli_vault.help_dry_run"))
+    st = sub.add_parser("set", parents=[common], help=i18n.t("cli_vault.help_set"))
+    st.add_argument("--cred", required=True, help=i18n.t("cli_vault.help_cred"))
+    st.add_argument("--field", required=True, choices=list(SECRET_FIELDS), help=i18n.t("cli_vault.help_field"))
+    un = sub.add_parser("unlock", parents=[common], help=i18n.t("cli_vault.help_unlock"))
+    un.add_argument("--ttl", type=int, default=0, help=i18n.t("cli_vault.help_ttl"))
+    un.add_argument("--env", action="store_true", help=i18n.t("cli_vault.help_env"))
+    sub.add_parser("lock", parents=[common], help=i18n.t("cli_vault.help_lock"))
+    sub.add_parser("status", parents=[common], help=i18n.t("cli_vault.help_status"))
+    sub.add_parser("change-password", parents=[common], help=i18n.t("cli_vault.help_change_password"))
 
     args = parser.parse_args()
     from lib.vault import VaultError  # noqa: PLC0415
@@ -451,7 +433,7 @@ def main() -> int:
     try:
         return dispatch[args.cmd](args)
     except VaultError as exc:
-        print(f"ERRO: {exc}", file=sys.stderr)
+        print(i18n.t("cli_vault.error", error=exc), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print()

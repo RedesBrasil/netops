@@ -1,0 +1,7 @@
+{
+  "file_modified": "arquivo modificado externamente",
+  "forbidden_host": "Host não autorizado e o console está sem login (cofre não inicializado). Inicialize o cofre (scripts/engine/vault/cli.py init) ou defina NETOPS_UI_ALLOWED_HOSTS=<dominio> e reinicie.",
+  "ip_denied": "Acesso negado: o IP {ip} não está autorizado a acessar este console.",
+  "unknown_ip": "desconhecido",
+  "validation_errors": "{n} erro(s) de validação"
+}

@@ -1,97 +1,97 @@
-# SKILL — Tarefas agendadas (scheduler)
+# SKILL — Scheduled tasks (scheduler)
 
-## O que é
+## What it is
 
-Agendador do NetOps: roda tarefas sozinho, no horário, mesmo com o console e o chat fechados.
-Console: menu **Sistema → Tarefas agendadas** (`#schedules`). Agente de IA: este `cli.py`.
+NetOps scheduler: runs tasks by itself, on time, even with the console and the chat closed.
+Console: menu **System → Scheduled tasks** (`#schedules`). AI agent: this `cli.py`.
 
-Há três tipos de tarefa (`kind`):
+There are three task types (`kind`):
 
-| kind | Rótulo na tela | O que roda | Quando usar |
-|------|----------------|------------|-------------|
-| `script` | Determinística / script | um comando/script (`bash`, cwd = raiz do NetOps, venv no PATH) | coleta, backup, verificação com resposta fixa |
-| `agent` | Agente de IA | `claude -p` headless com o pedido em linguagem natural | pesquisar, interpretar, decidir ("veja o changelog e me avise se…") |
-| `hybrid` | Script + agente | o script coleta; a saída entra no prompt do agente | coleta determinística + análise por IA |
+| kind | Label on screen | What it runs | When to use |
+|------|-----------------|--------------|-------------|
+| `script` | Deterministic / script | a command/script (`bash`, cwd = NetOps root, venv in PATH) | collection, backup, check with a fixed answer |
+| `agent` | AI agent | headless `claude -p` with the request in natural language | research, interpret, decide ("check the changelog and tell me if…") |
+| `hybrid` | Script + agent | the script collects; its output goes into the agent's prompt | deterministic collection + AI analysis |
 
-No `hybrid`, saída vazia do script (ou última linha `{"wakeAgent": false}`) **não aciona** o agente (economiza tokens).
+In `hybrid`, empty script output (or a last line `{"wakeAgent": false}`) **does not trigger** the agent (saves tokens).
 
-## Como funciona (inspirado no cron do Hermes Agent, NousResearch)
+## How it works (inspired by the cron of Hermes Agent, NousResearch)
 
-- **Cadastro:** `network/schedules.yaml` (git-ignorado). **Estado:** `runs/schedules/state.json`.
-  **Execuções:** `runs/schedules/<tarefa>/<run>.json` + `.log` (mantém as 50 últimas por tarefa).
-- **Disparo:** o cron do sistema chama o despachante a cada minuto — UMA linha em
-  `/etc/cron.d/netops-scheduler` (`cli.py tick`), instalada/atualizada sozinha ao salvar uma tarefa.
-  Não é uma linha de cron por tarefa porque o servidor roda em **UTC** e o cron do Debian não tem
-  `CRON_TZ`: o despachante avalia cada agenda no fuso do cadastro (`timezone`, padrão `America/Sao_Paulo`).
-- **No máximo uma vez por horário:** o próximo horário é avançado **antes** de disparar; trava por
-  tarefa impede sobreposição (a 2ª vira `skipped`). Cron parado por mais de 1 h → o horário é pulado
-  (`missed`), não acumula.
-- **Agente:** sessão nova por execução, `cwd` = raiz (lê `AGENTS.md`, hooks valem), com instrução fixa:
-  não mudar nada além do pedido, não perguntar, não criar tarefas, responder `[SILENT]` se não houver
-  nada relevante e `[FALHA]` se falhar. Permissões: `restricted` (padrão: Read/Glob/Grep/WebFetch/WebSearch,
-  sem shell nem escrita) ou `full` (shell e escrita). Cron* e AskUserQuestion sempre bloqueados.
-  A sessão fica no histórico da aba Claude Code ("continuar no Claude Code" no detalhe da execução).
-- **Notificação** (`notify`): `auto` (padrão: falha sempre; agente avisa salvo `[SILENT]`; script só em
-  falha), `always`, `failure`, `never`. Não lidas aparecem como contador vermelho no menu e na aba
-  **Execuções**.
-- **Central de Avisos** (`scripts/engine/inbox/SKILL.md`): toda notificação vira mensagem no sino 🔔 do topo
-  (falha = alerta; falhas repetidas agrupam). O agente publica alertas/pedidos de aprovação com bloco
-  ```` ```netops-inbox {json}``` ```` na resposta (funciona em `restricted`); aprovar retoma a sessão dele.
+- **Registry:** `network/schedules.yaml` (git-ignored). **State:** `runs/schedules/state.json`.
+  **Runs:** `runs/schedules/<tarefa>/<run>.json` + `.log` (keeps the last 50 per task).
+- **Trigger:** the system cron calls the dispatcher every minute — ONE line in
+  `/etc/cron.d/netops-scheduler` (`cli.py tick`), installed/updated automatically when a task is saved.
+  It is not one cron line per task because the server runs in **UTC** and Debian's cron has no
+  `CRON_TZ`: the dispatcher evaluates each schedule in the registry's time zone (`timezone`, default `America/Sao_Paulo`).
+- **At most once per slot:** the next slot is advanced **before** firing; a per-task
+  lock prevents overlap (the 2nd becomes `skipped`). Cron stopped for more than 1 h → the slot is skipped
+  (`missed`), it does not pile up.
+- **Agent:** new session per run, `cwd` = root (reads `AGENTS.md`, hooks apply), with a fixed instruction:
+  change nothing beyond the request, do not ask questions, do not create tasks, answer `[SILENT]` if there is
+  nothing relevant and `[FALHA]` if it fails. Permissions: `restricted` (default: Read/Glob/Grep/WebFetch/WebSearch,
+  no shell and no writes) or `full` (shell and writes). Cron* and AskUserQuestion always blocked.
+  The session stays in the Claude Code tab history ("continue in Claude Code" in the run detail).
+- **Notification** (`notify`): `auto` (default: failure always; agent notifies unless `[SILENT]`; script only on
+  failure), `always`, `failure`, `never`. Unread ones show as a red counter in the menu and in the
+  **Runs** tab.
+- **Notification center** (`scripts/engine/inbox/SKILL.md`): every notification becomes a message in the bell 🔔 at the top
+  (failure = alert; repeated failures are grouped). The agent publishes alerts/approval requests with a
+  ```` ```netops-inbox {json}``` ```` block in its answer (works in `restricted`); approving resumes its session.
   Script: `python3 scripts/engine/inbox/cli.py add --kind approval ...` + `wait <id>`.
-- **Acesso a equipamentos:** tarefa agendada usa **chave SSH dedicada**, não o cofre (que só fica destrancado com humano
-  digitando a senha). Uma vez, com o cofre aberto: `python3 scripts/tools/access/task_key.py provision --task <id> --hosts 16,35 --mode ro`.
-  Depois a tarefa/agente acessam com `python3 scripts/tools/access/task_exec.py --task <id> --host-id N --command "..."`.
-  - Chave em `network/task-keys/<id>/` (git-ignorada, 0600). `ro` = o equipamento só aceita comandos de leitura
-    (`/usr/local/sbin/netops-ro-shell`: lista de permissão, sem redirecionamento, sem arquivos sensíveis; tudo no syslog).
-    `rw` só se a tarefa precisar escrever. Fingerprint do equipamento fixada no provisionamento.
-  - **Ciclo de vida:** a chave morre com a tarefa — `delete_task` (CLI/console) apaga a pasta e o tick do despachante
-    varre pastas sem tarefa (cobre apagar no YAML). A remoção da linha no equipamento fica na fila
-    `network/task-keys/_revoke.yaml` e roda com `task_key.py revoke-pending` (cofre aberto). `task_key.py list|test|delete`.
+- **Access to equipment:** a scheduled task uses a **dedicated SSH key**, not the vault (which is only unlocked while a human
+  types the password). Once, with the vault open: `python3 scripts/tools/access/task_key.py provision --task <id> --hosts 16,35 --mode ro`.
+  Then the task/agent access with `python3 scripts/tools/access/task_exec.py --task <id> --host-id N --command "..."`.
+  - Key in `network/task-keys/<id>/` (git-ignored, 0600). `ro` = the equipment only accepts read commands
+    (`/usr/local/sbin/netops-ro-shell`: allowlist, no redirection, no sensitive files; everything to syslog).
+    `rw` only if the task needs to write. The equipment fingerprint is pinned at provisioning.
+  - **Lifecycle:** the key dies with the task — `delete_task` (CLI/console) deletes the folder and the dispatcher tick
+    sweeps folders without a task (covers deleting in the YAML). Removing the line on the equipment goes to the queue
+    `network/task-keys/_revoke.yaml` and runs with `task_key.py revoke-pending` (vault open). `task_key.py list|test|delete`.
 
-## Instalação nova / atualização
+## New install / update
 
-Nada a fazer à mão: o código vem no pacote e no atualizador. O cadastro (`network/schedules.yaml`) é
-dado local e nunca é distribuído. A linha do cron é instalada sozinha ao salvar a 1ª tarefa e
-reinstalada no arranque do console se houver tarefas e a linha tiver sumido (restore, reinstalação).
-- Console como **root** (padrão): `/etc/cron.d/netops-scheduler`.
-- Console **sem root**: cai no **crontab do usuário** (bloco `# >>> netops-scheduler`, preserva o resto).
-- **Sem o pacote `cron`** (container mínimo): a tela avisa; rode `apt install cron && systemctl enable --now cron`.
-- Pré-requisitos: `.venv` do projeto (a linha usa `.venv/bin/python3`). Tarefas de agente também exigem o
-  `claude` logado para o mesmo usuário do console (igual à aba Claude Code).
-- Manual/diagnóstico: `cli.py install-cron`; `cli.py list` mostra `cron.installed/healthy/last_tick`.
+Nothing to do by hand: the code comes in the package and with the updater. The registry (`network/schedules.yaml`) is
+local data and is never distributed. The cron line is installed automatically when the 1st task is saved and
+reinstalled at console startup if there are tasks and the line has disappeared (restore, reinstall).
+- Console as **root** (default): `/etc/cron.d/netops-scheduler`.
+- Console **without root**: falls back to the **user's crontab** (block `# >>> netops-scheduler`, preserves the rest).
+- **Without the `cron` package** (minimal container): the screen warns; run `apt install cron && systemctl enable --now cron`.
+- Prerequisites: the project's `.venv` (the line uses `.venv/bin/python3`). Agent tasks also require
+  `claude` logged in for the same user as the console (same as the Claude Code tab).
+- Manual/diagnostics: `cli.py install-cron`; `cli.py list` shows `cron.installed/healthy/last_tick`.
 
-## Uso pelo agente de IA (pedido no chat)
+## Use by the AI agent (request in the chat)
 
-Quando o usuário pedir "agende…", "todo dia…", "a cada N minutos…", "me avise quando…":
-**use este CLI** (nunca `crontab -e`, `/etc/cron.d` à mão, nem a ferramenta `CronCreate`, que só vive
-na sessão). Escolha o `kind`: comando fixo → `script`; precisa interpretar/pesquisar → `agent`;
-coleta + análise → `hybrid`. Confirme com o usuário o horário e o que fará, se houver dúvida.
+When the user asks "schedule…", "every day…", "every N minutes…", "let me know when…":
+**use this CLI** (never `crontab -e`, `/etc/cron.d` by hand, nor the `CronCreate` tool, which only lives
+in the session). Choose the `kind`: fixed command → `script`; needs to interpret/research → `agent`;
+collection + analysis → `hybrid`. Confirm the time and what it will do with the user, if in doubt.
 
 ```bash
 P=".venv/bin/python3 scripts/engine/scheduler/cli.py"
-$P list                                         # tarefas, próxima/última, saúde do cron
+$P list                                         # tasks, next/last, cron health
 $P add --name "Changelog MikroTik" --kind agent --cron "0 8 * * *" \
    --prompt "Veja https://mikrotik.com/download/changelogs; se houver versão nova citando o bug X, resuma. Senão [SILENT]."
 $P add --name "Ping core" --kind script --every 30 --script "python3 scripts/tools/diagnostics/ping_advanced.py --host rt-core-01"
 $P add --name "Backup + análise" --kind hybrid --cron "30 3 * * *" --script "..." --prompt "Compare e avise se mudou firewall"
-$P add --name "Lembrete" --kind agent --at 2026-11-20T09:00 --prompt "..."     # uma vez
+$P add --name "Lembrete" --kind agent --at 2026-11-20T09:00 --prompt "..."     # once
 $P edit <id> --cron "0 9 * * 1-5" | $P disable <id> | $P enable <id> | $P rm <id>
-$P run <id>                                     # dispara agora (segundo plano)
-$P runs [<id>] | $P log <id> <run_id>           # resultados
-$P preview --cron "0 9 * * 1-5"                 # próximos horários
+$P run <id>                                     # fires now (background)
+$P runs [<id>] | $P log <id> <run_id>           # results
+$P preview --cron "0 9 * * 1-5"                 # next slots
 ```
 
-Agendas: `--cron` (5 campos, fuso do cadastro; `@daily`, `L` = último dia do mês, `1#2` = 2ª segunda — lib `croniter`, a mesma do Hermes), `--every N` (minutos), `--at AAAA-MM-DDTHH:MM`.
-Outros: `--notify`, `--permissions restricted|full`, `--model`, `--github-as <usuario>`, `--timeout` (min, padrão 15), `--description`,
-`--disabled`. `--github-as`: o agente usa a conta do GitHub conectada por esse usuário do console. Sem conta conectada, fica sem GitHub;
-sem `--github-as`, usa o `gh` do servidor. Saída sempre em JSON; erro de validação = exit 2 com `errors[]`.
-Tarefas criadas pelo CLI ficam marcadas `created_by: chat` (selo "via chat" na tela) e são editáveis no console.
+Schedules: `--cron` (5 fields, registry time zone; `@daily`, `L` = last day of the month, `1#2` = 2nd Monday — `croniter` lib, the same as Hermes), `--every N` (minutes), `--at AAAA-MM-DDTHH:MM`.
+Others: `--notify`, `--permissions restricted|full`, `--model`, `--github-as <usuario>`, `--timeout` (min, default 15), `--description`,
+`--disabled`. `--github-as`: the agent uses the GitHub account connected by that console user. With no account connected, it has no GitHub;
+without `--github-as`, it uses the server's `gh`. Output always in JSON; validation error = exit 2 with `errors[]`.
+Tasks created by the CLI are marked `created_by: chat` ("via chat" badge on screen) and are editable in the console.
 
-## Regras
+## Rules
 
-- Uma tarefa agendada **não** cria nem dispara outras (`NETOPS_SCHEDULED_RUN=1` bloqueia o CLI).
-- Mudança de configuração em equipamento por tarefa agendada segue a constituição §V (baseline → rollback);
-  prefira tarefas de leitura/verificação. Agente `full` só quando o pedido exigir shell.
-- Testes usam raiz de dados temporária: o cron vai para `<raiz>/runs/schedules/cron.d-netops-scheduler`,
-  nunca para `/etc/cron.d` (`NETOPS_SCHEDULER_CRON_FILE` força outro caminho).
-- Testes: `scripts/engine/ui/tests/test_schedules.py`, `tests/schedules.test.mjs`, caso `schedules` em `urls.browser.mjs`.
+- A scheduled task does **not** create or trigger others (`NETOPS_SCHEDULED_RUN=1` blocks the CLI).
+- A configuration change on equipment by a scheduled task follows constitution §V (baseline → rollback);
+  prefer read/check tasks. A `full` agent only when the request requires a shell.
+- Tests use a temporary data root: the cron goes to `<raiz>/runs/schedules/cron.d-netops-scheduler`,
+  never to `/etc/cron.d` (`NETOPS_SCHEDULER_CRON_FILE` forces another path).
+- Tests: `scripts/engine/ui/tests/test_schedules.py`, `tests/schedules.test.mjs`, `schedules` case in `urls.browser.mjs`.

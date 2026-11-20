@@ -28,6 +28,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from lib import i18n
 from lib.vault import VaultLocked
 
 NETOPS_ROOT = Path(__file__).resolve().parents[3]
@@ -166,14 +167,13 @@ def _load_cache() -> dict | None:
     st_dir = os.lstat(str(d))
     if st_dir.st_uid != os.getuid() or stat.S_IMODE(st_dir.st_mode) != 0o700:
         raise VaultLocked(
-            f"Diretório do cache com permissões inseguras: {d}. "
-            "Rode: python3 scripts/engine/vault/cli.py lock"
+            i18n.t("lib_vault.cache_dir_insecure", path=d, cmd="python3 scripts/engine/vault/cli.py lock")
         )
 
     try:
         fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW)
     except OSError as exc:
-        raise VaultLocked(f"Não foi possível abrir o cache com segurança: {exc}") from exc
+        raise VaultLocked(i18n.t("lib_vault.cache_open_failed", error=exc)) from exc
     try:
         st = os.fstat(fd)
         if (
@@ -182,8 +182,7 @@ def _load_cache() -> dict | None:
             or stat.S_IMODE(st.st_mode) != 0o600
         ):
             raise VaultLocked(
-                "Arquivo de cache com permissões inseguras. "
-                "Rode: python3 scripts/engine/vault/cli.py lock  (e depois unlock)"
+                i18n.t("lib_vault.cache_file_insecure", cmd="python3 scripts/engine/vault/cli.py lock")
             )
         data = os.read(fd, 65536)
     finally:
@@ -215,7 +214,7 @@ def get_session_key() -> bytes:
         try:
             return decode_key(env)
         except Exception as exc:
-            raise VaultLocked(f"{ENV_KEY} inválida: {exc}") from exc
+            raise VaultLocked(i18n.t("lib_vault.env_key_invalid", var=ENV_KEY, error=exc)) from exc
 
     raise VaultLocked()
 

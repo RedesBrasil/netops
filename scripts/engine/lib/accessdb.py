@@ -40,6 +40,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from lib import i18n
+
 SCHEMA_VERSION = 2
 ADMIN_GROUP = "admin"
 NET_PERMS = ("read", "create", "edit", "delete")
@@ -88,6 +90,25 @@ PERMISSIONS: list[dict] = [
     {"key": "audit.view", "label": "Auditoria", "area": "Administração", "admin_only": True},
 ]
 PERM_KEYS = {p["key"] for p in PERMISSIONS}
+
+_AREA_KEYS = {"Inventário": "area_inventory", "Conhecimento": "area_knowledge", "Administração": "area_administration",
+              "Operação": "area_operations", "Acesso a equipamento": "area_device_access", "IA": "area_ai"}
+
+
+def localized_permissions(lang: str | None = None) -> list[dict]:
+    """PERMISSIONS with label/area in the requested (or current) language (core/locales/*/perm.json)."""
+    from lib import i18n  # noqa: PLC0415
+    out = []
+    for p in PERMISSIONS:
+        q = dict(p)
+        lbl = i18n.t("perm." + p["key"], lang)
+        q["label"] = p["label"] if lbl == "perm." + p["key"] else lbl
+        ak = _AREA_KEYS.get(p["area"])
+        if ak:
+            area = i18n.t("perm." + ak, lang)
+            q["area"] = p["area"] if area == "perm." + ak else area
+        out.append(q)
+    return out
 ADMIN_ONLY = {p["key"] for p in PERMISSIONS if p.get("admin_only")}
 GRANTABLE = PERM_KEYS - ADMIN_ONLY
 
@@ -123,8 +144,8 @@ class AccessError(Exception):
 
 
 class Conflict(AccessError):
-    def __init__(self, detail: str = "Registro alterado por outra pessoa — recarregue."):
-        super().__init__("conflict", detail, 409)
+    def __init__(self, detail: str | None = None):
+        super().__init__("conflict", detail or i18n.t("lib_accessdb.conflict"), 409)
 
 
 class NotFound(AccessError):
@@ -134,7 +155,7 @@ class NotFound(AccessError):
 
 class WrongPassword(AccessError):
     def __init__(self):
-        super().__init__("bad_credentials", "Usuário ou senha incorretos.", 401)
+        super().__init__("bad_credentials", i18n.t("lib_accessdb.bad_credentials"), 401)
 
 
 # --------------------------------------------------------------------------- #
@@ -282,7 +303,7 @@ def _ensure(path: Path) -> None:
                     conn.execute("ROLLBACK")
                     raise
             elif ver > SCHEMA_VERSION:
-                raise AccessError("db_too_new", f"Banco de acesso v{ver} é mais novo que este NetOps (v{SCHEMA_VERSION}).", 500)
+                raise AccessError("db_too_new", i18n.t("lib_accessdb.db_too_new", ver=ver, current=SCHEMA_VERSION), 500)
         finally:
             conn.close()
         _initialized.add(_ident(path))
@@ -328,7 +349,7 @@ def _vault():
 
 def check_password_policy(password: str) -> None:
     if not isinstance(password, str) or len(password) < PASSWORD_MIN:
-        raise AccessError("weak_password", f"A senha precisa ter pelo menos {PASSWORD_MIN} caracteres.", 422)
+        raise AccessError("weak_password", i18n.t("lib_accessdb.weak_password", min=PASSWORD_MIN), 422)
 
 
 def _hash_password(password: str) -> tuple[str, bytes]:
@@ -367,7 +388,7 @@ def norm_username(username: str) -> str:
     u = (username or "").strip().lower()
     if not USERNAME_RE.match(u):
         raise AccessError("invalid_username",
-                          "Usuário inválido: 2 a 32 caracteres, letras minúsculas, números, ponto, hífen ou _.", 422)
+                          i18n.t("lib_accessdb.invalid_username"), 422)
     return u
 
 
@@ -375,10 +396,10 @@ def norm_email(email: str | None, required: bool = False) -> str:
     e = (email or "").strip().lower()
     if not e:
         if required:
-            raise AccessError("email_required", "Informe o e-mail (é o login do usuário).", 422)
+            raise AccessError("email_required", i18n.t("lib_accessdb.email_required"), 422)
         return ""
     if len(e) > 120 or not EMAIL_RE.match(e):
-        raise AccessError("invalid_email", f"E-mail inválido: {email}", 422)
+        raise AccessError("invalid_email", i18n.t("lib_accessdb.invalid_email", email=email), 422)
     return e
 
 
@@ -474,7 +495,7 @@ def _set_groups(conn, username: str, groups) -> None:
     groups = sorted({str(g).strip().lower() for g in (groups or []) if str(g).strip()})
     for g in groups:
         if not conn.execute("SELECT 1 FROM access_groups WHERE name=?", (g,)).fetchone():
-            raise AccessError("unknown_group", f"Grupo de acesso '{g}' não existe.", 422)
+            raise AccessError("unknown_group", i18n.t("lib_accessdb.unknown_group", group=g), 422)
     conn.execute("DELETE FROM user_groups WHERE username=?", (username,))
     conn.executemany("INSERT INTO user_groups(username, group_name) VALUES(?,?)", [(username, g) for g in groups])
 
@@ -491,15 +512,15 @@ def create_user(db, username: str | None, password: str, *, display_name: str = 
     now = time.time()
     with connect(db, write=True) as c:
         if _email_taken(c, email):
-            raise AccessError("exists", f"Já existe um usuário com o e-mail {email}.", 409)
+            raise AccessError("exists", i18n.t("lib_accessdb.email_exists", email=email), 409)
         if username is None:
             username = _derive_username(c, email)
         if _user_row(c, username):
-            raise AccessError("exists", f"O usuário '{username}' já existe.", 409)
+            raise AccessError("exists", i18n.t("lib_accessdb.user_exists", username=username), 409)
         first = c.execute("SELECT 1 FROM users LIMIT 1").fetchone() is None
         groups = list(groups or [])
         if first and ADMIN_GROUP not in groups:
-            raise AccessError("first_must_be_admin", "O primeiro usuário precisa estar no grupo admin.", 422)
+            raise AccessError("first_must_be_admin", i18n.t("lib_accessdb.first_must_be_admin"), 422)
         c.execute("INSERT INTO users(username, display_name, email, pw, vault_slot, must_change, created_at,"
                   " created_by, updated_at, pw_changed_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
                   (username, (display_name or "").strip()[:80], email, pw_json, slot,
@@ -514,7 +535,7 @@ def update_user(db, username: str, *, rev: str | None = None, actor: str = "", *
     with connect(db, write=True) as c:
         row = _user_row(c, username)
         if not row:
-            raise NotFound(f"Usuário '{username}' não encontrado.")
+            raise NotFound(i18n.t("lib_accessdb.user_not_found", username=username))
         if rev is not None and str(rev) != str(row["rev"]):
             raise Conflict()
         sets, args = [], []
@@ -524,12 +545,12 @@ def update_user(db, username: str, *, rev: str | None = None, actor: str = "", *
         if fields.get("email") is not None:
             email = norm_email(fields["email"], required=True)
             if _email_taken(c, email, exclude=username):
-                raise AccessError("exists", f"Já existe um usuário com o e-mail {email}.", 409)
+                raise AccessError("exists", i18n.t("lib_accessdb.email_exists", email=email), 409)
             sets.append("email=?")
             args.append(email)
         if fields.get("disabled") is not None:
             if fields["disabled"] and actor and actor == username:
-                raise AccessError("self_disable", "Você não pode desativar o próprio usuário.", 422)
+                raise AccessError("self_disable", i18n.t("lib_accessdb.self_disable"), 422)
             sets.append("disabled=?")
             args.append(int(bool(fields["disabled"])))
         if fields.get("must_change_password") is not None:
@@ -538,13 +559,13 @@ def update_user(db, username: str, *, rev: str | None = None, actor: str = "", *
         if fields.get("groups") is not None:
             if actor and actor == username and ADMIN_GROUP in _groups_of(c, username) \
                     and ADMIN_GROUP not in fields["groups"]:
-                raise AccessError("self_demote", "Você não pode tirar o próprio usuário do grupo admin.", 422)
+                raise AccessError("self_demote", i18n.t("lib_accessdb.self_demote"), 422)
             _set_groups(c, username, fields["groups"])
         sets += ["updated_at=?", "rev=rev+1"]
         args += [time.time(), username]
         c.execute(f"UPDATE users SET {', '.join(sets)} WHERE username=?", args)
         if _admins_active(c) == 0 and c.execute("SELECT 1 FROM users LIMIT 1").fetchone():
-            raise AccessError("last_admin", "Precisa sobrar pelo menos um administrador ativo.", 422)
+            raise AccessError("last_admin", i18n.t("lib_accessdb.last_admin"), 422)
         if fields.get("disabled"):
             c.execute("DELETE FROM sessions WHERE username=?", (username,))
             c.execute("UPDATE users SET vault_slot=NULL WHERE username=?", (username,))
@@ -561,7 +582,7 @@ def set_password(db, username: str, password: str, *, must_change: bool | None =
     now = time.time()
     with connect(db, write=True) as c:
         if not _user_row(c, username):
-            raise NotFound(f"Usuário '{username}' não encontrado.")
+            raise NotFound(i18n.t("lib_accessdb.user_not_found", username=username))
         mc = "must_change" if must_change is None else str(int(bool(must_change)))
         c.execute(f"UPDATE users SET pw=?, vault_slot=?, must_change={mc}, pw_changed_at=?, updated_at=?,"
                   " rev=rev+1 WHERE username=?", (pw_json, slot, now, now, username))
@@ -575,14 +596,14 @@ def set_password(db, username: str, password: str, *, must_change: bool | None =
 def delete_user(db, username: str, *, actor: str = "") -> None:
     username = (username or "").strip().lower()
     if actor and actor == username:
-        raise AccessError("self_delete", "Você não pode apagar o próprio usuário.", 422)
+        raise AccessError("self_delete", i18n.t("lib_accessdb.self_delete"), 422)
     with connect(db, write=True) as c:
         if not _user_row(c, username):
-            raise NotFound(f"Usuário '{username}' não encontrado.")
+            raise NotFound(i18n.t("lib_accessdb.user_not_found", username=username))
         c.execute("DELETE FROM users WHERE username=?", (username,))
         c.execute("DELETE FROM sessions WHERE username=?", (username,))
         if _admins_active(c) == 0 and c.execute("SELECT 1 FROM users LIMIT 1").fetchone():
-            raise AccessError("last_admin", "Precisa sobrar pelo menos um administrador ativo.", 422)
+            raise AccessError("last_admin", i18n.t("lib_accessdb.last_admin"), 422)
 
 
 def verify_password(db, login: str, password: str) -> tuple[dict, bytes]:
@@ -643,7 +664,7 @@ def _norm_perms(perms) -> list[str]:
     out = sorted({str(p) for p in (perms or [])})
     bad = [p for p in out if p not in GRANTABLE]
     if bad:
-        raise AccessError("invalid_permission", "Permissão inválida ou exclusiva do admin: " + ", ".join(bad), 422)
+        raise AccessError("invalid_permission", i18n.t("lib_accessdb.invalid_permission", perms=", ".join(bad)), 422)
     return out
 
 
@@ -676,12 +697,12 @@ def get_group(db, name: str) -> dict | None:
 def create_group(db, name: str, *, description: str = "", permissions=(), net_perms=("read",)) -> dict:
     name = (name or "").strip().lower()
     if not GROUPNAME_RE.match(name):
-        raise AccessError("invalid_name", "Nome inválido: 2 a 40 caracteres, minúsculas, números, ponto, hífen ou _.", 422)
+        raise AccessError("invalid_name", i18n.t("lib_accessdb.invalid_group_name"), 422)
     perms, net = _norm_perms(permissions), _norm_net(net_perms)
     now = time.time()
     with connect(db, write=True) as c:
         if c.execute("SELECT 1 FROM access_groups WHERE name=?", (name,)).fetchone():
-            raise AccessError("exists", f"O grupo '{name}' já existe.", 409)
+            raise AccessError("exists", i18n.t("lib_accessdb.group_exists", name=name), 409)
         c.execute("INSERT INTO access_groups(name, description, permissions, net_perms, created_at, updated_at)"
                   " VALUES(?,?,?,?,?,?)", (name, (description or "").strip()[:200], json.dumps(perms),
                                          json.dumps(net), now, now))
@@ -694,7 +715,7 @@ def update_group(db, name: str, *, rev: str | None = None, description=None, per
     with connect(db, write=True) as c:
         row = c.execute("SELECT * FROM access_groups WHERE name=?", (name,)).fetchone()
         if not row:
-            raise NotFound(f"Grupo '{name}' não encontrado.")
+            raise NotFound(i18n.t("lib_accessdb.group_not_found", name=name))
         if rev is not None and str(rev) != str(row["rev"]):
             raise Conflict()
         builtin = bool(row["builtin"])
@@ -715,14 +736,14 @@ def update_group(db, name: str, *, rev: str | None = None, description=None, per
             members = sorted({str(m).strip().lower() for m in members if str(m).strip()})
             for m in members:
                 if not _user_row(c, m):
-                    raise AccessError("unknown_user", f"Usuário '{m}' não existe.", 422)
+                    raise AccessError("unknown_user", i18n.t("lib_accessdb.unknown_user", username=m), 422)
             if name == ADMIN_GROUP and actor and actor not in members and \
                     c.execute("SELECT 1 FROM user_groups WHERE username=? AND group_name=?", (actor, name)).fetchone():
-                raise AccessError("self_demote", "Você não pode tirar o próprio usuário do grupo admin.", 422)
+                raise AccessError("self_demote", i18n.t("lib_accessdb.self_demote"), 422)
             c.execute("DELETE FROM user_groups WHERE group_name=?", (name,))
             c.executemany("INSERT INTO user_groups(username, group_name) VALUES(?,?)", [(m, name) for m in members])
             if _admins_active(c) == 0 and c.execute("SELECT 1 FROM users LIMIT 1").fetchone():
-                raise AccessError("last_admin", "Precisa sobrar pelo menos um administrador ativo.", 422)
+                raise AccessError("last_admin", i18n.t("lib_accessdb.last_admin"), 422)
         return _public_group(c, c.execute("SELECT * FROM access_groups WHERE name=?", (name,)).fetchone())
 
 
@@ -731,9 +752,9 @@ def delete_group(db, name: str) -> None:
     with connect(db, write=True) as c:
         row = c.execute("SELECT * FROM access_groups WHERE name=?", (name,)).fetchone()
         if not row:
-            raise NotFound(f"Grupo '{name}' não encontrado.")
+            raise NotFound(i18n.t("lib_accessdb.group_not_found", name=name))
         if row["builtin"]:
-            raise AccessError("builtin", "O grupo admin é fixo e não pode ser apagado.", 422)
+            raise AccessError("builtin", i18n.t("lib_accessdb.builtin_group"), 422)
         c.execute("DELETE FROM access_groups WHERE name=?", (name,))
 
 

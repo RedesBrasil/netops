@@ -1,0 +1,11 @@
+{
+  "browser_unsupported": "Este navegador não permite gravar áudio (use HTTPS ou localhost).",
+  "empty_transcription": "O áudio não gerou uma transcrição.",
+  "mic_denied": "Permissão do microfone negada. Libere o acesso no navegador.",
+  "mic_not_found": "Nenhum microfone encontrado.",
+  "recorder_load_failed": "Não foi possível carregar o gravador.",
+  "recording_empty": "A gravação está vazia.",
+  "start_failed": "Não foi possível iniciar a gravação.",
+  "transcribe_failed": "Falha ao transcrever o áudio.",
+  "transcribe_failed_http": "Falha ao transcrever o áudio (HTTP {status})."
+}

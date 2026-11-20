@@ -28,6 +28,7 @@ from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
 from lib.host_identity import host_index, identity_errors, require_host_id
 from lib.inventory_lock import JOURNAL_NAME, MigrationIncomplete, ensure_migration_complete, inventory_lock
+from lib import i18n
 
 FILES = ("hosts.yaml", "topology.yaml", "maps.yaml", "backups.yaml")
 MAX_FILE_BYTES = 32 * 1024 * 1024
@@ -36,7 +37,7 @@ MAX_FILE_BYTES = 32 * 1024 * 1024
 class PreflightError(ValueError):
     def __init__(self, problems):
         self.problems = problems
-        super().__init__(f"pré-validação falhou: {len(problems)} problema(s); nenhuma alteração aplicada")
+        super().__init__(i18n.t("lib_host_migration.preflight_failed", count=len(problems)))
 
 
 def _yaml():
@@ -70,13 +71,13 @@ def _digest(data: bytes | None):
 def _read(path):
     for component in (path, *path.parents):
         if component.is_symlink():
-            raise ValueError(f"symlink não permitido no caminho de migração: {component.name}")
+            raise ValueError(i18n.t("lib_host_migration.symlink_in_path", name=component.name))
     if path.is_symlink():
-        raise ValueError(f"não é permitido migrar symlink: {path.name}")
+        raise ValueError(i18n.t("lib_host_migration.symlink_file", name=path.name))
     if not path.exists():
         return None
     if path.stat().st_size > MAX_FILE_BYTES:
-        raise ValueError(f"arquivo excede o limite de migração: {path.name}")
+        raise ValueError(i18n.t("lib_host_migration.file_too_large", name=path.name))
     return path.read_bytes()
 
 
@@ -93,10 +94,10 @@ def _documents(root):
         originals[name] = raw
         doc = _yaml().load(raw.decode("utf-8")) if raw and raw.strip() else defaults[name]
         if not isinstance(doc, dict):
-            raise ValueError(f"{name}: documento precisa ser um objeto")
+            raise ValueError(i18n.t("lib_host_migration.document_not_object", name=name))
         docs[name] = doc
     if originals["hosts.yaml"] is None:
-        raise ValueError("network/hosts.yaml não existe")
+        raise ValueError(i18n.t("lib_host_migration.hosts_yaml_missing"))
     return originals, docs
 
 
@@ -115,14 +116,14 @@ def transform(documents, backup_directories=()):
     for error in identity_errors(inventory):
         fail("hosts.yaml/" + error["loc"], error["msg"])
     if not isinstance(inventory.get("groups", {}), dict):
-        fail("hosts.yaml/groups", "grupos precisam ser um objeto")
+        fail("hosts.yaml/groups", i18n.t("lib_host_migration.groups_not_object"))
     for filename, field in (("topology.yaml", "links"), ("maps.yaml", "maps"), ("backups.yaml", "services")):
         values = docs[filename].get(field, [])
         if not isinstance(values, list) or any(not isinstance(value, dict) for value in values):
-            fail(f"{filename}/{field}", "campo precisa ser uma lista de objetos")
+            fail(f"{filename}/{field}", i18n.t("lib_host_migration.field_not_object_list"))
     sources = docs["backups.yaml"].get("legacy_sources", [])
     if not isinstance(sources, list) or any(not isinstance(source, dict) for source in sources):
-        fail("backups.yaml/legacy_sources", "fontes históricas precisam ser uma lista de objetos")
+        fail("backups.yaml/legacy_sources", i18n.t("lib_host_migration.legacy_sources_not_list"))
     if problems:
         raise PreflightError(problems)
     version = inventory.get("version", 1)
@@ -131,7 +132,7 @@ def transform(documents, backup_directories=()):
     for key, host in hosts.items():
         for field in ("hostname", "mgmt_ip"):
             if not isinstance(host.get(field), str) or not host[field].strip():
-                fail(f"hosts.yaml/hosts/{key}/{field}", "campo obrigatório ausente")
+                fail(f"hosts.yaml/hosts/{key}/{field}", i18n.t("lib_host_migration.required_field_missing"))
 
     def lookup(reference, loc):
         if version == 1:
@@ -144,17 +145,17 @@ def transform(documents, backup_directories=()):
                     return reference
             except ValueError:
                 pass
-        fail(loc, "referência a host não cadastrado ou ID inválido", reference)
+        fail(loc, i18n.t("lib_host_migration.unknown_host_reference"), reference)
         return None
 
     topo = docs["topology.yaml"]
     expected = 1 if version == 1 else 2
     if topo.get("version", expected) != expected:
-        fail("topology.yaml/version", "versão incompatível com o inventário")
+        fail("topology.yaml/version", i18n.t("lib_host_migration.incompatible_version"))
     seen, ids = {}, set()
     for index, link in enumerate(topo.get("links") or []):
         if not isinstance(link, dict):
-            fail(f"topology.yaml/links/{index}", "enlace precisa ser um objeto")
+            fail(f"topology.yaml/links/{index}", i18n.t("lib_host_migration.link_not_object"))
             continue
         # Mesmo algoritmo do topology_svc, ANTES de mudar as pontas.
         value = link.get("id")
@@ -165,31 +166,31 @@ def transform(documents, backup_directories=()):
             value = f"link-{fingerprint}-{ordinal}"
             link["id"] = value
         if not isinstance(value, str) or value in ids:
-            fail(f"topology.yaml/links/{index}/id", "ID de enlace inválido ou duplicado")
+            fail(f"topology.yaml/links/{index}/id", i18n.t("lib_host_migration.invalid_link_id"))
         ids.add(value)
         for end in ("a", "b"):
             endpoint = link.get(end)
             if not isinstance(endpoint, dict):
-                fail(f"topology.yaml/links/{index}/{end}", "ponta precisa ser um objeto")
+                fail(f"topology.yaml/links/{index}/{end}", i18n.t("lib_host_migration.endpoint_not_object"))
                 continue
             endpoint["host"] = lookup(endpoint.get("host"), f"topology.yaml/links/{index}/{end}/host")
     topo["version"] = 2
 
     maps = docs["maps.yaml"]
     if maps.get("version", expected) != expected:
-        fail("maps.yaml/version", "versão incompatível com o inventário")
+        fail("maps.yaml/version", i18n.t("lib_host_migration.incompatible_version"))
     map_ids = set()
     for index, network_map in enumerate(maps.get("maps") or []):
         loc = f"maps.yaml/maps/{index}"
         if not isinstance(network_map, dict):
-            fail(loc, "mapa precisa ser um objeto")
+            fail(loc, i18n.t("lib_host_migration.map_not_object"))
             continue
         if not isinstance(network_map.get("id"), str) or network_map["id"] in map_ids:
-            fail(loc + "/id", "ID de mapa inválido ou duplicado")
+            fail(loc + "/id", i18n.t("lib_host_migration.invalid_map_id"))
         map_ids.add(network_map.get("id"))
         members = network_map.get("members") or []
         if not isinstance(members, list):
-            fail(loc + "/members", "membros precisam ser uma lista")
+            fail(loc + "/members", i18n.t("lib_host_migration.members_not_list"))
             members = []
         network_map["members"] = [lookup(value, f"{loc}/members/{i}") for i, value in enumerate(members)]
         positions = network_map.get("positions") or ({} if version == 1 else [])
@@ -199,7 +200,7 @@ def transform(documents, backup_directories=()):
                 converted.ca.comment = copy.deepcopy(positions.ca.comment)
             for old, point in positions.items():
                 if not isinstance(point, dict):
-                    fail(loc + "/positions/" + str(old), "posição precisa ser um objeto")
+                    fail(loc + "/positions/" + str(old), i18n.t("lib_host_migration.position_not_object"))
                     continue
                 point["host_id"] = lookup(old, loc + "/positions/" + str(old))
                 converted.append(point)
@@ -208,16 +209,16 @@ def transform(documents, backup_directories=()):
         elif version == 2 and isinstance(positions, list):
             for i, point in enumerate(positions):
                 if not isinstance(point, dict):
-                    fail(f"{loc}/positions/{i}", "posição precisa ser um objeto")
+                    fail(f"{loc}/positions/{i}", i18n.t("lib_host_migration.position_not_object"))
                     continue
                 lookup(point.get("host_id"), f"{loc}/positions/{i}/host_id")
         else:
-            fail(loc + "/positions", "formato de posições incompatível")
+            fail(loc + "/positions", i18n.t("lib_host_migration.incompatible_positions"))
         objects = network_map.get("objects") or []
         object_ids = {obj.get("id") for obj in objects if isinstance(obj, dict)}
         for li, link in enumerate(network_map.get("visual_links") or []):
             if not isinstance(link, dict):
-                fail(f"{loc}/visual_links/{li}", "conexão visual precisa ser um objeto")
+                fail(f"{loc}/visual_links/{li}", i18n.t("lib_host_migration.visual_link_not_object"))
                 continue
             for end in ("source", "target"):
                 path = f"{loc}/visual_links/{li}/{end}"
@@ -228,24 +229,24 @@ def transform(documents, backup_directories=()):
                     elif isinstance(ref, str) and ref.startswith("object:"):
                         link[end] = {"kind": "object", "object_id": ref[7:]}
                     else:
-                        fail(path, "ponta visual inválida", ref)
+                        fail(path, i18n.t("lib_host_migration.invalid_visual_endpoint"), ref)
                         continue
                 endpoint = link[end]
                 if not isinstance(endpoint, dict):
-                    fail(path, "ponta visual precisa ser um objeto")
+                    fail(path, i18n.t("lib_host_migration.visual_endpoint_not_object"))
                 elif endpoint.get("kind") == "host":
                     if version == 2:
                         lookup(endpoint.get("host_id"), path + "/host_id")
                 elif endpoint.get("kind") == "object":
                     if endpoint.get("object_id") not in object_ids:
-                        fail(path, "objeto visual ausente", endpoint.get("object_id"))
+                        fail(path, i18n.t("lib_host_migration.visual_object_missing"), endpoint.get("object_id"))
                 else:
-                    fail(path, "tipo de ponta visual inválido")
+                    fail(path, i18n.t("lib_host_migration.invalid_visual_endpoint_type"))
     maps["version"] = 2
 
     backups = docs["backups.yaml"]
     if backups.get("version", 2) not in ((1, 2) if version == 1 else (3,)):
-        fail("backups.yaml/version", "versão de backups incompatível")
+        fail("backups.yaml/version", i18n.t("lib_host_migration.incompatible_backups_version"))
     # v1 possuía um serviço implícito, normalizado sem perder seu agendamento.
     if backups.get("version") == 1:
         legacy = backups
@@ -266,17 +267,17 @@ def transform(documents, backup_directories=()):
             schedule["time"] = DoubleQuotedScalarString(schedule["time"])
         targets = service.setdefault("targets", {})
         if not isinstance(targets, dict):
-            fail(f"backups.yaml/services/{si}/targets", "alvos precisam ser um objeto")
+            fail(f"backups.yaml/services/{si}/targets", i18n.t("lib_host_migration.targets_not_object"))
             continue
         refs = targets.get("hosts") or []
         if not isinstance(refs, list) or not isinstance(targets.get("groups", []), list):
-            fail(f"backups.yaml/services/{si}/targets", "hosts e grupos precisam ser listas")
+            fail(f"backups.yaml/services/{si}/targets", i18n.t("lib_host_migration.targets_not_lists"))
             continue
         targets["hosts"] = [lookup(old, f"backups.yaml/services/{si}/targets/hosts/{i}") for i, old in enumerate(refs)]
         groups = inventory.get("groups") or {}
         for gi, group in enumerate(targets.get("groups") or []):
             if group not in groups:
-                fail(f"backups.yaml/services/{si}/targets/groups/{gi}", "grupo ausente", group)
+                fail(f"backups.yaml/services/{si}/targets/groups/{gi}", i18n.t("lib_host_migration.group_missing"), group)
     backups["version"] = 3
     if version == 1:
         sources = backups.setdefault("legacy_sources", [])
@@ -307,17 +308,17 @@ def transform(documents, backup_directories=()):
     for i, item in enumerate(backups.get("legacy_sources") or []):
         directory = item.get("directory")
         if not isinstance(directory, str) or not re.fullmatch(r"[a-zA-Z0-9._-]+", directory) or directory in (".", ".."):
-            fail(f"backups.yaml/legacy_sources/{i}/directory", "pasta histórica inválida")
+            fail(f"backups.yaml/legacy_sources/{i}/directory", i18n.t("lib_host_migration.invalid_legacy_dir"))
         try:
             require_host_id(item.get("host_id"))
             # Fontes de hosts excluídos são mantidas para não reassociar o histórico.
             if item["host_id"] >= inventory["next_host_id"]:
-                raise ValueError("ID histórico ainda não alocado")
+                raise ValueError(i18n.t("lib_host_migration.legacy_id_not_allocated"))
         except ValueError as exc:
             fail(f"backups.yaml/legacy_sources/{i}/host_id", str(exc))
     directories = [item.get("directory") for item in backups.get("legacy_sources") or []]
     if len(directories) != len(set(directories)):
-        fail("backups.yaml/legacy_sources/directory", "pastas históricas duplicadas ou com proprietários conflitantes")
+        fail("backups.yaml/legacy_sources/directory", i18n.t("lib_host_migration.duplicate_legacy_dirs"))
     if problems:
         raise PreflightError(problems)
     _validate_prepared(docs)
@@ -348,14 +349,14 @@ def _validate_prepared(docs):
     effective = {}
     for host_id, host in hosts.items():
         if host.get("group") and host["group"] not in (inventory.get("groups") or {}):
-            errors.append({"loc": f"hosts.yaml/hosts/{host_id}/group", "msg": "grupo ausente"})
+            errors.append({"loc": f"hosts.yaml/hosts/{host_id}/group", "msg": i18n.t("lib_host_migration.group_missing")})
         merged, _ = resolve_host(host_id, inventory, {}, decrypt=False)
         effective[host_id] = merged
         for field in ("vendor", "credential"):
             if not merged.get(field):
-                errors.append({"loc": f"hosts.yaml/hosts/{host_id}/{field}", "msg": "campo obrigatório ausente após herança"})
+                errors.append({"loc": f"hosts.yaml/hosts/{host_id}/{field}", "msg": i18n.t("lib_host_migration.required_after_inherit")})
         if not (merged.get("access") or {}).get("method"):
-            errors.append({"loc": f"hosts.yaml/hosts/{host_id}/access/method", "msg": "método de acesso ausente"})
+            errors.append({"loc": f"hosts.yaml/hosts/{host_id}/access/method", "msg": i18n.t("lib_host_migration.access_method_missing")})
 
     def model_error(filename, prefix, exc):
         for error in exc.errors():
@@ -373,7 +374,7 @@ def _validate_prepared(docs):
     services = docs["backups.yaml"].get("services") or []
     names = [service.get("id") for service in services]
     if len(names) != len(set(names)):
-        errors.append({"loc": "backups.yaml/services/id", "msg": "IDs de serviço duplicados"})
+        errors.append({"loc": "backups.yaml/services/id", "msg": i18n.t("lib_host_migration.duplicate_service_ids")})
     maps = docs["maps.yaml"].get("maps") or []
     all_maps = list(maps)
     present = {m["id"] for m in maps}
@@ -383,7 +384,7 @@ def _validate_prepared(docs):
         try:
             validated = NetworkMap.model_validate(network_map).model_dump(exclude_none=True)
             if len(validated["members"]) != len(set(validated["members"])):
-                errors.append({"loc": f"maps.yaml/maps/{index}/members", "msg": "host duplicado nos membros"})
+                errors.append({"loc": f"maps.yaml/maps/{index}/members", "msg": i18n.t("lib_host_migration.duplicate_map_member")})
             maps_svc._validate(validated, all_maps, effective, links)
         except ValidationError as exc:
             model_error("maps.yaml", f"maps/{index}", exc)
@@ -397,7 +398,7 @@ def plan(root: Path):
     root = Path(root).resolve()
     originals, documents = _documents(root)
     if documents["hosts.yaml"].get("version", 1) == 1 and _canonical_backups_exist(root):
-        raise PreflightError([{"loc": "backups/by-id", "msg": "há histórico com IDs inteiros; reconciliar a identidade anterior antes de migrar novamente"}])
+        raise PreflightError([{"loc": "backups/by-id", "msg": i18n.t("lib_host_migration.integer_history_exists")}])
     backup_root = root / "backups"
     directories = [path.name for path in backup_root.iterdir() if path.is_dir() and not path.is_symlink()] if backup_root.exists() else []
     # Ausência de arquivo em instalação já migrada equivale ao documento vazio novo.
@@ -418,14 +419,14 @@ def _canonical_backups_exist(root):
     path = root / "backups" / "by-id"
     for component in (path, *path.parents):
         if component.is_symlink():
-            raise ValueError("symlink não permitido no armazenamento de backups")
+            raise ValueError(i18n.t("lib_host_migration.symlink_in_backups"))
     if not path.exists():
         return False
     for directory in path.iterdir():
         if not directory.name.isascii() or not directory.name.isdigit():
             continue
         if directory.is_symlink():
-            raise ValueError("symlink não permitido no histórico de identidade inteira")
+            raise ValueError(i18n.t("lib_host_migration.symlink_in_integer_history"))
         if directory.is_dir() and any(item.is_file() for item in directory.rglob("*")):
             return True
     return False
@@ -434,7 +435,7 @@ def _canonical_backups_exist(root):
 def _atomic_write(path: Path, data: bytes, mode=0o600):
     for component in (path, *path.parents):
         if component.is_symlink():
-            raise ValueError(f"symlink não permitido na escrita de migração: {component.name}")
+            raise ValueError(i18n.t("lib_host_migration.symlink_on_write", name=component.name))
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, filename = tempfile.mkstemp(prefix="." + path.name + ".", dir=path.parent)
     try:
@@ -465,21 +466,21 @@ def _journal(root, state):
 def _load_journal(root):
     path = root / "network" / JOURNAL_NAME
     if any(component.is_symlink() for component in (path, *path.parents)):
-        raise ValueError("journal não pode passar por symlink")
+        raise ValueError(i18n.t("lib_host_migration.journal_symlink"))
     if not path.exists():
         return None
     state = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(state, dict) or state.get("version") != 1 or set(state.get("files", {})) != set(FILES):
-        raise ValueError("journal inválido")
+        raise ValueError(i18n.t("lib_host_migration.invalid_journal"))
     if state.get("status") not in ("prepared", "applying", "complete", "rolling_back", "rolled_back"):
-        raise ValueError("estado de journal inválido")
+        raise ValueError(i18n.t("lib_host_migration.invalid_journal_state"))
     for entry in state["files"].values():
         if not isinstance(entry, dict) or not isinstance(entry.get("mode"), int) or not 0 <= entry["mode"] <= 0o777:
-            raise ValueError("metadados de journal inválidos")
+            raise ValueError(i18n.t("lib_host_migration.invalid_journal_metadata"))
         for kind in ("before", "after"):
             value = entry.get(kind)
             if value is not None and (not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value)):
-                raise ValueError("hash de journal inválido")
+                raise ValueError(i18n.t("lib_host_migration.invalid_journal_hash"))
     run_dir = (root / state["run_dir"]).resolve()
     if not run_dir.is_relative_to((root / "runs").resolve()):
         raise ValueError("baseline fora de runs/")
@@ -495,7 +496,7 @@ def _rollback(root, state):
             raise ValueError(f"baseline corrompido: {name}")
         current = _digest(_read(root / "network" / name))
         if current not in (entry["before"], entry["after"]):
-            raise ValueError(f"{name} mudou após a migração; rollback recusado para preservar edições")
+            raise ValueError(i18n.t("lib_host_migration.changed_after_migration", name=name))
         originals[name] = baseline
     state["status"] = "rolling_back"
     _journal(root, state)
@@ -517,7 +518,7 @@ def apply(root: Path, *, expected_hashes: dict | None = None):
     with inventory_lock(root / "network"):
         old = _load_journal(root)
         if old and old["status"] not in ("complete", "rolled_back"):
-            raise ValueError("migração incompleta; execute recover antes de apply")
+            raise ValueError(i18n.t("lib_host_migration.incomplete_migration"))
         migration = plan(root)
         if expected_hashes is not None:
             actual = {name: _digest(value) for name, value in migration["before"].items()}
@@ -545,13 +546,13 @@ def apply(root: Path, *, expected_hashes: dict | None = None):
         try:
             for name in FILES:
                 if _digest(_read(root / "network" / name)) != state["files"][name]["before"]:
-                    raise ValueError(f"{name} mudou durante a preparação")
+                    raise ValueError(i18n.t("lib_host_migration.changed_during_prepare", name=name))
             for name in FILES:
                 _atomic_write(root / "network" / name, migration["after"][name], state["files"][name]["mode"])
             # Pré-validação também cobre o conjunto efetivamente gravado.
             validation = plan(root)
             if not validation["already_migrated"]:
-                raise ValueError("inventário não migrou para v2")
+                raise ValueError(i18n.t("lib_host_migration.inventory_not_v2"))
             state["status"] = "complete"
             _journal(root, state)
         except Exception:
@@ -571,15 +572,15 @@ def recover(root: Path, *, rollback_complete=False):
         if state["status"] == "complete" and not rollback_complete:
             return {"status": "complete", "run_dir": state["run_dir"]}
         if state["status"] == "complete" and _canonical_backups_exist(root):
-            raise ValueError("há backups criados após a migração; rollback exige reconciliação para preservar identidades")
+            raise ValueError(i18n.t("lib_host_migration.backups_after_migration"))
         return _rollback(root, state)
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Migra hosts para IDs inteiros sem acessar dispositivos.")
+    parser = argparse.ArgumentParser(description=i18n.t("lib_host_migration.cli_description"))
     parser.add_argument("command", choices=("dry-run", "apply", "recover", "rollback"))
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[3])
-    parser.add_argument("--expected-plan", type=Path, help="JSON de dry-run; apply exige hashes idênticos")
+    parser.add_argument("--expected-plan", type=Path, help=i18n.t("lib_host_migration.cli_expected_plan_help"))
     args = parser.parse_args(argv)
     try:
         if args.command == "dry-run":

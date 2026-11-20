@@ -1,7 +1,8 @@
 // Reports (read-only), Runs (read-only) e Settings (project-config.yaml).
-import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
+import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError, t, fmtDateTime } from "../ui.js";
 import { authToken } from "../api.js";
 import { UpdatesControl } from "./updates.js";
+import { InstanceLanguageCard } from "../language.js";
 import { useMenuRoute, matchText } from "../route.js";
 import { FilterBar, DataTable, Field, Modal, MarkdownPanel, CodeTextEditor } from "../components.js";
 
@@ -13,16 +14,16 @@ export function ReportsPage() {
   const open = r.segments[0] || null;
   const setOpen = (f) => (f ? r.open(f) : r.close());
   if (res.loading) return html`<${Spinner} />`;
-  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  if (res.error) return html`<div class="card">${t("view.error", { message: res.error.message })}</div>`;
   const cols = [
-    { key: "file", label: "Relatório", hideable: false, sort: true, render: (x) => html`<a href=${"#reports/" + encodeURIComponent(x.file)} onClick=${(e) => e.stopPropagation()}><b>${x.file}</b></a>` },
-    { key: "size", label: "Tamanho", sort: true, render: (r) => `${r.size} B` },
+    { key: "file", label: t("view.col_report"), hideable: false, sort: true, render: (x) => html`<a href=${"#reports/" + encodeURIComponent(x.file)} onClick=${(e) => e.stopPropagation()}><b>${x.file}</b></a>` },
+    { key: "size", label: t("view.col_size"), sort: true, render: (r) => `${r.size} B` },
   ];
   return html`<div>
-    <div class="page-title"><h1>Relatórios</h1></div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar relatório" count=${res.data.reports.filter((x) => matchText(q, x.file)).length} total=${res.data.reports.length} />
+    <div class="page-title"><h1>${t("view.reports_title")}</h1></div>
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${t("view.search_report")} count=${res.data.reports.filter((x) => matchText(q, x.file)).length} total=${res.data.reports.length} />
     <${DataTable} tableId="reports" urlSort columns=${cols} rows=${res.data.reports.filter((x) => matchText(q, x.file)).map((x) => ({ ...x, _key: x.file }))}
-      onRowClick=${(r) => setOpen(r.file)} empty="Nenhum relatório em reports/." />
+      onRowClick=${(r) => setOpen(r.file)} empty=${t("view.no_reports")} />
     ${open && html`<${ReportView} key=${open} file=${open} onClose=${() => setOpen(null)} />`}
   </div>`;
 }
@@ -31,9 +32,9 @@ export function ReportView({ file, onClose, fullLink }) {
   const ext = (file.split(".").pop() || "").toLowerCase();
   const [content, setContent] = useState(null);   // texto (md/txt) ou URL de blob (pdf)
   const fetchRaw = async (dl) => {
-    const h = {}; const t = authToken(); if (t) h["X-Netops-Session"] = t;
+    const h = {}; const tok = authToken(); if (tok) h["X-Netops-Session"] = tok;
     const res = await fetch(`/api/reports/${encodeURIComponent(file)}/raw${dl ? "?download=1" : ""}`, { headers: h });
-    if (!res.ok) throw new Error(res.status === 404 ? "arquivo não encontrado" : `erro ${res.status}`);
+    if (!res.ok) throw new Error(res.status === 404 ? t("view.file_not_found") : t("view.http_error", { status: res.status }));
     return res.blob();
   };
   useEffect(() => {
@@ -52,16 +53,16 @@ export function ReportView({ file, onClose, fullLink }) {
     } catch (e) { handleError(e); }
   };
   const body = content === null ? html`<${Spinner} />`
-    : content === false ? html`<div class="card">Não foi possível abrir o arquivo.</div>`
+    : content === false ? html`<div class="card">${t("view.open_failed")}</div>`
     : ext === "pdf" ? html`<iframe src=${content} title=${file} style="width:100%;height:70vh;border:0"></iframe>`
     : ext === "md" ? html`<${MarkdownPanel} text=${content} />`
     : html`<pre class="raw">${content}</pre>`;
   return html`<${Modal} title=${file} onClose=${onClose} wide=${true}>
     ${body}
     <div class="modal-actions">
-      ${fullLink && html`<a class="btn" href=${"#reports/" + encodeURIComponent(file)} onClick=${onClose}>Abrir em tela cheia</a>`}
-      <button class="primary" onClick=${download}>⬇ Baixar</button>
-      <button onClick=${onClose}>Fechar</button>
+      ${fullLink && html`<a class="btn" href=${"#reports/" + encodeURIComponent(file)} onClick=${onClose}>${t("view.open_full")}</a>`}
+      <button class="primary" onClick=${download}>${t("view.download")}</button>
+      <button onClick=${onClose}>${t("common.close")}</button>
     </div>
   <//>`;
 }
@@ -74,18 +75,18 @@ export function RunsPage() {
   const open = r.segments[0] || null;
   const setOpen = (id) => (id ? r.open(id) : r.close());
   if (res.loading) return html`<${Spinner} />`;
-  if (res.error) return html`<div class="card">Erro: ${res.error.message}</div>`;
+  if (res.error) return html`<div class="card">${t("view.error", { message: res.error.message })}</div>`;
   const dot = (s) => ({ completed: "var(--ok)", failed: "var(--danger)", in_progress: "var(--warn)" }[s] || "var(--muted)");
   const cols = [
-    { key: "id", label: "Execução", hideable: false, sort: true, render: (x) => html`<a href=${"#runs/" + encodeURIComponent(x.id)} onClick=${(e) => e.stopPropagation()}><b>${x.id}</b></a>` },
-    { key: "status", label: "Status", sort: true, render: (x) => html`<span class="statedot" style=${`background:${dot(x.status)}`}></span>${x.status || "—"}` },
+    { key: "id", label: t("view.col_run"), hideable: false, sort: true, render: (x) => html`<a href=${"#runs/" + encodeURIComponent(x.id)} onClick=${(e) => e.stopPropagation()}><b>${x.id}</b></a>` },
+    { key: "status", label: t("common.status"), sort: true, render: (x) => html`<span class="statedot" style=${`background:${dot(x.status)}`}></span>${x.status || "—"}` },
   ];
   return html`<div>
-    <div class="page-title"><h1>Execuções</h1></div>
-    <${FilterBar} q=${q} onChange=${r.setParams} placeholder="Buscar execução" count=${res.data.runs.filter((x) => (!status || x.status === status) && matchText(q, x.id)).length} total=${res.data.runs.length}
-      selects=${[{ key: "status", label: "Status", value: status, options: [...new Set(res.data.runs.map((x) => x.status).filter(Boolean))].sort() }]} />
+    <div class="page-title"><h1>${t("view.runs_title")}</h1></div>
+    <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${t("view.search_run")} count=${res.data.runs.filter((x) => (!status || x.status === status) && matchText(q, x.id)).length} total=${res.data.runs.length}
+      selects=${[{ key: "status", label: t("common.status"), value: status, options: [...new Set(res.data.runs.map((x) => x.status).filter(Boolean))].sort() }]} />
     <${DataTable} tableId="runs" urlSort columns=${cols} rows=${res.data.runs.filter((x) => (!status || x.status === status) && matchText(q, x.id)).map((x) => ({ ...x, _key: x.id }))}
-      onRowClick=${(r) => setOpen(r.id)} empty="Nenhuma execução em runs/ (criadas durante workflows)." />
+      onRowClick=${(r) => setOpen(r.id)} empty=${t("view.no_runs")} />
     ${open && html`<${RunView} key=${open} id=${open} onClose=${() => setOpen(null)} />`}
   </div>`;
 }
@@ -93,22 +94,22 @@ function RunView({ id, onClose }) {
   const [data, setData] = useState(null);
   const [artifact, setArtifact] = useState(null);
   useEffect(() => { api.get(`/runs/${id}`).then(setData).catch(handleError); }, []);
-  return html`<${Modal} title=${`Execução ${id}`} onClose=${onClose} wide=${true}>
+  return html`<${Modal} title=${t("view.run_title", { id })} onClose=${onClose} wide=${true}>
     ${!data ? html`<${Spinner} />` : html`<div>
       <h3>state.json</h3>
       <pre class="md">${JSON.stringify(data.state, null, 2)}</pre>
-      <h3>Artefatos</h3>
+      <h3>${t("view.artifacts")}</h3>
       ${data.artifacts.length ? html`<ul>${data.artifacts.map((a) => html`<li key=${a}>
         <button class="ghost" onClick=${async () => { try { setArtifact(await api.get(`/runs/${id}/artifact?path=${encodeURIComponent(a)}`)); } catch (e) { handleError(e); } }}>${a}</button></li>`)}</ul>`
-        : html`<div class="help">sem artefatos</div>`}
+        : html`<div class="help">${t("view.no_artifacts")}</div>`}
       ${artifact && html`<div class="card"><b>${artifact.path}</b><pre class="md">${artifact.text}</pre></div>`}
     </div>`}
-    <div class="modal-actions"><button onClick=${onClose}>Fechar</button></div>
+    <div class="modal-actions"><button onClick=${onClose}>${t("common.close")}</button></div>
   <//>`;
 }
 
 // Firewall de acesso web: só IP/redes da lista acessam o console (services/web_access_svc.py).
-const toLines = (t) => t.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+const toLines = (s) => s.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
 function WebAccessCard({ rev, setRev }) {
   const st = useResource("/web-access");
   const [form, setForm] = useState(null);
@@ -116,36 +117,36 @@ function WebAccessCard({ rev, setRev }) {
     if (st.data && !form) setForm({ enabled: st.data.enabled, nets: st.data.allowed_networks.join("\n"), proxies: st.data.trusted_proxies.join("\n") });
   }, [st.data]);
   if (st.loading && !form) return html`<div class="card"><${Spinner} /></div>`;
-  if (st.error || !form) return html`<div class="card">Erro: ${st.error?.message || "sem dados"}</div>`;
+  if (st.error || !form) return html`<div class="card">${t("settings.error", { message: st.error?.message || t("settings.no_data") })}</div>`;
   const d = st.data;
   async function save() {
     try {
       const r = await api.put("/config", { web_access: { enabled: form.enabled, allowed_networks: toLines(form.nets), trusted_proxies: toLines(form.proxies) } }, rev);
-      setRev(r.rev); toast.ok("Acesso web salvo (vale na hora)");
+      setRev(r.rev); toast.ok(t("settings.web_saved"));
       st.reload();
     } catch (e) { handleError(e); }
   }
   const cols = [
-    { key: "ip", label: "IP bloqueado", hideable: false, sort: true, render: (x) => x.ip },
-    { key: "count", label: "Tentativas", sort: true, render: (x) => x.count },
-    { key: "path", label: "Último caminho", sort: true, render: (x) => x.path },
-    { key: "last", label: "Última vez", sort: true, render: (x) => new Date(x.last * 1000).toLocaleString("pt-BR") },
+    { key: "ip", label: t("settings.col_blocked_ip"), hideable: false, sort: true, render: (x) => x.ip },
+    { key: "count", label: t("settings.col_attempts"), sort: true, render: (x) => x.count },
+    { key: "path", label: t("settings.col_last_path"), sort: true, render: (x) => x.path },
+    { key: "last", label: t("settings.col_last_time"), sort: true, render: (x) => fmtDateTime(x.last * 1000) },
   ];
   return html`<div class="card">
-    <h3>Acesso web (firewall do console)</h3>
-    <div class="help">Seu IP, como o servidor enxerga: <b>${d.client_ip || "?"}</b> ${d.client_allowed ? html`<${Badge} kind="ok">liberado<//>` : html`<${Badge} kind="err">fora da lista<//>`}</div>
+    <h3>${t("settings.web_title")}</h3>
+    <div class="help">${t("settings.your_ip")} <b>${d.client_ip || "?"}</b> ${d.client_allowed ? html`<${Badge} kind="ok">${t("settings.ip_allowed")}<//>` : html`<${Badge} kind="err">${t("settings.ip_outside")}<//>`}</div>
     <${Field} label="">
-      <label><input type="checkbox" checked=${form.enabled} onChange=${(e) => setForm({ ...form, enabled: e.target.checked })} /> Restringir o acesso ao console às redes abaixo (quem estiver fora recebe 403)</label><//>
-    <${Field} label="Redes/IPs liberados (um por linha)" hint="IPv4 ou IPv6, IP solto (192.0.2.7) ou rede (10.0.0.0/8, 2001:db8::/32). Você não consegue salvar se o seu IP atual ficar de fora. O servidor (127.0.0.1) sempre entra.">
+      <label><input type="checkbox" checked=${form.enabled} onChange=${(e) => setForm({ ...form, enabled: e.target.checked })} /> ${t("settings.web_restrict")}</label><//>
+    <${Field} label=${t("settings.web_networks")} hint=${t("settings.web_networks_hint")}>
       <textarea rows="6" value=${form.nets} onInput=${(e) => setForm({ ...form, nets: e.target.value })}></textarea><//>
-    <${Field} label="Proxies reversos confiáveis (um por linha)" hint="Quem fica na frente do console (ex.: Nginx, Traefik ou HAProxy, com o IP deles). Só desses o servidor aceita o X-Forwarded-For como IP real do visitante; sem isso, todos pareceriam o IP do proxy.">
+    <${Field} label=${t("settings.web_proxies")} hint=${t("settings.web_proxies_hint")}>
       <textarea rows="2" value=${form.proxies} onInput=${(e) => setForm({ ...form, proxies: e.target.value })}></textarea><//>
     <div class="row">
-      <button class="primary" onClick=${save}>Salvar acesso web</button>
-      <button onClick=${() => setForm({ ...form, nets: d.defaults.join("\n") })}>Restaurar padrão (redes privadas)</button>
+      <button class="primary" onClick=${save}>${t("settings.web_save")}</button>
+      <button onClick=${() => setForm({ ...form, nets: d.defaults.join("\n") })}>${t("settings.web_restore")}</button>
     </div>
-    ${d.denied.length ? html`<h4>Bloqueios recentes (desde o último restart)</h4>
-      <${DataTable} tableId="web-access-denied" columns=${cols} rows=${d.denied.map((x) => ({ ...x, _key: x.ip }))} empty="Nenhum bloqueio." />` : null}
+    ${d.denied.length ? html`<h4>${t("settings.web_recent_blocks")}</h4>
+      <${DataTable} tableId="web-access-denied" columns=${cols} rows=${d.denied.map((x) => ({ ...x, _key: x.ip }))} empty=${t("settings.web_no_blocks")} />` : null}
   </div>`;
 }
 
@@ -165,27 +166,28 @@ export function SettingsPage() {
         vault: { session_ttl_seconds: vault.session_ttl_seconds ? Number(vault.session_ttl_seconds) : undefined },
         access: { session_idle_minutes: access.session_idle_minutes ? Number(access.session_idle_minutes) : undefined },
       };
-      const r = await api.put("/config", body, rev); setRev(r.rev); toast.ok("Configuração salva");
+      const r = await api.put("/config", body, rev); setRev(r.rev); toast.ok(t("settings.saved"));
     } catch (e) { handleError(e); }
   }
   return html`<div>
-    <div class="page-title"><h1>Configuração do projeto</h1></div>
+    <div class="page-title"><h1>${t("settings.title")}</h1></div>
     <div class="card">
-      <${Field} label="Nome da rede"><input value=${proj.network_name || ""} onInput=${(e) => upd("project", "network_name", e.target.value)} /><//>
-      <${Field} label="Descrição"><input value=${proj.description || ""} onInput=${(e) => upd("project", "description", e.target.value)} /><//>
+      <${Field} label=${t("settings.network_name")}><input value=${proj.network_name || ""} onInput=${(e) => upd("project", "network_name", e.target.value)} /><//>
+      <${Field} label=${t("common.description")}><input value=${proj.description || ""} onInput=${(e) => upd("project", "description", e.target.value)} /><//>
       <div class="row">
-        <${Field} label="Janela de manutenção"><input value=${ops.maintenance_window || ""} onInput=${(e) => upd("operations", "maintenance_window", e.target.value)} /><//>
-        <${Field} label="Contato de escalação"><input value=${ops.escalation_contact || ""} onInput=${(e) => upd("operations", "escalation_contact", e.target.value)} /><//>
+        <${Field} label=${t("settings.maintenance_window")}><input value=${ops.maintenance_window || ""} onInput=${(e) => upd("operations", "maintenance_window", e.target.value)} /><//>
+        <${Field} label=${t("settings.escalation_contact")}><input value=${ops.escalation_contact || ""} onInput=${(e) => upd("operations", "escalation_contact", e.target.value)} /><//>
       </div>
-      <${Field} label="TTL da sessão do cofre (segundos)" hint="Tempo de inatividade até re-trancar (default 900)">
+      <${Field} label=${t("settings.vault_ttl")} hint=${t("settings.vault_ttl_hint")}>
         <input type="number" value=${vault.session_ttl_seconds || ""} onInput=${(e) => upd("vault", "session_ttl_seconds", e.target.value)} /><//>
-      <${Field} label="Sessão de acesso aos equipamentos (minutos sem comando)" hint="Sessão aberta pelo session.py (1 login por host, vários comandos) fecha após N min sem comando. Padrão 5. Vale na hora, inclusive para sessões já abertas.">
+      <${Field} label=${t("settings.access_idle")} hint=${t("settings.access_idle_hint")}>
         <input type="number" min="1" step="1" placeholder="5" value=${access.session_idle_minutes || ""} onInput=${(e) => upd("access", "session_idle_minutes", e.target.value)} /><//>
-      <button class="primary" onClick=${save}>Salvar</button>
+      <button class="primary" onClick=${save}>${t("common.save")}</button>
     </div>
+    <${InstanceLanguageCard} />
     <${WebAccessCard} rev=${rev} setRev=${setRev} />
     <div class="card">
-      <h3>Atualizações</h3>
+      <h3>${t("settings.updates")}</h3>
       <${UpdatesControl} />
     </div>
   </div>`;

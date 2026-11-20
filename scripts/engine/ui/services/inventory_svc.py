@@ -15,6 +15,7 @@ import json
 import re
 
 import deps
+from lib import i18n
 from lib.inventory import lookup_ci, normalize_node_fields, upper_value
 from lib.host_identity import MAX_HOST_ID, host_index, identity_errors, require_host_id
 from services import yaml_io
@@ -34,7 +35,7 @@ def _gkey(groups: dict, name: str) -> str:
     for k in groups:
         if str(k).casefold() == folded:
             return k
-    raise KeyError(f"grupo '{name}' não existe")
+    raise KeyError(i18n.t("api_inventory.group_not_exists", name=name))
 
 
 def _same(a, b) -> bool:
@@ -75,7 +76,7 @@ def get_host(name: int | str) -> dict:
     data, rev = load_hosts()
     hosts = host_index(data)
     if name not in hosts:
-        raise KeyError(f"host '{name}' não existe")
+        raise KeyError(i18n.t("api_inventory.host_not_exists", id=name))
     effective, _ = resolve_host(name, data, {}, decrypt=False, lowercase_enums=False)
     effective.pop("name", None)
     return {"id": name, "explicit": dict(hosts[name]), "effective": effective, "rev": rev}
@@ -113,21 +114,21 @@ def _local_errors(data: dict) -> list[dict]:
     errors = []
     locals_ = [h for h in (data.get("hosts") or []) if isinstance(h, dict) and is_local_node(h)]
     if len(locals_) > 1:
-        errors.append({"loc": "hosts", "msg": "só pode existir um host com access.method=local"})
+        errors.append({"loc": "hosts", "msg": i18n.t("api_inventory.one_local_host")})
     for gname, g in (data.get("groups") or {}).items():
         if is_local_node(g) or _same((g or {}).get("credential"), LOCAL_CREDENTIAL):
-            errors.append({"loc": f"groups/{gname}", "msg": "grupo não pode usar o acesso Local nem a credencial do admin local"})
+            errors.append({"loc": f"groups/{gname}", "msg": i18n.t("api_inventory.group_no_local")})
     for h in data.get("hosts") or []:
         if not isinstance(h, dict):
             continue
         refs = [h.get("credential")] + [(x or {}).get("credential") for x in (h.get("extra_access") or [])]
         if is_local_node(h):
             if not _same(h.get("credential"), LOCAL_CREDENTIAL) or not h.get("local_instance"):
-                errors.append({"loc": f"hosts/{h.get('id')}", "msg": "host Local precisa da credencial CRED_LOCAL_ADMIN e do vínculo local_instance"})
+                errors.append({"loc": f"hosts/{h.get('id')}", "msg": i18n.t("api_inventory.local_needs_cred")})
         elif any(_same(r, LOCAL_CREDENTIAL) for r in refs if r):
-            errors.append({"loc": f"hosts/{h.get('id')}/credential", "msg": "a credencial do admin local só pode ser usada pelo host Local"})
+            errors.append({"loc": f"hosts/{h.get('id')}/credential", "msg": i18n.t("api_inventory.local_cred_only_local")})
         elif h.get("local_instance"):
-            errors.append({"loc": f"hosts/{h.get('id')}/local_instance", "msg": "local_instance só existe no host Local"})
+            errors.append({"loc": f"hosts/{h.get('id')}/local_instance", "msg": i18n.t("api_inventory.local_instance_only_local")})
     return errors
 
 
@@ -136,7 +137,7 @@ def _protect_local(node: dict | None, fields: dict, *, creating: bool = False) -
     wants_local = is_local_node(fields) or bool(fields.get("local_instance")) or _same(fields.get("credential"), LOCAL_CREDENTIAL)
     if creating or not is_local_node(node):
         if wants_local:
-            raise deps.ValidationFailed([{"loc": "access/method", "msg": "o host Local é criado pelo instalador (scripts/engine/localadmin/cli.py ensure-host)"}])
+            raise deps.ValidationFailed([{"loc": "access/method", "msg": i18n.t("api_inventory.local_created_by_installer")}])
         return
     def canon(v):
         v = _plain(v)
@@ -147,7 +148,7 @@ def _protect_local(node: dict | None, fields: dict, *, creating: bool = False) -
         return v if v not in (None, "", [], {}) else None
     changed = [k for k in LOCAL_LOCKED if k in fields and canon(fields[k]) != canon(node.get(k))]
     if changed:
-        raise deps.ValidationFailed([{"loc": changed[0], "msg": "host Local protegido: acesso, credencial, IP e vínculo não podem ser alterados (use provision.py)"}])
+        raise deps.ValidationFailed([{"loc": changed[0], "msg": i18n.t("api_inventory.local_protected")}])
 
 
 def validate_data(hosts_data: dict) -> list[dict]:
@@ -175,7 +176,7 @@ def validate_data(hosts_data: dict) -> list[dict]:
         for field in ("vendor", "credential"):
             if not host.get(field):
                 errors.append({"loc": f"hosts/{name}/{field}",
-                               "msg": f"campo '{field}' ausente (nem no host nem no grupo)"})
+                               "msg": i18n.t("api_inventory.field_missing", field=field)})
         if not (host.get("access") or {}).get("method"):
             errors.append({"loc": f"hosts/{name}/access/method", "msg": "'access.method' ausente"})
     errors.extend(_check_runs_on(hosts_data))
@@ -238,14 +239,14 @@ def _check_runs_on(data: dict) -> list[dict]:
             continue
         loc = f"hosts/{hid}/runs_on"
         if target == hid:
-            errors.append({"loc": loc, "msg": "um host não pode rodar nele mesmo"})
+            errors.append({"loc": loc, "msg": i18n.t("api_inventory.runs_on_self")})
         elif target not in hosts:
-            errors.append({"loc": loc, "msg": f"host {target} não existe"})
+            errors.append({"loc": loc, "msg": i18n.t("api_inventory.runs_on_missing", id=target)})
         else:
             seen, cur = {hid}, target
             while cur is not None and cur in hosts:
                 if cur in seen:
-                    errors.append({"loc": loc, "msg": "ciclo em 'roda em' (um host hospeda o outro e vice-versa)"})
+                    errors.append({"loc": loc, "msg": i18n.t("api_inventory.runs_on_cycle")})
                     break
                 seen.add(cur)
                 cur = (hosts[cur] or {}).get("runs_on")
@@ -305,14 +306,14 @@ def _clean_new(fields: dict, order: list[str]) -> dict:
 @yaml_io.serialized
 def create_host(fields: dict, rev: str | None, *, placement: dict | None = None, system: bool = False) -> dict:
     if "id" in fields:
-        raise deps.ValidationFailed([{"loc": "id", "msg": "ID é gerado automaticamente"}])
+        raise deps.ValidationFailed([{"loc": "id", "msg": i18n.t("api_inventory.id_generated")}])
     if not system:
         _protect_local(None, fields, creating=True)
     data, doc, y = _load_doc()
     hosts = data.setdefault("hosts", [])
     host_id = require_host_id(data["next_host_id"])
     if host_id == MAX_HOST_ID:
-        raise deps.ValidationFailed([{"loc": "id", "msg": "espaço de IDs esgotado"}])
+        raise deps.ValidationFailed([{"loc": "id", "msg": i18n.t("api_inventory.ids_exhausted")}])
     before = _plain(data)
     hosts.append(_clean_new({"id": host_id, **fields}, HOST_KEY_ORDER))
     data["next_host_id"] = host_id + 1
@@ -320,7 +321,7 @@ def create_host(fields: dict, rev: str | None, *, placement: dict | None = None,
     if placement:
         from services import maps_svc
         if not rev:
-            maps_svc._fail("rev", "revisão do inventário obrigatória ao criar pelo mapa")
+            maps_svc._fail("rev", i18n.t("api_inventory.rev_required_map"))
         writes = [(deps.HOSTS_FILE, yaml_io.dump_rt(y, data), 0o644)]
         checks = [(deps.HOSTS_FILE, rev)]
         maps_svc.place_host(host_id, placement, _plain(data), writes, checks)
@@ -333,12 +334,12 @@ def create_host(fields: dict, rev: str | None, *, placement: dict | None = None,
 @yaml_io.serialized
 def update_host(host_id: int, fields: dict, rev: str | None, *, partial: bool, system: bool = False) -> dict:
     if "id" in fields:
-        raise deps.ValidationFailed([{"loc": "id", "msg": "ID é permanente e não pode ser editado"}])
+        raise deps.ValidationFailed([{"loc": "id", "msg": i18n.t("api_inventory.id_permanent")}])
     data, doc, y = _load_doc()
     require_host_id(host_id)
     hosts = host_index(data)
     if host_id not in hosts:
-        raise KeyError(f"host '{host_id}' não existe")
+        raise KeyError(i18n.t("api_inventory.host_not_exists", id=host_id))
     if not system:
         _protect_local(hosts[host_id], fields)
     before = _plain(data)
@@ -354,9 +355,9 @@ def delete_host(host_id: int, rev: str | None) -> dict:
     require_host_id(host_id)
     hosts = host_index(data)
     if host_id not in hosts:
-        raise KeyError(f"host '{host_id}' não existe")
+        raise KeyError(i18n.t("api_inventory.host_not_exists", id=host_id))
     if is_local_node(hosts[host_id]):
-        raise deps.ValidationFailed([{"loc": "id", "msg": "o host Local (este servidor) é protegido e não pode ser apagado; para desligar o root local use: sudo scripts/engine/localadmin/provision.py disable"}])
+        raise deps.ValidationFailed([{"loc": "id", "msg": i18n.t("api_inventory.local_not_deletable")}])
     data["hosts"].remove(hosts[host_id])
     for other in data["hosts"]:  # quem rodava neste host perde a referência (não fica apontando p/ nada)
         if other.get("runs_on") == host_id:
@@ -404,7 +405,7 @@ def _topology_host_refs(host_id: int | str) -> list[dict]:
 def host_references(host_id: int | str) -> dict:
     data, _ = load_hosts()
     if host_id not in host_index(data):
-        raise KeyError(f"host '{host_id}' não existe")
+        raise KeyError(i18n.t("api_inventory.host_not_exists", id=host_id))
     from services import maps_svc
     guests = [{"kind": "runs-on", "id": hid, "field": "runs_on", "label": f"{h.get('hostname') or hid} roda neste host"}
               for hid, h in host_index(data).items() if (h or {}).get("runs_on") == host_id]
@@ -415,7 +416,7 @@ def host_references(host_id: int | str) -> dict:
 @yaml_io.serialized
 def rename_host(old: str, new: str, rev: str | None) -> dict:
     """Compatibilidade de rota: nenhuma chamada pode alterar identidade permanente."""
-    raise deps.ValidationFailed([{"loc": "id", "msg": "ID é permanente; edite somente hostname"}])
+    raise deps.ValidationFailed([{"loc": "id", "msg": i18n.t("api_inventory.id_permanent_hostname")}])
 
 
 # --------------------------------------------------------------------------- #
@@ -427,7 +428,7 @@ def create_group(name: str, fields: dict, rev: str | None) -> dict:
     groups = data.setdefault("groups", {})
     name = upper_value(name)
     if any(_same(k, name) for k in groups):
-        raise deps.ValidationFailed([{"loc": "name", "msg": f"grupo '{name}' já existe"}])
+        raise deps.ValidationFailed([{"loc": "name", "msg": i18n.t("api_inventory.group_exists", name=name)}])
     before = _plain(data)
     groups[name] = _clean_new(fields, GROUP_KEY_ORDER)
     _gate(before, _plain(data))  # grupos não têm requisito próprio; valida que não quebrou hosts
@@ -455,7 +456,7 @@ def delete_group(name: str, rev: str | None, *, force: bool) -> dict:
     used = [h for h, v in host_index(data).items() if _same(v.get("group"), name)]
     if used and not force:
         raise deps.ConflictError(yaml_io.file_rev(deps.HOSTS_FILE),
-                                 detail=f"grupo em uso por {len(used)} host(s): {', '.join(map(str, used))}")
+                                 detail=i18n.t("api_inventory.group_in_use", n=len(used), hosts=", ".join(map(str, used))))
     del groups[name]
     new_rev = yaml_io.write_rt(deps.HOSTS_FILE, y, data, expected=rev, backup=True)
     return {"deleted": name, "rev": new_rev}
@@ -475,15 +476,15 @@ def group_references(name: str) -> dict:
 @yaml_io.serialized
 def rename_group(old: str, new: str, rev: str | None) -> dict:
     if not ID_RE.match(new):
-        raise deps.ValidationFailed([{"loc": "to", "msg": "use a-z, 0-9, ponto, hífen ou underline"}])
+        raise deps.ValidationFailed([{"loc": "to", "msg": i18n.t("api_credentials.bad_name")}])
     new = upper_value(new)
     data, _, y = _load_doc()
     groups = data.get("groups") or {}
     old = _gkey(groups, old)
     if new == old:
-        raise deps.ValidationFailed([{"loc": "to", "msg": "o novo nome é igual ao atual"}])
+        raise deps.ValidationFailed([{"loc": "to", "msg": i18n.t("api_common.same_name")}])
     if new in groups:
-        raise deps.ValidationFailed([{"loc": "to", "msg": f"grupo '{new}' já existe"}])
+        raise deps.ValidationFailed([{"loc": "to", "msg": i18n.t("api_inventory.group_exists", name=new)}])
 
     yaml_io.rename_key(groups, old, new)
     updated = []
@@ -503,7 +504,7 @@ def _load_doc():
     if data is None:
         data = {"version": 2, "next_host_id": 1, "groups": {}, "hosts": [], "legacy_aliases": []}
     if data.get("version") != 2:
-        raise deps.ValidationFailed([{"loc": "version", "msg": "inventário legado: execute a migração de IDs antes de editar"}])
+        raise deps.ValidationFailed([{"loc": "version", "msg": i18n.t("api_inventory.legacy_inventory")}])
     identity = identity_errors(data)
     if identity:
         raise deps.ValidationFailed(identity)

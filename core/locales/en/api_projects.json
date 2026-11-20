@@ -1,0 +1,19 @@
+{
+  "bad_folder": "Invalid folder name: use letters, numbers, dot, hyphen or _ (no / or space).",
+  "bad_order": "Send the list of ids in the desired order.",
+  "bad_path": "Enter the absolute folder path (starts with /).",
+  "deny_contains_netops": "This folder contains NetOps. Choose a folder that does not include the NetOps installation.",
+  "deny_hidden": "Hidden folders of the server user (~/.claude, ~/.ssh...) cannot be a project.",
+  "deny_home": "The home folder of the server user cannot be a project. Use a subfolder.",
+  "deny_netops": "The NetOps folder (and what is inside it) belongs to the Claude Code tab. Choose another folder.",
+  "deny_system": "A system folder cannot be a project. Use a subfolder of your own (e.g. {example}).",
+  "duplicate_path": "This folder is already the project “{name}”.",
+  "empty_name": "Give the project a name.",
+  "exists": "Something with this name already exists in this folder. Use “Existing folder”.",
+  "list_failed": "Could not list this folder.",
+  "mkdir_failed": "Could not create the folder: {error}.",
+  "no_access": "The server is not allowed to read this folder.",
+  "not_a_dir": "The path is not a folder.",
+  "path_not_found": "This folder does not exist on the server.",
+  "too_many": "Project limit reached."
+}

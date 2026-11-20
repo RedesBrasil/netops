@@ -1,0 +1,18 @@
+{
+  "auth_status_failed": "falha ao executar `claude auth status`",
+  "cancelled_by_user": "Resposta cancelada pelo usuário.",
+  "cli_missing": "binário `claude` não encontrado no PATH",
+  "cli_missing_server": "binário `claude` não encontrado no PATH do servidor",
+  "compact_summary": "📋 Resumo da conversa anterior (compactada)",
+  "login_timeout": "tempo esgotado no login",
+  "model_default": "Padrão do Claude Code",
+  "no_output": "(sem saída)",
+  "other_users_session": "Esta conversa é de outro usuário.",
+  "prompt_not_in_history": "prompt não encontrado no histórico gravado",
+  "prompt_not_in_transcript": "prompt não encontrado no transcript",
+  "queue_full": "Fila cheia ({max} mensagens).",
+  "recent_stderr": "stderr recente do agente",
+  "sdk_unavailable": "SDK do Claude indisponível",
+  "unintelligible": "resposta ininteligível",
+  "untitled": "(sem título)"
+}

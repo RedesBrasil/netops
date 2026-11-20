@@ -1,0 +1,18 @@
+{
+  "diff_description": "Compare two configuration files.",
+  "help_before": "'Before' config file (baseline)",
+  "help_after": "'After' config file (proposal)",
+  "file_not_found": "ERROR: file not found: {path}",
+  "no_differences": "No differences between the files.",
+  "diff_summary": "--- Summary: +{added} line(s), -{removed} line(s) ---",
+  "port_open": "port {port}/tcp open",
+  "config_checks_skipped": "Config checks not run",
+  "no_config_file": "no --config-file given",
+  "config_match": "excerpt: '{excerpt}'",
+  "security_description": "Security assessment of inventory hosts.",
+  "help_host_id": "Assess the host with this integer ID",
+  "help_host": "Unique name or legacy alias of the host",
+  "help_all": "Assess every host in the inventory",
+  "help_config_file": "Collected config file (enables config checks)",
+  "assessment_failed": "Failed to assess host"
+}

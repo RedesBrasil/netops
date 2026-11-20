@@ -1,79 +1,79 @@
-# Regra — Segurança de Conexão e Mudança
+# Rule — Connection and Change Safety
 
-Regras obrigatórias para qualquer acesso a equipamentos. Vale principalmente para o agente
-`executor`. Deriva do §V e §VI da `constitution.md`.
+Mandatory rules for any access to devices. They apply mainly to the
+`executor` agent. Derived from §V and §VI of `constitution.md`.
 
-## Antes de conectar
+## Before connecting
 
-- Conectar **somente** em hosts presentes em `network/hosts.yaml`. Host fora do inventário
-  é proibido — registre como bloqueio e pare.
-- Resolver o método de acesso e o **nome** da credencial via `scripts/engine/lib/inventory.py`
-  (`--show` mascara segredos) — ou deixar o próprio script de acesso resolver. Nunca digitar
-  credenciais soltas e **nunca** descriptografar o segredo você mesmo (ver "Manuseio de segredos").
-- Usar `timeout` em toda conexão. Falha de conexão não trava a execução: registra-se o erro
-  e segue-se para o próximo host.
+- Connect **only** to hosts present in `network/hosts.yaml`. A host outside the inventory
+  is forbidden — record it as a blocker and stop.
+- Resolve the access method and the **name** of the credential via `scripts/engine/lib/inventory.py`
+  (`--show` masks secrets) — or let the access script itself resolve it. Never type
+  loose credentials and **never** decrypt the secret yourself (see "Handling secrets").
+- Use a `timeout` on every connection. A connection failure does not halt the run: the error is recorded
+  and you move on to the next host.
 
-## Coleta (read-only)
+## Collection (read-only)
 
-- Comandos de coleta são **read-only**. Na dúvida se um comando altera estado, trate-o como
-  mudança (ver abaixo).
-- Salvar a saída em `runs/<id>/collected/<host>.txt`. Nunca em pasta versionada.
+- Collection commands are **read-only**. If in doubt whether a command changes state, treat it as a
+  change (see below).
+- Save the output in `runs/<id>/collected/<host>.txt`. Never in a versioned folder.
 
-## Mudança de configuração
+## Configuration change
 
-A escrita direta é permitida (decisão do projeto), mas **sempre reversível**:
+Direct writing is allowed (project decision), but **always reversible**:
 
-1. **Baseline.** Capturar o estado atual da área afetada → `runs/<id>/collected/<host>.before.txt`.
-2. **Rollback pronto.** Confirmar que existe `runs/<id>/proposals/<host>.rollback.txt`.
-   Sem rollback, não aplique.
-3. **Aplicar.** Executar a config de `runs/<id>/proposals/<host>.change.txt`.
-4. **Pós-estado.** Capturar `runs/<id>/collected/<host>.after.txt`.
-5. **Falha = rollback automático.** Se qualquer comando falhar, ou se a conectividade de
-   gerência cair, executar o rollback imediatamente e parar.
+1. **Baseline.** Capture the current state of the affected area → `runs/<id>/collected/<host>.before.txt`.
+2. **Rollback ready.** Confirm that `runs/<id>/proposals/<host>.rollback.txt` exists.
+   Without a rollback, do not apply.
+3. **Apply.** Run the config from `runs/<id>/proposals/<host>.change.txt`.
+4. **Post-state.** Capture `runs/<id>/collected/<host>.after.txt`.
+5. **Failure = automatic rollback.** If any command fails, or if management
+   connectivity drops, run the rollback immediately and stop.
 
-## Risco de lockout
+## Lockout risk
 
-Antes de mudar regras de firewall, endereço de gerência, ACL ou serviços de acesso (SSH/API),
-verificar se a mudança pode cortar a própria conexão de gerência. Em caso de risco, o
-`planner` deve incluir um mecanismo de segurança (ex.: `safe-mode` no MikroTik, agendamento
-de rollback automático).
+Before changing firewall rules, the management address, ACLs or access services (SSH/API),
+check whether the change can cut the management connection itself. If there is a risk, the
+`planner` must include a safety mechanism (e.g.: `safe-mode` on MikroTik, scheduling
+an automatic rollback).
 
-## Credenciais e manuseio de segredos (INEGOCIÁVEL)
+## Credentials and handling secrets (NON-NEGOTIABLE)
 
-**A IA nunca manuseia segredo em texto puro.** Descriptografar, ler, imprimir, salvar ou copiar
-o valor de um campo `password`/`secret` e **proibido** — mesmo com o cofre destrancado, mesmo
-"para conferir" ou "por transparencia". Quem descriptografa sao **exclusivamente** os scripts de
-acesso (`scripts/tools/access/*`), no instante de conectar, e o backend **Local**
-(`scripts/engine/localadmin/`), que autentica o `su` de `netops-admin` no proprio servidor.
+**The AI never handles a plaintext secret.** Decrypting, reading, printing, saving or copying
+the value of a `password`/`secret` field is **forbidden** — even with the vault unlocked, even
+"to check" or "for transparency". The only things that decrypt are **exclusively** the access
+scripts (`scripts/tools/access/*`), at the moment of connecting, and the **Local** backend
+(`scripts/engine/localadmin/`), which authenticates the `su` of `netops-admin` on the server itself.
 
-## Host Local (este servidor NetOps)
+## Local host (this NetOps server)
 
-- E o host com `access.method: local` (criado pelo instalador, protegido: nao se apaga nem se troca
-  acesso/credencial). Nao usa rede: `session.py exec|run --host-id <ID-LOCAL> --command "..."` roda
-  **como root**, uma operacao por comando (sem shell root persistente: junte `cd`/`export` no mesmo comando).
-- Comando que nao precisa de root: rode direto no Bash (a IA ja e `netops`). Root so quando o pedido exigir.
-- Pre-requisitos: cofre destrancado e usuario com `server.admin`. Falta algo -> o script diz o que (codigo
-  `vault_locked`, `authorization_denied`, `local_access_disabled`...): **informe o humano e pare**; nunca tente
-  `sudo`, `su`, SSH em 127.0.0.1 ou ler a credencial.
-- Backup antes/depois (`change.py begin/end --host-id <ID-LOCAL>`) vale igual: o baseline do Local inclui
-  pacotes, servicos, portas, grupos e firewall. Gerenciador de pacotes **nao** tem rollback universal: diga
-  antes o que e irreversivel. Instalar Docker nao inclui `netops` no grupo `docker`.
-- Nunca trate o IP de um host remoto como local, nem `127.0.0.1` como prova de que e o Local.
+- It is the host with `access.method: local` (created by the installer, protected: it cannot be deleted and its
+  access/credential cannot be changed). It does not use the network: `session.py exec|run --host-id <ID-LOCAL> --command "..."` runs
+  **as root**, one operation per command (no persistent root shell: put `cd`/`export` in the same command).
+- A command that does not need root: run it directly in Bash (the AI already is `netops`). Root only when the request requires it.
+- Prerequisites: vault unlocked and a user with `server.admin`. Something missing -> the script says what (code
+  `vault_locked`, `authorization_denied`, `local_access_disabled`...): **inform the human and stop**; never try
+  `sudo`, `su`, SSH to 127.0.0.1 or reading the credential.
+- Backup before/after (`change.py begin/end --host-id <ID-LOCAL>`) applies the same way: the Local baseline includes
+  packages, services, ports, groups and firewall. The package manager has **no** universal rollback: say
+  beforehand what is irreversible. Installing Docker does not add `netops` to the `docker` group.
+- Never treat the IP of a remote host as local, nor `127.0.0.1` as proof that it is the Local host.
 
-- Para conectar/coletar/mudar, **invoque o script de acesso** com `--host-id <inteiro>`
-  (ou `--host <hostname-ou-alias>` para compatibilidade). Ele resolve a
-  credencial internamente e usa o segredo sem devolvê-lo — você recebe a SAÍDA do comando, nunca
-  a senha.
-- **Nunca** escreva código que chame `resolve_host(decrypt=True)`, `resolve_secret()` ou
-  `decrypt_value()`, nem leia os campos `password`/`secret` do `credentials.yaml`.
-- **Nunca** imprima/ecoe uma senha (`print`, `echo`, `log`) nem a passe por argumento de shell
-  (fica visível em `ps`/histórico). Se um comando devolver um segredo, **mascare** antes de exibir.
-- Cofre destrancado é permissão para as **ferramentas** conectarem — **não** para a IA ler
-  segredos. Se você acha que precisa do valor da senha, você não precisa: a ferramenta precisa,
-  não você. Pare e use a ferramenta.
+- To connect/collect/change, **invoke the access script** with `--host-id <integer>`
+  (or `--host <hostname-or-alias>` for compatibility). It resolves the
+  credential internally and uses the secret without returning it — you receive the command OUTPUT, never
+  the password.
+- **Never** write code that calls `resolve_host(decrypt=True)`, `resolve_secret()` or
+  `decrypt_value()`, nor read the `password`/`secret` fields of `credentials.yaml`.
+- **Never** print/echo a password (`print`, `echo`, `log`) nor pass it as a shell argument
+  (it becomes visible in `ps`/history). If a command returns a secret, **mask** it before displaying.
+- An unlocked vault is permission for the **tools** to connect — **not** for the AI to read
+  secrets. If you think you need the password value, you do not: the tool needs it,
+  not you. Stop and use the tool.
 
-Credenciais **nunca** entram em `runs/`, `reports/`, `memory/` ou logs (só em `credentials.yaml`,
-git-ignorado). A descriptografia acontece só em memória, **dentro do script de acesso**, via
-`scripts/engine/lib/inventory.py:resolve_secret()`; a chave da sessão vive em RAM (tmpfs, `0600`),
-nunca em disco. O cofre é destrancado pelo humano (`python3 scripts/engine/vault/cli.py unlock`);
-a IA não digita a senha-mestra.
+Credentials **never** go into `runs/`, `reports/`, `memory/` or logs (only into `credentials.yaml`,
+git-ignored). Decryption happens only in memory, **inside the access script**, via
+`scripts/engine/lib/inventory.py:resolve_secret()`; the session key lives in RAM (tmpfs, `0600`),
+never on disk. The vault is unlocked by the human (`python3 scripts/engine/vault/cli.py unlock`);
+the AI does not type the master password.

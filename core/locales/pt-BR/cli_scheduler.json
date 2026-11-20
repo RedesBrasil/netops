@@ -1,0 +1,15 @@
+{
+  "description": "Tarefas agendadas do NetOps",
+  "help_at": "uma vez: AAAA-MM-DDTHH:MM (fuso da tarefa)",
+  "help_cron": "expressão de 5 campos, ex.: \"0 9 * * 1-5\" (fuso da tarefa)",
+  "help_data_root": "raiz de dados (padrão: a instalação)",
+  "help_every": "a cada N minutos",
+  "help_github_as": "ID do usuário do console cuja conta do GitHub o agente usa (padrão: gh do servidor)",
+  "help_prompt": "o que o agente deve fazer",
+  "help_script": "comando/script (roda com bash, cwd = raiz do NetOps)",
+  "help_timeout": "minutos (padrão 15)",
+  "no_nested_run": "uma tarefa agendada não dispara outra",
+  "one_schedule_only": "use só um de --cron, --every, --at",
+  "schedule_required": "informe --cron, --every ou --at",
+  "tick_fired": "{ts} disparadas: {ids}"
+}

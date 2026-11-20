@@ -1,0 +1,14 @@
+{
+  "cache_dir_insecure": "Cache directory with insecure permissions: {path}. Run: {cmd}",
+  "cache_file_insecure": "Cache file with insecure permissions. Run: {cmd}  (then unlock)",
+  "cache_open_failed": "Could not open the cache safely: {error}",
+  "env_key_invalid": "Invalid {var}: {error}",
+  "incomplete_block": "Incomplete 'vault:' block. Run 'init'.",
+  "locked": "Credential vault locked. To release the passwords, copy and paste in the terminal:\n\n  {cmd}\n",
+  "no_verifier": "'vault:' block without 'verifier'. Run 'init' again.",
+  "not_initialized": "Vault not initialized. Run:\n  {cmd}",
+  "unknown_kdf": "Unknown KDF in the vault: {kdf}",
+  "unsupported_kdf": "Unsupported KDF: {kdf}",
+  "wrong_master": "Incorrect master password.",
+  "wrong_master_or_corrupt": "Incorrect master password or corrupted data."
+}

@@ -1,0 +1,20 @@
+{
+  "artifacts": "Artifacts",
+  "col_report": "Report",
+  "col_run": "Run",
+  "col_size": "Size",
+  "download": "⬇ Download",
+  "error": "Error: {message}",
+  "file_not_found": "file not found",
+  "http_error": "error {status}",
+  "no_artifacts": "no artifacts",
+  "no_reports": "No reports in reports/.",
+  "no_runs": "No runs in runs/ (created during workflows).",
+  "open_failed": "Could not open the file.",
+  "open_full": "Open full screen",
+  "reports_title": "Reports",
+  "run_title": "Run {id}",
+  "runs_title": "Runs",
+  "search_report": "Search report",
+  "search_run": "Search run"
+}

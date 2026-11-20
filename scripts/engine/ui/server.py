@@ -28,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import deps  # noqa: E402
+from lib import i18n  # noqa: E402
 
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 WILDCARD = {"0.0.0.0", "::", "*", ""}
@@ -101,40 +102,37 @@ def _prepare_tls(host: str, https_port: int):
             s.bind((_bind_v4(host), https_port))
         cert, key = tls_svc.ensure_cert(deps.DATA_ROOT / "runs" / "tls", host)
         shown = ", ".join(f"https://{h}:{https_port}/" for h in _display_hosts(host))
-        print(f"\n  🔐 HTTPS (autoassinado) -> {shown}  (permite microfone/ditado por IP)")
-        print(f"     SHA-256 do certificado: {tls_svc.fingerprint(cert)}")
+        print("\n  " + i18n.t("api_server.https_on", shown=shown))
+        print("     " + i18n.t("api_server.cert_sha256", fingerprint=tls_svc.fingerprint(cert)))
         return cert, key
     except Exception as exc:  # noqa: BLE001
-        print(f"\n  ⚠ HTTPS por IP DESLIGADO ({exc}) — o console HTTP segue normal.")
+        print("\n  " + i18n.t("api_server.https_off", error=exc))
         return None
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="NetOps Console — CRUD web local.")
+    parser = argparse.ArgumentParser(description=i18n.t("api_server.description"))
     parser.add_argument("--host", default="127.0.0.1",
-                        help="Bind (default 127.0.0.1; 0.0.0.0 = todos os IPs da máquina, IPv4 + IPv6)")
-    parser.add_argument("--port", type=int, default=8765, help="Porta preferida (default 8765; cai p/ livre)")
-    parser.add_argument("--no-browser", action="store_true", help="Não abrir o navegador")
-    parser.add_argument("--read-only", action="store_true", help="Desliga toda escrita (só CRUD de leitura)")
+                        help=i18n.t("api_server.help_host"))
+    parser.add_argument("--port", type=int, default=8765, help=i18n.t("api_server.help_port"))
+    parser.add_argument("--no-browser", action="store_true", help=i18n.t("api_server.help_no_browser"))
+    parser.add_argument("--read-only", action="store_true", help=i18n.t("api_server.help_read_only"))
     parser.add_argument("--no-vault-unlock", action="store_true",
-                        help="Desabilita destrancar o cofre pela web (a senha-mestra só pelo terminal)")
+                        help=i18n.t("api_server.help_no_vault_unlock"))
     parser.add_argument("--enable-terminal", action="store_true",
-                        help="Liga o terminal web (PTY). ⚠ EXECUÇÃO DE COMANDO ARBITRÁRIO. Default: desligado")
+                        help=i18n.t("api_server.help_terminal"))
     parser.add_argument("--enable-claude", action="store_true",
-                        help="Liga a página Claude Code (agente de IA). ⚠ EXECUTA COMANDOS E EDITA "
-                             "ARQUIVOS como este usuário. Não liga em --read-only. Default: desligado")
+                        help=i18n.t("api_server.help_claude"))
     parser.add_argument("--enable-claude-persist", action="store_true",
-                        help="Mantém a sessão da aba Claude viva após o socket cair (termina o turno; "
-                             "re-anexa ao voltar). Sobrevive a F5/standby/troca de aba. Default do server.py: desligado; o start.sh liga por padrão (NETOPS_UI_CLAUDE_PERSIST=0 desliga)")
+                        help=i18n.t("api_server.help_claude_persist"))
     parser.add_argument("--claude-max-sessions", type=int, default=4,
-                        help="Teto de sessões Claude desanexadas vivas (recusa novas ao estourar)")
+                        help=i18n.t("api_server.help_max_sessions"))
     parser.add_argument("--claude-detach-grace", type=int, default=300,
-                        help="Segundos que uma sessão desanexada e ociosa sobrevive antes do teardown")
+                        help=i18n.t("api_server.help_detach_grace"))
     parser.add_argument("--claude-ask-timeout", type=int, default=180,
-                        help="Segundos que uma pergunta sem resposta espera (desanexado) antes de negar")
+                        help=i18n.t("api_server.help_ask_timeout"))
     parser.add_argument("--https-port", type=int, default=None,
-                        help="Porta do listener HTTPS (certificado autoassinado, mesmo IP). Default: porta HTTP + 1000 "
-                             "(env NETOPS_UI_HTTPS_PORT); 0 desliga. Necessário p/ microfone/ditado por IP")
+                        help=i18n.t("api_server.help_https_port"))
     args = parser.parse_args()
 
     is_loopback = args.host in LOOPBACK
@@ -145,7 +143,7 @@ def main() -> int:
     try:
         import uvicorn  # noqa: PLC0415
     except ImportError:
-        sys.exit("ERRO: dependências da UI ausentes. Rode: .venv/bin/pip install -r requirements.txt")
+        sys.exit(i18n.t("api_server.missing_deps"))
 
     deps.STATE.read_only = args.read_only
     deps.STATE.allow_vault_unlock = not args.no_vault_unlock
@@ -161,45 +159,49 @@ def main() -> int:
     deps.STATE.bind_wildcard = is_wildcard
 
     if deps.vault_initialized():
-        print("\n  🔒 LOGIN EXIGIDO: o console pede a senha-mestra do cofre antes de liberar o acesso.")
+        print("\n  " + i18n.t("api_server.login_required"))
         if not deps.STATE.allow_vault_unlock:
-            print("    (--no-vault-unlock: o login autentica o console mas NÃO destranca o cofre.)")
+            print("    " + i18n.t("api_server.no_vault_unlock"))
     elif deps.setup_mode():
-        print("\n  🔑 PRIMEIRO ACESSO PENDENTE: o console só mostra o assistente de configuração (idioma,")
-        print("    admin e senha), que exige o link com token. Gere/reimprima o link no servidor:")
+        # No language chosen yet (that is part of the first access): print it in every complete language.
+        langs = [i18n.default_lang()] if i18n.instance_language() else \
+            [x["code"] for x in i18n.languages() if x["status"] == "complete"] or [i18n.default_lang()]
+        for lang in langs:
+            print("\n  " + i18n.t("api_server.setup_pending_1", lang))
+            print("    " + i18n.t("api_server.setup_pending_2", lang))
         print("    python3 scripts/engine/users/cli.py setup-link")
     else:
-        print("\n  ⚠ SEM COFRE INICIALIZADO: não há senha-mestra, então NÃO há login — o console fica")
-        print("    aberto a qualquer um que alcance este endereço. Inicialize o cofre")
-        print("    (`python3 scripts/engine/vault/cli.py init`) para proteger o acesso por senha.")
+        print("\n  " + i18n.t("api_server.no_vault_1"))
+        print("    " + i18n.t("api_server.no_vault_2"))
+        print("    " + i18n.t("api_server.no_vault_3"))
 
     if deps.STATE.enable_terminal:
-        print("\n  ⚠ TERMINAL WEB LIGADO (--enable-terminal): quem acessar o console tem um SHELL")
-        print("    completo nesta máquina (execução de comando arbitrário, como este usuário).")
+        print("\n  " + i18n.t("api_server.terminal_on_1"))
+        print("    " + i18n.t("api_server.terminal_on_2"))
 
     if deps.STATE.enable_claude:
-        print("\n  ⚠ PÁGINA CLAUDE CODE LIGADA (--enable-claude): quem acessar o console dirige um")
-        print("    agente de IA que EXECUTA COMANDOS e EDITA ARQUIVOS como este usuário (no repo).")
+        print("\n  " + i18n.t("api_server.claude_on_1"))
+        print("    " + i18n.t("api_server.claude_on_2"))
 
     if deps.STATE.claude_persist:
-        print("\n  ⚠ PERSISTÊNCIA DA ABA CLAUDE LIGADA (--enable-claude-persist): a sessão sobrevive à")
-        print(f"    queda do socket (standby). Teto {deps.STATE.claude_max_sessions} sessões desanexadas, "
-              f"carência {deps.STATE.claude_detach_grace}s, timeout de pergunta {deps.STATE.claude_ask_timeout}s.")
-        print("    Um turno pode continuar executando com a aba fechada; na dúvida o agente PERGUNTA.")
+        print("\n  " + i18n.t("api_server.persist_on_1"))
+        print("    " + i18n.t("api_server.persist_on_2", max=deps.STATE.claude_max_sessions,
+                                grace=deps.STATE.claude_detach_grace, ask=deps.STATE.claude_ask_timeout))
+        print("    " + i18n.t("api_server.persist_on_3"))
 
     if not is_loopback:
-        print("\n  AVISO DE SEGURANÇA: bind em endereço NÃO-loopback — o console fica acessível na rede.")
-        print("  Acesso protegido pelo LOGIN (senha-mestra do cofre) quando inicializado. Use só em rede CONFIÁVEL.")
-        print("  Este servidor pode descriptografar credenciais e editar o inventário.")
+        print("\n  " + i18n.t("api_server.net_warn_1"))
+        print("  " + i18n.t("api_server.net_warn_2"))
+        print("  " + i18n.t("api_server.net_warn_3"))
         if deps.STATE.allow_vault_unlock:
-            print("  ATENÇÃO: o login/destranque do cofre envia a SENHA-MESTRA em TEXTO PURO por HTTP nesta rede.")
-            print("  Use só atrás de túnel SSH/VPN, ou suba com --no-vault-unlock e destranque pelo terminal.")
+            print("  " + i18n.t("api_server.net_plain_1"))
+            print("  " + i18n.t("api_server.net_plain_2"))
         if deps.STATE.enable_terminal:
-            print("  ATENÇÃO: com o terminal ligado nesta rede, quem logar tem um shell completo.")
-            print("  Prefira túnel SSH/VPN. O terminal NÃO liga em --read-only.")
+            print("  " + i18n.t("api_server.net_term_1"))
+            print("  " + i18n.t("api_server.net_term_2"))
         if deps.STATE.enable_claude:
-            print("  ATENÇÃO: com a página Claude Code ligada nesta rede, quem logar dirige um agente")
-            print("  que executa comandos e edita arquivos. Prefira túnel SSH/VPN. NÃO liga em --read-only.")
+            print("  " + i18n.t("api_server.net_claude_1"))
+            print("  " + i18n.t("api_server.net_claude_2"))
         print()
 
     from app import create_app  # noqa: PLC0415  (importa depois de setar STATE)
@@ -209,12 +211,12 @@ def main() -> int:
     urls = [f"http://{h}:{port}/" for h in _display_hosts(args.host)]
     url = f"http://127.0.0.1:{port}/" if is_wildcard else urls[0]
 
-    print("\n  NetOps Console" + ("  (todos os IPs da máquina: 0.0.0.0)" if is_wildcard else ""))
+    print("\n  NetOps Console" + ("  " + i18n.t("api_server.all_ips") if is_wildcard else ""))
     for u in urls:
         print(f"  -> {u}")
     if args.read_only:
-        print("  (modo somente-leitura)")
-    print("  Ctrl+C para encerrar.\n")
+        print("  " + i18n.t("api_server.read_only_mode"))
+    print("  " + i18n.t("api_server.ctrl_c") + "\n")
 
     if not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
@@ -243,7 +245,7 @@ def main() -> int:
         try:
             sec_socks = _listen_sockets(args.host, https_port)
         except OSError as exc:      # HTTPS nunca derruba o console
-            print(f"  ⚠ HTTPS por IP DESLIGADO (porta {https_port}: {exc}) — o console HTTP segue normal.")
+            print("  " + i18n.t("api_server.https_off_port", port=https_port, error=exc))
             tls = None
 
     async def _run() -> None:
@@ -262,7 +264,7 @@ def main() -> int:
                 try:
                     await sec_srv.serve(sockets=sec_socks)
                 except BaseException as exc:  # noqa: BLE001  (uvicorn faz sys.exit(1) se não conseguir bind)
-                    print(f"  ⚠ listener HTTPS encerrou: {exc!r} — HTTP segue normal")
+                    print("  " + i18n.t("api_server.https_listener_ended", error=repr(exc)))
             sec_task = asyncio.create_task(_sec())
         try:
             await main_srv.serve(sockets=main_socks)

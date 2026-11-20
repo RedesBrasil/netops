@@ -26,6 +26,7 @@ from pathlib import Path
 from ruamel.yaml import YAML
 
 import deps
+from lib import i18n
 from services import inventory_svc, yaml_io
 from lib.host_identity import host_index, require_host_id, resolve_reference
 from lib.inventory_lock import ensure_migration_complete
@@ -102,7 +103,7 @@ def save(config: dict, rev: str | None) -> dict:
     ensure_migration_complete(deps.HOSTS_FILE.parent)
     services = config.get("services")
     if not isinstance(services, list):
-        raise deps.ValidationFailed([{"loc": "services", "msg": "lista de serviços ausente"}])
+        raise deps.ValidationFailed([{"loc": "services", "msg": i18n.t("api_backups.services_missing")}])
 
     inv = inventory_svc.list_hosts_detailed()
     valid_hosts = {h["id"] for h in inv["hosts"]}
@@ -120,16 +121,16 @@ def save(config: dict, rev: str | None) -> dict:
             try:
                 require_host_id(hid)
             except (TypeError, ValueError):
-                errors.append({"loc": f"services/{sid}/hosts", "msg": "ID de host deve ser inteiro positivo"})
+                errors.append({"loc": f"services/{sid}/hosts", "msg": i18n.t("api_backups.host_id_int")})
                 continue
             if hid not in valid_hosts:
-                errors.append({"loc": f"services/{sid}/hosts/{hid}", "msg": "host inexistente no inventário"})
+                errors.append({"loc": f"services/{sid}/hosts/{hid}", "msg": i18n.t("api_backups.host_not_in_inventory")})
         for g in tgt.get("groups") or []:
             if g not in valid_groups:
-                errors.append({"loc": f"services/{sid}/groups/{g}", "msg": "grupo inexistente no inventário"})
+                errors.append({"loc": f"services/{sid}/groups/{g}", "msg": i18n.t("api_backups.group_not_in_inventory")})
     current_sources = load()["config"].get("legacy_sources") or []
     if config.get("legacy_sources", []) != current_sources:
-        errors.append({"loc": "legacy_sources", "msg": "associações do histórico são internas e imutáveis"})
+        errors.append({"loc": "legacy_sources", "msg": i18n.t("api_backups.legacy_immutable")})
     if errors:
         raise deps.ValidationFailed(errors)
     config["version"] = 3
@@ -179,12 +180,12 @@ def _safe_path(relpath: str) -> Path:
     """Resolve relpath DENTRO de BACKUPS_STORE. Barra path traversal (../, absoluto, symlink)."""
     root = deps.BACKUPS_STORE.resolve()
     if not relpath or relpath.startswith("/") or ".." in Path(relpath).parts:
-        raise deps.ValidationFailed([{"loc": "path", "msg": "caminho invalido"}])
+        raise deps.ValidationFailed([{"loc": "path", "msg": i18n.t("api_backups.invalid_path")}])
     target = (root / relpath).resolve()
     try:
         target.relative_to(root)
     except ValueError:
-        raise deps.ValidationFailed([{"loc": "path", "msg": "fora do diretorio de backups"}])
+        raise deps.ValidationFailed([{"loc": "path", "msg": i18n.t("api_backups.outside_dir")}])
     return target
 
 
@@ -208,7 +209,7 @@ def read_stored(relpath: str) -> dict:
     """Conteúdo textual de um backup p/ visualização inline (trunca em MAX_VIEW_BYTES)."""
     target = _safe_path(relpath)
     if not target.is_file():
-        raise deps.ValidationFailed([{"loc": "path", "msg": "arquivo nao encontrado"}])
+        raise deps.ValidationFailed([{"loc": "path", "msg": i18n.t("api_backups.file_not_found")}])
     raw = target.read_bytes()
     binary = b"\x00" in raw[:8192]
     truncated = len(raw) > MAX_VIEW_BYTES
@@ -223,7 +224,7 @@ def resolve_stored(relpath: str) -> Path:
     """Path absoluto validado p/ download (FileResponse)."""
     target = _safe_path(relpath)
     if not target.is_file():
-        raise deps.ValidationFailed([{"loc": "path", "msg": "arquivo nao encontrado"}])
+        raise deps.ValidationFailed([{"loc": "path", "msg": i18n.t("api_backups.file_not_found")}])
     return target
 
 
@@ -236,7 +237,7 @@ _RUN_ID_RE = None  # validado abaixo por _safe_run_id
 def _safe_run_id(run_id: str) -> str:
     import re  # noqa: PLC0415
     if not run_id or not re.fullmatch(r"[A-Za-z0-9._-]+", run_id):
-        raise deps.ValidationFailed([{"loc": "run_id", "msg": "run_id invalido"}])
+        raise deps.ValidationFailed([{"loc": "run_id", "msg": i18n.t("api_backups.invalid_run_id")}])
     return run_id
 
 
@@ -276,7 +277,7 @@ def start_run(service_id: str) -> dict:
     cfg = load()["config"]
     service = next((s for s in cfg.get("services") or [] if s.get("id") == service_id), None)
     if not service:
-        raise KeyError(f"serviço '{service_id}' não existe")
+        raise KeyError(i18n.t("api_backups.service_not_exists", id=service_id))
 
     # Exige cofre destrancado (senão VaultLocked -> 423 com dica de unlock).
     from lib.vault_session import get_session_key  # noqa: PLC0415
@@ -293,7 +294,7 @@ def start_run(service_id: str) -> dict:
         "state": "running",
         "started_at": int(time.time()),
         "finished_at": None,
-        "note": "Piloto: coleta apenas MikroTik via SSH.",
+        "note": i18n.t("api_backups.pilot_note"),
         "hosts": [{"id": h, "hostname": records[h].get("hostname"), "state": "pending", "detail": ""}
                   for h in targets],
     }
@@ -312,7 +313,7 @@ def start_run(service_id: str) -> dict:
 def read_run(run_id: str) -> dict:
     p = _run_path(run_id)
     if not p.is_file():
-        raise KeyError(f"run '{run_id}' não encontrado")
+        raise KeyError(i18n.t("api_backups.run_not_found", run_id=run_id))
     return json.loads(p.read_text(encoding="utf-8"))
 
 
@@ -401,13 +402,13 @@ def list_hosts_with_backups() -> dict:
 def zip_paths(paths: list, name: str = "backups") -> tuple:
     """Empacota vários backups num zip (cada path validado no sandbox). Retorna (bytes, filename)."""
     if not paths:
-        raise deps.ValidationFailed([{"loc": "path", "msg": "nenhum backup selecionado"}])
+        raise deps.ValidationFailed([{"loc": "path", "msg": i18n.t("api_backups.none_selected")}])
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for rel in paths:
             target = _safe_path(rel)
             if not target.is_file():
-                raise deps.ValidationFailed([{"loc": "path", "msg": f"arquivo nao encontrado: {rel}"}])
+                raise deps.ValidationFailed([{"loc": "path", "msg": i18n.t("api_backups.file_not_found_path", path=rel)}])
             z.write(target, arcname=rel)
     safe = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-") or "backups"
     return buf.getvalue(), safe + ".zip"
@@ -419,10 +420,10 @@ def zip_paths(paths: list, name: str = "backups") -> tuple:
 def _read_for_diff(rel: str) -> str:
     t = _safe_path(rel)
     if not t.is_file():
-        raise deps.ValidationFailed([{"loc": "path", "msg": f"arquivo nao encontrado: {rel}"}])
+        raise deps.ValidationFailed([{"loc": "path", "msg": i18n.t("api_backups.file_not_found_path", path=rel)}])
     raw = t.read_bytes()
     if b"\x00" in raw[:8192]:
-        raise deps.ValidationFailed([{"loc": "path", "msg": "arquivo binario nao pode ser comparado"}])
+        raise deps.ValidationFailed([{"loc": "path", "msg": i18n.t("api_backups.binary_no_diff")}])
     return raw.decode("utf-8", errors="replace")
 
 
@@ -464,7 +465,7 @@ def delete_stored(paths: list) -> dict:
     """Apaga os backups indicados (cada path validado no sandbox). IRREVERSÍVEL.
     Remove o diretório do host se ficar vazio."""
     if not paths:
-        raise deps.ValidationFailed([{"loc": "paths", "msg": "nenhum backup selecionado"}])
+        raise deps.ValidationFailed([{"loc": "paths", "msg": i18n.t("api_backups.none_selected")}])
     root = deps.BACKUPS_STORE.resolve()
     deleted = []
     for rel in paths:

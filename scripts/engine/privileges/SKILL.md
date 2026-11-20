@@ -1,62 +1,62 @@
 ---
 id: privileges
-name: Permissões da conta operacional (rede sem root; root só com o cofre destrancado)
+name: Operational account permissions (network without root; root only with the vault unlocked)
 type: script
 runtime: python
-description: Prepara o servidor para a conta netops fazer diagnóstico de rede sem root e virar root (sudo ou direto) apenas enquanto o cofre estiver destrancado.
+description: Prepares the server so the netops account can run network diagnostics without root and become root (sudo or directly) only while the vault is unlocked.
 env: []
 ---
 
-## Modelo
+## Model
 
-| O quê | Como fica | Precisa do cofre? |
+| What | How it works | Needs the vault? |
 |---|---|---|
-| `ping`, `traceroute -I/-T`, `mtr`, `nmap -sS/-O`, `nping`, `tcpdump`, `arping`, `fping`, `arp-scan` | roda direto como `netops` | **não** |
-| `sudo <qualquer comando>` | root, sem senha | **sim** — trancado = negado |
-| `apt`, `systemctl`/`journalctl` (sem `--user`), `nft`, `iptables`, `docker`, `mount`, `sysctl`, `ss`, `lsof`… digitados no shell | viram root sozinhos ("sudo automático") | **sim** — trancado = rodam como `netops` |
-| `rootcat <arq>`, `rootedit <arq>`, `rootsh '<pipeline>'` | ler/editar/redirecionar arquivo do sistema como root | **sim** |
-| `git`, `python3`, edição em `/opt/netops` | sempre `netops` (nunca cria arquivo de root na árvore) | — |
+| `ping`, `traceroute -I/-T`, `mtr`, `nmap -sS/-O`, `nping`, `tcpdump`, `arping`, `fping`, `arp-scan` | runs directly as `netops` | **no** |
+| `sudo <any command>` | root, no password | **yes** — locked = denied |
+| `apt`, `systemctl`/`journalctl` (without `--user`), `nft`, `iptables`, `docker`, `mount`, `sysctl`, `ss`, `lsof`… typed in the shell | become root on their own ("auto sudo") | **yes** — locked = run as `netops` |
+| `rootcat <file>`, `rootedit <file>`, `rootsh '<pipeline>'` | read/edit/redirect a system file as root | **yes** |
+| `git`, `python3`, editing in `/opt/netops` | always `netops` (never creates root files in the tree) | — |
 
-Peças (todas root-owned, criadas por `provision.py install`, chamado pelo `install.sh` em toda instalação/reparo):
+Pieces (all root-owned, created by `provision.py install`, called by `install.sh` on every install/repair):
 
-- `/etc/sysctl.d/60-netops-ping.conf` — `net.ipv4.ping_group_range` na faixa de GIDs mapeada. Em CT LXC não
-  privilegiado o padrão do Debian (`0 2147483647`) é recusado pelo kernel e o ping fica só para root.
-- `/usr/local/sbin/netops-netcaps` — capabilities de arquivo (`cap_net_raw`/`cap_net_admin`, não setuid) nas
-  ferramentas de rede; reaplicado após todo apt (`/etc/apt/apt.conf.d/80netops-netcaps`) e pelo timer
-  `netops-netcaps.timer` (boot + 1 h, outras distros). Wrappers `/usr/local/bin/nmap|nping` passam `--privileged`.
-- `/etc/sudoers.d/netops-cofre` (`netops ALL=(ALL:ALL) ALL`, `timestamp_timeout=0`) + linha `pam_exec` no topo do
-  auth de `/etc/pam.d/sudo` → `/usr/local/sbin/netops-sudo-cofre`. A conta não tem senha: o PAM só libera se a
-  sessão do cofre (`/run/user/<uid>/netops/session.key`) for válida — dono/modo, mesmo boot, não expirada e chave
-  que abre o **verificador fixado pelo root** em `/etc/netops/vault-verifier.d/<slug>.pin` (HMAC do token Fernet,
-  só stdlib). Cada liberação/negação vai para o syslog AUTHPRIV (`netops-sudo-cofre`).
-- `/usr/local/share/netops/auto-sudo.bash`, carregado no **topo** do `~/.bashrc` da conta (antes do teste de
-  shell interativo, para o Claude Code também carregar). Scripts não interativos não carregam: neles use `sudo`.
-- `/etc/netops/privileges.conf` — qual é a conta operacional (lido pelo `netops-sudo-cofre`).
-- `/usr/local/sbin/netops-setup-finish <slug>` — etapa root do **primeiro acesso** (uso único). A instalação nova não
-  tem cofre, então o pin acima e a senha do host Local ficam para depois do assistente `#setup`: a unidade
-  `netops-setup-finish-<slug>.path` (vigia `runs/setup/finish-request`) roda o script, que só age com
-  `/etc/netops/instances/<slug>.setup-pending` (root), fixa o pin via `netops-sudo-cofre --pin` (só o que a sessão
-  destrancada abre) e gera a senha do `netops-admin` (a conta operacional grava no cofre; root aplica). Resultado em
-  `<slug>.setup-done`; concluído, apaga o marcador e desliga a unidade. Recuperação: rodar o mesmo comando com `sudo`.
+- `/etc/sysctl.d/60-netops-ping.conf` — `net.ipv4.ping_group_range` over the mapped GID range. In an unprivileged LXC CT
+  the Debian default (`0 2147483647`) is rejected by the kernel and ping stays root-only.
+- `/usr/local/sbin/netops-netcaps` — file capabilities (`cap_net_raw`/`cap_net_admin`, not setuid) on the
+  network tools; reapplied after every apt run (`/etc/apt/apt.conf.d/80netops-netcaps`) and by the
+  `netops-netcaps.timer` timer (boot + 1 h, other distros). Wrappers `/usr/local/bin/nmap|nping` pass `--privileged`.
+- `/etc/sudoers.d/netops-cofre` (`netops ALL=(ALL:ALL) ALL`, `timestamp_timeout=0`) + a `pam_exec` line at the top of the
+  auth section of `/etc/pam.d/sudo` → `/usr/local/sbin/netops-sudo-cofre`. The account has no password: PAM only allows it if the
+  vault session (`/run/user/<uid>/netops/session.key`) is valid — owner/mode, same boot, not expired and a key
+  that opens the **verifier pinned by root** in `/etc/netops/vault-verifier.d/<slug>.pin` (HMAC of the Fernet token,
+  stdlib only). Every grant/denial goes to syslog AUTHPRIV (`netops-sudo-cofre`).
+- `/usr/local/share/netops/auto-sudo.bash`, loaded at the **top** of the account's `~/.bashrc` (before the interactive
+  shell test, so Claude Code loads it too). Non-interactive scripts do not load it: use `sudo` in them.
+- `/etc/netops/privileges.conf` — which account is the operational one (read by `netops-sudo-cofre`).
+- `/usr/local/sbin/netops-setup-finish <slug>` — root step of the **first access** (single use). A new installation has
+  no vault, so the pin above and the Local host password are deferred until after the `#setup` wizard: the
+  `netops-setup-finish-<slug>.path` unit (watches `runs/setup/finish-request`) runs the script, which only acts with
+  `/etc/netops/instances/<slug>.setup-pending` (root), pins via `netops-sudo-cofre --pin` (only what the unlocked
+  session opens) and generates the `netops-admin` password (the operational account writes it to the vault; root applies it). Result in
+  `<slug>.setup-done`; when finished, it deletes the marker and disables the unit. Recovery: run the same command with `sudo`.
 
-## Uso (root)
+## Usage (root)
 
 ```bash
-sudo python3 -I -B scripts/engine/privileges/provision.py install --root /opt/netops   # instala/repara (idempotente)
-sudo python3 -I -B scripts/engine/privileges/provision.py status  --root /opt/netops   # o que está ativo + cofre agora
-sudo python3 -I -B scripts/engine/privileges/provision.py pin     --root /opt/netops   # refixa o verificador
-sudo python3 -I -B scripts/engine/privileges/provision.py remove  --root /opt/netops   # desfaz tudo
+sudo python3 -I -B scripts/engine/privileges/provision.py install --root /opt/netops   # installs/repairs (idempotent)
+sudo python3 -I -B scripts/engine/privileges/provision.py status  --root /opt/netops   # what is active + vault now
+sudo python3 -I -B scripts/engine/privileges/provision.py pin     --root /opt/netops   # re-pins the verifier
+sudo python3 -I -B scripts/engine/privileges/provision.py remove  --root /opt/netops   # undoes everything
 ```
 
-- **Trocou a senha-mestra?** Destranque o cofre e rode `pin` (senão o sudo passa a ser negado).
-- `install --trust-creds` só é usado pelo `install.sh` numa instalação **nova** (o cofre acabou de ser criado por
-  ele). Fora disso o `pin` exige o cofre destrancado, porque o `credentials.yaml` pertence à conta operacional.
-- `sudo -n` **não** funciona (o sudo recusa antes de chamar o PAM). Use `sudo` comum.
+- **Changed the master password?** Unlock the vault and run `pin` (otherwise sudo starts being denied).
+- `install --trust-creds` is only used by `install.sh` on a **new** installation (the vault was just created by
+  it). Otherwise `pin` requires the vault unlocked, because `credentials.yaml` belongs to the operational account.
+- `sudo -n` does **not** work (sudo refuses before calling PAM). Use plain `sudo`.
 
-## Limites (honestos)
+## Limits (honest)
 
-- O cofre é um **portão operacional**, não uma fronteira contra a própria conta `netops`: enquanto destrancado, a
-  chave fica num arquivo que a conta lê; um processo malicioso dela poderia guardá-la e liberar o sudo depois.
-- O sudo não aplica as permissões por usuário do console (`server.admin`): quem tem terminal/aba Claude no console
-  vira root enquanto o cofre estiver destrancado. O host Local (`scripts/engine/localadmin/`) continua aplicando.
-- Usar `sudo` não renova o TTL do cofre (15 min sem uso, `vault.session_ttl_seconds`).
+- The vault is an **operational gate**, not a boundary against the `netops` account itself: while unlocked, the
+  key sits in a file the account can read; a malicious process of that account could keep it and allow sudo later.
+- sudo does not apply the console's per-user permissions (`server.admin`): anyone with terminal/Claude tab in the console
+  becomes root while the vault is unlocked. The Local host (`scripts/engine/localadmin/`) still enforces them.
+- Using `sudo` does not renew the vault TTL (15 min without use, `vault.session_ttl_seconds`).

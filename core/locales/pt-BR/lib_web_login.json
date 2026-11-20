@@ -1,0 +1,10 @@
+{
+  "connect_failed": "não foi possível conectar em {url}: {error}",
+  "proxmox_2fa": "usuário com 2FA: login automático não suportado — entre manualmente",
+  "proxmox_rejected": "Proxmox recusou a credencial (usuário/senha/realm)",
+  "proxmox_unexpected": "resposta inesperada do Proxmox (não parece a API do PVE)",
+  "zabbix_http_note": "http→http: se o console estiver em HTTPS, o navegador pode avisar sobre formulário inseguro",
+  "zabbix_mfa": "Zabbix com MFA: login automático não suportado — entre manualmente",
+  "zabbix_no_session": "Zabbix não iniciou sessão (HTTP {status}) — confira a URL base ({path})",
+  "zabbix_rejected": "Zabbix recusou a credencial (usuário/senha)"
+}

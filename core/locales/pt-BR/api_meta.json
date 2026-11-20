@@ -1,0 +1,4 @@
+{
+  "no_credentials_file": "credentials.yaml não existe.",
+  "unlock_disabled": "Destrancar pela web está desabilitado (--no-vault-unlock). Use o terminal."
+}

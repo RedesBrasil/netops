@@ -1,55 +1,55 @@
 ---
 id: linux-services-hardening
-titulo: Hardening de Serviços Linux (Apache, Docker, FTP)
+titulo: Linux Services Hardening (Apache, Docker, FTP)
 vendor: linux
 tags: [security, linux, apache, docker, ftp, services]
 severidade: media
 ---
 
-## Resumo
+## Summary
 
-Boas práticas para os serviços mais comuns rodando em servidores Linux. Cada serviço exposto
-é uma superfície de ataque — este guia cobre Apache, Docker e FTP.
+Best practices for the most common services running on Linux servers. Every exposed service
+is an attack surface — this guide covers Apache, Docker and FTP.
 
 ## Apache HTTP Server
 
-- [ ] TLS habilitado; HTTP redireciona para HTTPS; certificado válido (Let's Encrypt).
-- [ ] Versão do servidor ocultada (`ServerTokens Prod`, `ServerSignature Off`).
-- [ ] Módulos não usados desabilitados; `mod_status`/`mod_info` restritos ou desligados.
-- [ ] `Indexes` desabilitado (sem listagem de diretório).
-- [ ] Cabeçalhos de segurança (`X-Content-Type-Options`, `X-Frame-Options`, HSTS).
-- [ ] Limites de tamanho de requisição e timeouts configurados (anti-DoS básico).
-- [ ] Logs de acesso e erro habilitados.
+- [ ] TLS enabled; HTTP redirects to HTTPS; valid certificate (Let's Encrypt).
+- [ ] Server version hidden (`ServerTokens Prod`, `ServerSignature Off`).
+- [ ] Unused modules disabled; `mod_status`/`mod_info` restricted or turned off.
+- [ ] `Indexes` disabled (no directory listing).
+- [ ] Security headers (`X-Content-Type-Options`, `X-Frame-Options`, HSTS).
+- [ ] Request size limits and timeouts configured (basic anti-DoS).
+- [ ] Access and error logs enabled.
 
 ## Docker
 
-- [ ] Daemon Docker **não** exposto via TCP sem TLS (`/var/run/docker.sock` só local).
-- [ ] Containers não rodam como `root` quando evitável (`USER` no Dockerfile).
-- [ ] Imagens de origem confiável e com tag fixa (não `latest` em produção).
-- [ ] Só as portas necessárias publicadas (`-p`), preferir bind em `127.0.0.1` quando local.
-- [ ] Limites de recurso definidos (`--memory`, `--cpus`) para isolar falhas.
-- [ ] `--cap-drop` do que não for necessário; evitar `--privileged`.
-- [ ] Imagens atualizadas; varredura de vulnerabilidade no pipeline.
+- [ ] Docker daemon **not** exposed over TCP without TLS (`/var/run/docker.sock` local only).
+- [ ] Containers do not run as `root` when avoidable (`USER` in the Dockerfile).
+- [ ] Images from a trusted source and with a pinned tag (not `latest` in production).
+- [ ] Only the required ports published (`-p`); prefer binding to `127.0.0.1` when local.
+- [ ] Resource limits defined (`--memory`, `--cpus`) to isolate failures.
+- [ ] `--cap-drop` whatever is not needed; avoid `--privileged`.
+- [ ] Images up to date; vulnerability scanning in the pipeline.
 
 ## FTP
 
-- [ ] FTP simples (porta 21, texto puro) **desabilitado** — preferir SFTP/SCP (sobre SSH).
-- [ ] Se FTP for inevitável, usar FTPS (FTP sobre TLS) e restringir por firewall.
-- [ ] Sem acesso anônimo de escrita; usuários confinados ao seu diretório (`chroot`).
+- [ ] Plain FTP (port 21, plain text) **disabled** — prefer SFTP/SCP (over SSH).
+- [ ] If FTP is unavoidable, use FTPS (FTP over TLS) and restrict it by firewall.
+- [ ] No anonymous write access; users confined to their own directory (`chroot`).
 
-## Detalhamento
+## Details
 
-O princípio comum: **menor privilégio e menor exposição**. Um serviço deve rodar com o
-mínimo de permissão, ouvir só onde precisa, e expor só o necessário. O `docker.sock`
-exposto via TCP sem TLS é equivalente a dar `root` no host — é um achado CRÍTICO.
+The common principle: **least privilege and least exposure**. A service should run with the
+minimum permission, listen only where it needs to, and expose only what is necessary. A `docker.sock`
+exposed over TCP without TLS is equivalent to giving `root` on the host — it is a CRITICAL finding.
 
-## Configuração relacionada
+## Related configuration
 
-- `config-examples/linux/sshd_config` — acesso SSH endurecido (exemplo seed).
-- Exemplos de Apache, Docker e FTP: a adicionar em `config-examples/linux/` conforme o
-  projeto vivo evolui (siga `config-examples/PADRAO.md`).
+- `config-examples/linux/sshd_config` — hardened SSH access (seed example).
+- Apache, Docker and FTP examples: to be added to `config-examples/linux/` as the
+  living project evolves (follow `config-examples/PADRAO.md`).
 
-## Referências
+## References
 
 - Apache HTTP Server — Security Tips.
 - Docker — Security best practices.

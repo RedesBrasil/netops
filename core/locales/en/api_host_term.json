@@ -1,0 +1,19 @@
+{
+  "access_denied": "Access denied (username/password).",
+  "auto_auth": " — automatic authentication",
+  "auto_login": " — automatic login",
+  "connect_failed": "Connection failed: {error}",
+  "connecting_ssh": "Connecting to {target} (SSH)",
+  "connecting_telnet": "Connecting to {target} (Telnet)",
+  "credential_not_found": "credential '{name}' not found",
+  "decrypt_failed": "could not decrypt the credential — enter the password manually",
+  "enter_credentials": "Enter the credentials.",
+  "error": "error: {error}",
+  "locked_no_web_unlock": "vault locked (unlocking from the web is disabled) — enter the password manually",
+  "no_credential": "host without a registered credential",
+  "no_mgmt_ip": "host without a management IP (mgmt_ip)",
+  "not_in_inventory": "host '{host_id}' is not in the inventory",
+  "still_locked": "vault still locked — enter the password manually",
+  "vault_locked": "vault locked",
+  "vault_locked_popup": "Vault locked — unlock it in the popup to sign in with the registered credential."
+}

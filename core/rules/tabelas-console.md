@@ -1,48 +1,50 @@
-# Regra permanente: toda tabela do console usa o DataTable
+# Permanent rule: every console table uses DataTable
 
-Leia antes de criar ou alterar qualquer listagem em `scripts/engine/ui/static/js/`.
+Read before creating or changing any listing in `scripts/engine/ui/static/js/`.
 
-## Regra
+## Rule
 
-1. **Nunca escreva `<table>` à mão numa tela.** Use `DataTable` de `static/js/table.js` (também
-   exportado por `components.js`). Só ficam de fora as tabelas que não são de dados, como o modelo
-   inserido pelo editor de Markdown (`wysiwyg.js`).
-   **Exceção: o explorador de arquivos** (`static/js/file-browser.js`, menu **Arquivos** e painel SFTP do
-   terminal de host) é uma lista de pastas e arquivos com ícones, no estilo do MobaXterm e do explorador do
-   sistema. Ele não é uma tabela de dados e não usa `DataTable` (decisão do usuário, 13/11/2026). A lista é
-   feita de `div` em grade, sem `<table>`. Ordenação, filtro e pasta ficam na URL (`#files?path=&q=&sort=`).
-2. **Todo `DataTable` tem um `tableId` estável e único** (ex.: `"hosts"`, `"backup-host-files"`). Ele é a
-   chave da preferência salva no navegador. Trocar o id apaga o layout que o usuário montou.
-3. **Toda coluna de dados ganha `sort`**: `sort: true` ordena por `row[key]`, ou passe uma função `(row) => valor`.
-4. A **tabela principal da tela usa `urlSort`**, o que põe a ordenação na URL (`core/rules/urls-navegacao.md`).
-   Em modais e com várias tabelas na mesma URL, use `urlSort="prefixo"` ou deixe a ordenação local.
-5. **A coluna de identidade** (nome do host, do grupo etc.) leva `hideable: false`. Campos secundários entram
-   com `hidden: true`: ficam disponíveis no menu ⚙ Colunas sem poluir o padrão.
-6. **Botões por linha vão em `actions`**, que é a coluna fixa à direita junto do ⚙ Colunas. Uma checkbox de
-   seleção é coluna `pinned: true` (fixa à esquerda, não move nem redimensiona).
+1. **Never write `<table>` by hand in a screen.** Use `DataTable` from `static/js/table.js` (also
+   exported by `components.js`). The only exceptions are tables that are not data, such as the template
+   inserted by the Markdown editor (`wysiwyg.js`).
+   **Exception: the file explorer** (`static/js/file-browser.js`, **Files** menu and SFTP panel of the
+   host terminal) is a list of folders and files with icons, in the style of MobaXterm and the system
+   explorer. It is not a data table and does not use `DataTable` (user decision, 13/11/2026). The list is
+   made of `div`s in a grid, without `<table>`. Sorting, filter and folder go in the URL (`#files?path=&q=&sort=`).
+2. **Every `DataTable` has a stable and unique `tableId`** (e.g.: `"hosts"`, `"backup-host-files"`). It is the
+   key of the preference saved in the browser. Changing the id erases the layout the user built.
+3. **Every data column gets `sort`**: `sort: true` sorts by `row[key]`, or pass a function `(row) => value`.
+4. The **main table of the screen uses `urlSort`**, which puts the sorting in the URL (`core/rules/urls-navegacao.md`).
+   In modals and with several tables in the same URL, use `urlSort="prefix"` or keep the sorting local.
+5. **The identity column** (host name, group name etc.) gets `hideable: false`. Secondary fields come in
+   with `hidden: true`: they are available in the ⚙ Columns menu without cluttering the default.
+6. **Per-row buttons go in `actions`**, which is the fixed column on the right next to ⚙ Columns. A selection
+   checkbox is a `pinned: true` column (fixed on the left, it does not move or resize).
 
-O usuário ganha, sem código extra: redimensionar ao vivo (duplo clique ajusta ao conteúdo), arrastar
-coluna, mostrar/ocultar, restaurar padrão, cabeçalho fixo e a coluna de ações sempre visível.
+The user gets, with no extra code: live resizing (double click fits the content), dragging a
+column, show/hide, restore default, sticky header and the actions column always visible.
 
-## Exemplo
+## Example
+
+Visible texts go through `t()` (see `core/rules/i18n.md`).
 
 ```js
 import { DataTable } from "../components.js";
 <${DataTable} tableId="groups" urlSort rows=${rows.map((g) => ({ ...g, _key: g.name }))}
-  onRowClick=${open} empty="Nenhum grupo."
-  actions=${(g) => html`<button class="sm danger" onClick=${() => del(g)}>Excluir</button>`}
+  onRowClick=${open} empty=${t("groups.empty")}
+  actions=${(g) => html`<button class="sm danger" onClick=${() => del(g)}>${t("common.delete")}</button>`}
   columns=${[
-    { key: "name", label: "Grupo", hideable: false, sort: true, render: (g) => html`<a href=${"#groups/" + g.name}>${g.name}</a>` },
-    { key: "vendor", label: "Vendor", sort: true },
-    { key: "notes", label: "Notas", sort: true, hidden: true },
+    { key: "name", label: t("groups.col_group"), hideable: false, sort: true, render: (g) => html`<a href=${"#groups/" + g.name}>${g.name}</a>` },
+    { key: "vendor", label: t("groups.col_vendor"), sort: true },
+    { key: "notes", label: t("groups.col_notes"), sort: true, hidden: true },
   ]} />
 ```
 
-As props e as opções de coluna estão documentadas no cabeçalho de `static/js/table.js`. A lógica pura fica em
+The props and column options are documented in the header of `static/js/table.js`. The pure logic lives in
 `static/js/table-core.js`.
 
-## Verificação automática
+## Automatic check
 
-`node --test scripts/engine/ui/tests/table-core.test.mjs` reprova `<table>` cru numa tela, `DataTable` sem
-`tableId` e `tableId` repetido. Rode também `tests/tables-all.browser.mjs` (smoke em todas as telas) e
-`tests/table-columns.browser.mjs` (interações, no desktop e no celular).
+`node --test scripts/engine/ui/tests/table-core.test.mjs` rejects raw `<table>` in a screen, `DataTable` without
+`tableId` and a repeated `tableId`. Also run `tests/tables-all.browser.mjs` (smoke test on all screens) and
+`tests/table-columns.browser.mjs` (interactions, on desktop and on mobile).

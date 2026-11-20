@@ -12,6 +12,7 @@ import os
 import time
 
 import deps
+from lib import i18n
 from update.common import STATE_DIR, private_dir, read_json, read_version, write_json
 
 LOG = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ def _convert(expected_hashes=None):
     root = deps.DATA_ROOT
     if not (root / "network/hosts.yaml").exists():
         return {"phase": "not_required", "required": False,
-                "detail": "Nenhum inventário existente para converter."}
+                "detail": i18n.t("api_host_migration.no_inventory")}
     # Recover restaura a baseline original se houve uma queda entre substituições.
     # Ele recusa sobrescrever alterações posteriores ou baselines corrompidos.
     if (root / "network" / migration.JOURNAL_NAME).exists():
@@ -69,10 +70,10 @@ def _convert(expected_hashes=None):
     document = migration._yaml().load(raw.decode("utf-8")) if raw and raw.strip() else {}
     if isinstance(document, dict) and document.get("version") == 2:
         return {"phase": "not_required", "required": False,
-                "detail": "Inventário já usa IDs inteiros."}
+                "detail": i18n.t("api_host_migration.already_int")}
     result = migration.apply(root, expected_hashes=expected_hashes)
     return {"phase": "completed", "required": False,
-            "detail": "Migração automática de IDs concluída e verificada.",
+            "detail": i18n.t("api_host_migration.completed"),
             "hosts_migrated": len(result.get("mapping", [])),
             "baseline": result.get("run_dir")}
 
@@ -103,13 +104,11 @@ async def _run(expected_hashes=None):
             deadline = time.monotonic() + COMMIT_TIMEOUT
             while not _commit_published(expected_job, expected_version):
                 if time.monotonic() >= deadline:
-                    _set("failed", "A instalação do código ainda não foi confirmada pelo launcher. "
-                         "Os dados não foram convertidos; verifique o estado da atualização antes de reiniciar.",
+                    _set("failed", i18n.t("api_host_migration.commit_unconfirmed"),
                          required=True, code="migration_commit_unconfirmed")
                     return
                 await asyncio.sleep(.1)
-        _set("running", "Convertendo automaticamente as identidades dos hosts. Aguarde; "
-             "as edições e conexões interativas estão temporariamente bloqueadas.", required=True)
+        _set("running", i18n.t("api_host_migration.converting"), required=True)
         result = await asyncio.to_thread(_convert, expected_hashes)
         deps.STATE.host_migration = result
     except asyncio.CancelledError:
@@ -117,14 +116,10 @@ async def _run(expected_hashes=None):
     except Exception as exc:
         from lib.host_id_migration import PreflightError
         if isinstance(exc, PreflightError):
-            _set("failed", "Migração automática de IDs bloqueada na pré-validação "
-                 f"({len(exc.problems)} problema(s)). Nenhuma referência órfã foi excluída. "
-                 "Corrija os dados indicados pelo dry-run e reinicie para tentar novamente.",
+            _set("failed", i18n.t("api_host_migration.preflight_blocked", count=len(exc.problems)),
                  required=True, code="migration_preflight", problems=len(exc.problems))
         else:
-            _set("failed", "Não foi possível concluir ou recuperar a migração automática de IDs. "
-                 "As edições estão bloqueadas para preservar os dados. O baseline e o journal "
-                 "foram mantidos; verifique a recuperação antes de reiniciar.",
+            _set("failed", i18n.t("api_host_migration.recovery_failed"),
                  required=True, code="migration_recovery_failed")
         # Não incluir valores dos documentos nem conteúdo de exceções na API/log.
         LOG.error("Migração automática bloqueada (%s)", type(exc).__name__)
@@ -133,11 +128,10 @@ async def _run(expected_hashes=None):
 def start(expected_hashes=None):
     """Chamado no startup antes da prontidão HTTP; não cria dados em read-only."""
     if deps.STATE.read_only:
-        _set("read_only", "Modo somente leitura: migração automática não executada.")
+        _set("read_only", i18n.t("api_host_migration.read_only"))
         return None
     if os.environ.get("NETOPS_UPDATE_RECOVERING") == "1":
-        _set("waiting_for_commit", "Aguardando a confirmação da instalação pelo launcher "
-             "antes de converter os IDs dos hosts.", required=True)
+        _set("waiting_for_commit", i18n.t("api_host_migration.waiting_commit"), required=True)
     else:
-        _set("running", "Verificando a migração automática de IDs dos hosts.", required=True)
+        _set("running", i18n.t("api_host_migration.checking"), required=True)
     return asyncio.create_task(_run(expected_hashes))

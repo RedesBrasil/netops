@@ -33,6 +33,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from lib import i18n
+
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,31}$")   # espelha accessdb.USERNAME_RE
 NONE_DIR_NAME = "_sem-github"          # pasta vazia de quem não conectou (não colide: "_" não é inicial válida)
 META_FILE = "github.json"
@@ -57,7 +59,7 @@ def users_root(data_root: Path | str) -> Path:
 def _check_user(username: str) -> str:
     u = (username or "").strip().lower()
     if not USERNAME_RE.match(u):
-        raise GitHubError("invalid_username", f"Usuário inválido: {username!r}", 422)
+        raise GitHubError("invalid_username", i18n.t("lib_github.invalid_username", username=repr(username)), 422)
     return u
 
 
@@ -150,13 +152,13 @@ def _gh(args: list[str], cfg_dir: Path, data_root, stdin: str | None = None,
         timeout: int = _TIMEOUT) -> subprocess.CompletedProcess:
     gh = gh_bin()
     if not gh:
-        raise GitHubError("gh_missing", "GitHub CLI (gh) não está instalado no servidor.", 500)
+        raise GitHubError("gh_missing", i18n.t("lib_github.gh_missing"), 500)
     try:
         return subprocess.run(  # noqa: S603 - argv fixo, sem shell
             [gh, *args], env=base_env(cfg_dir, data_root), input=stdin, capture_output=True, text=True,
             timeout=timeout, cwd=str(cfg_dir))
     except (OSError, subprocess.SubprocessError) as e:
-        raise GitHubError("gh_failed", f"Falha ao executar gh: {type(e).__name__}", 502) from e
+        raise GitHubError("gh_failed", i18n.t("lib_github.gh_failed", error=type(e).__name__), 502) from e
 
 
 def _api_json(path: str, cfg_dir: Path, data_root):
@@ -182,7 +184,7 @@ def refresh(data_root, username: str, method: str = "", keep_email: bool = True)
     cfg = gh_dir(data_root, username)
     user = _api_json("/user", cfg, data_root)
     if not isinstance(user, dict) or not user.get("login"):
-        raise GitHubError("not_logged", "O GitHub não confirmou o login (token inválido ou sem acesso).", 401)
+        raise GitHubError("not_logged", i18n.t("lib_github.not_logged"), 401)
     emails = _api_json("/user/emails", cfg, data_root)
     verified = [e["email"] for e in (emails or []) if isinstance(e, dict) and e.get("verified") and e.get("email")]
     old = get_meta(data_root, username) or {}
@@ -202,14 +204,14 @@ def login_with_token(data_root, username: str, token: str) -> dict:
     """Alternativa ao login pelo navegador: token pessoal (PAT). Vai por stdin, nunca por argv/log."""
     token = (token or "").strip()
     if not token or len(token) > 400 or any(c.isspace() for c in token):
-        raise GitHubError("invalid_token", "Token inválido.", 422)
+        raise GitHubError("invalid_token", i18n.t("lib_github.invalid_token"), 422)
     cfg = gh_dir(data_root, username)
     p = _gh(["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--with-token",
              "--insecure-storage"],   # token no hosts.yml da pasta do usuário, nunca no chaveiro do sistema
             cfg, data_root, stdin=token + "\n")
     if p.returncode != 0:
         _wipe_gh(cfg)
-        raise GitHubError("login_failed", "O GitHub recusou o token (confira validade e permissões).", 401)
+        raise GitHubError("login_failed", i18n.t("lib_github.login_failed"), 401)
     try:
         return refresh(data_root, username, method="token", keep_email=False)
     except GitHubError:
@@ -220,9 +222,9 @@ def login_with_token(data_root, username: str, token: str) -> dict:
 def set_email(data_root, username: str, email: str) -> dict:
     meta = get_meta(data_root, username)
     if not meta:
-        raise GitHubError("not_connected", "Conecte o GitHub antes.", 409)
+        raise GitHubError("not_connected", i18n.t("lib_github.not_connected"), 409)
     if email not in (meta.get("emails") or []):
-        raise GitHubError("invalid_email", "Escolha um dos e-mails verificados da sua conta do GitHub.", 422)
+        raise GitHubError("invalid_email", i18n.t("lib_github.invalid_email"), 422)
     meta["email"] = email
     _write_meta(data_root, username, meta)
     return meta

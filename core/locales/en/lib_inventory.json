@@ -1,0 +1,19 @@
+{
+  "access_method_missing": "hosts/{name}: 'access.method' missing",
+  "cli_description": "Loads/validates the NetOps inventory.",
+  "cli_list_help": "Lists the inventory hosts",
+  "cli_show_help": "Shows a resolved host (without password)",
+  "cli_show_id_help": "Shows a host by its integer ID",
+  "cli_validate_help": "Validates hosts.yaml against the schema",
+  "dir_symlink": "the inventory directory cannot go through a symlink",
+  "field_missing": "hosts/{name}: field '{field}' missing (neither in the host nor in the group)",
+  "invalid": "INVALID:",
+  "journal_invalid": "invalid migration journal; check symlinks before recovering",
+  "journal_unreadable": "unreadable migration journal; recover the baseline before continuing",
+  "jsonschema_missing": "jsonschema not installed (pip install -r requirements.txt)",
+  "migration_incomplete": "incomplete ID migration; run host_id_migration.py recover",
+  "not_found": "ERROR: inventory not found: {path}",
+  "pyyaml_missing": "ERROR: PyYAML not installed. Run: pip install -r requirements.txt",
+  "schema_not_found": "schema not found: {path}",
+  "valid": "OK — valid inventory."
+}

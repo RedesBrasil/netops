@@ -24,6 +24,7 @@ from lib._venv import ensure_venv  # noqa: E402
 ensure_venv()  # python3 do sistema -> re-executa no .venv do projeto
 
 import yaml  # noqa: E402
+from lib import i18n  # noqa: E402
 from lib.inventory import resolve_host  # noqa: E402
 from lib.cli_runner import run_commands  # noqa: E402
 from backup_runner import _strip_ros, _atomic_write  # noqa: E402
@@ -57,9 +58,9 @@ def _run_local(cmd: str, timeout: int = 300) -> str:
         end = client.run(ROOT, script=cmd, cwd="/", timeout=timeout, scope="backup pré/pós (change.py)",
                          on_output=chunks.append)
     except LocalAdminError as e:
-        raise SystemExit(f"backup do host Local falhou: {e.code}: {e.detail}")
+        raise SystemExit(i18n.t("cli_backup.local_backup_failed", code=e.code, detail=e.detail))
     if end.get("timeout"):
-        raise SystemExit("backup do host Local estourou o tempo")
+        raise SystemExit(i18n.t("cli_backup.local_backup_timeout"))
     return b"".join(chunks).decode(errors="replace").replace("\r\n", "\n")
 
 
@@ -104,7 +105,7 @@ def _run_via_session(hid: int, method: str, cmd: str, timeout: int = 120) -> str
     res = sess._request(sid, {"op": "exec", "command": cmd, "timeout": timeout,
                               "expect": None, "timing": False}, timeout=timeout + sess.CLIENT_SLACK)
     if res.get("status") != "ok":
-        raise RuntimeError(f"sessão devolveu status={res.get('status')}")
+        raise RuntimeError(i18n.t("cli_backup.session_status", status=res.get("status")))
     return res.get("output", "")
 
 
@@ -114,29 +115,29 @@ def _run(hid: int, method: str, cmd: str) -> str:
         try:
             return _run_via_session(hid, method, cmd)
         except BaseException as exc:  # noqa: BLE001 — inclui SystemExit (cofre trancado etc.)
-            print(f"AVISO: sessão persistente indisponível ({exc}); usando login avulso.", file=sys.stderr)
+            print(i18n.t("cli_backup.session_unavailable", error=exc), file=sys.stderr)
     return run_commands(hid, [cmd], force_method=method, read_timeout=120)[cmd]
 
 
 def collect(hid: int, h: dict) -> str:
     col = collector(h.get("vendor") or "")
     if not col:
-        raise SystemExit(f"vendor '{h.get('vendor')}' sem coletor de backup")
+        raise SystemExit(i18n.t("cli_backup.no_collector", vendor=h.get("vendor")))
     cmd, clean = col
     method = (h.get("access") or {}).get("method", "ssh")
     if method == "local":
         text = clean(_run_local(LOCAL_CMD))
         if len(text.strip()) < 200 or "### pacotes" not in text:
-            raise SystemExit("backup do host Local vazio/incompleto — abortando por segurança")
+            raise SystemExit(i18n.t("cli_backup.local_backup_incomplete"))
         return text + "\n"
     if method not in ("ssh", "telnet"):
-        raise SystemExit(f"acesso {method} não coleta config — cadastre SSH")
+        raise SystemExit(i18n.t("cli_backup.method_no_config", method=method))
     out = _run(hid, method, cmd)
     if cmd.startswith("/export show-sensitive") and ("expected end of command" in out or "syntax error" in out):
         out = _run(hid, method, "/export")
     text = clean(out)
     if len(text.strip()) < 50:
-        raise SystemExit("backup vazio/curto demais — abortando por segurança")
+        raise SystemExit(i18n.t("cli_backup.backup_too_short"))
     return text if text.endswith("\n") else text + "\n"
 
 
@@ -157,13 +158,13 @@ def save(hid: int, tag: str, text: str) -> str:
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description=i18n.t("cli_backup.change_description"))
     ap.add_argument("action", choices=["begin", "end", "check"])
     ap.add_argument("--host-id", type=int, required=True)
     ap.add_argument("--force", action="store_true")
-    ap.add_argument("--mode", choices=["snapshot", "none"], help="só CT/VM de Proxmox: snapshot pré-mudança ou sem backup")
-    ap.add_argument("--tag", default="", help="CT/VM: rótulo curto no nome do snapshot")
-    ap.add_argument("--force-space", action="store_true", help="CT/VM: ignora o bloqueio de espaço do pool")
+    ap.add_argument("--mode", choices=["snapshot", "none"], help=i18n.t("cli_backup.help_mode"))
+    ap.add_argument("--tag", default="", help=i18n.t("cli_backup.help_tag"))
+    ap.add_argument("--force-space", action="store_true", help=i18n.t("cli_backup.help_force_space"))
     a = ap.parse_args()
     hid = a.host_id
     h = host_info(hid)
@@ -176,52 +177,50 @@ def main():
         flag = guest is not None or collector(h.get("vendor") or "") is not None
     if a.action == "check":   # usado pelo hook: exit 3 = falta rodar `begin` antes de alterar
         if flag and not marker.exists():
-            print(f"FALTA BACKUP: rode `python3 scripts/tools/backup/change.py begin --host-id {hid}` antes de alterar o host {hid}.")
+            print(i18n.t("cli_backup.missing_backup", host_id=hid))
             sys.exit(3)
         return
     if not flag and not a.force:
-        print(f"SKIP: host {hid} com backup_before_change desligado (use --force para forçar)")
+        print(i18n.t("cli_backup.skip_disabled", host_id=hid))
         return
     if guest and a.action == "begin":
         if not a.mode:   # a IA NÃO decide sozinha: precisa perguntar ao usuário (AskUserQuestion)
-            print(f"PERGUNTE AO USUÁRIO: o host {hid} é {guest[0].upper().replace('LXC','CT')} {guest[1]} do Proxmox (host {guest[2]}). "
-                  "Fazer snapshot antes da mudança? Sim → `change.py begin --host-id %d --mode snapshot [--tag x]`; "
-                  "Não → `... --mode none`." % hid)
+            print(i18n.t("cli_backup.ask_snapshot", host_id=hid, kind=guest[0].upper().replace("LXC", "CT"),
+                         vmid=guest[1], pve_id=guest[2]))
             sys.exit(4)
         if a.mode == "snapshot":
             snap = SN.create(hid, h, a.tag, force_space=a.force_space)
             marker.write_text(json.dumps({"snapshot": snap, "started": int(time.time())}))
         else:
             marker.write_text(json.dumps({"skipped": True, "started": int(time.time())}))
-            print("OK: sem backup (usuário recusou o snapshot)")
+            print(i18n.t("cli_backup.no_backup_declined"))
         return
     if guest and a.action == "end":
         if not marker.exists():
-            raise SystemExit("sessão não iniciada (rode begin antes)")
+            raise SystemExit(i18n.t("cli_backup.not_started"))
         m = json.loads(marker.read_text())
         marker.unlink()
         if m.get("snapshot"):
-            print(f"OK: mudança encerrada. Snapshot {m['snapshot']} continua no Proxmox.")
-            print(f"AÇÃO: avise o usuário que concluiu e PERGUNTE (AskUserQuestion) se apaga o snapshot: "
-                  f"`python3 scripts/tools/backup/snapshot.py delete --host-id {hid}` (só após o 'sim').")
+            print(i18n.t("cli_backup.end_snapshot_kept", snapshot=m["snapshot"]))
+            print(i18n.t("cli_backup.ask_delete_snapshot", host_id=hid))
         else:
-            print("OK: mudança encerrada (sem snapshot).")
+            print(i18n.t("cli_backup.end_no_snapshot"))
         return
     if a.action == "begin":
         name = save(hid, "pre", collect(hid, h))
         marker.write_text(json.dumps({"pre": name, "started": int(time.time())}))
-        print(f"OK pre: backups/by-id/{hid}/{name} (podados: {prune(hid)})")
+        print(i18n.t("cli_backup.ok_pre", host_id=hid, name=name, pruned=prune(hid)))
     else:
         if not marker.exists():
-            raise SystemExit("sessão não iniciada (rode begin antes)")
+            raise SystemExit(i18n.t("cli_backup.not_started"))
         pre = json.loads(marker.read_text())["pre"]
         name = save(hid, "post", collect(hid, h))
         a_txt = (STORE / str(hid) / pre).read_text().splitlines()
         b_txt = (STORE / str(hid) / name).read_text().splitlines()
         diff = list(difflib.unified_diff(a_txt, b_txt, pre, name, lineterm="", n=1))
         marker.unlink()
-        print(f"OK post: backups/by-id/{hid}/{name} (podados: {prune(hid)})")
-        print(f"DIFF: {sum(1 for l in diff if l[:1] in '+-' and l[:3] not in ('+++','---'))} linhas alteradas")
+        print(i18n.t("cli_backup.ok_post", host_id=hid, name=name, pruned=prune(hid)))
+        print(i18n.t("cli_backup.diff_lines", count=sum(1 for l in diff if l[:1] in '+-' and l[:3] not in ('+++', '---'))))
         print("\n".join(diff[:200]))
 
 

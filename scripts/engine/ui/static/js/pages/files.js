@@ -4,7 +4,7 @@
 //   root=1 = modo root (sessão curta via administração Local; o token NUNCA vai para a URL — F5 pede de novo).
 // Normal: roda como a conta do servidor (`netops`) e abre na pasta do NetOps. "Abrir como root" usa o
 // host Local (senha do admin local no cofre, destrancado) — ver services/root_files_svc.py.
-import { html, useState, useEffect, api, toast } from "../ui.js";
+import { html, useState, useEffect, api, toast, t } from "../ui.js";
 import { useMenuRoute } from "../route.js";
 import { FileBrowser } from "../file-browser.js";
 
@@ -43,33 +43,31 @@ export function FilesPage() {
       const out = await api.post("/files/root/open", {});
       rootSrc = out.src; setSrc(out.src);
       r.pushParams({ root: "1", path: "/root", open: "" });
-      toast("ok", "Modo root aberto (expira após 5 min sem uso)");
+      toast("ok", t("files.root_opened"));
     } catch (e) { toast("err", e.message || String(e)); }
     finally { setBusy(false); }
   }
   async function closeRoot() {
-    const t = rootSrc; rootSrc = ""; setSrc("local");
+    const tok = rootSrc; rootSrc = ""; setSrc("local");
     r.pushParams({ root: "", path: home, open: "" });
-    if (t) api.post("/files/root/close", { src: t }).catch(() => {});
+    if (tok) api.post("/files/root/close", { src: tok }).catch(() => {});
   }
 
   const inRoot = src !== "local";
   const rootBtn = info && info.user !== "root" && !inRoot && html`<button class="sm danger needs-server-admin"
       disabled=${busy || !(rootSt && rootSt.ready)} onClick=${openRoot}
-      title=${rootSt ? (rootSt.ready ? "Gerenciar como root (sessão curta, auditada)" : rootSt.detail || "indisponível") : "verificando…"}>
-      🔓 Abrir como root</button>`;
+      title=${rootSt ? (rootSt.ready ? t("files.root_open_title") : rootSt.detail || t("files.unavailable")) : t("files.checking")}>
+      ${t("files.root_open_btn")}</button>`;
   return html`<div class="files-page">
-    <div class="page-title"><h1>Arquivos</h1>
-      ${info && !inRoot && html`<span class="help">Servidor <b>${info.hostname}</b> · usuário <b>${info.user}</b>${info.user === "root"
-        ? " (acesso total — cuidado ao apagar)" : ""}</span>`}
+    <div class="page-title"><h1>${t("files.title")}</h1>
+      ${info && !inRoot && html`<span class="help">${t("files.server_label")} <b>${info.hostname}</b> · ${t("files.user_label")} <b>${info.user}</b>${info.user === "root"
+        ? t("files.root_full_access") : ""}</span>`}
       ${rootBtn}
       ${rootSt && !rootSt.ready && !inRoot && info && info.user !== "root" && html`<span class="muted">${rootSt.detail}</span>`}
     </div>
     ${inRoot && html`<div class="card err" role="alert" style="display:flex;gap:1rem;align-items:center">
-      <b>⚠ MODO ROOT</b> — você está gerenciando este servidor como <b>root</b>. Toda ação é auditada; a sessão
-      fecha sozinha após 5 min sem uso. <button class="sm" onClick=${closeRoot}>Sair do modo root</button></div>`}
-    ${wantRoot && !inRoot && html`<div class="card warn">A sessão root desta aba terminou (recarregou a página ou expirou). Clique em
-      “Abrir como root” para abrir outra, ou <a href="#files">volte aos arquivos normais</a>.</div>`}
+      <b>${t("files.root_mode_badge")}</b> — ${t("files.root_mode_before")} <b>root</b>. ${t("files.root_mode_after")} <button class="sm" onClick=${closeRoot}>${t("files.root_exit")}</button></div>`}
+    ${wantRoot && !inRoot && html`<div class="card warn">${t("files.root_session_ended")} <a href="#files">${t("files.root_back_normal")}</a>.</div>`}
     ${err ? html`<div class="err">${err}</div>`
       : info && html`<${FileBrowser} key=${src} src=${src} home=${inRoot ? "/root" : home} state=${state} setState=${setState} />`}
   </div>`;

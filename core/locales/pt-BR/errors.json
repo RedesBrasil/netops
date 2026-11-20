@@ -1,0 +1,16 @@
+{
+  "field_required": "Campo obrigatório",
+  "forbidden_perm": "Sem permissão: {perm}.",
+  "forbidden_short": "Sem permissão.",
+  "invalid_value": "Valor inválido",
+  "locale_no_user": "Ainda não há usuários: o idioma é escolhido por usuário depois que o administrador é criado.",
+  "maintenance": "Atualização em andamento. Aguarde o console reiniciar.",
+  "password_change_required": "Troque a senha provisória antes de continuar.",
+  "read_only": "servidor em modo somente-leitura (--read-only)",
+  "setup_required": "Primeiro acesso pendente: conclua a configuração inicial pelo link que o instalador mostrou (ou gere outro: python3 scripts/engine/users/cli.py setup-link).",
+  "shape_icon_unsupported": "Este servidor ainda não aceita ícones nas formas. Atualize o NetOps e reinicie o console no servidor. Seus ajustes ainda não foram salvos.",
+  "unknown_language": "Idioma não suportado: {lang}",
+  "validation_failed": "Validação falhou",
+  "vault_locked_toast": "Cofre trancado — destranque no terminal",
+  "version_conflict": "Conflito de versão — recarregue"
+}

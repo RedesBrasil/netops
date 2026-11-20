@@ -1,4 +1,6 @@
 // Links e preferência de conversa; o histórico continua no transcript do servidor.
+// Loaded as plain source by node tests: no imports; globalThis.netopsT with the Portuguese fallback.
+const tr = (key, vars, fallback) => { const out = globalThis.netopsT ? globalThis.netopsT(key, vars) : key; return out === key ? fallback : out; };
 const LAST_SESSION_KEY = "netops_claude_last_session";
 const SESSION_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
@@ -93,7 +95,7 @@ export function replaceClaudeHash(hash) {
 }
 
 export async function copyClaudeSessionLink(id, project = "") {
-  if (!validSessionId(id)) throw new Error("A sessão ainda não tem um link.");
+  if (!validSessionId(id)) throw new Error(tr("claude.session_no_link", null, "A sessão ainda não tem um link."));
   const url = new URL(location.href);
   url.search = ""; // Nunca copiar parâmetros de autenticação de um link legado.
   url.hash = claudeSessionHash(id, project);
@@ -109,7 +111,7 @@ export async function copyClaudeSessionLink(id, project = "") {
   document.body.appendChild(field);
   try {
     field.select();
-    if (!document.execCommand("copy")) throw new Error("Não foi possível copiar o link.");
+    if (!document.execCommand("copy")) throw new Error(tr("claude.copy_link_failed", null, "Não foi possível copiar o link."));
   } finally {
     field.remove();
     if (previous && previous.focus) previous.focus();

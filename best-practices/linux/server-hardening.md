@@ -1,54 +1,54 @@
 ---
 id: linux-server-hardening
-titulo: Hardening de Servidor Linux
+titulo: Linux Server Hardening
 vendor: linux
 tags: [security, linux, hardening, server]
 severidade: alta
 ---
 
-## Resumo
+## Summary
 
-Endurecimento de um servidor Linux de infraestrutura (Ubuntu/Debian/RHEL). Cobre acesso,
-superfície de ataque, atualização e auditoria. Vale para hosts físicos, VMs e hosts Proxmox.
+Hardening of an infrastructure Linux server (Ubuntu/Debian/RHEL). Covers access,
+attack surface, updates and auditing. Applies to physical hosts, VMs and Proxmox hosts.
 
 ## Checklist
 
-- [ ] SSH endurecido: chave em vez de senha, `PermitRootLogin` controlado (ver `ssh-hardening`).
-- [ ] Firewall de host ativo (`ufw`/`firewalld`/`nftables`) com política default deny no input.
-- [ ] Apenas serviços necessários ouvindo — revisar `ss -tulpn`.
-- [ ] Pacotes atualizados; atualizações de segurança automáticas habilitadas (`unattended-upgrades`).
-- [ ] Contas de usuário individuais; `sudo` em vez de login direto de `root`.
-- [ ] Senhas de contas locais fortes; contas de sistema sem shell de login.
-- [ ] Logs centralizados (syslog/journald → coletor remoto) e horário via NTP.
-- [ ] `fail2ban` (ou equivalente) protegendo SSH e serviços expostos.
-- [ ] Permissões corretas em arquivos sensíveis (`/etc/shadow`, chaves, configs de serviço).
-- [ ] Backup definido e testado.
+- [ ] SSH hardened: key instead of password, `PermitRootLogin` controlled (see `ssh-hardening`).
+- [ ] Host firewall active (`ufw`/`firewalld`/`nftables`) with a default deny policy on input.
+- [ ] Only the required services listening — review `ss -tulpn`.
+- [ ] Packages up to date; automatic security updates enabled (`unattended-upgrades`).
+- [ ] Individual user accounts; `sudo` instead of direct `root` login.
+- [ ] Strong passwords on local accounts; system accounts without a login shell.
+- [ ] Centralized logs (syslog/journald → remote collector) and time via NTP.
+- [ ] `fail2ban` (or equivalent) protecting SSH and exposed services.
+- [ ] Correct permissions on sensitive files (`/etc/shadow`, keys, service configs).
+- [ ] Backup defined and tested.
 
-## Detalhamento
+## Details
 
-**Superfície de ataque.** `ss -tulpn` lista o que está ouvindo. Tudo que não for necessário
-deve ser parado e desabilitado (`systemctl disable --now <serviço>`). Cada porta aberta é
-uma porta a defender.
+**Attack surface.** `ss -tulpn` lists what is listening. Everything that is not needed
+should be stopped and disabled (`systemctl disable --now <service>`). Every open port is
+a port to defend.
 
-**Firewall de host.** Não confie só no firewall de borda. O host deve ter seu próprio
-firewall com default deny no input, abrindo só o necessário (SSH da gerência, portas do
-serviço que ele provê).
+**Host firewall.** Do not rely only on the edge firewall. The host must have its own
+firewall with default deny on input, opening only what is needed (SSH from management, the ports of the
+service it provides).
 
-**Atualização.** A maioria dos comprometimentos explora CVE conhecida e já corrigida.
-`unattended-upgrades` para correções de segurança reduz drasticamente a janela de exposição.
+**Updates.** Most compromises exploit a known CVE that has already been fixed.
+`unattended-upgrades` for security fixes drastically reduces the exposure window.
 
-**Acesso.** Logar como `root` direto elimina rastreabilidade. Cada admin tem sua conta e usa
-`sudo` — o log mostra quem fez o quê.
+**Access.** Logging in directly as `root` removes traceability. Each admin has their own account and uses
+`sudo` — the log shows who did what.
 
-**fail2ban.** Monitora logs e bane temporariamente IPs com muitas falhas de autenticação —
-defesa eficaz e barata contra brute force.
+**fail2ban.** Monitors logs and temporarily bans IPs with many authentication failures —
+an effective and cheap defense against brute force.
 
-## Configuração relacionada
+## Related configuration
 
-- `config-examples/linux/sshd_config` — SSH endurecido (exemplo seed).
-- Firewall de host (ufw/nftables): a adicionar em `config-examples/linux/` conforme o projeto evolui.
+- `config-examples/linux/sshd_config` — hardened SSH (seed example).
+- Host firewall (ufw/nftables): to be added to `config-examples/linux/` as the project evolves.
 
-## Referências
+## References
 
-- CIS Benchmark para a distribuição em uso.
+- CIS Benchmark for the distribution in use.
 - `best-practices/general/ssh-hardening.md`, `best-practices/linux/services-hardening.md`

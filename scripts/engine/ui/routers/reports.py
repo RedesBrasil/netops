@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
 import deps
+from lib import i18n
 from services import docs_svc
 
 router = APIRouter(tags=["reports"])
@@ -33,7 +34,7 @@ def list_reports():
 def get_report(file: str):
     path = docs_svc.safe_child(deps.REPORTS_DIR, file)
     if not path.exists() or path.suffix != ".md":
-        raise KeyError(f"relatório '{file}' não existe")
+        raise KeyError(i18n.t("api_reports.not_exists", file=file))
     return {"file": file, "markdown": path.read_text(encoding="utf-8")}
 
 
@@ -43,7 +44,7 @@ def raw_report(file: str, download: bool = False):
     path = docs_svc.safe_child(deps.REPORTS_DIR, file)
     ctype = VIEWABLE.get(path.suffix.lower())
     if not path.is_file() or not ctype:
-        raise KeyError(f"relatório '{file}' não existe")
+        raise KeyError(i18n.t("api_reports.not_exists", file=file))
     disp = "attachment" if download else "inline"
     return FileResponse(path, media_type=ctype, headers={
         "Content-Disposition": f"{disp}; filename*=UTF-8''{quote(path.name)}",

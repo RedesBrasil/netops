@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, Field, FiniteFloat, StrictInt, model_validator, field_validator
+from lib import i18n
 
 Vendor = Literal[
     "mikrotik", "unifi", "ubiquiti", "cisco", "huawei", "proxmox",
@@ -110,7 +111,7 @@ class ExtraIp(BaseModel):
         try:
             ipaddress.ip_interface(value)  # aceita 10.0.0.1, 10.0.0.1/24, IPv6
         except ValueError:
-            raise ValueError("IP inválido (use IPv4/IPv6, com máscara opcional: 200.1.2.3/29)")
+            raise ValueError(i18n.t("api_models.invalid_ip"))
         return value
 
 
@@ -130,7 +131,7 @@ class HostUpsert(NodeUpsert):
     def valid_icon(cls, value):
         from services import icons_svc
         if value is not None and not icons_svc.known_icon(value):
-            raise ValueError("ícone não existe na biblioteca local")
+            raise ValueError(i18n.t("api_models.unknown_icon"))
         return value
     @model_validator(mode="after")
     def unique_extra_ips(self):
@@ -144,7 +145,7 @@ class HostUpsert(NodeUpsert):
         for item in self.extra_ips or []:
             address = ipaddress.ip_interface(item.ip).ip
             if address in seen:
-                raise ValueError(f"IP {address} repetido (já é o IP de gerência ou outro IP adicional)")
+                raise ValueError(i18n.t("api_models.duplicate_ip", address=address))
             seen.add(address)
         return self
 
@@ -332,7 +333,7 @@ class BackupLegacySource(BaseModel):
     @classmethod
     def safe_directory(cls, value):
         if value in (".", "..") or "/" in value or "\\" in value:
-            raise ValueError("diretório de histórico inválido")
+            raise ValueError(i18n.t("api_models.invalid_history_dir"))
         return value
 
 
@@ -404,13 +405,13 @@ class MapObject(BaseModel):
     def valid_icon(cls, value):
         from services import icons_svc
         if value is not None and not icons_svc.known_icon(value):
-            raise ValueError("ícone não existe na biblioteca local")
+            raise ValueError(i18n.t("api_models.unknown_icon"))
         return value
 
     @model_validator(mode="after")
     def reference_target(self):
         if self.type == "reference" and not self.map_id:
-            raise ValueError("referência precisa de um mapa de destino")
+            raise ValueError(i18n.t("api_models.reference_needs_map"))
         return self
 
 class HostEndpoint(BaseModel):
@@ -453,17 +454,17 @@ class NetworkMap(BaseModel):
     def map_rule(self):
         position_ids = [position.host_id for position in self.positions]
         if len(position_ids) != len(set(position_ids)):
-            raise ValueError("posições de host duplicadas")
+            raise ValueError(i18n.t("api_models.duplicate_positions"))
         if len(self.members) != len(set(self.members)):
-            raise ValueError("membros de host duplicados")
+            raise ValueError(i18n.t("api_models.duplicate_members"))
         if len(self.excluded) != len(set(self.excluded)):
-            raise ValueError("hosts excluídos duplicados")
+            raise ValueError(i18n.t("api_models.duplicate_excluded"))
         if self.kind == "site" and not self.site:
-            raise ValueError("mapa por localidade precisa de site")
+            raise ValueError(i18n.t("api_models.site_map_needs_site"))
         if self.kind == "all" and self.id != "all":
-            raise ValueError("o mapa geral usa o ID all")
+            raise ValueError(i18n.t("api_models.all_map_id"))
         if self.id == "all" and self.kind != "all":
-            raise ValueError("o mapa geral não pode mudar de tipo")
+            raise ValueError(i18n.t("api_models.all_map_kind"))
         return self
 
 class MapSave(BaseModel):

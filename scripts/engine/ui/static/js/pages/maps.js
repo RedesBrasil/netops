@@ -1,5 +1,5 @@
 // O editor trabalha sobre os mesmos hosts/enlaces das páginas de inventário.
-import { html, useState, useEffect, useRef, api, Spinner, toast, handleError, Modal, ConfirmDialog } from "../ui.js";
+import { html, useState, useEffect, useRef, api, Spinner, toast, handleError, Modal, ConfirmDialog, t, fmtTime } from "../ui.js";
 import { HostForm } from "./hosts.js";
 import { accessEntries, openEntry, AccessChooser } from "./host-term.js";
 import { LinkForm, IconPicker } from "../components.js";
@@ -15,7 +15,8 @@ export function MapsPage() {
   const current = r.segments[0] || sessionStorage.getItem("netops_map") || "all";
   const curId = () => { const p = parseRoute(); return (p.menu === "maps" && p.segments[0]) || sessionStorage.getItem("netops_map") || "all"; };   // leitura "ao vivo" (closures antigas)
   const setCurrent = (id, replace = false) => { sessionStorage.setItem("netops_map", id); navigate({ menu: "maps", segments: [id], params: replace ? parseRoute().params : {} }, { replace }); };
-  const [status, setStatus] = useState("Salvo no servidor"), [saving, setSaving] = useState(false);
+  // Status = stable code (saved | saving | conflict | failed); the editor translates it (map_editor.status_*).
+  const [status, setStatus] = useState("saved"), [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [deleting, setDeleting] = useState(false), deletion = useRef(false);
   const [hostDialog, setHostDialog] = useState(null), [linkDialog, setLinkDialog] = useState(null), [newMap, setNewMap] = useState(false), [confirm, setConfirm] = useState(null);
@@ -64,7 +65,7 @@ export function MapsPage() {
       const link = event.target.closest?.('a[href^="#"]');
       if (link && link.hash.split("?")[0].split("/")[0] !== "#maps" && (running.current || pending.current.size || blocked.current || deletion.current)) {
         event.preventDefault(); event.stopPropagation();
-        toast.err("Aguarde o salvamento do mapa ou resolva a falha antes de sair.");
+        toast.err(t("maps.wait_save_before_leaving"));
       }
     };
     document.addEventListener("click", navigate, true);
@@ -72,7 +73,7 @@ export function MapsPage() {
   }, []);
   async function drain() {
     if (running.current || blocked.current || !pending.current.size) return;
-    running.current = true; setSaving(true); setStatus("Salvando…"); setSaveError(null);
+    running.current = true; setSaving(true); setStatus("saving"); setSaveError(null);
     try {
       while (pending.current.size) {
         const [id, map] = pending.current.entries().next().value;
@@ -83,11 +84,11 @@ export function MapsPage() {
         // Uma confirmação de um gesto anterior não reposiciona o host ainda em arraste.
         if (!pending.current.size && !busy.current && mounted.current) setSnapshot(result);
       }
-      if (mounted.current) setStatus("Salvo no servidor");
+      if (mounted.current) setStatus("saved");
     } catch (e) {
       blocked.current = true;
       if (mounted.current) {
-        setStatus(e.status === 409 ? "Conflito de versão" : "Falha ao salvar");
+        setStatus(e.status === 409 ? "conflict" : "failed");
         const hint = e.recoveryHint || null;
         setSaveError(hint);
         if (hint) toast.err(hint); else handleError(e);
@@ -103,7 +104,7 @@ export function MapsPage() {
   async function flush() {
     if (deletion.current) return false;
     await drain();
-    if (blocked.current || pending.current.size || running.current) { toast.err("Aguarde o salvamento do mapa ou resolva o conflito antes de continuar."); return false; }
+    if (blocked.current || pending.current.size || running.current) { toast.err(t("maps.wait_save_before_continuing")); return false; }
     return true;
   }
   async function switchMap(id) { if (!await flush()) return; setCurrent(id); }
@@ -118,7 +119,7 @@ export function MapsPage() {
     let row = hostRows.current?.find(x => x.id === hostId);
     if (!row) { try { row = (await loadHostRows()).find(x => x.id === hostId); } catch (e) { handleError(e); return; } }
     const entries = row ? accessEntries(row) : [];
-    if (!entries.length) { toast.err("Host sem SSH/Telnet/HTTP(S) cadastrado."); return; }
+    if (!entries.length) { toast.err(t("maps.no_access_method")); return; }
     if (entries.length === 1 && hostRows.current?.includes(row)) { openEntry(row.id, entries[0]); loadHostRows().catch(() => {}); return; }
     setAccessHost(row);
   }
@@ -126,7 +127,7 @@ export function MapsPage() {
   async function openChat(ids) {
     if (!await flush()) return;
     const tokens = ids.map(id => "#host:" + String((snapshot.hosts[id] || {}).hostname || id).trim().replace(/\s+/g, "_"));
-    const text = `Sobre ${ids.length > 1 ? "os hosts" : "o host"} ${tokens.join(" ")}: `;
+    const text = t("maps.chat_prefill", { count: ids.length, hosts: tokens.join(" ") });
     try { localStorage.setItem("cc-fork-prefill", JSON.stringify({ id: "new", text, t: Date.now() })); } catch (_) {}
     navigate("#claude/new");
     setTimeout(() => dispatchEvent(new Event("netops:claude-prefill")), 400);
@@ -137,7 +138,7 @@ export function MapsPage() {
     try {
       const h = await api.get("/hosts");
       const host = args.id ? h.hosts.find(x => x.id === args.id) : { __new: true };
-      if (!host) { toast.err("Host não encontrado"); r.setParams({ host: "" }); return; }
+      if (!host) { toast.err(t("maps.host_not_found")); r.setParams({ host: "" }); return; }
       setHostDialog({ host, groups: h.groups, rev: h.rev, initial: { site: args.site || "" },
         ...(args.point ? { placement: { map_id: live.current.maps.find(m => m.id === current)?.id || "all", maps_rev: live.current.rev, ...args.point } } : {}) });
     } catch (e) { handleError(e); }
@@ -149,7 +150,7 @@ export function MapsPage() {
     const s = live.current, link = args.id ? s.topology.links.find(l => l.id === args.id) : { ...args, __new: true };
     if (args.remove) { setConfirm({ kind: "link", id: args.id }); return; }
     opening.current = false;
-    if (!link) { toast.err("Enlace não encontrado"); r.setParams({ link: "" }); return; }
+    if (!link) { toast.err(t("maps.link_not_found")); r.setParams({ link: "" }); return; }
     setLinkDialog({ link, hosts: Object.values(s.hosts).map(host => ({ ...host, label: hostLabel(host) })), rev: s.topology.rev });
   }
   async function deleteSelection(selection) {
@@ -171,10 +172,10 @@ export function MapsPage() {
           accept(await api.put(`/maps/${encodeURIComponent(map.id)}`, { map: persisted(map), hosts_rev: data.hosts_rev, topology_rev: data.topology.rev }, data.rev));
         } else accept(data);
       } else accept(data);
-      setStatus("Salvo no servidor"); toast.ok("Seleção excluída");
+      setStatus("saved"); toast.ok(t("maps.selection_deleted"));
     } catch (error) {
       handleError(error);
-      if (removed) toast.err(`${removed} host(s) já removido(s). A exclusão parou; confira a seleção restante antes de tentar novamente.`);
+      if (removed) toast.err(t("maps.partial_delete", { count: removed }));
       try { accept(await api.get("/maps")); } catch (refreshError) { handleError(refreshError); }
     } finally { deletion.current = false; if (mounted.current) setDeleting(false); }
   }
@@ -195,11 +196,11 @@ export function MapsPage() {
     if (!linkParam && linkDialog) setLinkDialog(null);
     else if (linkParam && !linkDialog && !opening.current) linkRef.current({ id: /^\d+$/.test(linkParam) ? Number(linkParam) : linkParam }, true);
   }, [linkParam, !!snapshot, !!Editor]);
-  if (error && (!snapshot || !Editor)) return html`<div class="card">Não foi possível abrir os mapas: ${error.message}<button onClick=${reload}>Tentar novamente</button></div>`;
+  if (error && (!snapshot || !Editor)) return html`<div class="card">${t("maps.open_failed", { message: error.message })}<button onClick=${reload}>${t("maps.retry")}</button></div>`;
   if (!snapshot || !Editor) return html`<${Spinner} />`;
   const map = snapshot.maps.find(m => m.id === current) || snapshot.maps[0];
   return html`<div class="maps-page">
-    <${Editor} IconPicker=${IconPicker} map=${map} maps=${snapshot.maps} hosts=${snapshot.hosts} links=${snapshot.topology.links} readOnly=${snapshot.read_only || deleting}
+    <${Editor} t=${t} fmtTime=${fmtTime} IconPicker=${IconPicker} map=${map} maps=${snapshot.maps} hosts=${snapshot.hosts} links=${snapshot.topology.links} readOnly=${snapshot.read_only || deleting}
       saving=${saving || !!pending.current.size || deleting} status=${status} saveError=${saveError} onSave=${save} onHost=${openHost} onLink=${openLink} onSwitch=${switchMap} onAccess=${openAccess} onChat=${openChat}
       onNewMap=${async () => { if (await flush()) setNewMap(true); }} onDeleteMap=${() => setConfirm({ kind: "map", id: map.id })}
       onDeleteSelection=${async selection => { if (await flush()) setConfirm({ kind: "selection", ...selection }); }}
@@ -209,16 +210,16 @@ export function MapsPage() {
     ${hostDialog && html`<${HostForm} ...${hostDialog} onClose=${() => { setHostDialog(null); r.pushParams({ host: "" }); reload().catch(handleError); }}
       onSaved=${() => { setHostDialog(null); r.pushParams({ host: "" }); reload().catch(handleError); }} />`}
     ${linkDialog && html`<${LinkForm} ...${linkDialog} onClose=${() => { setLinkDialog(null); r.pushParams({ link: "" }); }} onSaved=${() => { setLinkDialog(null); r.pushParams({ link: "" }); reload().catch(handleError); }} />`}
-    ${newMap && html`<${Modal} title="Novo mapa" onClose=${() => setNewMap(false)}><form onSubmit=${e => {
+    ${newMap && html`<${Modal} title=${t("maps.new_map")} onClose=${() => setNewMap(false)}><form onSubmit=${e => {
       e.preventDefault(); const name = new FormData(e.currentTarget).get("name").trim(); if (!name) return;
       const id = "map-" + (globalThis.crypto?.randomUUID?.() || Date.now()); save(blank(id, name)); setCurrent(id); setNewMap(false);
-    }}><label>Nome do mapa<input name="name" required maxlength="100" autofocus /></label><div class="modal-actions"><button type="button" onClick=${() => setNewMap(false)}>Cancelar</button><button class="primary">Criar mapa</button></div></form><//>`}
-    ${confirm && html`<${ConfirmDialog} title=${confirm.kind === "reload" ? "Recarregar mapas" : "Confirmar exclusão"} danger=true
-      message=${confirm.kind === "selection" ? `Excluir ${confirm.hostIds.length} host(s) do inventário e seus enlaces/referências em todos os mapas${confirm.objectIds.length ? `, além de ${confirm.objectIds.length} objeto(s) deste mapa` : ""}? Hosts: ${confirm.hostIds.map(id => hostLabel(snapshot.hosts[id] || {})).join(", ")}.` : confirm.kind === "map" ? `Excluir o mapa "${snapshot.maps.find(m => m.id === confirm.id)?.name || ""}"? Ele deixa de ser exibido, e as referências a ele em outros mapas são removidas. Hosts e enlaces do inventário são preservados, e o registro do mapa permanece no maps.yaml.` : confirm.kind === "link" ? "Excluir o enlace da topologia e de todos os mapas?" : "Descartar os ajustes locais não salvos e carregar a versão atual do servidor?"}
+    }}><label>${t("maps.map_name")}<input name="name" required maxlength="100" autofocus /></label><div class="modal-actions"><button type="button" onClick=${() => setNewMap(false)}>${t("common.cancel")}</button><button class="primary">${t("maps.create_map")}</button></div></form><//>`}
+    ${confirm && html`<${ConfirmDialog} title=${confirm.kind === "reload" ? t("maps.reload_title") : t("maps.confirm_delete_title")} danger=true
+      message=${confirm.kind === "selection" ? t("maps.delete_selection_confirm", { count: confirm.hostIds.length, objects: confirm.objectIds.length ? t("maps.delete_selection_objects", { count: confirm.objectIds.length }) : "", list: confirm.hostIds.map(id => hostLabel(snapshot.hosts[id] || {})).join(", ") }) : confirm.kind === "map" ? t("maps.delete_map_confirm", { name: snapshot.maps.find(m => m.id === confirm.id)?.name || "" }) : confirm.kind === "link" ? t("maps.delete_link_confirm") : t("maps.reload_confirm")}
       onClose=${() => setConfirm(null)} onConfirm=${async () => {
         try {
           if (confirm.kind === "selection") { await deleteSelection(confirm); }
-          else if (confirm.kind === "reload") { pending.current.clear(); blocked.current = false; await reload(); setStatus("Salvo no servidor"); setSaveError(null); }
+          else if (confirm.kind === "reload") { pending.current.clear(); blocked.current = false; await reload(); setStatus("saved"); setSaveError(null); }
           else { if (!await flush()) return; if (confirm.kind === "map") { accept(await api.del(`/maps/${confirm.id}`, live.current.rev)); setCurrent("all"); }
             else { await api.del(`/topology/link/${confirm.id}`, live.current.topology.rev); await reload(); } }
         } catch (e) { handleError(e); }

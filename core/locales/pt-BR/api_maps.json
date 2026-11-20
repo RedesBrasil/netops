@@ -1,0 +1,22 @@
+{
+  "all_not_deletable": "a Rede geral não pode ser excluída",
+  "bad_format": "formato de maps.yaml inválido",
+  "bad_target_map": "mapa de destino inexistente ou igual ao atual",
+  "bad_visual_endpoint": "ponta da conexão visual inválida",
+  "duplicate_map_ids": "IDs de mapa duplicados",
+  "duplicate_object_ids": "IDs de objeto duplicados",
+  "duplicate_position": "posição de host duplicada",
+  "duplicate_visual_ids": "IDs de conexão visual duplicados",
+  "edge_not_in_topology": "enlace não existe na topologia, recarregue o mapa",
+  "host_link_must_be_real": "ligação entre hosts precisa ser cadastrada como enlace real",
+  "host_not_in_inventory": "host '{name}' fora do inventário",
+  "id_mismatch": "ID do mapa diverge da URL",
+  "kind_site_immutable": "o tipo e a localidade de um mapa existente não podem mudar",
+  "merged": "este mapa foi unificado com Rede geral",
+  "merged_reload": "Este mapa foi unificado com Rede geral. Recarregue antes de editar.",
+  "migrate_first": "Migre o inventário para IDs inteiros antes de editar os mapas e enlaces.",
+  "not_exists": "mapa não existe",
+  "rev_required": "revisão do mapa obrigatória (If-Match)",
+  "saved_bad_format": "mapa salvo com formato inválido",
+  "text_id_required": "todo mapa precisa de um ID textual"
+}

@@ -1,0 +1,11 @@
+# Languages offered by NetOps (console, CLIs, first-access wizard).
+# Add a language: create core/locales/<code>/ with the same JSON files as core/locales/en/, translate,
+# and list it here. No code changes. `en` is the source of truth: a missing key falls back to it.
+# status: complete = full catalog (guard test requires parity with en) | partial = falls back to en.
+languages:
+  - code: en
+    name: English
+    status: complete
+  - code: pt-BR
+    name: Português
+    status: complete

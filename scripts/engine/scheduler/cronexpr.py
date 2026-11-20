@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 
 from croniter import CroniterBadCronError, CroniterBadDateError, CroniterError, croniter
 
+from lib import i18n
+
 ALIASES = ("@hourly", "@daily", "@midnight", "@weekly", "@monthly", "@yearly", "@annually")
 
 
@@ -27,15 +29,15 @@ class CronExpr:
     def __init__(self, expr: str):
         raw = (expr or "").strip()
         if not raw:
-            raise CronError("expressão vazia")
+            raise CronError(i18n.t("lib_scheduler.cron_empty"))
         if raw.lower() not in ALIASES and len(raw.split()) != 5:
-            raise CronError("use 5 campos: minuto hora dia-do-mês mês dia-da-semana")
+            raise CronError(i18n.t("lib_scheduler.cron_five_fields"))
         try:
             ok = croniter.is_valid(raw)
         except (CroniterError, ValueError, TypeError):
             ok = False
         if not ok:
-            raise CronError(f"expressão cron inválida: '{raw}'")
+            raise CronError(i18n.t("lib_scheduler.cron_invalid", expr=raw))
         self.expr = raw
 
     def matches(self, dt: datetime) -> bool:

@@ -1,0 +1,19 @@
+{
+  "best_practices": "Boas práticas",
+  "col_file": "Arquivo",
+  "col_title": "Título",
+  "col_topic": "Tópico",
+  "col_when": "Quando usar",
+  "configs": "Configurações",
+  "content": "Conteúdo",
+  "created": "Arquivo criado",
+  "empty": "Catálogo vazio.",
+  "error": "Erro: {message}",
+  "file_name": "Nome do arquivo",
+  "file_name_rename": "Nome do arquivo (alterar = renomear, atualiza o índice)",
+  "files_on_disk": "Arquivos em disco: {files}",
+  "new_file_btn": "+ Novo arquivo",
+  "new_file_title": "Novo arquivo ({kind})",
+  "saved": "Salvo",
+  "search_file": "Buscar arquivo"
+}

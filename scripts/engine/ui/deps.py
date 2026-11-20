@@ -44,6 +44,10 @@ CORE_DIR = NETOPS_ROOT / "core"
 SCHEMA_FILE = CORE_DIR / "schemas" / "inventory.schema.json"
 PROJECT_CONFIG = DATA_ROOT / "core" / "config" / "project-config.yaml"
 
+# Translations (lib/i18n.py): the instance language is read from THIS data root (tests repoint DATA_ROOT).
+from lib import i18n as _i18n  # noqa: E402
+_i18n.set_data_root_provider(lambda: DATA_ROOT)
+
 MEMORY_DIR = NETOPS_ROOT / "memory"
 MEMORY_MD = MEMORY_DIR / "MEMORY.md"   # arquivo único de memória (ver core/rules/memory-protocol.md)
 
@@ -333,7 +337,8 @@ def host_origin_allowed(host_header: str | None, origin: str | None = None) -> b
 class ConflictError(Exception):
     """Arquivo mudou no disco desde o GET (concorrência otimista) -> 409."""
 
-    def __init__(self, current_hash: str, detail: str = "arquivo modificado externamente"):
+    def __init__(self, current_hash: str, detail: str | None = None):
+        detail = detail or _i18n.t("api_app.file_modified")
         self.current_hash = current_hash
         self.detail = detail
         super().__init__(detail)
@@ -344,7 +349,7 @@ class ValidationFailed(Exception):
 
     def __init__(self, errors: list[dict]):
         self.errors = errors
-        super().__init__(f"{len(errors)} erro(s) de validação")
+        super().__init__(_i18n.t("api_app.validation_errors", n=len(errors)))
 
 
 class ReadOnlyMode(Exception):

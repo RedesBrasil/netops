@@ -1,4 +1,8 @@
 // Lógica pura do gerenciador de arquivos (sem DOM) — testada em tests/files-core.test.mjs.
+import { t, lang, fmtDate, fmtTime } from "./i18n.js";
+
+// Translation with the original Portuguese as fallback (node tests run without a catalog).
+const tr = (key, vars, fallback) => { const out = t(key, vars); return out === key ? fallback : out; };
 
 export function normPath(p) {
   const parts = [];
@@ -44,15 +48,15 @@ export function formatSize(n) {
 
 export function formatDate(sec) {
   if (!sec) return "";
-  const d = new Date(sec * 1000), z = (x) => String(x).padStart(2, "0");
-  return `${z(d.getDate())}/${z(d.getMonth() + 1)}/${d.getFullYear()} ${z(d.getHours())}:${z(d.getMinutes())}`;
+  const d = new Date(sec * 1000);
+  return `${fmtDate(d, { day: "2-digit", month: "2-digit", year: "numeric" })} ${fmtTime(d, { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 // sort: "name" | "-name" | "size" | "-size" | "mtime" | "-mtime". Pastas sempre primeiro.
 export function sortEntries(entries, sort = "name") {
   const desc = String(sort).startsWith("-");
   const key = String(sort).replace(/^-/, "") || "name";
-  const cmpName = (a, b) => a.name.localeCompare(b.name, "pt-BR", { numeric: true, sensitivity: "base" });
+  const cmpName = (a, b) => a.name.localeCompare(b.name, lang(), { numeric: true, sensitivity: "base" });
   return [...entries].sort((a, b) => {
     if (!!a.is_dir !== !!b.is_dir) return a.is_dir ? -1 : 1;
     let c = 0;
@@ -135,8 +139,8 @@ export function topNames(items) {
 
 export function validName(name) {
   const n = String(name || "").trim();
-  if (!n) return "Informe um nome.";
-  if (n === "." || n === "..") return "Nome inválido.";
-  if (n.includes("/")) return "O nome não pode ter /.";
+  if (!n) return tr("files.name_required", null, "Informe um nome.");
+  if (n === "." || n === "..") return tr("files.name_invalid", null, "Nome inválido.");
+  if (n.includes("/")) return tr("files.name_no_slash", null, "O nome não pode ter /.");
   return "";
 }

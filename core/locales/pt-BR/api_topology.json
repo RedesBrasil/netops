@@ -1,0 +1,9 @@
+{
+  "duplicate_link_ids": "IDs de enlace duplicados",
+  "host_id_required": "ID inteiro de host obrigatório",
+  "host_not_in_inventory": "host fora do inventário",
+  "link_index_not_exists": "link índice {index} não existe",
+  "link_not_exists": "enlace não existe",
+  "migrate_first": "Migre o inventário e a topologia para IDs inteiros antes de editar os enlaces.",
+  "segment_index_not_exists": "segmento índice {index} não existe"
+}

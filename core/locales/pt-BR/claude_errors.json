@@ -1,0 +1,13 @@
+{
+  "agent_failed": "Falha no agente Claude.",
+  "auth_failed": "Falha de autenticação no Claude. Faça login de novo (/login).",
+  "billing": "Problema de crédito/cobrança na conta do Claude.",
+  "cancelled_by_user": "Resposta cancelada pelo usuário.",
+  "model_unavailable": "Modelo indisponível ou sem acesso. Escolha outro modelo.",
+  "network": "Erro de rede: a conexão com o Claude caiu no meio da resposta. Tente novamente.",
+  "overloaded": "Serviço do Claude sobrecarregado. Tente novamente em instantes.",
+  "process_exited": "O agente Claude foi encerrado inesperadamente. Tente novamente.",
+  "rate_limit": "Limite de uso atingido. Aguarde um pouco e tente de novo.",
+  "server_error": "Erro no servidor do Claude. Tente novamente em instantes.",
+  "too_many_sessions": "Muitas sessões Claude abertas. Feche alguma e tente de novo."
+}

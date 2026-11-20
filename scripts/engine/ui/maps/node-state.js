@@ -1,4 +1,6 @@
 // Conserva as medidas e o estado transitório do React Flow ao atualizar o layout.
+// Tested as plain source by node: no imports; translations via globalThis.netopsT with a fallback.
+const tr = (key, vars, fallback) => { const out = globalThis.netopsT ? globalThis.netopsT(key, vars) : key; return out === key ? fallback : out; };
 const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
 export function reconcileNodes(previous, desired) {
   const byId = new Map(previous.map(node => [node.id, node]));
@@ -20,15 +22,15 @@ export function reconcileNodes(previous, desired) {
 
 // Espaçamento entre bordas, não entre centros: preserva a ordem visual do grupo.
 export function alignNodes(nodes, direction, gap = 24) {
-  if (!['horizontal', 'vertical'].includes(direction)) throw new Error('Alinhamento inválido');
-  if (!Number.isFinite(gap) || gap < 0) throw new Error('Espaçamento inválido');
+  if (!['horizontal', 'vertical'].includes(direction)) throw new Error(tr('map_editor.invalid_alignment', null, 'Alinhamento inválido'));
+  if (!Number.isFinite(gap) || gap < 0) throw new Error(tr('map_editor.invalid_spacing', null, 'Espaçamento inválido'));
   if (nodes.length < 2) return {};
   const horizontal = direction === 'horizontal', axis = horizontal ? 'x' : 'y', cross = horizontal ? 'y' : 'x';
   const rectangles = nodes.map(node => {
     const width = node.measured?.width ?? node.width ?? node.style?.width ?? 198;
     const height = node.measured?.height ?? node.height ?? node.style?.height ?? 91;
     const rect = { id: node.id, x: node.position.x, y: node.position.y, width, height };
-    if (![rect.x, rect.y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) throw new Error('Dimensões inválidas para alinhar');
+    if (![rect.x, rect.y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) throw new Error(tr('map_editor.invalid_align_dimensions', null, 'Dimensões inválidas para alinhar'));
     return rect;
   });
   const size = horizontal ? 'width' : 'height', crossSize = horizontal ? 'height' : 'width';
@@ -115,7 +117,7 @@ export function shapesOverlap(a, b) {
 // de desenho): passar por um link distante que não cruza a forma não mudaria nada na tela.
 // Sem `overlaps` (ou sem ninguém sobreposto na direção), anda uma camada.
 export function moveLayer(map, id, direction, linkIds = [], overlaps = null) {
-  if (!LAYER_DIRECTIONS.includes(direction)) throw new Error('Direção de camada inválida');
+  if (!LAYER_DIRECTIONS.includes(direction)) throw new Error(tr('map_editor.invalid_layer_direction', null, 'Direção de camada inválida'));
   const order = orderedNodeIds(map, linkIds), index = order.indexOf(id);
   if (index < 0) return map;
   const step = direction === 'forward' ? 1 : -1;

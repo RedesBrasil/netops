@@ -1,0 +1,4 @@
+{
+  "missing_lib": "ERROR: {lib} not installed. Run: pip install -r requirements.txt",
+  "napalm_unsupported": "NAPALM does not support the vendor '{vendor}'"
+}

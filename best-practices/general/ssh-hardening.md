@@ -1,50 +1,50 @@
 ---
 id: ssh-hardening
-titulo: Hardening de Acesso SSH
+titulo: SSH Access Hardening
 vendor: general
 tags: [security, ssh, hardening, access]
 severidade: alta
 ---
 
-## Resumo
+## Summary
 
-SSH é o canal de administração padrão. Mal configurado, vira a porta de entrada do atacante.
-Este guia cobre o endurecimento do SSH em equipamentos de rede e servidores Linux.
+SSH is the standard administration channel. Badly configured, it becomes the attacker's way in.
+This guide covers SSH hardening on network devices and Linux servers.
 
 ## Checklist
 
-- [ ] Telnet desabilitado — SSH é o único acesso CLI.
-- [ ] Autenticação por chave preferida à senha (obrigatório em servidores Linux).
-- [ ] Login direto de `root`/`admin` restrito ou desabilitado quando o equipamento permite.
-- [ ] Acesso SSH restrito por IP/sub-rede de gerência (firewall ou `allowed-address`).
-- [ ] Porta padrão (22) aceitável se houver ACL; trocar a porta é ofuscação, não segurança.
-- [ ] Algoritmos fracos desabilitados (sem `ssh-rsa` legado, sem ciphers CBC obsoletos).
-- [ ] Timeout de sessão ociosa configurado.
-- [ ] Tentativas de login limitadas (proteção contra brute force).
-- [ ] Banner de aviso configurado (requisito legal/compliance em muitos casos).
+- [ ] Telnet disabled — SSH is the only CLI access.
+- [ ] Key authentication preferred over password (mandatory on Linux servers).
+- [ ] Direct `root`/`admin` login restricted or disabled when the device allows it.
+- [ ] SSH access restricted by management IP/subnet (firewall or `allowed-address`).
+- [ ] Default port (22) is acceptable if there is an ACL; changing the port is obfuscation, not security.
+- [ ] Weak algorithms disabled (no legacy `ssh-rsa`, no obsolete CBC ciphers).
+- [ ] Idle session timeout configured.
+- [ ] Login attempts limited (brute force protection).
+- [ ] Warning banner configured (a legal/compliance requirement in many cases).
 
-## Detalhamento
+## Details
 
-**Chave vs senha.** Senha é adivinhável e sujeita a brute force. Chave (ed25519 de
-preferência) elimina esse vetor. Em servidores Linux, o padrão deve ser
-`PasswordAuthentication no` após distribuir as chaves.
+**Key vs password.** A password can be guessed and is subject to brute force. A key (ed25519
+preferably) removes that vector. On Linux servers, the default should be
+`PasswordAuthentication no` after the keys are distributed.
 
-**Restrição por origem.** Mesmo com SSH bem configurado, expô-lo à internet inteira é risco
-desnecessário. Restrinja à sub-rede de gerência — no MikroTik via `/ip/firewall` e
-`/ip/service address`; no Linux via firewall + `AllowUsers`/`Match Address`.
+**Restriction by source.** Even with SSH well configured, exposing it to the whole internet is an
+unnecessary risk. Restrict it to the management subnet — on MikroTik via `/ip/firewall` and
+`/ip/service address`; on Linux via firewall + `AllowUsers`/`Match Address`.
 
-**Algoritmos.** Equipamentos antigos negociam ciphers/MACs fracos. Verifique com
-`nmap --script ssh2-enum-algos` e desabilite o que for obsoleto.
+**Algorithms.** Old devices negotiate weak ciphers/MACs. Check with
+`nmap --script ssh2-enum-algos` and disable whatever is obsolete.
 
-**Brute force.** Limite tentativas: `MaxAuthTries` no Linux; address-list dinâmica no
-MikroTik (ver `config-examples/mikrotik/firewall-baseline.rsc`).
+**Brute force.** Limit attempts: `MaxAuthTries` on Linux; a dynamic address-list on
+MikroTik (see `config-examples/mikrotik/firewall-baseline.rsc`).
 
-## Configuração relacionada
+## Related configuration
 
 - `config-examples/linux/sshd_config`
 - `config-examples/mikrotik/security-hardening.rsc`
 
-## Referências
+## References
 
 - Mozilla OpenSSH Guidelines.
 - `best-practices/general/network-security-audit.md`
