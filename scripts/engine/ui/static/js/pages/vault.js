@@ -67,7 +67,8 @@ function ItemsTab({ data, reload, r, unlocked }) {
     && matchText(q, it.title, it.template_label, it.notes, ...textOf(it)));
   const tplOptions = [...new Set(all.map((it) => it.template_label || "—"))].sort();
   const [seg, sub] = r.segments;
-  const found = seg && seg !== "new" ? all.find((it) => it.id === seg) : null;
+  // ID numérico (estável); o slug antigo (apelido) também abre o item.
+  const found = seg && seg !== "new" ? all.find((it) => String(it.id) === seg || (it.aliases || []).includes(seg)) : null;
 
   const visibleOf = (it) => {
     const tpl = tplById[it.template];
@@ -75,6 +76,7 @@ function ItemsTab({ data, reload, r, unlocked }) {
     return it.values.filter((x) => vis.has(x.field));
   };
   const cols = [
+    { key: "id", label: "ID", sort: (it) => it.id, render: (it) => it.id },
     { key: "title", label: "Título", hideable: false, sort: (it) => it.title,
       render: (it) => html`<a href=${"#vault/" + encodeURIComponent(it.id)} onClick=${(e) => e.stopPropagation()}><b>${it.title}</b></a>` },
     { key: "template", label: "Template", sort: (it) => it.template_label || "", render: (it) => it.template_label ? html`<${Badge}>${it.template_label}<//>` : "—" },
@@ -102,9 +104,9 @@ function ItemsTab({ data, reload, r, unlocked }) {
         data=${data} unlocked=${unlocked} onClose=${() => (found ? r.open(found.id) : r.close())}
         onSaved=${(saved) => { reload(); r.open(saved.id); }} />`}
     ${confirm && html`<${ConfirmDialog} title="Excluir item" danger=${true}
-        message=${`Remover '${confirm.title}' do cofre? Os valores são apagados.`} onClose=${() => setConfirm(null)}
+        message=${`Remover '${confirm.title}' (ID ${confirm.id}) do cofre? Os valores são apagados.`} onClose=${() => setConfirm(null)}
         onConfirm=${async () => {
-          try { await api.del(`/vault/items/${encodeURIComponent(confirm.id)}`, rev); toast.ok("Item removido"); if (seg === confirm.id) r.close(); reload(); }
+          try { await api.del(`/vault/items/${encodeURIComponent(confirm.id)}`, rev); toast.ok("Item removido"); if (found && found.id === confirm.id) r.close(); reload(); }
           catch (e) { handleError(e); } }} />`}
   </div>`;
 }
@@ -138,7 +140,7 @@ function ItemView({ item, tpl, unlocked, onEdit, onClose }) {
     : !mayReveal ? html`<span class="muted">sem permissão para revelar</span>`
     : html`<button class="sm" onClick=${() => toggle(x.field)}>${shown[x.field] != null ? "🙈 Ocultar" : "👁 Revelar"}</button>
         <button class="sm" onClick=${() => copyField(x)}>📋 Copiar</button>`;
-  return html`<${Modal} title=${item.title} onClose=${onClose} wide=${true}>
+  return html`<${Modal} title=${`${item.title} (ID ${item.id})`} onClose=${onClose} wide=${true}>
     <div class="help">${item.template_label ? html`Template: <${Badge}>${item.template_label}<//> · ` : ""}
       Atualizado ${(item.updated_at || "").replace("T", " ").slice(0, 16)} por ${item.updated_by || "—"}</div>
     <div class="vault-fields">
@@ -214,7 +216,7 @@ function ItemForm({ item, data, unlocked, onClose, onSaved }) {
       toast.ok(isNew ? "Item criado" : "Item atualizado"); onSaved(saved);
     } catch (e) { handleError(e); } finally { setBusy(false); }
   }
-  return html`<${Modal} title=${isNew ? "Novo item do cofre" : `Editar ${item.title}`} onClose=${onClose} wide=${true}>
+  return html`<${Modal} title=${isNew ? "Novo item do cofre" : `Editar ${item.title} (ID ${item.id})`} onClose=${onClose} wide=${true}>
     <${Field} label="Título *"><input value=${title} onInput=${(e) => setTitle(e.target.value)} placeholder="ex.: Portal Claro empresas" /><//>
     <${Field} label="Template" hint="Define os campos do item. Trocar de template mantém os campos já preenchidos.">
       <select value=${template} onChange=${(e) => changeTemplate(e.target.value)}>

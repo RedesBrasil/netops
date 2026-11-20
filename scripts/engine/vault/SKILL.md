@@ -27,7 +27,7 @@ sessão, depois de destrancar com a **senha-mestra**.
 O mesmo cofre (senha-mestra e chave da sessão) protege também o **Cofre de senhas** do console
 (**Inventário → Cofre de senhas**, `#vault`): segredos que não são de host, como login de portal, chave de API ou token.
 - **Estrutura:** `fields` é o catálogo de campos reutilizáveis (`kind: secret|text`). `templates` traz os campos de cada
-  template, com `required`/`visible` por template. `items` traz os valores; o tipo `secret` vira `enc.v1:` e o `text` fica em claro.
+  template, com `required`/`visible` por template. `items` (chave = ID numérico estável, `next_item_id`, slug antigo em `aliases`) traz os valores; o tipo `secret` vira `enc.v1:` e o `text` fica em claro.
 - **Código:** `scripts/engine/lib/pwvault.py` (formato, padrões, `reencrypt_file`) e
   `scripts/engine/ui/services/vault_items_svc.py` (CRUD, validação de obrigatório, revelar).
 - **API:** `/api/vault/catalog`, `/api/vault/fields`, `/api/vault/templates`, `/api/vault/items`,

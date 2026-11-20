@@ -42,12 +42,12 @@ try {
   await field(modal, "Senha * 🔒").fill("s3gr3d0-e2e");
   await shot(page, "01-novo-item");
   await modal.getByRole("button", { name: "Criar", exact: true }).click();
-  await page.waitForFunction(() => location.hash === "#vault/portal-claro");
+  await page.waitForFunction(() => location.hash === "#vault/1");
   await page.locator(".modal .vault-row").first().waitFor();
   const view = page.locator(".modal");
   assert.ok((await view.innerText()).includes("fulano"));
   assert.ok(!(await view.innerText()).includes("s3gr3d0-e2e"), "segredo mascarado antes de revelar");
-  assert.ok((await view.innerText()).includes("nvault://portal-claro/senha"), "referência para .env/nvault");
+  assert.ok((await view.innerText()).includes("nvault://1/senha"), "referência para .env/nvault");
   await view.getByRole("button", { name: "👁 Revelar" }).click();
   await page.locator(".modal code", { hasText: "s3gr3d0-e2e" }).waitFor();
   await shot(page, "02-item-revelado");
@@ -83,7 +83,7 @@ try {
   await page.goto(BASE + "/#vault");
   await page.locator(".vault-page .vault-icon.ok").click();
   await page.locator(".vault-page .vault-icon.locked").waitFor();
-  await page.goto(BASE + "/#vault/portal-claro");
+  await page.goto(BASE + "/#vault/1");
   await page.locator(".modal .muted", { hasText: "destranque o cofre" }).waitFor();
   assert.ok((await page.locator(".modal").innerText()).includes("fulano"));
   assert.equal(await page.locator(".modal").getByRole("button", { name: "👁 Revelar" }).count(), 0);

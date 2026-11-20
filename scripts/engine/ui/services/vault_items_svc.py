@@ -39,6 +39,14 @@ def _save(data: dict, rev: str | None) -> str:
     return yaml_io.write_text(_path(), pwvault.dump(data), expected=rev, mode=MODE_600, backup=True)
 
 
+def _ik(data: dict, iid) -> int:
+    """ID numérico do item (aceita número ou o slug antigo); KeyError se não existe."""
+    k = pwvault.find_item(data, iid)
+    if k is None:
+        raise KeyError(f"item '{iid}' não existe")
+    return k
+
+
 def _key() -> bytes:
     """Chave do cofre (mesma do credentials.yaml). Levanta VaultNotInitialized / VaultLocked."""
     import yaml  # noqa: PLC0415
@@ -66,7 +74,7 @@ def _field_usage(data: dict) -> dict:
     return use
 
 
-def _item_view(iid: str, it: dict, fields: dict) -> dict:
+def _item_view(iid: int, it: dict, fields: dict) -> dict:
     vals = []
     for name, v in ((it or {}).get("values") or {}).items():
         kind = (fields.get(name) or {}).get("kind", "secret")
@@ -75,7 +83,7 @@ def _item_view(iid: str, it: dict, fields: dict) -> dict:
         else:
             vals.append({"field": name, "kind": "secret", "set": bool(v)})
     out = {"id": iid, "values": vals}
-    for k in ("title", "template", "template_label", "notes", "created_by", "created_at", "updated_by", "updated_at"):
+    for k in ("title", "template", "template_label", "notes", "aliases", "created_by", "created_at", "updated_by", "updated_at"):
         if (it or {}).get(k) not in (None, ""):
             out[k] = it[k]
     return out
@@ -107,8 +115,7 @@ def list_items() -> dict:
 
 def get_item(iid: str) -> dict:
     data, rev = _load()
-    if iid not in data["items"]:
-        raise KeyError(f"item '{iid}' não existe")
+    iid = _ik(data, iid)
     return _item_view(iid, data["items"][iid], data["fields"]) | {"rev": rev}
 
 
@@ -178,6 +185,10 @@ def update_field(name: str, new_name: str | None, kind: str | None, rev: str | N
         if other and other != real:
             raise _bad("name", f"o campo '{new_name}' já existe")
         if new_name != real:
+            # o nome antigo vira apelido: referências nvault://<id>/<campo-antigo> continuam resolvendo
+            meta = dict(data["fields"][real] or {})
+            meta["aliases"] = sorted(set((meta.get("aliases") or []) + [real]) - {new_name})
+            data["fields"][real] = meta
             data["fields"] = {(new_name if k == real else k): v for k, v in data["fields"].items()}
             for t in data["templates"].values():
                 for f in (t or {}).get("fields") or []:
@@ -325,10 +336,10 @@ def _apply_item(data: dict, it: dict, body: dict, *, user: str, is_new: bool) ->
 @yaml_io.serialized
 def create_item(body: dict, rev: str | None, user: str) -> dict:
     data, _ = _load()
-    iid = pwvault.unique_id(body.get("title") or "item", data["items"])
+    iid = pwvault.new_item_id(data)
     it: dict = {}
     _apply_item(data, it, body, user=user, is_new=True)
-    data["items"][iid] = {k: it[k] for k in ("title", "template", "template_label", "notes", "values",
+    data["items"][iid] = {k: it[k] for k in ("title", "template", "template_label", "notes", "aliases", "values",
                                               "created_by", "created_at", "updated_by", "updated_at") if k in it}
     new_rev = _save(data, rev)
     return _item_view(iid, data["items"][iid], data["fields"]) | {"rev": new_rev}
@@ -337,8 +348,7 @@ def create_item(body: dict, rev: str | None, user: str) -> dict:
 @yaml_io.serialized
 def update_item(iid: str, body: dict, rev: str | None, user: str) -> dict:
     data, _ = _load()
-    if iid not in data["items"]:
-        raise KeyError(f"item '{iid}' não existe")
+    iid = _ik(data, iid)
     it = dict(data["items"][iid] or {})
     _apply_item(data, it, body, user=user, is_new=False)
     data["items"][iid] = it
@@ -349,8 +359,7 @@ def update_item(iid: str, body: dict, rev: str | None, user: str) -> dict:
 @yaml_io.serialized
 def delete_item(iid: str, rev: str | None) -> dict:
     data, _ = _load()
-    if iid not in data["items"]:
-        raise KeyError(f"item '{iid}' não existe")
+    iid = _ik(data, iid)
     del data["items"][iid]
     return {"deleted": iid, "rev": _save(data, rev)}
 
@@ -360,11 +369,10 @@ def reveal(iid: str, field: str | None) -> dict:
     exige cofre destrancado + permissão vault.reveal (authz). Auditado pelo middleware."""
     from lib import vault  # noqa: PLC0415
     data, _ = _load()
-    if iid not in data["items"]:
-        raise KeyError(f"item '{iid}' não existe")
+    iid = _ik(data, iid)
     vals = (data["items"][iid] or {}).get("values") or {}
     if field:
-        real = pwvault.field_key(vals, field)
+        real = pwvault.find_value_name(data, data["items"][iid], field)   # nome, slug ou nome antigo do campo
         if not real:
             raise KeyError(f"campo '{field}' sem valor neste item")
         vals = {real: vals[real]}

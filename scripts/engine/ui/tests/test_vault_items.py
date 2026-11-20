@@ -39,7 +39,7 @@ def test_create_item_encrypts_secret_and_lists_masked(client, env):
     r = _item(client)
     assert r.status_code == 201, r.text
     iid = r.json()["id"]
-    assert iid == "portal-claro"
+    assert iid == 1                                   # ID numérico estável (não deriva do título)
     path = env / "network/vault.yaml"
     assert oct(path.stat().st_mode & 0o777) == "0o600"
     raw = path.read_text()
@@ -118,7 +118,8 @@ def test_template_creates_reusable_field_and_kind_conversion(client, env):
     assert r.status_code == 200, r.text
     raw = (env / "network/vault.yaml").read_text()
     assert "abc123" not in raw
-    assert client.post("/api/vault/items/cf/reveal", json={"field": "Zone ID"}).json()["values"]["Zone ID"] == "abc123"
+    cf = it.json()["id"]
+    assert client.post(f"/api/vault/items/{cf}/reveal", json={"field": "Zone ID"}).json()["values"]["Zone ID"] == "abc123"
 
 
 def test_field_rename_cascades_and_delete_in_use_blocked(client, env):
@@ -155,12 +156,12 @@ def test_change_password_reencrypts_vault_yaml(env):
     old_key = _init_vault(env)
     path = deps.NETWORK_DIR / "vault.yaml"
     data = pwvault.default_doc()
-    data["items"]["x"] = {"title": "X", "values": {"Senha": vault.encrypt_value(old_key, "abc"), "URL": "u"}}
+    data["items"][1] = {"title": "X", "values": {"Senha": vault.encrypt_value(old_key, "abc"), "URL": "u"}}
     path.write_text(pwvault.dump(data))
     _, new_key = vault.build_meta("outra-senha")
     text, n = pwvault.reencrypt_file(path, old_key, new_key)
     assert n == 1
-    assert vault.decrypt_value(new_key, yaml.safe_load(text)["items"]["x"]["values"]["Senha"]) == "abc"
+    assert vault.decrypt_value(new_key, yaml.safe_load(text)["items"][1]["values"]["Senha"]) == "abc"
 
 
 def test_permissions_mapped():
@@ -172,3 +173,27 @@ def test_permissions_mapped():
     assert authz.required_perm("POST", "/vault/templates") == "vault.templates"
     assert authz.required_perm("DELETE", "/vault/fields/URL") == "vault.templates"
     assert authz.required_perm("POST", "/vault/unlock") == authz.ANY
+
+
+def test_numeric_ids_stable_and_legacy_slug_migrated(client, env):
+    """ID numérico não muda com o título; arquivo antigo (ID em slug) migra e o slug vira apelido."""
+    key = _init_vault(env)
+    a = _item(client).json()["id"]
+    b = _item(client, title="Outro portal").json()["id"]
+    assert (a, b) == (1, 2)
+    r = client.put(f"/api/vault/items/{a}", headers={"If-Match": _rev(client)},
+                   json={"title": "Nome novo", "template": "login", "values": [
+                       {"field": "Usuário", "value": "fulano"}, {"field": "Senha", "value": None}]})
+    assert r.status_code == 200 and r.json()["id"] == 1
+    client.delete(f"/api/vault/items/{b}", headers={"If-Match": _rev(client)})
+    assert _item(client, title="Terceiro").json()["id"] == 3          # nunca reutiliza o ID apagado
+    # formato anterior: chave em slug
+    from lib import pwvault, vault
+    path = env / "network/vault.yaml"
+    old = pwvault.default_doc()
+    old["items"] = {"simple-api": {"title": "Simple API", "values": {"API key": vault.encrypt_value(key, "k1")}}}
+    path.write_text(pwvault.dump(old))
+    items = client.get("/api/vault/items").json()["items"]
+    assert items[0]["id"] == 1 and items[0]["aliases"] == ["simple-api"]
+    assert client.get("/api/vault/items/simple-api").json()["id"] == 1
+    assert client.post("/api/vault/items/simple-api/reveal", json={"field": "api-key"}).json()["values"]["API key"] == "k1"

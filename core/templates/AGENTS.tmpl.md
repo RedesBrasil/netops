@@ -169,7 +169,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   credencial internamente); nunca chame `resolve_host(decrypt=True)`/`resolve_secret`/`decrypt_value`.
   Ver `constitution.md` §V e `core/rules/connection-safety.md`.
 - **Chave de API/senha do Cofre de senhas em comando, `.env` ou script = `nvault` (INEGOCIÁVEL):** para usar um segredo do
-  Cofre de senhas (Cloudflare/Wrangler, API do Coolify, `.env` de aplicação...), escreva a **referência** `nvault://<item>/<campo>`
+  Cofre de senhas (Cloudflare/Wrangler, API do Coolify, `.env` de aplicação...), escreva a **referência** `nvault://<ID>/<campo>` (ID numérico do item, estável)
   (no `.env`, com `--set` ou `--item`) e rode `nvault run -- <comando>` (`scripts/tools/secrets/run.py`). O valor vai só para o
   ambiente do processo e sai mascarado (`***`). Nunca grave o valor em arquivo, nunca leia o `network/vault.yaml`, nunca chame
   `/reveal` e nunca transforme nem envie o segredo para outro lugar. `nvault list` mostra as referências. Precisa do cofre destrancado

@@ -77,7 +77,7 @@ def test_bad_reference_and_list_check(vault_env):
     r = _run(["run", "--set", "T=nvault://nao-existe/x", "--", "true"], env, root)
     assert r.returncode == 2 and "não existe" in r.stderr
     out = _run(["list"], env, root)
-    assert out.returncode == 0 and "nvault://coolify-producao/api-key" in out.stdout and SECRET not in out.stdout
+    assert out.returncode == 0 and "nvault://1/api-key" in out.stdout and SECRET not in out.stdout
     (root / ".env").write_text("A=nvault://coolify-producao/api-key\nB=nvault://coolify-producao/nada\n")
     chk = _run(["check"], env, root)
     assert chk.returncode == 2 and "OK    A" in chk.stdout and "ERRO  B" in chk.stdout
@@ -95,7 +95,31 @@ def test_console_user_needs_vault_use(vault_env):
     admin = accessdb.login_username(db, "chefe@empresa.com.br")
     ok = _run(["run", "--set", "T=nvault://coolify-producao/api-key", "--", "true"], {**env, "NETOPS_USER": admin}, root)
     assert ok.returncode == 0, ok.stderr
-    assert accessdb.query_audit(db, action="vault.run")["items"][0]["target"] == "coolify-producao"
+    assert accessdb.query_audit(db, action="vault.run")["items"][0]["target"] == "item 1"
+
+
+def test_numeric_id_and_renamed_field_alias(vault_env):
+    """O item do fixture está no formato antigo (chave 'coolify-producao'): vira ID 1, o slug segue valendo;
+    campo renomeado mantém o nome antigo como apelido."""
+    root, env = vault_env
+    code = "import os; assert os.environ['A']==os.environ['B']==os.environ['C']; print('ok')"
+    r = _run(["run", "--no-dotenv", "--set", "A=nvault://1/api-key", "--set", "B=coolify-producao/api-key",
+              "--set", "C=1/api key", "--", sys.executable, "-c", code], env, root)
+    assert r.returncode == 0 and "ok" in r.stdout, r.stderr
+    lst = _run(["list"], env, root).stdout
+    assert "nvault://1/api-key" in lst and "apelidos: coolify-producao" in lst
+    # renomeia o campo "API key" -> "Token" (como o console faz) e a referência antiga continua
+    sys.path.insert(0, str(PROJECT / "scripts/engine"))
+    from lib import pwvault
+    data, _ = pwvault.load(root / "network/vault.yaml")
+    it = data["items"][1]
+    it["values"] = {("Token" if k == "API key" else k): v for k, v in it["values"].items()}
+    data["fields"]["Token"] = {"kind": "secret", "aliases": ["API key"]}
+    data["fields"].pop("API key")
+    (root / "network/vault.yaml").write_text(pwvault.dump(data))
+    r = _run(["run", "--no-dotenv", "--set", "A=1/api-key", "--set", "B=1/token", "--set", "C=1/token",
+              "--", sys.executable, "-c", code], env, root)
+    assert r.returncode == 0, r.stderr
 
 
 def test_masker_split_across_chunks():

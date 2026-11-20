@@ -58,18 +58,19 @@ test("expandir: grupo vira lista de hosts; sem menção nada muda; bolha esconde
 
 test("#senha: itens do Cofre de senhas viram referências nvault:// (nunca valor)", () => {
   const cat = m.buildCatalog({ groups: [], hosts: [] }, { items: [
-    { id: "coolify-producao", title: "Coolify produção", template_label: "API",
+    { id: 3, title: "Coolify produção", template_label: "API",
       values: [{ field: "URL", kind: "text", value: "https://c.example" }, { field: "API key", kind: "secret", set: true }] }] });
   const tok = m.findMentionToken("usa #senha:cool", 15);
   assert.equal(tok.kind, "senha");
   const items = m.searchMentions(cat, "coolify", null);
-  assert.deepEqual(items.map((i) => [i.kind, i.token]), [["senha", "#senha:coolify-producao"]]);
+  assert.deepEqual(items.map((i) => [i.kind, i.token, i.label]), [["senha", "#senha:3", "Coolify produção (3)"]]);
   assert.equal(m.searchMentions(cat, "coolify", "host").length, 0);
-  const out = m.expandMentions("acessa o coolify com #senha:coolify-producao.", cat);
-  assert.ok(out.includes("nvault://coolify-producao/api-key (API key, segredo)"));
-  assert.ok(out.includes("nvault://coolify-producao/url (URL, texto)"));
+  const out = m.expandMentions("acessa o coolify com #senha:3.", cat);
+  assert.ok(out.includes('#senha:3 = item 3 "Coolify produção"'));
+  assert.ok(out.includes("nvault://3/api-key (API key, segredo)"));
+  assert.ok(out.includes("nvault://3/url (URL, texto)"));
   assert.ok(out.includes("nvault run"));
   assert.ok(!out.includes("https://c.example"), "não manda nem o valor de texto");
-  assert.equal(m.stripMentionNote(out), "acessa o coolify com #senha:coolify-producao.");
+  assert.equal(m.stripMentionNote(out), "acessa o coolify com #senha:3.");
   assert.deepEqual(m.buildCatalog({ hosts: [] }, null).vault, []);
 });

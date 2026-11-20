@@ -34,7 +34,7 @@ try {
     if (path === '/api/claude/sessions') return route.fulfill({ json: { sessions: [] } });
     if (path.startsWith('/api/claude/sessions/')) return route.fulfill({ json: path.endsWith('/messages') ? { items: [] } : { id: SID } });
     if (path === '/api/hosts') return route.fulfill({ json: HOSTS });
-    if (path === '/api/vault/items') return route.fulfill({ json: { items: [{ id: 'coolify-producao', title: 'Coolify produção', template_label: 'API',
+    if (path === '/api/vault/items') return route.fulfill({ json: { items: [{ id: 3, title: 'Coolify produção', template_label: 'API',
       values: [{ field: 'URL', kind: 'text', value: 'https://c.example' }, { field: 'API key', kind: 'secret', set: true }] }] } });
     return route.fulfill({ json: {} });
   });
@@ -111,7 +111,7 @@ try {
   await ta.fill(''); await ta.pressSequentially('use #cool'); await menu.waitFor();
   assert.match((await rows())[0], /senhaCoolify produção/);
   await ta.press('Enter');
-  assert.equal(await ta.inputValue(), 'use #senha:coolify-producao ');
+  assert.equal(await ta.inputValue(), 'use #senha:3 ');
   // o texto enviado (referências nvault://, sem valor) é coberto em tests/mentions.test.mjs
   await ta.fill('');
 

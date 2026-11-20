@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Usa segredos do Cofre de senhas em comandos SEM gravá-los em arquivo e SEM mostrá-los.
 
-Referência (vai no .env, no export ou no --set, no lugar do valor):
-    COOLIFY_TOKEN=nvault://coolify-producao/api-key          # valor inteiro
-    DATABASE_URL=postgres://app:{{nvault://banco-app/senha}}@db:5432/app   # embutido
+Referência (vai no .env, no export ou no --set, no lugar do valor). <ID> = número do item no console
+(#vault/<ID>; não muda se o título mudar); o campo vai em slug ("API key" -> api-key):
+    COOLIFY_TOKEN=nvault://3/api-key                          # valor inteiro
+    DATABASE_URL=postgres://app:{{nvault://7/senha}}@db:5432/app   # embutido
+IDs antigos em slug (formato anterior) e nomes antigos de campo continuam resolvendo (apelidos).
 
 `run` resolve as referências (cofre destrancado), injeta SÓ no ambiente do processo filho e mascara
 (`***`) qualquer segredo que apareça na saída. A IA usa as chaves sem nunca ver o valor.
 
     python3 scripts/tools/secrets/run.py run -- npx wrangler deploy          # lê ./.env sozinho
     python3 scripts/tools/secrets/run.py run --env-file app/.env -- npm start
-    python3 scripts/tools/secrets/run.py run --item coolify-producao --prefix COOLIFY_ -- sh -c 'curl -H "Authorization: Bearer $COOLIFY_API_KEY" "$COOLIFY_URL/api/v1/servers"'
+    python3 scripts/tools/secrets/run.py run --item 3 --prefix COOLIFY_ -- sh -c 'curl -H "Authorization: Bearer $COOLIFY_API_KEY" "$COOLIFY_URL/api/v1/servers"'
     python3 scripts/tools/secrets/run.py list            # itens e referências (nunca valores)
     python3 scripts/tools/secrets/run.py check           # confere as referências do ./.env
 
@@ -79,22 +81,25 @@ class Vault:
             self._key = key
         return self._key
 
+    def item(self, ref) -> tuple[int, dict]:
+        k = self.pw.find_item(self.data, ref)
+        if k is None:
+            raise Fail(2, f"item '{ref}' não existe no Cofre de senhas (veja: nvault list)")
+        return k, self.data["items"][k]
+
     def field_name(self, item_id: str, ref_field: str) -> tuple[dict, str]:
-        item = self.data["items"].get(item_id)
-        if not item:
-            raise Fail(2, f"item '{item_id}' não existe no Cofre de senhas (veja: run.py list)")
-        want = self.pw.slugify(ref_field.replace("%20", " "))
-        for name in (item.get("values") or {}):
-            if self.pw.slugify(name) == want or name.casefold() == ref_field.casefold():
-                return item, name
-        raise Fail(2, f"campo '{ref_field}' sem valor no item '{item_id}' (veja: run.py list)")
+        k, item = self.item(item_id)
+        name = self.pw.find_value_name(self.data, item, ref_field)
+        if not name:
+            raise Fail(2, f"campo '{ref_field}' sem valor no item {k} ({item.get('title', '')}) (veja: nvault list)")
+        return item, name
 
     def value(self, item_id: str, ref_field: str) -> tuple[str, bool]:
         """(valor em claro, é_segredo). Só o processo filho recebe o valor."""
         from lib import vault
         item, name = self.field_name(item_id, ref_field)
         raw = item["values"][name]
-        self.used.add(item_id)
+        self.used.add(f"{self.pw.find_item(self.data, item_id)}")
         if vault.is_encrypted(raw):
             return vault.decrypt_value(self.key(), raw), True
         return str(raw), False
@@ -168,10 +173,8 @@ def build_env(args, vault: Vault) -> tuple[dict, list[str], list[str]]:
         for k, v in parse_env_file(f).items():
             if has_ref(v) or k not in env:      # referência do .env vence; valor comum não sobrescreve o ambiente
                 env[k] = v
-    for item_id in args.item or []:
-        item = vault.data["items"].get(item_id)
-        if not item:
-            raise Fail(2, f"item '{item_id}' não existe no Cofre de senhas")
+    for item_ref in args.item or []:
+        item_id, item = vault.item(item_ref)
         for name in (item.get("values") or {}):
             var = (args.prefix or "") + re.sub(r"[^A-Za-z0-9]+", "_", vault.pw.slugify(name)).upper()
             env[var] = f"{SCHEME}{item_id}/{vault.pw.slugify(name)}"
@@ -261,7 +264,7 @@ def audit(user: str, target: str, detail: str) -> None:
         return
     try:
         from lib import accessdb
-        accessdb.audit(DB_FILE, "vault.run", username=user or "cli", target=target[:200], detail=detail[:500])
+        accessdb.audit(DB_FILE, "vault.run", username=user or "cli", target=("item " + target)[:200], detail=detail[:500])
     except Exception:
         pass
 
@@ -294,7 +297,9 @@ def cmd_list(args) -> int:
         print("Cofre de senhas vazio. Cadastre em Inventário → Cofre de senhas.")
         return 0
     for iid, it in sorted(items.items()):
-        print(f"{iid}  —  {it.get('title', '')}" + (f"  [{it['template_label']}]" if it.get("template_label") else ""))
+        extra = (f"  [{it['template_label']}]" if it.get("template_label") else "") + \
+                (f"  (apelidos: {', '.join(it['aliases'])})" if it.get("aliases") else "")
+        print(f"{iid}  —  {it.get('title', '')}{extra}")
         for name, raw in (it.get("values") or {}).items():
             kind = "segredo" if str(raw).startswith("enc.v1:") else "texto"
             print(f"    {SCHEME}{iid}/{vault.pw.slugify(name):<28} {name} ({kind})")

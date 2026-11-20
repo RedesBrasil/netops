@@ -2,7 +2,7 @@
 // abre uma lista com `host:<hostname>`, `group:<grupo>` e `senha:<item>`. Lógica pura (sem DOM) — testada em
 // tests/mentions.test.mjs. O Composer só cuida da tela.
 //
-// Formato do texto: `#host:<hostname>`, `#group:<NOME>` e `#senha:<id-do-item>` (espaços do hostname viram "_").
+// Formato do texto: `#host:<hostname>`, `#group:<NOME>` e `#senha:<ID do item>` (espaços do hostname viram "_").
 // `#senha:` nunca leva valor: o agente recebe só as referências nvault:// (uso via `nvault run`).
 // No envio, `expandMentions` acrescenta um bloco com os IDs reais do inventário, para o
 // agente não precisar adivinhar quais hosts pertencem a um grupo.
@@ -19,7 +19,7 @@ export const vaultSlug = (t) => String(t || "").normalize("NFKD").replace(/[\u03
 // Itens do Cofre de senhas (GET /vault/items) -> { id, title, template, fields: [{field, kind, ref}], token }.
 export function buildVaultItems(resp) {
   return ((resp && resp.items) || []).map((it) => ({
-    id: it.id, title: String(it.title || it.id), template: String(it.template_label || ""), token: "#senha:" + it.id,
+    id: it.id, title: String(it.title || it.id), template: String(it.template_label || ""), token: "#senha:" + it.id,   // ID numérico estável
     fields: (it.values || []).map((v) => ({ field: v.field, kind: v.kind, ref: `nvault://${it.id}/${vaultSlug(v.field)}` })),
   }));
 }
@@ -69,8 +69,8 @@ export function searchMentions(catalog, query, kind = null, limit = 12) {
       out.push({ kind: "host", label: h.hostname, token: h.token, detail: [h.ip, h.group].filter(Boolean).join(" · "), rank: norm(h.hostname).startsWith(q) ? 0 : 2 });
   }
   if (kind !== "host" && kind !== "group") {
-    for (const v of catalog.vault || []) if (hit(v.title, v.id, v.template))
-      out.push({ kind: "senha", label: v.title, token: v.token, detail: [v.template, v.fields.length + " campo(s)"].filter(Boolean).join(" · "),
+    for (const v of catalog.vault || []) if (hit(v.title, String(v.id), v.template))
+      out.push({ kind: "senha", label: `${v.title} (${v.id})`, token: v.token, detail: [v.template, v.fields.length + " campo(s)"].filter(Boolean).join(" · "),
                  rank: norm(v.title).startsWith(q) || norm(v.id).startsWith(q) ? 1 : 3 });
   }
   out.sort((a, b) => a.rank - b.rank);     // estável: dentro do mesmo rank mantém a ordem (grupos antes de hosts)
@@ -114,7 +114,7 @@ export function expandMentions(text, catalog) {
       (g.members.length ? g.members.map(hostLine).join("; ") : "nenhum"));
   }
   for (const v of f.vault.values()) {
-    lines.push(`- ${v.token} = item "${v.title}" do Cofre de senhas${v.template ? ` (template ${v.template})` : ""}; referências: ` +
+    lines.push(`- ${v.token} = item ${v.id} "${v.title}" do Cofre de senhas${v.template ? ` (template ${v.template})` : ""}; referências: ` +
       (v.fields.length ? v.fields.map((x) => `${x.ref} (${x.field}, ${x.kind === "secret" ? "segredo" : "texto"})`).join("; ") : "nenhum campo") +
       ". Use só via `nvault run -- <comando>` (scripts/tools/secrets/SKILL.md); nunca leia nem mostre o valor.");
   }
