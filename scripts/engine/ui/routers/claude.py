@@ -97,11 +97,12 @@ def _visible(request: Request, sessions: list[dict]) -> list[dict]:
     from services import authz  # noqa: PLC0415
     p = authz.request_principal(request)
     owners = accessdb.claude_owners(deps.db_file())
+    names = accessdb.first_names(deps.db_file(), owners.values())
     out = []
     for x in sessions:
         owner = owners.get(x.get("id"), "")
         if p.is_admin or owner == p.username:
-            out.append({**x, "owner": owner})
+            out.append({**x, "owner": owner, "owner_name": names.get(owner, "")})
     return out
 
 

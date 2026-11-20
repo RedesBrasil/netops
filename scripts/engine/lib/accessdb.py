@@ -229,6 +229,14 @@ CREATE TABLE IF NOT EXISTS claude_owners(
   created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS claude_owners_user ON claude_owners(username);
+CREATE TABLE IF NOT EXISTS claude_msg_authors(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  username TEXT NOT NULL,
+  text TEXT NOT NULL,
+  ts REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS claude_msg_authors_sid ON claude_msg_authors(session_id, id);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
 
@@ -990,6 +998,38 @@ def claude_owners(db) -> dict[str, str]:
 def forget_claude_owner(db, session_id: str) -> None:
     with connect(db, write=True) as c:
         c.execute("DELETE FROM claude_owners WHERE session_id=?", (session_id,))
+        c.execute("DELETE FROM claude_msg_authors WHERE session_id=?", (session_id,))
+
+
+def record_claude_msg_author(db, session_id: str, username: str, text: str) -> None:
+    """Registra QUEM enviou uma mensagem da conversa (uma sessão pode ter mais de uma pessoa)."""
+    if not session_id or not username or not (text or "").strip():
+        return
+    with connect(db, write=True) as c:
+        c.execute("INSERT INTO claude_msg_authors(session_id, username, text, ts) VALUES(?,?,?,?)",
+                  (session_id, username, text.strip(), time.time()))
+
+
+def claude_msg_authors(db, session_id: str) -> list[tuple[str, str]]:
+    """[(texto, username)] na ordem de envio."""
+    with connect(db) as c:
+        return [(r[0], r[1]) for r in c.execute(
+            "SELECT text, username FROM claude_msg_authors WHERE session_id=? ORDER BY id", (session_id,))]
+
+
+def first_names(db, usernames) -> dict[str, str]:
+    """username -> PRIMEIRO nome (display_name; sem ele, a parte local do e-mail/username)."""
+    out: dict[str, str] = {}
+    with connect(db) as c:
+        for u in {x for x in usernames if x}:
+            r = c.execute("SELECT display_name FROM users WHERE username=?", (u,)).fetchone()
+            dn = ((r[0] if r else "") or "").strip()
+            if dn:
+                out[u] = dn.split()[0]
+            else:
+                parts = u.split("@")[0].replace(".", " ").replace("_", " ").replace("-", " ").split()
+                out[u] = (parts[0] if parts else u).capitalize()
+    return out
 
 
 # --------------------------------------------------------------------------- #

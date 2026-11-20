@@ -5,7 +5,7 @@
 // e um chat compacto encaixado à direita (ChatDock), que aparece quando você navega para
 // outra rota com uma conversa viva — dá p/ acompanhar o streaming, enviar e aprovar.
 // Protocolo JSON nos dois sentidos (ver scripts/engine/ui/services/claude_svc.py).
-import { html, useState, useEffect, useRef, useCallback, toast, api, refreshVault, can, t, fmtDateTime, fmtDate, fmtTime } from "../ui.js";
+import { html, useState, useEffect, useRef, useCallback, toast, api, refreshVault, can, meStore, t, fmtDateTime, fmtDate, fmtTime } from "../ui.js";
 import { FileBrowser } from "../file-browser.js";
 import { useDictation, MAX_SECONDS } from "../audio-dictation.js";
 import { createContext } from "preact";
@@ -593,7 +593,7 @@ function useClaudeSession() {
             break;
           }
           case "user_echo":   // pergunta digitada em OUTRA aba da mesma sessão
-            setItems((prev) => [...closeOpen(prev), { type: "user", text: ev.text, ts: Date.now() }]);
+            setItems((prev) => [...closeOpen(prev), { type: "user", text: ev.text, author: ev.author || "", ts: Date.now() }]);
             setWorking(true);
             break;
           case "queue_dispatched":   // item da fila virou turno no servidor
@@ -691,7 +691,7 @@ function useClaudeSession() {
     setPendingSend(null);
     if (!send({ type: "prompt", text, queue: !!queued })) { toast.err(t("claude.no_connection")); return false; }
     if (!queued || !working) {
-      setItems((prev) => [...prev, { type: "user", text, interjected: working && !queued, ts: Date.now() }]);
+      setItems((prev) => [...prev, { type: "user", text, author: myFirstName(), interjected: working && !queued, ts: Date.now() }]);
       setWorking(true);
     }
     setInput(""); setAttachments([]);
@@ -1176,7 +1176,17 @@ function QuotedText({ text }) {
     onClick=${(e) => jumpToQuote(e.currentTarget, p.q)}
     onKeyDown=${(e) => { if (e.key === "Enter") jumpToQuote(e.currentTarget, p.q); }}><b>${p.n}</b><span>${p.q}</span></div>`);
 }
-function UserMsg({ text: fullText, tag, ts, onFork, onEdit }) {
+// Primeiro nome de quem está logado (rótulo das próprias mensagens).
+function myFirstName() {
+  const me = meStore.get();
+  if (!me || !me.multiuser) return "";
+  const dn = (me.display_name || "").trim();
+  if (dn) return dn.split(/\s+/)[0];
+  const p = String(me.username || "").split("@")[0].split(/[._-]/)[0];
+  return p ? p.charAt(0).toUpperCase() + p.slice(1) : "";
+}
+
+function UserMsg({ text: fullText, tag, author, ts, onFork, onEdit }) {
   const text = stripMentionNote(fullText);   // bloco de IDs das menções "#" só vai ao agente
   const refs = [...text.matchAll(UPLOAD_REF_RE)].map((m) => m[1]);
   const rest = text.replace(UPLOAD_REF_RE, "").replace(/[ \t]{2,}/g, " ").trim();
@@ -1197,7 +1207,7 @@ function UserMsg({ text: fullText, tag, ts, onFork, onEdit }) {
     if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
     else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
   };
-  return html`<div class="cc-msg user"><div class="cc-role">${t("claude.role_you")}${tag && html` · <em>${tag}</em>`}</div>
+  return html`<div class="cc-msg user"><div class="cc-role">${author || t("claude.role_you")}${tag && html` · <em>${tag}</em>`}</div>
     ${refs.length > 0 && html`<div class="cc-attach-row user">${refs.map((r) => html`<${AttachThumb} key=${r} path=${r} />`)}</div>`}
     ${editing
       ? html`<div class="cc-edit">
@@ -2127,7 +2137,7 @@ export function SessionsList({ currentId = "", project = "", onResume, q: qProp,
             }}>${hl(s.title, term)}</a>`}${s.id === currentId ? html` <span class="badge ok">${t("claude.current")}</span>` : ""}</div>
             ${s.preview && html`<div class="cc-sess-prev help">${hl(s.preview, term)}</div>`}
             ${s.snippet && html`<div class="cc-sess-snip help">${hl(s.snippet, term)}</div>`}
-            <div class="cc-sess-meta help mono">${fmtShort(s.mtime)} · ${(s.id || "").slice(0, 8)}</div>
+            <div class="cc-sess-meta help mono">${s.owner_name ? s.owner_name + " · " : ""}${fmtShort(s.mtime)} · ${(s.id || "").slice(0, 8)}</div>
           </div>
           <div class="cc-sess-acts" onClick=${(e) => e.stopPropagation()} onMouseDown=${(e) => e.stopPropagation()}>
             <label class="cc-sess-chk" title=${s.completed ? t("claude.completed_title") : t("claude.mark_completed")}>
@@ -2179,7 +2189,7 @@ function fmtShort(ms) {
 
 function Item({ it, onPermission, onFork, onEdit }) {
   if (it.type === "user")
-    return html`<${UserMsg} text=${it.text} tag=${it.interjected ? t("claude.tag_interjected") : it.queued ? t("claude.tag_queued") : ""} ts=${it.ts} onFork=${onFork} onEdit=${onEdit} />`;
+    return html`<${UserMsg} text=${it.text} author=${it.author} tag=${it.interjected ? t("claude.tag_interjected") : it.queued ? t("claude.tag_queued") : ""} ts=${it.ts} onFork=${onFork} onEdit=${onEdit} />`;
 
   if (it.type === "assistant")
     return html`<${AssistantMsg} text=${it.text} ts=${it.ts} />`;

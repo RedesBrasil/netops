@@ -429,6 +429,7 @@ class ClaudeWebSession:
                  effort: str | None = None, user: str = "", cwd: str | None = None):
         self._wss: list = [ws] if ws is not None else []   # MULTI-ANEXO: várias abas na mesma sessão
         self.owner = owner
+        self._pending_authors: list[tuple[str, str]] = []
         # Pasta onde o agente roda. Vazio = NetOps (aba Claude Code); um Projeto passa a pasta dele.
         self._cwd = _dir(cwd)
         self._is_project = bool(cwd) and self._cwd != str(deps.NETOPS_ROOT)
@@ -900,6 +901,27 @@ class ClaudeWebSession:
             self._vault_waiting -= 1
 
     # ----------------------------------------------------- attach / detach / timers
+    def _record_author(self, who: str, text: str, sid: str | None = None) -> None:
+        sid = sid or getattr(self, "sid", None)
+        if not who:
+            return
+        if not sid:   # 1ª mensagem: o session_id só chega no init; guarda p/ gravar então
+            self._pending_authors.append((who, text))
+            return
+        try:
+            from lib import accessdb  # noqa: PLC0415
+            accessdb.record_claude_msg_author(deps.db_file(), sid, who, text)
+        except Exception:  # noqa: BLE001
+            pass
+
+    @staticmethod
+    def _first_name(who: str) -> str:
+        try:
+            from lib import accessdb  # noqa: PLC0415
+            return accessdb.first_names(deps.db_file(), [who]).get(who, "")
+        except Exception:  # noqa: BLE001
+            return ""
+
     def attach(self, ws: WebSocket) -> None:
         """(Re)anexa um socket. Cancela os timers de carência/pergunta e reemite os cards de
         permissão pendentes (o envio original foi DESCARTADO enquanto desanexado)."""
@@ -1106,8 +1128,10 @@ class ClaudeWebSession:
                 text = (raw.get("text") or "").strip()
                 if text:
                     self._auto_chain = 0     # humano no comando: a cadeia anti-loop recomeça
+                    who = getattr(getattr(ws.state, "principal", None), "username", "") or self.user
+                    self._record_author(who, text)
                     if len(self._wss) > 1:   # outras abas da sessão veem a pergunta
-                        await self._send({"type": "user_echo", "text": text}, skip=ws)
+                        await self._send({"type": "user_echo", "text": text, "author": self._first_name(who)}, skip=ws)
                     if raw.get("queue") and self._busy:
                         await self._enqueue(text)
                     elif raw.get("queue"):
@@ -1298,6 +1322,10 @@ class ClaudeWebSession:
             data = msg.data
             if msg.subtype == "init":
                 sid = (data or {}).get("session_id")
+                if sid and self._pending_authors:
+                    pend, self._pending_authors = self._pending_authors, []
+                    for w, tx in pend:
+                        self._record_author(w, tx, sid)
                 if sid and self.user:
                     try:
                         from lib import accessdb  # noqa: PLC0415
@@ -1817,7 +1845,34 @@ def session_items(sid: str, cwd: str | None = None) -> list[dict]:
                 inter.append({"text": x["text"].strip(), "ts": x["ts"]})
             else:
                 used.add(hit)
-    return _merge_interjections(items, inter)
+    return _annotate_authors(sid, _merge_interjections(items, inter))
+
+
+def _annotate_authors(sid: str, items: list[dict]) -> list[dict]:
+    """Põe `author` (primeiro nome) em cada mensagem do usuário: casa o texto com o registro de
+    quem enviou, 1 p/ 1 e em ordem; sem registro (conversa antiga), cai no dono da sessão."""
+    try:
+        from lib import accessdb  # noqa: PLC0415
+        db = deps.db_file()
+        recs = list(accessdb.claude_msg_authors(db, sid))
+        fallback = accessdb.claude_owner(db, sid) or ""
+        names = accessdb.first_names(db, {u for _, u in recs} | {fallback})
+    except Exception:  # noqa: BLE001 — rótulo; nunca quebra o histórico
+        return items
+    norm = lambda x: " ".join((x or "").split())  # noqa: E731
+    for it in items:
+        if it.get("type") != "user":
+            continue
+        who = fallback
+        want = norm(it.get("text"))
+        for k, (txt, u) in enumerate(recs):
+            if norm(txt) == want:
+                who = u
+                del recs[k]
+                break
+        if who and names.get(who):
+            it["author"] = names[who]
+    return items
 
 
 def _parse_ask_answers(text: str) -> dict:
