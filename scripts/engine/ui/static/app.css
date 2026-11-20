@@ -704,6 +704,7 @@ th.sortable:hover { color: var(--text); }
 .cc-msg.assistant .cc-time { align-self: flex-start; }
 
 /* Ramificar (fork) a conversa a partir de um prompt */
+.cc-user-who { margin-right: auto; font-size: 11px; opacity: .7; }
 .cc-user-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .cc-fork { background: none; border: 0; padding: 0 2px; font-size: 11px; color: var(--muted); cursor: pointer; opacity: .55; }
 .cc-fork:hover, .cc-fork:focus-visible { opacity: 1; color: var(--accent); text-decoration: underline; }

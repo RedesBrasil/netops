@@ -1207,7 +1207,7 @@ function UserMsg({ text: fullText, tag, author, ts, onFork, onEdit }) {
     if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
     else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
   };
-  return html`<div class="cc-msg user"><div class="cc-role">${author || t("claude.role_you")}${tag && html` · <em>${tag}</em>`}</div>
+  return html`<div class="cc-msg user">
     ${refs.length > 0 && html`<div class="cc-attach-row user">${refs.map((r) => html`<${AttachThumb} key=${r} path=${r} />`)}</div>`}
     ${editing
       ? html`<div class="cc-edit">
@@ -1221,6 +1221,7 @@ function UserMsg({ text: fullText, tag, author, ts, onFork, onEdit }) {
         </div>`
       : (rest || !refs.length) && html`<div class="cc-usertext"><${QuotedText} text=${refs.length ? rest : text} /></div>`}
     <div class="cc-user-foot">
+      ${(author || tag) && html`<span class="cc-user-who">${author}${author && tag ? " · " : ""}${tag && html`<em>${tag}</em>`}</span>`}
       ${onEdit && !editing && html`<button class="cc-fork" title=${t("claude.edit_prompt_title")}
         onClick=${startEdit}>✎ ${t("common.edit")}</button>`}
       ${onFork && !editing && html`<button class="cc-fork" title=${t("claude.fork_title")}
