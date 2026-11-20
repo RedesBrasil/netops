@@ -65,7 +65,7 @@ code, .mono { font-family: var(--mono); }
 .shell.nav-collapsed { --sidebar: 0px; }
 /* não usar display:none: tirar a <nav> do grid empurra o <main> para a coluna de 0px */
 @media (min-width: 761px) { .shell.nav-collapsed .sidebar { visibility: hidden; overflow: hidden; padding: 0; border: 0; } }
-.sidebar-toggle { position: fixed; z-index: 60; top: 50%; left: calc(var(--sidebar) - 14px); transform: translateY(-50%);
+.sidebar-toggle { position: fixed; z-index: 45; top: 50%; left: calc(var(--sidebar) - 14px); transform: translateY(-50%);
   width: 28px; height: 28px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   background: var(--surface); border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: 18px; line-height: 1; cursor: pointer; }
 .shell.nav-collapsed .sidebar-toggle { left: 6px; }
