@@ -276,6 +276,7 @@
   "title_dblclick_rename": "{title} — double-click to rename",
   "too_many_sessions": "Too many Claude sessions open — close one and try again.",
   "upload_failed": "Upload failed",
+  "upload_wait": "Wait for the image upload to finish, then send.",
   "upload_failed_status": "Upload failed ({status})",
   "url_copied": "URL copied",
   "vault_needed_reason": "The agent needs a vault credential to continue. Unlock to release the command — it is waiting.",

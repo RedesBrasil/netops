@@ -166,6 +166,7 @@ function useClaudeSession() {
   const projectRef = useRef("");
   const [slash, setSlash] = useState([]);             // nomes de slash commands (do init)
   const [input, setInput] = useState("");
+  const [uploading, setUploading] = useState(0);          // uploads em andamento (colar/📎): bloqueia envio até terminar
   const [attachments, setAttachments] = useState([]);   // [{path,name}] já enviados, ainda não mandados ao agente
   const [gen, setGen] = useState(0);                  // bump => reconecta
   const [showSessions, setShowSessionsState] = useState(() => claudeSessionsOpen());
@@ -674,6 +675,7 @@ function useClaudeSession() {
 
   function submit() {
     const typed = input.trim();
+    if (uploading > 0) { toast.info(t("claude.upload_wait")); return; }   // antes: Enter sumia sem aviso durante o upload
     if (!typed && !attachments.length) return;
     const text = [...attachments.map((a) => "@" + a.path), addQuoteNote(expandMentions(typed, mentionCatalog))].filter(Boolean).join(" ");
     // /login, /logout, /auth são resolvidos AQUI (o SDK não os conhece) e funcionam mesmo
@@ -875,6 +877,7 @@ function useClaudeSession() {
     const fd = new FormData(); fd.append("file", file);
     const headers = {};
     const a = authToken(); if (a) headers["X-Netops-Session"] = a;
+    setUploading((n) => n + 1);
     try {
       const res = await fetch("/api/claude/upload" + projQ(projectRef.current), { method: "POST", headers, body: fd });
       if (!res.ok) { toast.err(t("claude.upload_failed_status", { status: res.status })); return; }
@@ -882,6 +885,7 @@ function useClaudeSession() {
       setAttachments((v) => [...v, { path: d.path, name: d.name }]);
       toast.ok(t("claude.attached", { name: d.name }));
     } catch (_) { toast.err(t("claude.upload_failed")); }
+    finally { setUploading((n) => Math.max(0, n - 1)); }
   }
 
   const badge = { pronto: "ok", conectando: "", reconectando: "warn", desconectado: "warn", desabilitado: "danger", erro: "danger" }[status] || "";
@@ -893,7 +897,7 @@ function useClaudeSession() {
   return {
     effort, changeEffort, ctxUse, lastUsage,
     queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove,
-    project, status, items, working, mode, netperms, netpermsMax, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments,
+    project, status, items, working, mode, netperms, netpermsMax, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments, uploading,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
     send, submit, stop, newSession, resumeSession, forkFrom, editFrom, answerPermission, changeMode, changeModel, uploadFile, uploadFiles,
@@ -1246,7 +1250,7 @@ function loadMentionCatalog(force) {
 // Caixa de mensagem (compartilhada): textarea que cresce com o conteúdo + barra interna
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
-  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, netperms, netpermsMax, changeNetperms, modelSel, models, changeModel, uploadFile, uploadFiles, slash, fileRef, attachments, setAttachments,
+  const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, netperms, netpermsMax, changeNetperms, modelSel, models, changeModel, uploadFile, uploadFiles, slash, fileRef, attachments, setAttachments, uploading,
     queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove, sessionId } = useClaude();
   const taRef = useRef(null);
   // Menções "#host:…" / "#group:…": menu junto ao cursor, ↑↓ navega, Enter/Tab escolhe, Esc fecha.
@@ -1330,7 +1334,7 @@ function Composer() {
 
   // A caixa NUNCA trava: desconectado ainda dá p/ digitar /login (é justamente aí que se precisa).
   const isLocal = LOCAL_SLASH_RE.test(input.trim());
-  const cantSend = (disabled && !isLocal) || (!input.trim() && !attachments.length);
+  const cantSend = (disabled && !isLocal) || uploading > 0 || (!input.trim() && !attachments.length);
 
   return html`<div class="cc-composer-wrap">
     ${queue.length > 0 && html`<${QueueList} queue=${queue} working=${working} disabled=${disabled}

@@ -276,6 +276,7 @@
   "title_dblclick_rename": "{title} — duplo clique para renomear",
   "too_many_sessions": "Muitas sessões Claude abertas — feche alguma e tente de novo.",
   "upload_failed": "Upload falhou",
+  "upload_wait": "Aguarde o envio da imagem terminar e envie de novo.",
   "upload_failed_status": "Upload falhou ({status})",
   "url_copied": "URL copiada",
   "vault_needed_reason": "O agente precisa de uma credencial do cofre para continuar. Destranque para liberar o comando — ele está aguardando.",
