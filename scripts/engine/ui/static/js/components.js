@@ -230,7 +230,20 @@ async function copyText(t) {
   let ok = false; try { ok = document.execCommand("copy"); } catch (_) {}
   ta.remove(); return ok;
 }
+// Caminho de relatório citado pelo agente (`reports/x.md`, /opt/netops/reports/x.pdf, link markdown) -> clicável.
+const REPORT_RE = /^(?:\/opt\/netops\/|\.\/)?reports\/([^\/\s]+\.(?:md|txt|log|pdf))$/i;
+function reportOf(s) { const m = REPORT_RE.exec((s || "").trim()); return m ? m[1] : null; }
+function linkReports(root) {
+  root.querySelectorAll("code, a").forEach((el) => {
+    if (el.closest("pre") || el.dataset.report) return;
+    const f = el.tagName === "A" ? reportOf(decodeURIComponent(el.getAttribute("href") || "")) : reportOf(el.textContent);
+    if (!f) return;
+    el.dataset.report = f; el.classList.add("md-reportlink"); el.title = "Abrir " + f;
+  });
+}
 function onMdClick(e) {
+  const rep = e.target.closest && e.target.closest("[data-report]");
+  if (rep) { e.preventDefault(); window.dispatchEvent(new CustomEvent("netops:open-report", { detail: rep.dataset.report })); return; }
   // Link para o terminal de host (#hostterm/...): abre em janela nova, não troca a página atual.
   const term = e.target.closest && e.target.closest('a[href^="#hostterm/"]');
   if (term) { e.preventDefault(); openTermHref(term.getAttribute("href"), { fallbackHere: true }); return; }
@@ -244,7 +257,9 @@ function onMdClick(e) {
 }
 export function MarkdownView({ text }) {
   const out = wrapCodeBlocks(sanitize(marked.parse(text || "", { breaks: true })));
-  return html`<div class="md" onClick=${onMdClick} dangerouslySetInnerHTML=${{ __html: out }}></div>`;
+  const ref = useRef(null);
+  useEffect(() => { if (ref.current) linkReports(ref.current); }, [out]);
+  return html`<div class="md" ref=${ref} onClick=${onMdClick} dangerouslySetInnerHTML=${{ __html: out }}></div>`;
 }
 
 // Visualização read-only de markdown: formatado por padrão; toggle revela o código-fonte.

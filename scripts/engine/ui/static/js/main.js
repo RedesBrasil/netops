@@ -12,7 +12,7 @@ import { MemoryPage } from "./pages/memory.js";
 import { BestPracticesPage, ConfigsPage } from "./pages/knowledge.js";
 import { WorkflowsPage, AgentsPage } from "./pages/catalog.js";
 import { ScriptsPage } from "./pages/scripts.js";
-import { ReportsPage, RunsPage, SettingsPage } from "./pages/view.js";
+import { ReportsPage, RunsPage, SettingsPage, ReportView } from "./pages/view.js";
 import { BackupsPage } from "./pages/backups.js";
 import { SchedulesPage } from "./pages/schedules.js";
 import { InboxPage } from "./pages/inbox.js";
@@ -245,11 +245,22 @@ function Shell({ onLogout, showLogout }) {
         : forced ? html`<${AccountPage} forced=${true} />` : html`<${Page} />`}
     </main>
     ${dockVisible && html`<${ChatDock} />`}
-    <${ToastHost} />
+    <${ToastHost} /><${ReportHost} />
   </div>`;
 }
 
 // Gate de login: checa /auth/status; mostra a tela de login se exigido e não autenticado.
+// Abre um relatório (md/txt/pdf) em modal a partir de qualquer tela (ex.: link na resposta da aba Claude).
+function ReportHost() {
+  const [file, setFile] = useState(null);
+  useEffect(() => {
+    const h = (e) => setFile(e.detail);
+    window.addEventListener("netops:open-report", h);
+    return () => window.removeEventListener("netops:open-report", h);
+  }, []);
+  return file ? html`<${ReportView} key=${file} file=${file} fullLink=${true} onClose=${() => setFile(null)} />` : null;
+}
+
 function Root() {
   const [gate, setGate] = useState("loading");   // "loading" | "login" | "app"
   const [authRequired, setAuthRequired] = useState(false);

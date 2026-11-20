@@ -1,5 +1,6 @@
 // Reports (read-only), Runs (read-only) e Settings (project-config.yaml).
 import { html, useState, useEffect, api, useResource, Spinner, Badge, toast, handleError } from "../ui.js";
+import { authToken } from "../api.js";
 import { UpdatesControl } from "./updates.js";
 import { useMenuRoute, matchText } from "../route.js";
 import { FilterBar, DataTable, Field, Modal, MarkdownPanel, CodeTextEditor } from "../components.js";
@@ -25,12 +26,43 @@ export function ReportsPage() {
     ${open && html`<${ReportView} key=${open} file=${open} onClose=${() => setOpen(null)} />`}
   </div>`;
 }
-function ReportView({ file, onClose }) {
-  const [md, setMd] = useState(null);
-  useEffect(() => { api.get(`/reports/${file}`).then((d) => setMd(d.markdown)).catch(handleError); }, []);
+// Visualizador de relatório (md/txt/log/pdf) + Baixar. Usado na página Relatórios e nos links da aba Claude.
+export function ReportView({ file, onClose, fullLink }) {
+  const ext = (file.split(".").pop() || "").toLowerCase();
+  const [content, setContent] = useState(null);   // texto (md/txt) ou URL de blob (pdf)
+  const fetchRaw = async (dl) => {
+    const h = {}; const t = authToken(); if (t) h["X-Netops-Session"] = t;
+    const res = await fetch(`/api/reports/${encodeURIComponent(file)}/raw${dl ? "?download=1" : ""}`, { headers: h });
+    if (!res.ok) throw new Error(res.status === 404 ? "arquivo não encontrado" : `erro ${res.status}`);
+    return res.blob();
+  };
+  useEffect(() => {
+    let url = null, dead = false;
+    fetchRaw(false).then(async (b) => {
+      if (dead) return;
+      if (ext === "pdf") { url = URL.createObjectURL(b); setContent(url); } else setContent(await b.text());
+    }).catch((e) => { if (!dead) { setContent(false); handleError(e); } });
+    return () => { dead = true; if (url) URL.revokeObjectURL(url); };
+  }, [file]);
+  const download = async () => {
+    try {
+      const u = URL.createObjectURL(await fetchRaw(true));
+      const a = document.createElement("a"); a.href = u; a.download = file; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(u), 10000);
+    } catch (e) { handleError(e); }
+  };
+  const body = content === null ? html`<${Spinner} />`
+    : content === false ? html`<div class="card">Não foi possível abrir o arquivo.</div>`
+    : ext === "pdf" ? html`<iframe src=${content} title=${file} style="width:100%;height:70vh;border:0"></iframe>`
+    : ext === "md" ? html`<${MarkdownPanel} text=${content} />`
+    : html`<pre class="raw">${content}</pre>`;
   return html`<${Modal} title=${file} onClose=${onClose} wide=${true}>
-    ${md === null ? html`<${Spinner} />` : html`<${MarkdownPanel} text=${md} />`}
-    <div class="modal-actions"><button onClick=${onClose}>Fechar</button></div>
+    ${body}
+    <div class="modal-actions">
+      ${fullLink && html`<a class="btn" href=${"#reports/" + encodeURIComponent(file)} onClick=${onClose}>Abrir em tela cheia</a>`}
+      <button class="primary" onClick=${download}>⬇ Baixar</button>
+      <button onClick=${onClose}>Fechar</button>
+    </div>
   <//>`;
 }
 

@@ -1271,3 +1271,7 @@ span.vault-icon { cursor: default; border-radius: var(--radius); height: 28px; }
 .vault-state.locked { color: var(--danger); }
 .vault-page .page-title h1 { font-size: 20px; }
 @media (max-width: 700px) { .vault-page .tabs { flex-wrap: wrap; } .vault-page .tabs .tabs-actions { padding: 4px 0; } }
+
+/* links de relatório na resposta do agente (abrem o visualizador) */
+.md .md-reportlink { cursor: pointer; color: var(--accent, #4aa3ff); text-decoration: underline dotted; }
+.md .md-reportlink:hover { text-decoration: underline; }
