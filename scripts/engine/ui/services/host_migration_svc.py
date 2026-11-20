@@ -51,7 +51,7 @@ async def prepare():
                          "type": type(exc).__name__}]}
         directory = private_dir(deps.NETOPS_ROOT / STATE_DIR)
         write_json(directory / "host-migration-preflight.json", report)
-        raise RuntimeError("Pré-validação da migração de IDs falhou; dados antigos preservados. "
+        raise RuntimeError("Pré-validação da migração de IDs falhou; dados antigos preservados. "   # i18n-ok: startup log, not an API answer
                            "Consulte .netops-update/host-migration-preflight.json.") from None
 
 
@@ -100,7 +100,7 @@ async def _run(expected_hashes=None):
             expected_job = journal.get("job_id")
             expected_version = read_version(deps.NETOPS_ROOT)
             if not expected_job or (journal.get("new") or {}).get("version") != expected_version:
-                raise ValueError("journal não corresponde ao candidato")
+                raise ValueError("journal não corresponde ao candidato")   # i18n-ok: internal, caught
             deadline = time.monotonic() + COMMIT_TIMEOUT
             while not _commit_published(expected_job, expected_version):
                 if time.monotonic() >= deadline:

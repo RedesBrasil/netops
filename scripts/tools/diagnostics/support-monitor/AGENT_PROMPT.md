@@ -11,7 +11,7 @@ READ-ONLY: do not restart, do not change, do not delete anything, do not deploy.
 2. Dig into whatever the collection points to (container logs, `docker exec` to see the app's processes/connections/DB, the CT's cgroup on host 16, a neighbor consuming resources).
 3. Compare with the map's baseline. Rule out hypotheses with evidence.
 4. Write the output in the installation language (core/config/project-config.yaml → instance.language; default pt-BR), direct, in this format.
-   Keep the four bold labels below EXACTLY as written (in Portuguese), whatever the language: `investigar.py` parses them to build the Telegram summary.
+   Keep the four bold labels below EXACTLY as written (in Portuguese), whatever the language: `investigate.py` parses them to build the Telegram summary.
 **Causa provável:** (probable cause: 1-2 sentences, with confidence level)
 **Evidências:** (evidence: 3-6 bullets with numbers)
 **Impacto:** (impact) ...
@@ -30,5 +30,5 @@ Prefer commands that capture the transient state (e.g. `vmstat 1 5`, `docker sta
 
 ## Delivery (mandatory)
 1. Save the report (the answer in the format above + the coleta-add block) to `reports/atendimento-lentidao-<AAAAMMDD-HHMMSS>.md` with the Write tool.
-2. Run `.venv/bin/python3 scripts/tools/diagnostics/atendimento/investigar.py --finish reports/<that file>` — it validates/learns the coleta-add commands and sends the summary to Telegram.
+2. Run `.venv/bin/python3 scripts/tools/diagnostics/support-monitor/investigate.py --finish reports/<that file>` — it validates/learns the coleta-add commands and sends the summary to Telegram.
 3. Your final answer = the same report (without the coleta-add block).

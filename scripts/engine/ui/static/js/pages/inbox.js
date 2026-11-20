@@ -1,6 +1,6 @@
 // Central de Avisos: alertas, avisos e pedidos de aprovação vindos de tarefas agendadas, scripts e agentes.
 // Backend: routers/inbox.py + scripts/engine/inbox/ (SQLite runs/inbox.db). Ver scripts/engine/inbox/SKILL.md.
-// URLs (core/rules/urls-navegacao.md):
+// URLs (core/rules/navigation-urls.md):
 //   #inbox[?view=pending|unread|alerts|archived|all&kind=&sev=&q=]   #inbox/<id>
 import { html, useState, useEffect, api, useResource, Spinner, toast, handleError, Modal, Tabs, can, useMe, t } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
@@ -17,8 +17,11 @@ const VIEWS = [
   { key: "all", label: "inbox.view_all" },
 ];
 // Filter values live in the URL (?kind=aviso&sev=crítico): kept as-is.
-const KIND_OPTS = { aviso: "info", alerta: "alert", "aprovação": "approval" };
-const SEV_OPTS = { info: "info", "atenção": "warning", "crítico": "critical" };
+// Filter values in the URL are the API values (#inbox?kind=alert&sev=critical); old Portuguese links still work.
+const KINDS = ["info", "alert", "approval"];
+const SEVS = ["info", "warning", "critical"];
+const LEGACY_FILTER = { aviso: "info", alerta: "alert", "aprovação": "approval", "atenção": "warning", "crítico": "critical" };   // i18n-ok
+const filterValue = (v) => LEGACY_FILTER[v] || v;
 
 function ActionBox({ act, label }) {
   if (!act) return null;
@@ -143,7 +146,7 @@ export function InboxPage() {
 
   const items = (res.data && res.data.items) || [];
   const shown = items.filter((m) => matchText(q, m.title, m.body_excerpt, m.source_label, "#" + m.id)
-    && (!kindF || m.kind === KIND_OPTS[kindF]) && (!sevF || m.severity === SEV_OPTS[sevF]));
+    && (!kindF || m.kind === filterValue(kindF)) && (!sevF || m.severity === filterValue(sevF)));
   const openId = r.segments[0];
 
   async function archiveRead() {
@@ -165,8 +168,8 @@ export function InboxPage() {
     }))} />
     <div style="margin-top:12px">
       <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${t("inbox.search")} count=${shown.length} total=${items.length}
-        selects=${[{ key: "kind", label: t("inbox.col_type"), value: kindF, options: Object.keys(KIND_OPTS) },
-          { key: "sev", label: t("inbox.severity"), value: sevF, options: Object.keys(SEV_OPTS) }]} />
+        selects=${[{ key: "kind", label: t("inbox.col_type"), value: filterValue(kindF), options: KINDS.map((k) => ({ value: k, label: t("inbox.kind_" + k) })) },
+          { key: "sev", label: t("inbox.severity"), value: filterValue(sevF), options: SEVS.map((k) => ({ value: k, label: t("inbox.sev_" + k) })) }]} />
       ${res.error ? html`<div class="card">${t("inbox.load_error", { error: res.error.message })}</div>`
         : !res.data ? html`<${Spinner} />`
         : html`<${DataTable} tableId="inbox" urlSort defaultSort=${{ key: "when", dir: "desc" }}

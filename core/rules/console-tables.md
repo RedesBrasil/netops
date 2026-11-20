@@ -14,7 +14,7 @@ Read before creating or changing any listing in `scripts/engine/ui/static/js/`.
 2. **Every `DataTable` has a stable and unique `tableId`** (e.g.: `"hosts"`, `"backup-host-files"`). It is the
    key of the preference saved in the browser. Changing the id erases the layout the user built.
 3. **Every data column gets `sort`**: `sort: true` sorts by `row[key]`, or pass a function `(row) => value`.
-4. The **main table of the screen uses `urlSort`**, which puts the sorting in the URL (`core/rules/urls-navegacao.md`).
+4. The **main table of the screen uses `urlSort`**, which puts the sorting in the URL (`core/rules/navigation-urls.md`).
    In modals and with several tables in the same URL, use `urlSort="prefix"` or keep the sorting local.
 5. **The identity column** (host name, group name etc.) gets `hideable: false`. Secondary fields come in
    with `hidden: true`: they are available in the ⚙ Columns menu without cluttering the default.

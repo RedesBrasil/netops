@@ -5,7 +5,7 @@
    COOLIFY-REDES_BRASIL (host 35): pressão CPU/IO/mem, load, docker stats, logs recentes.
 2) `claude -p` recebe a evidência + o mapa da infra e investiga a fundo, do início ao fim.
 3) Relatório salvo em reports/atendimento-lentidao-<data>.md e resumo no Telegram.
-Disparado pelo monitor.py; também roda à mão:  investigar.py [--evidence arq.json]
+Disparado pelo monitor.py; também roda à mão:  investigate.py [--evidence arq.json]
 """
 from __future__ import annotations
 
@@ -191,7 +191,7 @@ def resumo_telegram(report: str, caminho: str) -> str:
              if ln.strip().startswith("- ")]
     acao = acoes[0] if acoes else secoes.get("ação recomendada", "")
     partes = [i18n.t("cli_diagnostics.inv_tg_title"), ""]
-    # section keys = the bold labels PROMPT_AGENTE.md keeps in Portuguese (parsed, never translated)
+    # section keys = the bold labels AGENT_PROMPT.md keeps in Portuguese (parsed, never translated)
     for rotulo, chave, n in ((i18n.t("cli_diagnostics.inv_tg_cause"), "causa provável", 260),
                              (i18n.t("cli_diagnostics.inv_tg_impact"), "impacto", 160),
                              (i18n.t("cli_diagnostics.inv_tg_action"), None, 160)):
@@ -239,7 +239,7 @@ def main() -> int:
     collected = collect()
     prompt = ("## " + i18n.t("cli_diagnostics.inv_infra_map") + "\n" + json.dumps(cfg["infra"], ensure_ascii=False, indent=1)
               + "\n\n## " + i18n.t("cli_diagnostics.inv_evidence") + "\n" + evidence[:6000]
-              + "\n\n## " + i18n.t("cli_diagnostics.inv_collected") + "\n" + collected + "\n\n" + (HERE / "PROMPT_AGENTE.md").read_text())
+              + "\n\n## " + i18n.t("cli_diagnostics.inv_collected") + "\n" + collected + "\n\n" + (HERE / "AGENT_PROMPT.md").read_text())
     claude = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
     timeout = cfg["investigate"].get("timeout_minutes", 15) * 60
     try:

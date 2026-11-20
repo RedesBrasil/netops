@@ -1,5 +1,5 @@
 // Auditoria (menu Sistema; só admin): quem fez o quê no console. Banco de acesso (tabela audit).
-// URL: #audit?user=&action=&q=&page=&sort=&dir=   (core/rules/urls-navegacao.md)
+// URL: #audit?user=&action=&q=&page=&sort=&dir=   (core/rules/navigation-urls.md)
 import { html, useResource, Spinner, Badge, t, fmtDateTime } from "../ui.js";
 import { useMenuRoute } from "../route.js";
 import { FilterBar, DataTable } from "../components.js";

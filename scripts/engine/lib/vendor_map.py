@@ -8,7 +8,7 @@ O campo `vendor` de cada host em network/hosts.yaml decide qual driver usar:
   - api            : biblioteca de API nativa (None se não houver)
   - notes          : observações operacionais
 
-Para adicionar um fabricante novo: acrescente uma entrada aqui e registre-o no PADRAO.md.
+Para adicionar um fabricante novo: acrescente uma entrada aqui e registre-o no core/rules/standard.md.
 """
 from __future__ import annotations
 

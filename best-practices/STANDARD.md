@@ -13,15 +13,15 @@ planning or auditing.
 
 ## Format of a guide (`<topic>.md`)
 
-YAML front-matter + body (the front-matter keys and the `severidade` values stay as they are: the console reads them):
+YAML front-matter + body:
 
 ```markdown
 ---
 id: unique-identifier
-titulo: Readable title
+title: Readable title
 vendor: general | mikrotik | linux | ...
 tags: [security, ssh, ...]
-severidade: alta | media | baixa
+severity: high | medium | low
 ---
 
 ## Summary
@@ -41,10 +41,10 @@ Points to the files in `config-examples/<vendor>/` that implement this.
 Links and official documentation.
 ```
 
-`severidade`: `alta` = high, `media` = medium, `baixa` = low.
+`severity`: `high`, `medium` or `low`.
 
 ## How to add a guide
 
 Copy `_TEMPLATE.md`, write the content, and register the guide in `_catalog.yaml`.
 Full seed content: `general/`, `mikrotik/`, `linux/`. Other vendors: fill in
-as the living project evolves (see the root `PADRAO.md`, §5).
+as the living project evolves (see `core/rules/standard.md`, §5).

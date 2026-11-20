@@ -1,6 +1,6 @@
 // Memória: índice memory/MEMORY.md, AGENTS.md (instruções do projeto, lido primeiro por toda IA)
 // e as notas memory/*.md que o índice aponta.
-// URL: #memory[/<arquivo>][?q=]  — #memory = MEMORY.md  (core/rules/urls-navegacao.md)
+// URL: #memory[/<arquivo>][?q=]  — #memory = MEMORY.md  (core/rules/navigation-urls.md)
 import { html, useState, useEffect, api, useResource, Spinner, toast, handleError, Tabs, t } from "../ui.js";
 import { useMenuRoute, matchText } from "../route.js";
 import { MarkdownEditor, FilterBar, DataTable } from "../components.js";

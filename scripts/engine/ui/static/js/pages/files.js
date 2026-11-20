@@ -1,5 +1,5 @@
 // Menu Arquivos: o sistema de arquivos DESTE servidor (NetOps), estilo explorador/MobaXterm.
-// URL (core/rules/urls-navegacao.md): #files?path=/etc&q=filtro&sort=-mtime&hidden=0&open=/etc/hosts&root=1
+// URL (core/rules/navigation-urls.md): #files?path=/etc&q=filtro&sort=-mtime&hidden=0&open=/etc/hosts&root=1
 //   path = pasta aberta (Voltar do navegador = pasta anterior); open = arquivo aberto no editor;
 //   root=1 = modo root (sessão curta via administração Local; o token NUNCA vai para a URL — F5 pede de novo).
 // Normal: roda como a conta do servidor (`netops`) e abre na pasta do NetOps. "Abrir como root" usa o

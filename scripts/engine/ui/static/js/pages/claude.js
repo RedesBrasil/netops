@@ -79,7 +79,7 @@ const npShort = (arr) => {
 // Catálogo anunciado pelo mesmo CLI/provider que executa a conversa. Se indisponível,
 // o CLI resolve seu próprio padrão; a UI não presume versões ou acesso da conta.
 const MODELS_FALLBACK = [
-  { id: "default", name: "Padrão do Claude Code", nameKey: "claude.model_default_name" },   // nameKey = translated at render
+  { id: "default", name: "Claude Code default", nameKey: "claude.model_default_name" },   // nameKey = translated at render
 ];
 const modelName = (m) => (m && m.nameKey ? t(m.nameKey) : (m && m.name) || "");
 

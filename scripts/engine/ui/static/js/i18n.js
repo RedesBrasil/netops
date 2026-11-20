@@ -82,7 +82,7 @@ let _index = null;
 export async function loadIndex() {
   if (_index) return _index;
   try { const r = await fetch("/api/i18n"); if (r.ok) _index = await r.json(); } catch (e) {}
-  return _index || { languages: [{ code: "en", name: "English" }, { code: "pt-BR", name: "Português" }], instance: null, default: "pt-BR" };
+  return _index || { languages: [{ code: "en", name: "English" }, { code: "pt-BR", name: "Português" }], instance: null, default: "pt-BR" };   // i18n-ok: native language names
 }
 export function languages() { return (_index && _index.languages) || []; }
 

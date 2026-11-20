@@ -198,7 +198,7 @@ export function FilterBar({ q = "", selects = [], onChange, placeholder = t("com
 }
 
 /* ---------------------- Tabelas → js/table.js ------------------------- */
-// Toda tabela de dados usa DataTable (core/rules/tabelas-console.md). Re-export p/ compatibilidade.
+// Toda tabela de dados usa DataTable (core/rules/console-tables.md). Re-export p/ compatibilidade.
 export { DataTable, ResourceTable } from "./table.js";
 
 /* ------------------------------- Toggle --------------------------------- */

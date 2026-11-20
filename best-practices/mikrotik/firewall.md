@@ -1,9 +1,9 @@
 ---
 id: mikrotik-firewall
-titulo: MikroTik Firewall Best Practices
+title: MikroTik Firewall Best Practices
 vendor: mikrotik
 tags: [security, mikrotik, firewall]
-severidade: alta
+severity: high
 ---
 
 ## Summary

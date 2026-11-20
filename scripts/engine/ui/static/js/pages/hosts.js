@@ -26,7 +26,7 @@ const bkLabel = (v) => v === true ? t("hosts.backup_yes") : v === false ? t("hos
 
 export function HostsPage() {
   const res = useResource("/hosts");
-  // URL: #hosts[/<id>|/new][?q=&vendor=&role=&group=&sort=&dir=]  (core/rules/urls-navegacao.md)
+  // URL: #hosts[/<id>|/new][?q=&vendor=&role=&group=&sort=&dir=]  (core/rules/navigation-urls.md)
   const route = useRoute();
   const { q = "", vendor = "", role = "", group = "", os = "", app = "" } = route.params;
   const setParams = (patch) => navigate({ menu: "hosts", segments: route.segments, params: { ...route.params, ...patch } }, { replace: true });
@@ -358,7 +358,7 @@ export function HostForm({ host, groups, rev, onClose, onSaved, placement, initi
 }
 
 /* ------------------------------- Grupos --------------------------------- */
-// URL: #groups[/<nome>|/new][?q=&vendor=&role=]  (core/rules/urls-navegacao.md)
+// URL: #groups[/<nome>|/new][?q=&vendor=&role=]  (core/rules/navigation-urls.md)
 export function GroupsPage() {
   const res = useResource("/groups");
   const r = useMenuRoute("groups");

@@ -1,10 +1,10 @@
-// Biblioteca de tabelas do console — TODA tabela de dados usa <DataTable> (regra: core/rules/tabelas-console.md).
+// Biblioteca de tabelas do console — TODA tabela de dados usa <DataTable> (regra: core/rules/console-tables.md).
 //
 // O que o usuário ganha em qualquer tabela, sem código extra na página:
 //   • redimensionar coluna (arrastar a borda do cabeçalho; duplo clique = ajustar ao conteúdo)
 //   • mover coluna (arrastar o cabeçalho, ou ↑↓ no menu ⚙ Colunas)
 //   • mostrar/ocultar colunas (menu ⚙ Colunas, "Restaurar padrão")
-//   • ordenar (clique no cabeçalho; na URL com `urlSort`, regra core/rules/urls-navegacao.md)
+//   • ordenar (clique no cabeçalho; na URL com `urlSort`, regra core/rules/navigation-urls.md)
 // Layout = preferência do navegador em localStorage `netops.table.<tableId>` ({order, vis, widths}).
 //
 // Uso mínimo:

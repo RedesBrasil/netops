@@ -1,9 +1,9 @@
 ---
 id: linux-server-hardening
-titulo: Linux Server Hardening
+title: Linux Server Hardening
 vendor: linux
 tags: [security, linux, hardening, server]
-severidade: alta
+severity: high
 ---
 
 ## Summary

@@ -192,7 +192,7 @@ does not publish or update installs automatically without the operator's action.
 
 It is a **living project**: every run records what it learned in `memory/`, and that
 knowledge improves the documentation for the next ones. Everything is **standardized** (see
-`PADRAO.md`) and follows `constitution.md`.
+`core/rules/standard.md`) and follows `constitution.md`.
 
 ## Origin
 

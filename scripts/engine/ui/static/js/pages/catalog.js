@@ -5,7 +5,7 @@ import { WorkflowForm } from "../workflow-form.js";
 import { FilterBar, DataTable, Field, Modal, CodeTextEditor, MarkdownEditor } from "../components.js";
 
 // Página de um único tipo (workflows OU agentes), sem abas.
-// URL: #workflows|#agents[/<arquivo>|/new][?q=]  (core/rules/urls-navegacao.md)
+// URL: #workflows|#agents[/<arquivo>|/new][?q=]  (core/rules/navigation-urls.md)
 function CatalogSection({ kind, title }) {
   const r = useMenuRoute(kind);
   return html`<div>

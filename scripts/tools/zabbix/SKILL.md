@@ -25,13 +25,13 @@ For queries on hosts/items/history of a device, see also
 
 | Script | Function |
 |--------|--------|
-| `analise_template.py` | Items + triggers of a template (default: `SNMP LINUX`) |
+| `template_analysis.py` | Items + triggers of a template (default: `SNMP LINUX`) |
 
 ## Usage
 
 ```bash
-python3 scripts/tools/zabbix/analise_template.py "SNMP LINUX"
-python3 scripts/tools/zabbix/analise_template.py "Mikrotik by SNMP"
+python3 scripts/tools/zabbix/template_analysis.py "SNMP LINUX"
+python3 scripts/tools/zabbix/template_analysis.py "Mikrotik by SNMP"
 ```
 
 ## Token

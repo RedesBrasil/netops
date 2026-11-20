@@ -3,11 +3,11 @@
 
 metadata:
   name: "NetOps"
-  version: "2.6.0"
+  version: "2.6.1"
   description: "Framework multi-agente para operações de redes e infraestrutura."
   created: "2026-05-18"
 
-# Localização dos recursos — onde cada coisa vive (ver PADRAO.md).
+# Localização dos recursos — onde cada coisa vive (ver core/rules/standard.md).
 resource_locations:
   agents: "agents"
   best_practices: "best-practices"

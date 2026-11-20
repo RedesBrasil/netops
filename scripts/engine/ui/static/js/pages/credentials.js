@@ -4,7 +4,7 @@ import { useMenuRoute, matchText } from "../route.js";
 import { FilterBar, DataTable, Field, Modal, ConfirmDialog, RenameCascadeHint } from "../components.js";
 import { vaultWritable, PasswordInput } from "../components.js";
 
-// URL: #credentials[/<nome>|/new|/<nome>/password|/<nome>/secret][?q=]  (core/rules/urls-navegacao.md)
+// URL: #credentials[/<nome>|/new|/<nome>/password|/<nome>/secret][?q=]  (core/rules/navigation-urls.md)
 export function CredentialsPage() {
   const res = useResource("/credentials");
   const v = useStore(vaultStore);

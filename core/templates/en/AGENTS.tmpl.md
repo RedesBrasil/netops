@@ -5,7 +5,7 @@
 # NetOps — Multi-Agent Framework for Networks and Infrastructure
 
 > This is the entry point of the framework. Any AI IDE (Claude Code, Codex, Cursor,
-> Antigravity) reads this file first (AGENTS.md standard; there is no CLAUDE.md anymore). Also read `constitution.md` and `PADRAO.md`.
+> Antigravity) reads this file first (AGENTS.md standard; there is no CLAUDE.md anymore). Also read `constitution.md` and `core/rules/standard.md`.
 
 ## What it is
 
@@ -75,7 +75,7 @@ When the user makes a request, you act as the **coordinator** agent. Follow:
 | Raw output of runs | `runs/` |
 | Final reports | `reports/` |
 | Rules, schemas, templates of the framework | `core/` |
-| The organization and naming standard | `PADRAO.md` |
+| The organization and naming standard | `core/rules/standard.md` |
 | The non-negotiable principles | `constitution.md` |
 
 ## Essential rules
@@ -100,7 +100,7 @@ When the user makes a request, you act as the **coordinator** agent. Follow:
   - **GitHub per user:** in the Claude tab and in Projects, git/gh use the GitHub account **of whoever opened the conversation**.
     Without a connected account, push, PR and `gh` fail: ask them to connect in **My account → GitHub** (`#account/github`) and
     reopen the conversation. Never use the server account nor change `GH_CONFIG_DIR`, `GH_TOKEN` or the git identity.
-- **Standardize:** every new file follows the `_TEMPLATE` of its folder. See `PADRAO.md`.
+- **Standardize:** every new file follows the `_TEMPLATE` of its folder. See `core/rules/standard.md`.
 - **Server account (NON-NEGOTIABLE):** NetOps runs as the Linux account `netops` (HOME `/var/lib/netops`), never root:
   console, AI, subagents, terminal, scheduler and updater. Never use `su`.
   **Root on THIS server = `sudo <command>` directly, allowed ONLY with the vault unlocked** (no password; PAM checks the

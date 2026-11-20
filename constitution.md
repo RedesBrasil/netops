@@ -12,7 +12,7 @@ infrastructure domain.
 
 ### I. Standardization Above All (NON-NEGOTIABLE)
 
-Everything in the framework follows `PADRAO.md`. Consistency is what allows the AI agent to
+Everything in the framework follows `core/rules/standard.md`. Consistency is what allows the AI agent to
 always know where to look and where to save.
 
 - **MUST:** Every new file follows the template (`_TEMPLATE`) of its folder.
@@ -20,8 +20,8 @@ always know where to look and where to save.
   standards, templates, skills) are kept only in English; the AI always answers in the user's language
   (see `core/rules/i18n.md`). Local files of an installation (`AGENTS.md`, `memory/MEMORY.md`) are born in the
   installation's language.
-- **MUST:** Every knowledge folder has a `PADRAO.md` and a `_TEMPLATE`.
-- **MUST NOT:** Create structures outside the standard without first updating `PADRAO.md`.
+- **MUST:** Every knowledge folder has a `STANDARD.md` and a `_TEMPLATE`.
+- **MUST NOT:** Create structures outside the standard without first updating `core/rules/standard.md`.
 
 ### II. Living Project (NON-NEGOTIABLE)
 
@@ -129,7 +129,7 @@ Python scripts. No database, no Docker, no server (OpenSquad principle).
 
 ## Governance
 
-- Changes to these principles require a version update and propagation to `PADRAO.md`.
+- Changes to these principles require a version update and propagation to `core/rules/standard.md`.
 - **NON-NEGOTIABLE:** a violation blocks the run. **MUST:** a violation generates an alert.
 - Versioning: MAJOR (incompatible redefinition), MINOR (new principle), PATCH (adjustment).
 

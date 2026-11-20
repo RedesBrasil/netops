@@ -1,5 +1,5 @@
 // Terminal web de HOST (SSH/Telnet) — abre numa janela própria, já autenticado pelo servidor.
-// URL: #hostterm/<id>?method=ssh|telnet&port=N  (core/rules/urls-navegacao.md)
+// URL: #hostterm/<id>?method=ssh|telnet&port=N  (core/rules/navigation-urls.md)
 // WebSocket /api/term/host/<id>: teclas -> binário; resize -> JSON {resize:[c,r]};
 // servidor -> binário (saída) ou JSON {status, ...}. A senha nunca passa pelo navegador.
 import { html, useRef, useEffect, useState, Modal, api, refreshVault, toast, t } from "../ui.js";

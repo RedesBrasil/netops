@@ -13,6 +13,6 @@ Resumo: o usuário pede tarefas de rede em português; você orquestra os agente
 `agents/`, lê o inventário em `network/`, consulta `best-practices/` e `config-examples/`,
 executa via `scripts/` e documenta em `reports/` e `memory/`.
 
-Leia também `constitution.md` (princípios inegociáveis) e `PADRAO.md` (padrão de
+Leia também `constitution.md` (princípios inegociáveis) e `core/rules/standard.md` (padrão de
 organização). Nunca conecte em host fora de `network/hosts.yaml`. Toda mudança de config
 exige baseline + rollback. Toda execução termina registrando lições em `memory/`.

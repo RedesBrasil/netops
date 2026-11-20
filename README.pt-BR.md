@@ -192,7 +192,7 @@ não publica nem atualiza instalações automaticamente sem a ação do operador
 
 É um **projeto vivo**: cada execução registra o que aprendeu em `memory/`, e esse
 conhecimento melhora a documentação para as próximas. Tudo é **padronizado** (ver
-`PADRAO.md`) e segue a `constitution.md`.
+`core/rules/standard.md`) e segue a `constitution.md`.
 
 ## Origem
 

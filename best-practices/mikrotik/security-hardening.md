@@ -1,9 +1,9 @@
 ---
 id: mikrotik-security-hardening
-titulo: MikroTik RouterOS Security Hardening
+title: MikroTik RouterOS Security Hardening
 vendor: mikrotik
 tags: [security, mikrotik, routeros, hardening]
-severidade: alta
+severity: high
 ---
 
 ## Summary

@@ -46,16 +46,16 @@ best-practice reference is, and the severity.
 ```yaml
 # runs/<id>/findings.yaml
 host: rt-core-01
-veredito: CAVEATS
-achados:
-  - id: telnet-habilitado
-    severidade: HIGH
-    evidencia: "/ip/service shows telnet enabled on port 23"
-    referencia: best-practices/mikrotik/security-hardening.md
+verdict: CAVEATS
+findings:
+  - id: telnet-enabled
+    severity: HIGH
+    evidence: "/ip/service shows telnet enabled on port 23"
+    reference: best-practices/mikrotik/security-hardening.md
   - id: snmp-community-public
-    severidade: HIGH
-    evidencia: "community 'public' active"
-    referencia: best-practices/general/network-security-audit.md
+    severity: HIGH
+    evidence: "community 'public' active"
+    reference: best-practices/general/network-security-audit.md
 ```
 
 ## Anti-Patterns

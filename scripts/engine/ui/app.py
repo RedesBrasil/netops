@@ -250,6 +250,22 @@ def create_app() -> FastAPI:
             logging.getLogger("netops").exception("Banco de acesso: falha no arranque")
 
     @app.on_event("startup")
+    async def _legacy_files():
+        # 2.6.1: old copies of renamed files (PADRAO.md, diagnostics/atendimento/...) that the updater kept in
+        # customizable folders. Only files identical to a published version are deleted (update/legacy_cleanup.py).
+        if deps.STATE.read_only or deps.DATA_ROOT != deps.NETOPS_ROOT:
+            return
+        try:
+            from update import legacy_cleanup  # noqa: PLC0415
+            gone = legacy_cleanup.run(deps.NETOPS_ROOT)
+            if gone:
+                import logging
+                logging.getLogger("netops").info("Arquivos antigos renomeados removidos: %s", ", ".join(gone))
+        except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger("netops").exception("Limpeza de arquivos renomeados falhou")
+
+    @app.on_event("startup")
     async def _instance_language():
         # Instalação anterior ao i18n (já configurada, sem instance.language): fixa pt-BR, o idioma em que ela
         # sempre rodou. Instalação nova (primeiro acesso pendente) não: quem escolhe é o assistente.

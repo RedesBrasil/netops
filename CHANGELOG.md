@@ -1,5 +1,35 @@
 # Changelog do NetOps
 
+## [2.6.1] - 2026-11-20
+
+### Melhorias
+
+- **Nomes e chaves em inglês (i18n, fase 5).**
+  - **Padrão do projeto:** o `PADRAO.md` da raiz vira `core/rules/standard.md`, e o `network/PADRAO.md` vira
+    `core/rules/network-standard.md`. Nas outras pastas, `PADRAO.md` vira `STANDARD.md`.
+  - **Regras do console:** `core/rules/tabelas-console.md` vira `console-tables.md`, e `urls-navegacao.md` vira
+    `navigation-urls.md`.
+  - **Monitor de atendimento:** a pasta `scripts/tools/diagnostics/atendimento/` vira `support-monitor/`, com
+    `investigate.py` e `AGENT_PROMPT.md`.
+  - **Zabbix:** `zabbix/analise_template.py` vira `template_analysis.py`.
+  - **Tarefas agendadas:** as que foram salvas com os caminhos antigos continuam rodando, por um apelido no agendador.
+  - **Chaves de YAML:** os índices de boas práticas e de exemplos de configuração, o catálogo de checagens de segurança
+    e o cabeçalho das boas práticas passam a usar `title`, `description`, `type`, `severity`, `pattern`...
+  - **Achados:** a avaliação de segurança gera os achados com chaves e severidades em inglês
+    (`CRITICAL`/`HIGH`/`MEDIUM`/`LOW`).
+  - **Compatibilidade:** arquivos personalizados com as chaves antigas em português continuam valendo.
+- **Testes de guarda passam a reprovar (fase 7).** Texto fixo em português nas telas do console ou nas mensagens de erro
+  da API reprova o teste. A exceção é marcada com `i18n-ok`, com o motivo na mesma linha.
+- **Central de Avisos:** os filtros de tipo e severidade usam os valores da API na URL (`#inbox?kind=alert`), com o
+  rótulo traduzido na tela. Links antigos em português continuam abrindo.
+
+### Compatibilidade e dados
+
+- Sem recurso novo nem migração de dados. Pacote validado contra o atualizador da 2.6.0 e das anteriores.
+- **Onde ficaram os padrões:** o da raiz e o de `network/` foram para `core/rules/`, porque o atualizador já instalado
+  recusa arquivo novo na raiz e dentro de `network/`.
+- **`PADRAO.md` antigos:** os que não foram editados saem na atualização. Os que você personalizou ficam onde estão.
+
 ## [2.6.0] - 2026-11-20
 
 ### Novidades
@@ -117,7 +147,7 @@
 - **Instalador: porta ocupada e falso sucesso.** Se a porta do console já estiver em uso (por exemplo, por outro NetOps em outra pasta), o `install.sh` escolhe a próxima livre e avisa. Se `NETOPS_PORT` foi informada, ele para com erro. No fim, só dá sucesso se quem responde for o console da própria instalação; antes, um console alheio na mesma porta fazia o instalador declarar sucesso sem o novo ter subido.
 - **Instalação com repositório privado por chave SSH.** O `install.sh` aceita `NETOPS_SSH_KEY` (deploy key somente leitura): clona a tag da última release por git+SSH, com as chaves de host do GitHub obtidas por HTTPS, e monta o pacote com o motor de release do próprio código. O README traz o passo de preparo e a linha de instalação.
 - **Tarefa agendada com acesso a equipamento por chave dedicada.** `task_key.py provision/revoke-pending` cria um par ed25519 por tarefa (git-ignorado) e autoriza só nos hosts escolhidos, com backup pré/pós. O modo `ro` (padrão) restringe o equipamento a comandos de leitura pela guarda `netops-ro-shell` (`ro_shell.py`, lista de permissão). A tarefa e o agente acessam com `task_exec.py`, mesmo com o cofre trancado. A chave morre com a tarefa.
-- **Monitor de lentidão do atendimento** (`scripts/tools/diagnostics/atendimento/`): medição periódica, aviso no Telegram e agente investigador. Os arquivos de configuração e credenciais ficam git-ignorados.
+- **Monitor de lentidão do atendimento** (`scripts/tools/diagnostics/support-monitor/`): medição periódica, aviso no Telegram e agente investigador. Os arquivos de configuração e credenciais ficam git-ignorados.
 - **Aba Claude Code:** comandos de barra na conexão, prompts sintéticos (`/compact`) legíveis no histórico e melhorias de menções.
 - **Backup de mudança:** `change.py` reusa a sessão persistente do host, com fallback para login avulso.
 - **Atualizador aceita `AGENTS.md`** (substitui `CLAUDE.md` na lista de arquivos distribuídos). Para que instalações 2.3.1 ou anteriores consigam atualizar, o pacote da 2.4.0 **não inclui** `AGENTS.md` (o atualizador antigo recusaria o pacote inteiro); ele passa a ser distribuído na release seguinte.

@@ -10,7 +10,7 @@ const blank = (id, name) => ({ id, name, kind: "custom", members: [], positions:
 const persisted = mapToWire;
 export function MapsPage() {
   const [snapshot, setSnapshot] = useState(null), [Editor, setEditor] = useState(null), [error, setError] = useState(null);
-  // URL: #maps/<mapa>[?host=<id>|new][&link=<id>]  (core/rules/urls-navegacao.md)
+  // URL: #maps/<mapa>[?host=<id>|new][&link=<id>]  (core/rules/navigation-urls.md)
   const r = useMenuRoute("maps");
   const current = r.segments[0] || sessionStorage.getItem("netops_map") || "all";
   const curId = () => { const p = parseRoute(); return (p.menu === "maps" && p.segments[0]) || sessionStorage.getItem("netops_map") || "all"; };   // leitura "ao vivo" (closures antigas)

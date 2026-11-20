@@ -64,7 +64,7 @@ const ROUTES = {
   account: { labelKey: "nav.account", comp: AccountPage, group: "system", hidden: true },
 };
 const ORDER = ["inventory", "knowledge", "output", "projects", "system"];
-const LEGACY_GROUP_IDS = { "Inventário": "inventory", "Conhecimento": "knowledge", "Saída": "output", "Projetos": "projects", "Sistema": "system" };
+const LEGACY_GROUP_IDS = { "Inventário": "inventory", "Conhecimento": "knowledge", "Saída": "output", "Projetos": "projects", "Sistema": "system" };   // i18n-ok: old localStorage values
 const routeLabel = (r) => t(r.labelKey);
 
 function useHash() {

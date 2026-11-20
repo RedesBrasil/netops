@@ -652,7 +652,7 @@ Use `scripts/engine/ui/start.sh --yes` (the same script that starts it; detaches
 ## Navigation URLs (rule)
 
 Every opened item and every filter in the console has its own URL (`#menu/<id>?filtro=valor`). Full rule and
-checklist in `core/rules/urls-navegacao.md` — read it before creating or changing any page.
+checklist in `core/rules/navigation-urls.md` — read it before creating or changing any page.
 
 ### URL test (browser)
 
@@ -679,7 +679,7 @@ cells, the theme and the URLs.
   top and the actions column stays fixed on the right.
 - **Persistence:** `localStorage["netops.table.<tableId>"]` = `{order, vis, widths}`, per browser. Sorting
   stays in the URL when the table uses `urlSort`.
-- **Rule for new screens:** `core/rules/tabelas-console.md` (no raw `<table>`, unique `tableId`, `sort` on columns).
+- **Rule for new screens:** `core/rules/console-tables.md` (no raw `<table>`, unique `tableId`, `sort` on columns).
 - **Tests:** `node --test tests/table-core.test.mjs` (pure core + pattern guard), `tests/tables-all.browser.mjs`
   (smoke on all screens) and `tests/table-columns.browser.mjs` (interactions, desktop and mobile), against `tests/e2e-env.sh up`.
 

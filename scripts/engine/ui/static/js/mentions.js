@@ -7,7 +7,7 @@
 // No envio, `expandMentions` acrescenta um bloco com os IDs reais do inventário, para o
 // agente não precisar adivinhar quais hosts pertencem a um grupo.
 
-export const MENTION_NOTE = "[NetOps — menções]";
+export const MENTION_NOTE = "[NetOps — menções]";   // i18n-ok: AI-context marker (matched by text)
 
 // Loaded as plain source by node tests: no imports; globalThis.netopsT with the Portuguese fallback.
 // Only the menu labels are translated; the text sent to the agent (expandMentions/addQuoteNote) stays as is.
@@ -127,7 +127,7 @@ export function expandMentions(text, catalog) {
 
 // Citações numeradas (**[n]** + "> trecho"): instrução ao agente para responder item a item citando "[n]",
 // o que permite à tela transformar esses "[n]" em links de volta à citação.
-export const QUOTE_NOTE = "[NetOps — citações]";
+export const QUOTE_NOTE = "[NetOps — citações]";   // i18n-ok: AI-context marker (matched by text)
 export function addQuoteNote(text) {
   if (!/^\*\*\[\d+\]\*\*$/m.test(text) || String(text).includes(QUOTE_NOTE)) return text;
   return `${text}\n\n${QUOTE_NOTE}\nO usuário citou trechos de respostas suas, numerados **[n]**. Responda a cada um separadamente e, ao tratar de cada citação, escreva o número exatamente no formato [n] (ex.: [1], [2]) no início do trecho da resposta.`;

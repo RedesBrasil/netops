@@ -1,4 +1,4 @@
-// Padrão de tabelas do console (core/rules/tabelas-console.md) + núcleo puro do DataTable.
+// Padrão de tabelas do console (core/rules/console-tables.md) + núcleo puro do DataTable.
 // Uso: node --test scripts/engine/ui/tests/table-core.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';

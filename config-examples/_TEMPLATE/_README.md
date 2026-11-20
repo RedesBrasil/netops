@@ -14,4 +14,4 @@ Each example is a file in the vendor's native syntax, with a commented header:
 ```
 
 After creating the example, register it in `config-examples/_index.yaml`.
-See `config-examples/PADRAO.md` for the full standard.
+See `config-examples/STANDARD.md` for the full standard.

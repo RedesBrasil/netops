@@ -7,40 +7,40 @@ version: 1
 # --- Available guides ---
 guides:
   - id: network-security-audit
-    titulo: "Network security audit"
+    title: "Network security audit"
     vendor: general
     file: general/network-security-audit.md
-    quando_usar: "Assess the security posture of any network device."
+    when_to_use: "Assess the security posture of any network device."
 
   - id: ssh-hardening
-    titulo: "SSH access hardening"
+    title: "SSH access hardening"
     vendor: general
     file: general/ssh-hardening.md
-    quando_usar: "Review/harden administrative access over SSH."
+    when_to_use: "Review/harden administrative access over SSH."
 
   - id: mikrotik-security-hardening
-    titulo: "MikroTik RouterOS security hardening"
+    title: "MikroTik RouterOS security hardening"
     vendor: mikrotik
     file: mikrotik/security-hardening.md
-    quando_usar: "Harden a MikroTik router/switch."
+    when_to_use: "Harden a MikroTik router/switch."
 
   - id: mikrotik-firewall
-    titulo: "MikroTik firewall best practices"
+    title: "MikroTik firewall best practices"
     vendor: mikrotik
     file: mikrotik/firewall.md
-    quando_usar: "Plan/review firewall rules on MikroTik."
+    when_to_use: "Plan/review firewall rules on MikroTik."
 
   - id: linux-server-hardening
-    titulo: "Linux server hardening"
+    title: "Linux server hardening"
     vendor: linux
     file: linux/server-hardening.md
-    quando_usar: "Harden a Linux server."
+    when_to_use: "Harden a Linux server."
 
   - id: linux-services-hardening
-    titulo: "Linux services hardening (Apache, Docker, FTP)"
+    title: "Linux services hardening (Apache, Docker, FTP)"
     vendor: linux
     file: linux/services-hardening.md
-    quando_usar: "Review exposed services on a Linux server."
+    when_to_use: "Review exposed services on a Linux server."
 
 # --- Vendor status ---
 # seed = full content already exists | pendente = structure only, fill in as it evolves

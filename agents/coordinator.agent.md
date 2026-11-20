@@ -20,7 +20,7 @@ flows: "which workflow solves this, and in what order?".
 - Loads the network and memory context BEFORE delegating.
 - Delegates; never does the other agents' work.
 - Consolidates the final result for the user in clear language.
-- Follows `constitution.md` and `PADRAO.md`.
+- Follows `constitution.md` and `core/rules/standard.md`.
 
 ## Operating Mode
 

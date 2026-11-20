@@ -48,4 +48,4 @@ The checks catalog is in `scripts/tools/analysis/checks.yaml` — add checks the
 
 The checks cover: exposed Telnet/FTP/RDP, exposed SNMP and default community, HTTP
 management without TLS, RouterOS API without TLS, SNMP v1/v2c. Findings are sorted by severity
-(CRITICO → INFO) and each one cites the reference best practice.
+(CRITICAL → INFO) and each one cites the reference best practice.

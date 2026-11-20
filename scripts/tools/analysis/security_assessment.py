@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Avaliação de segurança — confronta hosts contra o catálogo de checagens (checks.yaml).
 
-Checagens tipo 'port'   : rodam um scan e detectam serviços inseguros expostos.
-Checagens tipo 'config' : rodam regex sobre a configuração coletada (--config-file).
+Checks of type 'port'   : run a scan and detect insecure exposed services.
+Checks of type 'config' : run a regex on the collected configuration (--config-file).
 
 Uso:
     python3 scripts/tools/analysis/security_assessment.py --host rt-core-01
@@ -30,37 +30,54 @@ from lib.inventory import list_hosts, load_inventory, resolve_host  # noqa: E402
 CHECKS_FILE = Path(__file__).resolve().parent / "checks.yaml"
 
 
+LEGACY_KEYS = {"titulo": "title", "severidade": "severity", "tipo": "type", "porta": "port", "padrao": "pattern",
+               "descricao": "description", "referencia": "reference"}
+LEGACY_SEVERITY = {"CRITICO": "CRITICAL", "ALTO": "HIGH", "MEDIO": "MEDIUM", "BAIXO": "LOW"}
+SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
+
+
+def normalize_check(check: dict) -> dict:
+    """English keys/severities; customized catalogs with the legacy Portuguese keys keep working."""
+    out = {}
+    for k, v in (check or {}).items():
+        out.setdefault(LEGACY_KEYS.get(k, k), v)
+    sev = str(out.get("severity", "INFO")).upper()
+    out["severity"] = LEGACY_SEVERITY.get(sev, sev)
+    return out
+
+
 def load_checks() -> list[dict]:
     import yaml
     data = yaml.safe_load(CHECKS_FILE.read_text(encoding="utf-8")) or {}
-    return data.get("checks", [])
+    return [normalize_check(c) for c in data.get("checks", [])]
 
 
 def assess_host(name: int | str, host: dict, checks: list[dict], config_text: str | None) -> list[dict]:
     """Aplica todas as checagens a um host. Retorna a lista de achados."""
     findings: list[dict] = []
     target = host.get("mgmt_ip") or host.get("hostname")
+    checks = [normalize_check(c) for c in checks]
 
     # --- Checagens por porta ---
-    port_checks = [c for c in checks if c.get("tipo") == "port"]
+    port_checks = [c for c in checks if c.get("type") == "port"]
     if port_checks:
-        ports = sorted({c["porta"] for c in port_checks} | set(DEFAULT_PORTS))
+        ports = sorted({c["port"] for c in port_checks} | set(DEFAULT_PORTS))
         scan = scan_nmap(target, ports) if shutil.which("nmap") else scan_socket(target, ports)
         open_ports = {int(p["port"].split("/")[0]) for p in scan["open_ports"]}
         for c in port_checks:
-            if c["porta"] in open_ports:
-                findings.append(_finding(name, c, i18n.t("cli_analysis.port_open", port=c["porta"])))
+            if c["port"] in open_ports:
+                findings.append(_finding(name, c, i18n.t("cli_analysis.port_open", port=c["port"])))
 
     # --- Checagens por configuração ---
-    config_checks = [c for c in checks if c.get("tipo") == "config"]
+    config_checks = [c for c in checks if c.get("type") == "config"]
     if config_checks:
         if config_text is None:
-            findings.append({"host": name, "id": "config-checks-skipped", "severidade": "INFO",
-                             "titulo": i18n.t("cli_analysis.config_checks_skipped"),
-                             "evidencia": i18n.t("cli_analysis.no_config_file")})
+            findings.append({"host": name, "id": "config-checks-skipped", "severity": "INFO",
+                             "title": i18n.t("cli_analysis.config_checks_skipped"),
+                             "evidence": i18n.t("cli_analysis.no_config_file")})
         else:
             for c in config_checks:
-                m = re.search(c["padrao"], config_text)
+                m = re.search(c["pattern"], config_text)
                 if m:
                     findings.append(_finding(name, c, i18n.t("cli_analysis.config_match", excerpt=m.group(0).strip()[:80])))
     return findings
@@ -70,11 +87,11 @@ def _finding(host: int | str, check: dict, evidence: str) -> dict:
     return {
         "host": host,
         "id": check["id"],
-        "titulo": check["titulo"],
-        "severidade": check["severidade"],
-        "evidencia": evidence,
-        "descricao": check["descricao"],
-        "referencia": check.get("referencia", ""),
+        "title": check.get("title", check["id"]),
+        "severity": check.get("severity", "INFO"),
+        "evidence": evidence,
+        "description": check.get("description", ""),
+        "reference": check.get("reference", ""),
     }
 
 
@@ -98,11 +115,10 @@ def main() -> int:
             host, _ = resolve_host(name, hosts_data, {}, decrypt=False)
             all_findings += assess_host(host.get("id", host["name"]), host, checks, config_text)
         except Exception as exc:  # noqa: BLE001
-            all_findings.append({"host": name, "id": "assessment-error", "severidade": "INFO",
-                                 "titulo": i18n.t("cli_analysis.assessment_failed"), "evidencia": str(exc)})
+            all_findings.append({"host": name, "id": "assessment-error", "severity": "INFO",
+                                 "title": i18n.t("cli_analysis.assessment_failed"), "evidence": str(exc)})
 
-    order = {"CRITICO": 0, "ALTO": 1, "MEDIO": 2, "BAIXO": 3, "INFO": 4}
-    all_findings.sort(key=lambda f: order.get(f["severidade"], 9))
+    all_findings.sort(key=lambda f: SEVERITY_ORDER.get(f["severity"], 9))
     print(json.dumps({"total": len(all_findings), "findings": all_findings},
                      indent=2, ensure_ascii=False))
     return 0

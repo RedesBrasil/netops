@@ -4,7 +4,7 @@ import { useMenuRoute, matchText } from "../route.js";
 import { FilterBar, DataTable, Field, Modal, MarkdownEditor, CodeTextEditor, MarkdownView, EnumSelect, useEnums } from "../components.js";
 
 // Página de uma única seção (boas práticas OU exemplos de config), sem abas.
-// URL: #<menu>[/<vendor>/<arquivo>|/new][?q=&vendor=]  (core/rules/urls-navegacao.md)
+// URL: #<menu>[/<vendor>/<arquivo>|/new][?q=&vendor=]  (core/rules/navigation-urls.md)
 function KnowledgeSection({ kind, title, menu }) {
   const r = useMenuRoute(menu);
   return html`<div>
@@ -33,20 +33,20 @@ function KnowledgeKind({ kind, r }) {
   if (res.error) return html`<div class="card">${t("knowledge.error", { message: res.error.message })}</div>`;
   const { index, files } = res.data;
   const all = index || [];
-  const rows = all.filter((e) => (!vendor || e.vendor === vendor) && matchText(q, e.titulo, e.topico, e.file, e.quando_usar, e.descricao))
+  const rows = all.filter((e) => (!vendor || e.vendor === vendor) && matchText(q, e.title, e.topic, e.file, e.when_to_use, e.description))
     .map((e) => ({ ...e, _key: e.file }));
   const cols = kind === "best-practices"
-    ? [{ key: "titulo", hideable: false, sort: true, label: t("knowledge.col_title"), render: (r) => html`<b>${r.titulo}</b>` },
+    ? [{ key: "title", hideable: false, sort: true, label: t("knowledge.col_title"), render: (r) => html`<b>${r.title}</b>` },
        { key: "vendor", sort: true, label: "Vendor", render: (r) => html`<${Badge}>${r.vendor}<//>` },
        { key: "file", sort: true, label: t("knowledge.col_file"), render: (r) => html`<span class="mono">${r.file}</span>` },
-       { key: "quando_usar", sort: true, label: t("knowledge.col_when"), render: (r) => r.quando_usar }]
-    : [{ key: "topico", hideable: false, sort: true, label: t("knowledge.col_topic"), render: (r) => html`<b>${r.topico}</b>` },
+       { key: "when_to_use", sort: true, label: t("knowledge.col_when"), render: (r) => r.when_to_use }]
+    : [{ key: "topic", hideable: false, sort: true, label: t("knowledge.col_topic"), render: (r) => html`<b>${r.topic}</b>` },
        { key: "vendor", sort: true, label: "Vendor", render: (r) => html`<${Badge}>${r.vendor}<//>` },
        { key: "file", sort: true, label: t("knowledge.col_file"), render: (r) => html`<span class="mono">${r.file}</span>` },
-       { key: "descricao", sort: true, label: t("common.description"), render: (r) => r.descricao }];
+       { key: "description", sort: true, label: t("common.description"), render: (r) => r.description }];
   function split(rel) { const [vendor, ...rest] = rel.split("/"); return { vendor, name: rest.join("/") }; }
   const link = (r0, label) => html`<a href=${"#" + (kind === "best-practices" ? "practices" : "configs") + "/" + r0.file.split("/").map(encodeURIComponent).join("/")} onClick=${(e) => e.stopPropagation()}>${label}</a>`;
-  cols[0].render = (r0) => link(r0, html`<b>${r0.titulo || r0.topico}</b>`);
+  cols[0].render = (r0) => link(r0, html`<b>${r0.title || r0.topic}</b>`);
   return html`<div>
     <${FilterBar} q=${q} onChange=${r.setParams} placeholder=${t("knowledge.search_file")} count=${rows.length} total=${all.length}
       selects=${[{ key: "vendor", sort: true, label: "Vendor", value: vendor, options: [...new Set(all.map((e) => e.vendor))].sort() }]} />
@@ -89,7 +89,7 @@ function FileEditor({ kind, target, onClose, onSaved }) {
 
 function NewFile({ kind, onClose, onSaved }) {
   const enums = useEnums();
-  const [f, setF] = useState({ vendor: "general", name: "", titulo: "", quando_usar: "", topico: "", descricao: "", text: "" });
+  const [f, setF] = useState({ vendor: "general", name: "", title: "", when_to_use: "", topic: "", description: "", text: "" });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   async function save() {
     try { await api.post(`/knowledge/${kind}`, f); toast.ok(t("knowledge.created")); onSaved(); }
@@ -103,10 +103,10 @@ function NewFile({ kind, onClose, onSaved }) {
         <input value=${f.name} onInput=${(e) => set("name", e.target.value)} /><//>
     </div>
     ${kind === "best-practices"
-      ? html`<${Field} label=${t("knowledge.col_title")}><input value=${f.titulo} onInput=${(e) => set("titulo", e.target.value)} /><//>
-             <${Field} label=${t("knowledge.col_when")}><input value=${f.quando_usar} onInput=${(e) => set("quando_usar", e.target.value)} /><//>`
-      : html`<${Field} label=${t("knowledge.col_topic")}><input value=${f.topico} onInput=${(e) => set("topico", e.target.value)} /><//>
-             <${Field} label=${t("common.description")}><input value=${f.descricao} onInput=${(e) => set("descricao", e.target.value)} /><//>`}
+      ? html`<${Field} label=${t("knowledge.col_title")}><input value=${f.title} onInput=${(e) => set("title", e.target.value)} /><//>
+             <${Field} label=${t("knowledge.col_when")}><input value=${f.when_to_use} onInput=${(e) => set("when_to_use", e.target.value)} /><//>`
+      : html`<${Field} label=${t("knowledge.col_topic")}><input value=${f.topic} onInput=${(e) => set("topic", e.target.value)} /><//>
+             <${Field} label=${t("common.description")}><input value=${f.description} onInput=${(e) => set("description", e.target.value)} /><//>`}
     <${Field} label=${t("knowledge.content")}>${f.name.endsWith(".md") || (kind === "best-practices" && !/\.\w+$/.test(f.name))
       ? html`<${MarkdownEditor} value=${f.text} onChange=${(v) => set("text", v)} />`
       : html`<${CodeTextEditor} name=${f.name} value=${f.text} onChange=${(v) => set("text", v)} />`}<//>

@@ -6,29 +6,29 @@ version: 1
 examples:
   # --- MikroTik ---
   - vendor: mikrotik
-    topico: security-hardening
+    topic: security-hardening
     file: mikrotik/security-hardening.rsc
-    descricao: "Hardening of services, users, discovery and SNMP."
+    description: "Hardening of services, users, discovery and SNMP."
   - vendor: mikrotik
-    topico: firewall
+    topic: firewall
     file: mikrotik/firewall-baseline.rsc
-    descricao: "Secure input chain (default drop) with anti-brute-force."
+    description: "Secure input chain (default drop) with anti-brute-force."
   - vendor: mikrotik
-    topico: ospf
+    topic: ospf
     file: mikrotik/ospf-basic.rsc
-    descricao: "OSPF instance with backbone area and minimal redistribution."
+    description: "OSPF instance with backbone area and minimal redistribution."
   - vendor: mikrotik
-    topico: vlan
+    topic: vlan
     file: mikrotik/vlan-trunk.rsc
-    descricao: "VLANs over a bridge with a trunk port and access ports."
+    description: "VLANs over a bridge with a trunk port and access ports."
 
   # --- Linux ---
   - vendor: linux
-    topico: ssh
+    topic: ssh
     file: linux/sshd_config
-    descricao: "Hardened sshd_config — keys, no root, modern ciphers."
+    description: "Hardened sshd_config — keys, no root, modern ciphers."
   # More Linux examples (host firewall, Apache, Docker) go here as
-  # the living project evolves — see config-examples/PADRAO.md and best-practices/linux/.
+  # the living project evolves — see config-examples/STANDARD.md and best-practices/linux/.
 
 # Vendor status — seed = filled in | pendente = structure only
 vendors:

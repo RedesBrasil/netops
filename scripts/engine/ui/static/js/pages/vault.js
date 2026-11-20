@@ -1,6 +1,6 @@
 // Cofre de senhas (network/vault.yaml): segredos que NÃO são de host (portais, APIs, tokens).
 // Texto puro aparece sempre; segredo só abre (revelar/copiar/gravar) com o cofre destrancado.
-// URL (core/rules/urls-navegacao.md):
+// URL (core/rules/navigation-urls.md):
 //   #vault[?q=&tpl=]  #vault/new  #vault/<id>  #vault/<id>/edit
 //   #vault/templates  #vault/templates/new  #vault/templates/<id>
 //   #vault/fields     #vault/fields/new     #vault/fields/<nome>

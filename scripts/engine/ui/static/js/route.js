@@ -1,4 +1,4 @@
-// Rota central: #menu/seg1/seg2?chave=valor  (regra: core/rules/urls-navegacao.md)
+// Rota central: #menu/seg1/seg2?chave=valor  (regra: core/rules/navigation-urls.md)
 import { useState, useEffect } from "preact/hooks";
 
 export function parseRoute(hash = location.hash) {

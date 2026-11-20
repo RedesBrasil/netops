@@ -58,7 +58,8 @@ with a single version in `core/config/core-config.yaml`, notes in `CHANGELOG.md`
 Special files (prefix `_`):
 - `_TEMPLATE.*` / `_TEMPLATE/` — template to copy when creating a new item in the folder.
 - `_catalog.yaml` / `_index.yaml` — index of the folder, read by the agent for quick discovery.
-- `PADRAO.md` (inside each folder) — rules specific to that folder.
+- `STANDARD.md` (inside each folder) — rules specific to that folder. The standard of `network/` is
+  `core/rules/network-standard.md` (the updater only ships `*.example.yaml` inside `network/`).
 
 ## 3. Supported vendors
 
@@ -69,7 +70,7 @@ best practices (does not belong to a vendor).
 **Full seed content:** `mikrotik` and `linux`. The others already have the folder and the
 `_TEMPLATE` — they are filled in as the living project evolves.
 
-## 4. Format of each folder (summary — detail in the `PADRAO.md` of each one)
+## 4. Format of each folder (summary — detail in the `STANDARD.md` of each one)
 
 - **agents/** — `.agent.md` with 8 sections (Persona, Principles, Operating Mode,
   Tone of Voice, Output Examples, Anti-Patterns, Quality Criteria, Integration).

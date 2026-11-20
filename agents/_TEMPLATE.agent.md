@@ -17,7 +17,7 @@ paranoid about maintenance windows." 2 to 4 sentences.
 
 - Non-negotiable rule 1.
 - Non-negotiable rule 2.
-- (Always consult `constitution.md` and `PADRAO.md`.)
+- (Always consult `constitution.md` and `core/rules/standard.md`.)
 
 ## Operating Mode
 

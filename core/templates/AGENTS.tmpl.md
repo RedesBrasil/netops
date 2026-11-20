@@ -5,7 +5,7 @@
 # NetOps — Framework Multi-Agente para Redes e Infraestrutura
 
 > Este é o ponto de entrada do framework. Qualquer IDE de IA (Claude Code, Codex, Cursor,
-> Antigravity) lê este arquivo primeiro (padrão AGENTS.md; não existe mais CLAUDE.md). Leia também `constitution.md` e `PADRAO.md`.
+> Antigravity) lê este arquivo primeiro (padrão AGENTS.md; não existe mais CLAUDE.md). Leia também `constitution.md` e `core/rules/standard.md`.
 
 ## O que é
 
@@ -75,7 +75,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Saída bruta de execuções | `runs/` |
 | Relatórios finais | `reports/` |
 | Regras, schemas, templates do framework | `core/` |
-| O padrão de organização e nomenclatura | `PADRAO.md` |
+| O padrão de organização e nomenclatura | `core/rules/standard.md` |
 | Os princípios inegociáveis | `constitution.md` |
 
 ## Regras essenciais
@@ -100,7 +100,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
   - **GitHub por usuário:** na aba Claude e nos Projetos, git/gh usam a conta do GitHub **de quem abriu a conversa**.
     Sem conta conectada, push, PR e `gh` falham: peça para conectar em **Minha conta → GitHub** (`#account/github`) e
     reabrir a conversa. Nunca use a conta do servidor nem troque `GH_CONFIG_DIR`, `GH_TOKEN` ou a identidade do git.
-- **Padronize:** todo arquivo novo segue o `_TEMPLATE` da sua pasta. Ver `PADRAO.md`.
+- **Padronize:** todo arquivo novo segue o `_TEMPLATE` da sua pasta. Ver `core/rules/standard.md`.
 - **Conta do servidor (INEGOCIÁVEL):** o NetOps roda como a conta Linux `netops` (HOME `/var/lib/netops`), nunca root:
   console, IA, subagentes, terminal, agendador e atualizador. Nunca use `su`.
   **Root NESTE servidor = `sudo <comando>` direto, liberado SÓ com o cofre destrancado** (sem senha; o PAM confere o

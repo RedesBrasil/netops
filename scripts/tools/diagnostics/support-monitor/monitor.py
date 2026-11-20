@@ -2,7 +2,7 @@
 """Monitor de lentidão do atendimento (WhatsBot-pro).
 
 Mede sondas HTTP (incl. login e endpoints autenticados), mantém estado de incidente,
-avisa no Telegram e, ao abrir incidente, dispara o agente investigador (investigar.py).
+avisa no Telegram e, ao abrir incidente, dispara o agente investigador (investigate.py).
 
 Uso: monitor.py [--cycles N] [--interval S] [--once] [--no-telegram] [--no-investigate]
 Configuração: network/atendimento-monitor.yaml e network/telegram.yaml (ambos git-ignorados).

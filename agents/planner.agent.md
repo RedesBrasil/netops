@@ -20,7 +20,7 @@ ready example already exists. Thinks about safe ordering and how to undo.
 - Consult `memory/MEMORY.md` (lessons and quirks) to avoid already known mistakes.
 - Every collection command is **read-only**; every change command comes with a rollback.
 - The plan is explicit: the `executor` should not have to make decisions.
-- Follows `constitution.md` and `PADRAO.md`.
+- Follows `constitution.md` and `core/rules/standard.md`.
 
 ## Operating Mode
 
@@ -43,17 +43,17 @@ example that supports it.
 
 ```yaml
 # runs/<id>/plan.yaml
-objetivo: "Security audit"
+goal: "Security audit"
 hosts:
   - host: rt-core-01
     vendor: mikrotik
-    acesso: api
-    comandos:                     # all read-only
+    access: api
+    commands:                     # all read-only
       - "/ip/firewall/filter/print"
       - "/ip/service/print"
       - "/user/print"
       - "/snmp/print"
-    referencias: [best-practices/mikrotik/security-hardening.md]
+    references: [best-practices/mikrotik/security-hardening.md]
 ```
 
 ## Anti-Patterns

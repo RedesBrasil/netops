@@ -72,17 +72,20 @@ test("every literal t(key) used in the console exists in core/locales/en", () =>
   assert.deepEqual(missing, []);
 });
 
-test("hard-coded Portuguese text in the console (warning only, phase 7 turns it into a failure)", () => {
+// AI-context text (sent to the agent, not shown): the mention/quote notes are matched by text and stay as they are.
+const AI_CONTEXT_FILES = new Set(["mentions.js"]);
+
+test("no hard-coded Portuguese text in the console (use t(); exceptions marked // i18n-ok)", () => {
   const accent = /["'`>][^"'`<]*[áéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ][^"'`<]*["'`<]/;
   const hits = [];
-  for (const f of SOURCES) {
+  for (const f of SOURCES.filter((x) => !AI_CONTEXT_FILES.has(path.basename(x)))) {
     fs.readFileSync(f, "utf8").split("\n").forEach((line, i) => {
+      if (line.includes("i18n-ok")) return;
       const code = line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
       if (/^\s*\*/.test(line) || !accent.test(code)) return;
       if (/\b(?:t|netopsT|tr)\(/.test(code) && !/html`[^`]*[áéíóúâêôãõç]/.test(code)) return;
       hits.push(`${path.relative(STATIC, f)}:${i + 1}`);
     });
   }
-  if (hits.length) console.warn(`[i18n] ${hits.length} lines with literal Portuguese text, e.g.: ${hits.slice(0, 10).join(", ")}`);
-  assert.ok(true);
+  assert.deepEqual(hits, [], "visible text must go through t() (core/rules/i18n.md)");
 });

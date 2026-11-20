@@ -12,7 +12,7 @@ export function setupTokenFromHash(hash = location.hash) {
   return new URLSearchParams(m[1]).get("token") || "";
 }
 
-const LANG_LABEL = { en: "English", "pt-BR": "Português" };
+const LANG_LABEL = { en: "English", "pt-BR": "Português" };   // i18n-ok: native language names
 
 export function SetupScreen({ onDone }) {
   useLocale();

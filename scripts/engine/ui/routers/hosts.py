@@ -25,7 +25,7 @@ def _host_key(value: str):
     from lib.host_identity import require_host_id
     try:
         if not value.isascii() or not value.isdigit():
-            raise ValueError("ID inválido")
+            raise ValueError("ID inválido")   # i18n-ok: internal, caught
         return require_host_id(int(value))
     except ValueError:
         raise HTTPException(422, i18n.t("api_hosts.bad_host_id")) from None

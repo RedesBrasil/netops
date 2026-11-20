@@ -342,9 +342,31 @@ def _lock(root=None):
     return _flock(runs_dir(root) / ".tasks.lock")
 
 
+# Paths renamed to English in 2.7.0. Tasks saved with the old paths keep running (runtime alias; the file on disk
+# is not rewritten here). Keep this until every install has re-saved its tasks.
+LEGACY_PATHS = {
+    "scripts/tools/diagnostics/atendimento/investigar.py": "scripts/tools/diagnostics/support-monitor/investigate.py",
+    "scripts/tools/diagnostics/atendimento/PROMPT_AGENTE.md": "scripts/tools/diagnostics/support-monitor/AGENT_PROMPT.md",
+    "scripts/tools/diagnostics/atendimento/": "scripts/tools/diagnostics/support-monitor/",
+    "scripts/tools/zabbix/analise_template.py": "scripts/tools/zabbix/template_analysis.py",
+}
+
+
+def legacy_paths(text):
+    if not isinstance(text, str) or not text:
+        return text
+    for old, new in LEGACY_PATHS.items():
+        text = text.replace(old, new)
+    return text
+
+
 def get_task(task_id: str, root=None) -> dict:
     for t in load(root)["config"]["tasks"]:
         if t.get("id") == task_id:
+            t = dict(t)
+            for k in ("script", "prompt"):
+                if k in t:
+                    t[k] = legacy_paths(t[k])
             return t
     raise KeyError(i18n.t("lib_scheduler.task_not_found", id=task_id))
 

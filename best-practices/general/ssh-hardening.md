@@ -1,9 +1,9 @@
 ---
 id: ssh-hardening
-titulo: SSH Access Hardening
+title: SSH Access Hardening
 vendor: general
 tags: [security, ssh, hardening, access]
-severidade: alta
+severity: high
 ---
 
 ## Summary

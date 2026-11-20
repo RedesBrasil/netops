@@ -944,7 +944,7 @@ th.rt-drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .fm-copy:hover { border-color: var(--accent); }
 .fm-copy-txt { color: var(--muted); font-size: 12px; }
 
-/* Hosts — Sistema e aplicações (SO separado da aplicação; ver network/PADRAO.md) */
+/* Hosts — Sistema e aplicações (SO separado da aplicação; ver core/rules/network-standard.md) */
 .sys-box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 4px; margin: 4px 0 12px; }
 .sys-box legend { padding: 0 6px; color: var(--muted); font-size: 13px; font-weight: 600; }
 .sys-grid { display: grid; grid-template-columns: 1.2fr 1.2fr .8fr 1.4fr; gap: 0 12px; }

@@ -353,7 +353,7 @@ export function BackupsPage() {
   const candRes = useResource("/backups/candidates");
   const hostsRes = useResource("/backups/hosts");
   const runsRes = useResource("/backups/runs");
-  // URL (core/rules/urls-navegacao.md):
+  // URL (core/rules/navigation-urls.md):
   //   #backups[/services[/<id>|/new]]  #backups/storage[/<host>]  ?q=  &run=<id>  &file=<caminho>  &diffa=&diffb=
   const r = useMenuRoute("backups");
   const tab = r.segments[0] === "storage" ? "armazenamento" : "servicos";

@@ -1,7 +1,7 @@
 // Tarefas agendadas: lista (criar/editar/remover/executar) + histórico de execuções/notificações.
 // Quem dispara é o cron do sistema (/etc/cron.d/netops-scheduler → scheduler/cli.py tick);
 // a tela só edita network/schedules.yaml e lê runs/schedules/. Ver scripts/engine/scheduler/SKILL.md.
-// URLs (core/rules/urls-navegacao.md):
+// URLs (core/rules/navigation-urls.md):
 //   #schedules[?q=&kind=&status=]   #schedules/<id>   #schedules/new
 //   #schedules/runs[?task=&status=&unread=1]   #schedules/runs/<tarefa>/<run>
 import { html, useState, useEffect, api, useResource, Spinner, toast, handleError, Modal, Tabs, ConfirmDialog, t, fmtDateTime } from "../ui.js";
@@ -19,7 +19,7 @@ export const KINDS = [
 ];
 const KIND = Object.fromEntries(KINDS.map((k) => [k.key, k]));
 // [cron value, catalog suffix, Portuguese fallback (scheduleText runs in node tests without a catalog)]
-const WEEKDAYS = [["1", "mon", "Seg"], ["2", "tue", "Ter"], ["3", "wed", "Qua"], ["4", "thu", "Qui"], ["5", "fri", "Sex"], ["6", "sat", "Sáb"], ["0", "sun", "Dom"]];
+const WEEKDAYS = [["1", "mon", "Seg"], ["2", "tue", "Ter"], ["3", "wed", "Qua"], ["4", "thu", "Qui"], ["5", "fri", "Sex"], ["6", "sat", "Sáb"], ["0", "sun", "Dom"]];   // i18n-ok: fallback when no catalog (node test)
 // Self-contained translation helper: tests/schedules.test.mjs evaluates this file with the imports stripped.
 const tr = (key, vars, fallback) => { const out = globalThis.netopsT ? globalThis.netopsT(key, vars) : key; return out === key ? fallback : out; };
 const wdName = (v) => { const w = WEEKDAYS.find((x) => x[0] === v); return w ? tr("schedules.wd_" + w[1], null, w[2]) : v; };

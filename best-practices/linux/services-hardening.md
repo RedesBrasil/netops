@@ -1,9 +1,9 @@
 ---
 id: linux-services-hardening
-titulo: Linux Services Hardening (Apache, Docker, FTP)
+title: Linux Services Hardening (Apache, Docker, FTP)
 vendor: linux
 tags: [security, linux, apache, docker, ftp, services]
-severidade: media
+severity: medium
 ---
 
 ## Summary
@@ -47,7 +47,7 @@ exposed over TCP without TLS is equivalent to giving `root` on the host — it i
 
 - `config-examples/linux/sshd_config` — hardened SSH access (seed example).
 - Apache, Docker and FTP examples: to be added to `config-examples/linux/` as the
-  living project evolves (follow `config-examples/PADRAO.md`).
+  living project evolves (follow `config-examples/STANDARD.md`).
 
 ## References
 

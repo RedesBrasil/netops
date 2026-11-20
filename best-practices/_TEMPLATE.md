@@ -1,9 +1,9 @@
 ---
 id: unique-identifier
-titulo: Human-Readable Guide Title
+title: Human-Readable Guide Title
 vendor: general
 tags: [tag1, tag2]
-severidade: media
+severity: medium
 ---
 
 ## Summary

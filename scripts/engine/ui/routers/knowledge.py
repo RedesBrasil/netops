@@ -2,7 +2,7 @@
 """CRUD de conhecimento: best-practices/ e config-examples/ (+ seus índices).
 
 Cria/edita/remove arquivos por vendor e mantém o índice (_catalog.yaml/_index.yaml)
-em sincronia. Nomes em kebab-case; vendor precisa estar na lista do PADRAO."""
+em sincronia. Nomes em kebab-case; vendor precisa estar na lista de core/rules/standard.md."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
@@ -30,21 +30,39 @@ def _kind(kind: str):
     return KINDS[kind]
 
 
+# Index keys are English; installs older than 2.7 may still have the Portuguese ones (read both, write English).
+LEGACY_KEYS = {"titulo": "title", "quando_usar": "when_to_use", "topico": "topic", "descricao": "description"}
+
+
+def _norm(entry):
+    if not isinstance(entry, dict):
+        return entry
+    out = {}
+    for k, v in entry.items():
+        out.setdefault(LEGACY_KEYS.get(k, k), v)
+    return out
+
+
+def _field(body: dict, key: str, default=""):
+    legacy = next((k for k, v in LEGACY_KEYS.items() if v == key), None)
+    return body.get(key) or (body.get(legacy) if legacy else None) or default
+
+
 def _entry(kind: str, vendor: str, name: str, body: dict) -> dict:
     rel = f"{vendor}/{name}"
     if kind == "best-practices":
         return {
             "id": body.get("id") or name.rsplit(".", 1)[0],
-            "titulo": body.get("titulo", name),
+            "title": _field(body, "title", name),
             "vendor": vendor,
             "file": rel,
-            "quando_usar": body.get("quando_usar", ""),
+            "when_to_use": _field(body, "when_to_use"),
         }
     return {
         "vendor": vendor,
-        "topico": body.get("topico") or name.rsplit(".", 1)[0],
+        "topic": _field(body, "topic") or name.rsplit(".", 1)[0],
         "file": rel,
-        "descricao": body.get("descricao", ""),
+        "description": _field(body, "description"),
     }
 
 
@@ -60,7 +78,7 @@ def get_index(kind: str):
         for f in sorted(base.rglob("*")):
             if f.is_file() and not f.name.startswith("_") and f.parent != base:
                 on_disk.append(str(f.relative_to(base)))
-    return {"index": data.get(key) or [], "vendors": data.get("vendors") or {},
+    return {"index": [_norm(e) for e in (data.get(key) or [])], "vendors": data.get("vendors") or {},
             "files": on_disk, "rev": rev}
 
 

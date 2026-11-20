@@ -1,4 +1,4 @@
-// URLs de navegação (core/rules/urls-navegacao.md): item aberto e filtros têm URL; deep link e Voltar funcionam.
+// URLs de navegação (core/rules/navigation-urls.md): item aberto e filtros têm URL; deep link e Voltar funcionam.
 // Uso: tests/e2e-env.sh up && PLAYWRIGHT_MODULE=... CHROMIUM_EXECUTABLE=... node tests/urls.browser.mjs [menu ...]
 import assert from "node:assert/strict";
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");

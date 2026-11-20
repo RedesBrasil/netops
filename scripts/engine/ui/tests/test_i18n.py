@@ -190,3 +190,42 @@ def test_fresh_install_language_is_left_to_first_access(env):
         pass
     cfg = yaml.safe_load((env / "core/config/project-config.yaml").read_text()) or {}
     assert "instance" not in cfg
+
+
+def test_api_error_messages_have_no_hard_coded_portuguese():
+    """Phase 7 guard: API error texts go through i18n.t(); exceptions are marked '# i18n-ok'."""
+    acc = re.compile(r"[áéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ]")
+    pat = re.compile(r"""(HTTPException\([^)]*detail\s*=\s*f?["']|["']detail["']\s*:\s*f?["']|"""
+                     r"""(?:Error|Exception)\(\s*f?["'](?![a-z_]+["']\s*,)|raise\s+\w+\(\s*["'][a-z_]+["']\s*,\s*f?["'])""")
+    ui = Path(__file__).resolve().parents[1]
+    hits = []
+    for f in [*ui.glob("routers/*.py"), *ui.glob("services/*.py"), ui / "app.py", ui / "deps.py"]:
+        for i, line in enumerate(f.read_text(encoding="utf-8").split("\n"), 1):
+            if (pat.search(line) and acc.search(line) and "i18n.t(" not in line and "i18n-ok" not in line
+                    and not line.strip().startswith("#")):
+                hits.append(f"{f.name}:{i}")
+    assert hits == []
+
+
+def test_legacy_renamed_files_removed_only_when_pristine(tmp_path):
+    """2.6.1: unedited old copies (identical to a release) go away; edited ones stay."""
+    import hashlib
+    from update import legacy_cleanup
+    known = json.loads(legacy_cleanup.LIST.read_text())["files"]
+    assert "agents/PADRAO.md" in known and "scripts/tools/diagnostics/atendimento/monitor.py" in known
+    rel_ok, rel_edit = "agents/PADRAO.md", "workflows/PADRAO.md"
+    for rel in (rel_ok, rel_edit):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+    data = b"pristine copy"
+    (tmp_path / rel_ok).write_bytes(data)
+    (tmp_path / rel_edit).write_bytes(b"edited by the user")
+    orig = legacy_cleanup.LIST
+    fake = tmp_path / "legacy.json"
+    fake.write_text(json.dumps({"files": {rel_ok: [hashlib.sha256(data).hexdigest()],
+                                          rel_edit: [hashlib.sha256(b"other").hexdigest()]}}))
+    legacy_cleanup.LIST = fake
+    try:
+        assert legacy_cleanup.run(tmp_path) == [rel_ok]
+    finally:
+        legacy_cleanup.LIST = orig
+    assert not (tmp_path / rel_ok).exists() and (tmp_path / rel_edit).exists()

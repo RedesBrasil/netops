@@ -2,7 +2,7 @@
 // Usado em dois lugares com a MESMA API (/api/files/*, routers/files.py):
 //   - menu Arquivos (#files?path=/etc)          src="local"  — este servidor;
 //   - painel ao lado do terminal de host         src=<token>  — SFTP sobre a conexão SSH do terminal.
-// Lista própria (não é DataTable): exceção registrada em core/rules/tabelas-console.md.
+// Lista própria (não é DataTable): exceção registrada em core/rules/console-tables.md.
 // Estado de navegação (path, q, sort, hidden, open) é CONTROLADO por quem usa (URL no menu Arquivos).
 import { html, useState, useEffect, useRef, useMemo, api, toast, Modal, t } from "./ui.js";
 import { useLayoutEffect } from "preact/hooks";

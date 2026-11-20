@@ -5,7 +5,7 @@ import { FilterBar, DataTable, Field, Modal, ConfirmDialog, CodeTextEditor, Mark
 
 const LANG_ICON = { python: "🐍", shell: "🐚" };
 
-const SKILL_TMPL = (id) => `---\nid: ${id}\nname: ${id}\ntype: script\nruntime: python\ndescription: Uma linha — o que esta skill faz e quando usar.\nenv: []\n---\n\n## O que faz\n\n## Quando usar\n\n## Scripts\n\n| Script | Função |\n|--------|--------|\n\n## Uso\n\n\`\`\`bash\npython scripts/tools/${id}/<script>.py --help\n\`\`\`\n`;
+const SKILL_TMPL = (id) => `---\nid: ${id}\nname: ${id}\ntype: script\nruntime: python\ndescription: One line — what this skill does and when to use it.\nenv: []\n---\n\n## What it does\n\n## When to use\n\n## Scripts\n\n| Script | Purpose |\n|--------|---------|\n\n## Usage\n\n\`\`\`bash\npython scripts/tools/${id}/<script>.py --help\n\`\`\`\n`;
 
 const enc = (p) => p.split("/").map(encodeURIComponent).join("/");
 
@@ -15,7 +15,7 @@ const enc = (p) => p.split("/").map(encodeURIComponent).join("/");
 //      #scripts/<skill>              → página da skill (SKILL.md formatado + scripts dela)
 //      #scripts/<skill>/<arquivo>    → editor do script (ou do SKILL.md) sobre a skill / a aba Scripts
 //      #scripts/new                  → novo script
-//      ?q=&location=&lang=&sort=&dir=&doc=<doc.md>   (core/rules/urls-navegacao.md)
+//      ?q=&location=&lang=&sort=&dir=&doc=<doc.md>   (core/rules/navigation-urls.md)
 export function ScriptsPage() {
   const res = useResource("/scripts");
   const r = useMenuRoute("scripts");

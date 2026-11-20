@@ -1,5 +1,5 @@
 // Usuários e grupos de acesso (menu Sistema; só admin). Banco de acesso SQLite (lib/accessdb.py).
-// URLs (core/rules/urls-navegacao.md):
+// URLs (core/rules/navigation-urls.md):
 //   #users[/<login>|/new|/<login>/password][?q=&group=&status=&sort=&dir=]
 //   #access-groups[/<nome>|/new][?q=&sort=&dir=]
 import { html, useState, api, useResource, Spinner, Badge, toast, handleError, useMe, refreshMe, t, fmtDateTime } from "../ui.js";

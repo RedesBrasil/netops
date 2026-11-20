@@ -1,4 +1,4 @@
-# Workflow template — copy it when creating a new workflow. See workflows/PADRAO.md.
+# Workflow template — copy it when creating a new workflow. See workflows/STANDARD.md.
 workflow:
   id: workflow-identifier
   name: Readable Workflow Name

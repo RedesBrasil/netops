@@ -1,9 +1,9 @@
 ---
 id: network-security-audit
-titulo: Network Security Audit
+title: Network Security Audit
 vendor: general
 tags: [security, audit, hardening]
-severidade: alta
+severity: high
 ---
 
 ## Summary

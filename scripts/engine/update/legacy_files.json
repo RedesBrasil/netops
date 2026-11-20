@@ -1,0 +1,47 @@
+{
+ "comment": "Files renamed in 2.6.1 inside customizable folders. The updater keeps removed customizable files, so the console deletes them at startup ONLY when identical to a published version (sha256).",
+ "files": {
+  "agents/PADRAO.md": [
+   "455eb65ee302e2ccda60a7c49aeee448ff6ed19b0e9f267d32f97f6e721bd5cc",
+   "e84b4d7a9a1ff886ec5b34f83fb40500c4791bec356bc41f06e85dc26058dc3e"
+  ],
+  "best-practices/PADRAO.md": [
+   "6b4f8ffb35967a60903aedcde4846c51b9e3d0215217af503622f5f0040041e8",
+   "fb9d85f033f371a3bc4dc8a8a92aaa2cb7f1aaa5b2f44eef47c214a286d347a5"
+  ],
+  "config-examples/PADRAO.md": [
+   "00e28b3c867f8126986453fe5e870213a358a9e5c2f3a5ce0e6fa0aeaeadc006",
+   "9b212e765a75da99deb504dd8f2ec839f969a43dd07001d13c592acaf555c1ac"
+  ],
+  "planning-examples/PADRAO.md": [
+   "97e5b7919b7351da9d2337f9a029bfb428ef5ee27cd1e6f2bb43613f61a6622b",
+   "cc419a8597656da517f172539538b9f1e3866965aa4f05237e8f53e7109565f9"
+  ],
+  "scripts/tools/diagnostics/atendimento/PROMPT_AGENTE.md": [
+   "3aeb63e4cffb94fb7b78823e9951fab9ae84295e29cd4e0cdc5949105bde7393",
+   "e0cc588da0628d6af330055a43346c54b7b6cd37ec0210ddd1c18e7a4034f6fd"
+  ],
+  "scripts/tools/diagnostics/atendimento/SKILL.md": [
+   "5df3fa8ff0362be66cc97bac8cae4326c6ed963516d0e626297671b9ed23fe77",
+   "96ac71d7e1369357cf5339469b6ef99738a941706d3d2c3823072095804fc4cc"
+  ],
+  "scripts/tools/diagnostics/atendimento/investigar.py": [
+   "757cc7012764ba5db61b59cf8a88990d3ca8eeb61d245259382f02b1ae4857b9",
+   "d51f76e96227ff87c1ded793b858939cc4118f86501ba4ab9d1fba64b947ee91",
+   "e775983fb1e5074be432287ea7ee70b2809b032b9e1d7f38cfffb2145850fd32"
+  ],
+  "scripts/tools/diagnostics/atendimento/monitor.py": [
+   "0c644d30d7e029cbff947d4ef4de87f6b06645b0c051cd4c91e8bfdc1efe901e",
+   "e69867ec8971548934cd54d15f04f0b2c921a0419279281bad23faf94d7c4709"
+  ],
+  "scripts/tools/zabbix/analise_template.py": [
+   "0d7ef94955d32f52918b47b918277bc2f20ac9db731b6b77eba30a36ed5221d1",
+   "140df36d211f459a0713306f73c14a4ea091121a1093e857b527d1a79a1a534f",
+   "64ecd63667493d4bdd7f97880e015655ea7481206eb995ba5b024eae9df03ca3"
+  ],
+  "workflows/PADRAO.md": [
+   "675e3f1bcd46942df2cba9e9f241415e232c28bc7a833e1f161549bae043e618",
+   "d8fa92f06320edf98f7bd961696d49446cbb916f3410aecb07bef504f244db9c"
+  ]
+ }
+}

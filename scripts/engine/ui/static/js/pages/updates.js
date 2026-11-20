@@ -17,7 +17,7 @@ const PHASES = {
 
 // part: "version" = só o número (topbar); "button" = botão + painel (Configuração).
 export function UpdatesControl({ part = "button" } = {}) {
-  // URL: #settings/updates abre o painel (core/rules/urls-navegacao.md)
+  // URL: #settings/updates abre o painel (core/rules/navigation-urls.md)
   const rt = useMenuRoute("settings");
   const open = part === "button" && rt.segments[0] === "updates";
   const setOpen = (v) => (v ? rt.open("updates") : rt.close());

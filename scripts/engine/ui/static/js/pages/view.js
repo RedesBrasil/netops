@@ -6,7 +6,7 @@ import { InstanceLanguageCard } from "../language.js";
 import { useMenuRoute, matchText } from "../route.js";
 import { FilterBar, DataTable, Field, Modal, MarkdownPanel, CodeTextEditor } from "../components.js";
 
-// URL: #reports[/<arquivo>][?q=]  (core/rules/urls-navegacao.md)
+// URL: #reports[/<arquivo>][?q=]  (core/rules/navigation-urls.md)
 export function ReportsPage() {
   const res = useResource("/reports");
   const r = useMenuRoute("reports");
@@ -67,7 +67,7 @@ export function ReportView({ file, onClose, fullLink }) {
   <//>`;
 }
 
-// URL: #runs[/<id>][?q=&status=]  (core/rules/urls-navegacao.md)
+// URL: #runs[/<id>][?q=&status=]  (core/rules/navigation-urls.md)
 export function RunsPage() {
   const res = useResource("/runs");
   const r = useMenuRoute("runs");

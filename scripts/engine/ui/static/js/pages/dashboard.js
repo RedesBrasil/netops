@@ -1,5 +1,5 @@
 // Painel: consumo do host (CPU/RAM/disco) e consumo de IA (tokens/valor por dia, modelo e tarefa).
-// URL: #dashboard?range=7|30|90 | start=&end= | model= | metric=tokens|cost   (core/rules/urls-navegacao.md)
+// URL: #dashboard?range=7|30|90 | start=&end= | model= | metric=tokens|cost   (core/rules/navigation-urls.md)
 import { html, useState, useEffect, useMemo, useRef, api, Spinner, handleError, t, fmtNumber, fmtDate, fmtDateTime } from "../ui.js";
 import { useMenuRoute } from "../route.js";
 import { DataTable } from "../components.js";
