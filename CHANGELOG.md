@@ -15,6 +15,7 @@
   - **Saída:** stdout e stderr saem com o segredo trocado por `***`. Serve para Wrangler (`CLOUDFLARE_API_TOKEN`), API do Coolify, aplicações com `.env` e para a IA usar as chaves sem ver o valor.
   - **Comandos e tela:** `nvault list` e `nvault check` nunca mostram valores. A tela do item mostra a referência de cada campo, com o botão copiar.
   - **Permissão e auditoria:** a permissão nova `vault.use` vale para quem pede pela aba Claude ou pelo terminal. Cada uso fica na auditoria como `vault.run`.
+- **Menções `#senha:` na aba Claude.** Digitar `#` lista também os itens do Cofre de senhas, junto com hosts e grupos. No envio, o agente recebe só as referências `nvault://item/campo` de cada campo, nunca o valor, e a instrução de usar `nvault run`. Também corrigido: digitar rápido logo depois de mudar a busca podia engolir a seta ↑/↓ do menu.
 
 ## [2.5.0] - 2026-11-19
 

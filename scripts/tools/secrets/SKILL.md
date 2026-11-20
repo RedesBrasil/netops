@@ -20,7 +20,8 @@ conversa**. Exige o **cofre destrancado**. Cada uso entra na Auditoria do consol
 - **Referência embutida:** `DATABASE_URL=postgres://app:{{nvault://banco-app/senha}}@db:5432/app`.
 - **Item e campo:** o item é o ID que aparece na URL do console (`#vault/<id>`). O campo é o nome dele em
   slug: "API key" vira `api-key`, "Usuário" vira `usuario`. A tela de cada item mostra a referência pronta, com
-  o botão **copiar referência**, e `list` imprime todas.
+  o botão **copiar referência**, e `list` imprime todas. Na aba Claude, o usuário pode mencionar o item com
+  `#senha:<id>`; a mensagem chega com o bloco "[NetOps — menções]" listando as referências do item.
 
 ## Quando usar
 

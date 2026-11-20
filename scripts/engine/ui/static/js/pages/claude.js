@@ -1225,7 +1225,9 @@ let mentionCatalog = null, mentionLoadedAt = 0, mentionLoading = null;
 function loadMentionCatalog(force) {
   if (!force && mentionCatalog && Date.now() - mentionLoadedAt < 30000) return Promise.resolve(mentionCatalog);
   if (!mentionLoading) {
-    mentionLoading = api.get("/hosts").then((r) => { mentionCatalog = buildCatalog(r); mentionLoadedAt = Date.now(); return mentionCatalog; })
+    // Cofre de senhas é opcional (sem vault.view = 403): as menções de host/grupo seguem funcionando.
+    mentionLoading = Promise.all([api.get("/hosts"), api.get("/vault/items").catch(() => null)])
+      .then(([r, v]) => { mentionCatalog = buildCatalog(r, v); mentionLoadedAt = Date.now(); return mentionCatalog; })
       .catch(() => mentionCatalog).finally(() => { mentionLoading = null; });
   }
   return mentionLoading;
@@ -1240,13 +1242,20 @@ function Composer() {
   // Menções "#host:…" / "#group:…": menu junto ao cursor, ↑↓ navega, Enter/Tab escolhe, Esc fecha.
   const [caret, setCaret] = useState(0);
   const [catalog, setCatalog] = useState(mentionCatalog);
-  const [mSel, setMSel] = useState(0);
   const [mOff, setMOff] = useState("");                 // token fechado com Esc (reabre ao mudar o texto dele)
   const mTok = findMentionToken(input, Math.min(caret, input.length));
   const mKey = mTok ? `${mTok.start}|${mTok.kind}|${mTok.query}` : "";
   const mItems = mTok && mKey !== mOff && catalog ? searchMentions(catalog, mTok.query, mTok.kind) : [];
+  // Seleção amarrada ao token: mudou a busca = volta ao 1º na MESMA renderização (antes um useEffect zerava
+  // depois e engolia uma ↑/↓ digitada logo em seguida).
+  // `gen` muda a cada edição do token (inclusive quando volta ao mesmo texto), como o antigo reset.
+  const mGen = useRef({ key: mKey, n: 0 });
+  if (mGen.current.key !== mKey) mGen.current = { key: mKey, n: mGen.current.n + 1 };
+  const mStamp = mKey + "#" + mGen.current.n;
+  const [mSelState, setMSelState] = useState({ k: "", i: 0 });
+  const mSel = mSelState.k === mStamp ? mSelState.i : 0;
+  const setMSel = (i) => setMSelState({ k: mStamp, i });
   useEffect(() => { if (mTok) loadMentionCatalog(!catalog).then((c) => c && setCatalog(c)); }, [!!mTok]);
-  useEffect(() => { setMSel(0); }, [mTok && mTok.query, mTok && mTok.kind]);
   useEffect(() => { if (mOff && mKey !== mOff) setMOff(""); }, [mKey]);   // mudou o token: o Esc anterior não vale mais
   function pickMention(item) {
     const r = applyMention(input, mTok, item);
@@ -1321,11 +1330,11 @@ function Composer() {
     ${slashMatches.length > 0 && html`<div class="cc-slash-menu">
       ${slashMatches.map((c) => html`<button key=${c} class="cc-slash" onClick=${() => setInput("/" + c + " ")}>/${c}</button>`)}
     </div>`}
-    ${mItems.length > 0 && html`<div class="cc-mention-menu" role="listbox" aria-label="Hosts e grupos">
+    ${mItems.length > 0 && html`<div class="cc-mention-menu" role="listbox" aria-label="Hosts, grupos e senhas">
       ${mItems.map((m, i) => html`<button key=${m.token} role="option" aria-selected=${i === mSel}
           class=${"cc-mention" + (i === mSel ? " sel" : "")}
           onMouseDown=${(e) => e.preventDefault()} onMouseEnter=${() => setMSel(i)} onClick=${() => pickMention(m)}>
-        <span class=${"cc-mention-kind " + m.kind}>${m.kind === "group" ? "group" : "host"}</span>
+        <span class=${"cc-mention-kind " + m.kind}>${m.kind === "group" ? "group" : m.kind === "senha" ? "🔒 senha" : "host"}</span>
         <b>${m.label}</b><small>${m.detail}</small>
       </button>`)}
     </div>`}

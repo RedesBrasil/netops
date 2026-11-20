@@ -297,6 +297,7 @@ pre.raw { font-family: var(--mono); font-size: 13px; background: var(--surface-2
 .cc-mention.sel small { color: inherit; opacity: .85; }
 .cc-mention-kind { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); flex: none; }
 .cc-mention-kind.group { border-color: var(--accent); }
+.cc-mention-kind.senha { border-color: var(--warn); }
 .cc-mention.sel .cc-mention-kind { border-color: currentColor; }
 /* Caixa de mensagem: um único bloco arredondado que envolve o texto E os controles
    (modo, meta, anexar, enviar) — nada solto fora dela. Estilo Claude Code. */

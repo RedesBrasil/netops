@@ -1,8 +1,9 @@
-// Menções de hosts e grupos na caixa de mensagem da aba Claude: "#mikrotik" abre uma lista
-// com `host:<hostname>` e `group:<grupo>`. Lógica pura (sem DOM) — testada em
+// Menções de hosts, grupos e itens do Cofre de senhas na caixa de mensagem da aba Claude: "#mikrotik"
+// abre uma lista com `host:<hostname>`, `group:<grupo>` e `senha:<item>`. Lógica pura (sem DOM) — testada em
 // tests/mentions.test.mjs. O Composer só cuida da tela.
 //
-// Formato do texto: `#host:<hostname>` e `#group:<NOME>` (espaços do hostname viram "_").
+// Formato do texto: `#host:<hostname>`, `#group:<NOME>` e `#senha:<id-do-item>` (espaços do hostname viram "_").
+// `#senha:` nunca leva valor: o agente recebe só as referências nvault:// (uso via `nvault run`).
 // No envio, `expandMentions` acrescenta um bloco com os IDs reais do inventário, para o
 // agente não precisar adivinhar quais hosts pertencem a um grupo.
 
@@ -11,8 +12,21 @@ export const MENTION_NOTE = "[NetOps — menções]";
 const norm = (s) => String(s == null ? "" : s).toLowerCase();
 const tokenName = (s) => String(s).trim().replace(/\s+/g, "_");
 
+// Mesmo slug de lib/pwvault.slugify (referência nvault://item/campo).
+export const vaultSlug = (t) => String(t || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/, "") || "item";
+
+// Itens do Cofre de senhas (GET /vault/items) -> { id, title, template, fields: [{field, kind, ref}], token }.
+export function buildVaultItems(resp) {
+  return ((resp && resp.items) || []).map((it) => ({
+    id: it.id, title: String(it.title || it.id), template: String(it.template_label || ""), token: "#senha:" + it.id,
+    fields: (it.values || []).map((v) => ({ field: v.field, kind: v.kind, ref: `nvault://${it.id}/${vaultSlug(v.field)}` })),
+  }));
+}
+
 // Normaliza a resposta de GET /hosts em { hosts: [...], groups: [...] } já com o que o menu usa.
-export function buildCatalog(resp) {
+// `vaultResp` (opcional) = GET /vault/items; sem permissão/cofre, fica sem senhas.
+export function buildCatalog(resp, vaultResp = null) {
   const rows = (resp && resp.hosts) || [];
   const hosts = rows.map((r) => {
     const e = r.effective || {}, x = r.explicit || {};
@@ -24,7 +38,7 @@ export function buildCatalog(resp) {
   const groups = [...names].sort().map((name) => ({
     name, token: "#group:" + tokenName(name), members: hosts.filter((h) => h.group === name),
   }));
-  return { hosts, groups };
+  return { hosts, groups, vault: buildVaultItems(vaultResp) };
 }
 
 // Token em edição junto ao cursor: `#` no início ou depois de espaço, seguido de texto sem espaço.
@@ -35,7 +49,7 @@ export function findMentionToken(text, caret) {
   if (!m) return null;
   const start = before.length - m[2].length - 1;
   let query = m[2], kind = null;
-  const k = /^(host|group):(.*)$/i.exec(query);
+  const k = /^(host|group|senha):(.*)$/i.exec(query);
   if (k) { kind = k[1].toLowerCase(); query = k[2]; }
   return { start, end: caret, query, kind };
 }
@@ -54,6 +68,11 @@ export function searchMentions(catalog, query, kind = null, limit = 12) {
     for (const h of catalog.hosts) if (hit(h.hostname, h.id, h.ip))
       out.push({ kind: "host", label: h.hostname, token: h.token, detail: [h.ip, h.group].filter(Boolean).join(" · "), rank: norm(h.hostname).startsWith(q) ? 0 : 2 });
   }
+  if (kind !== "host" && kind !== "group") {
+    for (const v of catalog.vault || []) if (hit(v.title, v.id, v.template))
+      out.push({ kind: "senha", label: v.title, token: v.token, detail: [v.template, v.fields.length + " campo(s)"].filter(Boolean).join(" · "),
+                 rank: norm(v.title).startsWith(q) || norm(v.id).startsWith(q) ? 1 : 3 });
+  }
   out.sort((a, b) => a.rank - b.rank);     // estável: dentro do mesmo rank mantém a ordem (grupos antes de hosts)
   return out.slice(0, limit);
 }
@@ -67,14 +86,16 @@ export function applyMention(text, tok, item) {
 
 // Acha no texto os tokens `#host:…`/`#group:…` que existem no inventário.
 export function mentionsIn(text, catalog) {
-  const found = { hosts: new Map(), groups: new Map() };
+  const found = { hosts: new Map(), groups: new Map(), vault: new Map() };
   const hostBy = new Map(catalog.hosts.map((h) => [norm(h.token), h]));
   const groupBy = new Map(catalog.groups.map((g) => [norm(g.token), g]));
-  for (const m of String(text).matchAll(/(^|\s)(#(?:host|group):[^\s#]+)/gi)) {
+  const vaultBy = new Map((catalog.vault || []).map((v) => [norm(v.token), v]));
+  for (const m of String(text).matchAll(/(^|\s)(#(?:host|group|senha):[^\s#]+)/gi)) {
     const raw = norm(m[2]);
     for (const t of [raw, raw.replace(/[.,;:!?)]+$/, "")]) {   // 2ª tentativa: pontuação colada no fim da frase
       if (hostBy.has(t)) { found.hosts.set(hostBy.get(t).id, hostBy.get(t)); break; }
       if (groupBy.has(t)) { found.groups.set(groupBy.get(t).name, groupBy.get(t)); break; }
+      if (vaultBy.has(t)) { found.vault.set(vaultBy.get(t).id, vaultBy.get(t)); break; }
     }
   }
   return found;
@@ -84,13 +105,18 @@ export function mentionsIn(text, catalog) {
 export function expandMentions(text, catalog) {
   if (!catalog) return text;
   const f = mentionsIn(text, catalog);
-  if (!f.hosts.size && !f.groups.size) return text;
+  if (!f.hosts.size && !f.groups.size && !f.vault.size) return text;
   const hostLine = (h) => `host id ${h.id} (${h.hostname}${h.ip ? ", " + h.ip : ""})`;
   const lines = [];
   for (const h of f.hosts.values()) lines.push(`- ${h.token} = ${hostLine(h)}`);
   for (const g of f.groups.values()) {
     lines.push(`- ${g.token} = grupo do inventário com ${g.members.length} host(s): ` +
       (g.members.length ? g.members.map(hostLine).join("; ") : "nenhum"));
+  }
+  for (const v of f.vault.values()) {
+    lines.push(`- ${v.token} = item "${v.title}" do Cofre de senhas${v.template ? ` (template ${v.template})` : ""}; referências: ` +
+      (v.fields.length ? v.fields.map((x) => `${x.ref} (${x.field}, ${x.kind === "secret" ? "segredo" : "texto"})`).join("; ") : "nenhum campo") +
+      ". Use só via `nvault run -- <comando>` (scripts/tools/secrets/SKILL.md); nunca leia nem mostre o valor.");
   }
   return `${text}\n\n${MENTION_NOTE}\n${lines.join("\n")}`;
 }
