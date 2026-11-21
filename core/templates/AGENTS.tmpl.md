@@ -66,7 +66,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 | Gerenciador de arquivos do console (menu **Arquivos** + painel SFTP ao lado do terminal de host) | `scripts/engine/ui/` (`routers/files.py`, `static/js/file-browser.js`; ver `SKILL.md`) |
 | Usuários, grupos de acesso, auditoria do console (SQLite `runs/netops.db`) | `scripts/engine/users/` (`SKILL.md`; console: **Usuários / Grupos de acesso / Auditoria**) |
 | GitHub de cada usuário (conta própria no agente; **Minha conta → GitHub**) | `scripts/engine/lib/github_identity.py` (ver `scripts/engine/users/SKILL.md`, "GitHub por usuário") |
-| Projetos do console (nome + pasta; sessões do Claude Code por pasta; menu **Projetos**) | `scripts/engine/ui/` (`routers/projects.py`, `services/projects_svc.py`, `static/js/pages/projects.js`; ver `SKILL.md`) |
+| Projetos do console (nome + pasta; sessões do Claude Code por pasta; **privados por padrão, compartilhados com usuários/grupos** em `#projects/<id>/share`; menu **Projetos**) | `scripts/engine/ui/` (`routers/projects.py`, `services/projects_svc.py`, `services/project_acl.py`, `static/js/pages/projects.js`; ver `SKILL.md`) |
 | Tarefas agendadas (script / agente de IA / script + agente) | `scripts/engine/scheduler/` (`SKILL.md`; console: menu **Tarefas agendadas**) |
 | **Central de Avisos**: alertas, avisos e pedidos de aprovação (sino 🔔 no topo + menu **Saída → Central de Avisos**) | `scripts/engine/inbox/` (`SKILL.md`; `inbox/cli.py add`) |
 | Descobrir CTs/VMs de um Proxmox, cadastrar e organizar no mapa | `scripts/tools/inventory/` (`SKILL.md`; `map_place.py register` / `place`) |
@@ -97,7 +97,7 @@ Quando o usuário fizer um pedido, você atua como o agente **coordinator**. Sig
 
 - **Multiusuário (aba Claude):** cada pessoa entra com o próprio login; o que ela pode fazer vem do grupo dela.
   - **Na aba Claude:** `NETOPS_USER` identifica quem pediu. O teto de rede do grupo dele vale e **não se contorna**.
-  - **GitHub por usuário:** na aba Claude e nos Projetos, git/gh usam a conta do GitHub **de quem abriu a conversa**.
+  - **GitHub por usuário:** na aba Claude e nos Projetos, git/gh usam a conta do GitHub **de quem enviou a mensagem** (outra pessoa continua a conversa = o agente relança com a conta, o teto de rede e o `NETOPS_USER` dela).
     Sem conta conectada, push, PR e `gh` falham: peça para conectar em **Minha conta → GitHub** (`#account/github`) e
     reabrir a conversa. Nunca use a conta do servidor nem troque `GH_CONFIG_DIR`, `GH_TOKEN` ou a identidade do git.
 - **Padronize:** todo arquivo novo segue o `_TEMPLATE` da sua pasta. Ver `core/rules/standard.md`.

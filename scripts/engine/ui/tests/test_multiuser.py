@@ -325,7 +325,13 @@ def test_projects_follow_claude_permission_and_owner_filter(env, monkeypatch, tm
     # escolher pasta / criar / confiar / remover = só admin (projects.manage); o operador só usa
     op0 = _bare()
     _login(op0, "op", "senha-forte-1")
-    assert op0.get("/api/projects").status_code == 200
+    # private by default: the operator does not even see it until the owner shares it
+    assert op0.get("/api/projects").json()["projects"] == []
+    assert op0.get("/api/projects/site").status_code == 404
+    rev = admin.get("/api/projects/site/shares").json()["rev"]
+    r = admin.put("/api/projects/site/shares", json={"rev": rev, "users": [{"username": "op", "level": "participate"}]})
+    assert r.status_code == 200, r.text
+    assert [x["id"] for x in op0.get("/api/projects").json()["projects"]] == ["site"]
     assert op0.get("/api/projects/site").status_code == 200
     assert op0.get("/api/projects/browse", params={"path": "/"}).status_code == 403
     assert op0.post("/api/projects", json={"name": "x", "path": str(pasta)}).status_code == 403
@@ -345,7 +351,8 @@ def test_projects_follow_claude_permission_and_owner_filter(env, monkeypatch, tm
     accessdb.set_claude_owner(deps.db_file(), "s-op", "op")
     op = _bare()
     _login(op, "op", "senha-forte-1")
-    assert [x["id"] for x in op.get("/api/projects/site/sessions").json()["sessions"]] == ["s-op"]
+    # members see every conversation of the project (not only their own)
+    assert {x["id"] for x in op.get("/api/projects/site/sessions").json()["sessions"]} == {"s-admin", "s-op", "s-velha"}
     assert {x["id"] for x in admin.get("/api/projects/site/sessions").json()["sessions"]} == {"s-admin", "s-op", "s-velha"}
     # sem claude.use: nem lista, nem cria, nem navega nas pastas do servidor
     assert admin.post("/api/access-groups", json={"name": "sem-ia", "permissions": ["hosts.view"]}).status_code == 201

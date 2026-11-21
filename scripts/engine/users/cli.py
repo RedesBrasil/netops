@@ -16,6 +16,7 @@ Subcomandos:
     audit [--user u] [--action a] [--limit 50]
     snapshot <destino.db>        cópia consistente do banco (segura com o console no ar)
     setup-link [--port N] [--hours 24]   gera (de novo) o link do PRIMEIRO ACESSO (#setup?token=...)
+    project-owner --project <id> [--user <id|e-mail>]   shows / sets the owner of a Project (ownerless project)
 
 --data-root: raiz de dados (padrão: NETOPS_UI_DATA_ROOT ou a raiz do projeto).
 """
@@ -177,6 +178,16 @@ def cmd_audit(args):
         print(f"{_ts(i['ts'])}  {i['username'] or '—':<14} {i['ip'] or '—':<15} {i['action']:<18} {what}")
 
 
+def cmd_project_owner(args):
+    """Owner of a Project (runs/netops.db, table project_shares). Recovery path for an ownerless project."""
+    db = _db(args)
+    if args.user:
+        user = _uid(args)
+        accessdb.set_project_owner(db, args.project, user, actor="cli", keep_previous="manage")
+        accessdb.audit(db, "project_owner_transfer", username="cli", target=args.project, detail=f"-> {user} via CLI")
+    print(i18n.t("cli_users.project_owner", project=args.project, user=accessdb.project_owner(db, args.project) or "—"))
+
+
 def cmd_snapshot(args):
     print(accessdb.snapshot(_db(args), args.dest))
 
@@ -268,6 +279,10 @@ def main(argv=None):
     p.add_argument("--action")
     p.add_argument("--limit", type=int, default=50)
     p.set_defaults(fn=cmd_audit)
+    p = sub.add_parser("project-owner")
+    p.add_argument("--project", required=True)
+    p.add_argument("--user")
+    p.set_defaults(fn=cmd_project_owner)
     p = sub.add_parser("snapshot")
     p.add_argument("dest")
     p.set_defaults(fn=cmd_snapshot)

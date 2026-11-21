@@ -101,10 +101,13 @@ RULES: list[tuple[frozenset, re.Pattern, str | None]] = [
     # na pasta escolhida — mesma confiança da aba Claude Code. O seletor de pasta só lista diretórios.
     # Escolher a pasta (navegar, criar, confiar, renomear, remover) = só admin; ver/usar = claude.use.
     # Ordem e arquivados são preferência de cada usuário (não mexem no registro).
+    # Each project is private to its owner and shared per user/access group (services/project_acl): the router
+    # checks the LEVEL in the project (view/participate/manage/owner) on top of claude.use. Creating = router
+    # (projects.manage = any folder, projects.create = only a new folder in the default base).
     (WRITE, _R(r"^/projects/(order|[a-z0-9-]+/archived)$"), "claude.use"),
     (GET, _R(r"^/projects/browse$"), "projects.manage"),
-    (WRITE, _R(r"^/projects(/|$)"), "projects.manage"),
-    (GET, _R(r"^/projects(/|$)"), "claude.use"),
+    (WRITE, _R(r"^/projects$"), ROUTER),
+    (ALL, _R(r"^/projects(/|$)"), "claude.use"),
     # administração de acesso
     (ALL, _R(r"^/(users|access-groups|access-catalog)(/|$)"), "users.manage"),
     (GET, _R(r"^/audit(/|$)"), "audit.view"),

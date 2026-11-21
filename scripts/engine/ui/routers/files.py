@@ -48,6 +48,11 @@ async def _files_perm(request: Request) -> None:
     # pasta de um Projeto (presa a ela: services/files_svc.ProjectFS) = projects.files
     authz.require(request, "server.files" if src == "local"
                   else "projects.files" if src.startswith("project:") else "host.files")
+    if src.startswith("project:"):
+        # ...and the LEVEL in that project (services/project_acl): not a member = 404; "view" = read-only.
+        from services import project_acl  # noqa: PLC0415
+        need = "view" if request.method in ("GET", "HEAD") else "participate"
+        project_acl.require(authz.request_principal(request), src[len("project:"):], need)
 
 
 router = APIRouter(tags=["files"], dependencies=[Depends(_files_perm)])

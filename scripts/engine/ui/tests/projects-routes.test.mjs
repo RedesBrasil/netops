@@ -56,3 +56,9 @@ test("#projects/<proj>/files é página (arquivos do projeto), não conversa", (
   assert.equal(s.isClaudeChatHash("#projects/meu-site/files"), false);
   assert.deepEqual(s.readClaudeRoute("#projects/meu-site/" + A), { kind: "session", id: A, project: "meu-site" });
 });
+
+test("#projects/<proj>/share is a page (sharing), not a conversation", () => {
+  assert.equal(s.readClaudeRoute("#projects/meu-site/share"), null);
+  assert.equal(s.readClaudeRoute("#projects/meu-site/share?tab=effective&q=ana"), null);
+  assert.equal(s.isClaudeChatHash("#projects/meu-site/share"), false);
+});

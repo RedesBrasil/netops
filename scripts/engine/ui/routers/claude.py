@@ -39,15 +39,36 @@ _ATTACH_COOKIE = "netops_claude_attach"
 class _BadProject(Exception):
     """`?project=` aponta para um projeto inexistente (ou cuja pasta sumiu)."""
 
-def _cwd(project: str | None) -> str | None:
+def _cwd(project: str | None, principal=None, minimum: str | None = None) -> str | None:
     """Pasta do projeto, ou None (= NetOps, aba Claude Code). Nunca cai no NetOps por engano:
-    projeto informado e inválido levanta _BadProject, senão a conversa rodaria na pasta errada."""
+    projeto informado e inválido levanta _BadProject, senão a conversa rodaria na pasta errada.
+    With `minimum`, the requester needs that level in the project (services/project_acl): not a member =
+    _BadProject (404, existence not revealed); lower level = authz.Forbidden (403)."""
     if not project:
         return None
+    if minimum is not None:
+        from services import authz, project_acl  # noqa: PLC0415
+        try:
+            project_acl.require(principal, project, minimum)
+        except project_acl.NoAccess:
+            raise _BadProject(project)
+        except project_acl.LowLevel as e:
+            raise authz.Forbidden("claude.use", i18n.t("api_projects.level_needed",
+                                                       level=project_acl.level_label(e.need)))
     path = projects_svc.path_of(project)
     if not path:
         raise _BadProject(project)
     return path
+
+
+def _guard(request: Request, project: str, minimum: str) -> str | None:
+    """Conversation routes: inside a project the LEVEL decides (any member's conversation);
+    outside (NetOps Claude tab) the conversation owner rule stays."""
+    from services import authz  # noqa: PLC0415
+    if project:
+        return _cwd(project, authz.request_principal(request), minimum)
+    _owner_guard(request)
+    return None
 
 def _bad_project() -> JSONResponse:
     return JSONResponse({"error": "project_not_found", "detail": i18n.t("api_common.project_not_found")}, status_code=404)
@@ -92,7 +113,8 @@ def _owner_guard(request: Request) -> None:
         raise authz.Forbidden("claude.use", i18n.t("api_claude.other_users_session"))
 
 
-def _visible(request: Request, sessions: list[dict]) -> list[dict]:
+def _visible(request: Request, sessions: list[dict], everyone: bool = False) -> list[dict]:
+    """`everyone` = project conversations (the caller already checked the level): every member sees all."""
     from lib import accessdb  # noqa: PLC0415
     from services import authz  # noqa: PLC0415
     p = authz.request_principal(request)
@@ -101,7 +123,7 @@ def _visible(request: Request, sessions: list[dict]) -> list[dict]:
     out = []
     for x in sessions:
         owner = owners.get(x.get("id"), "")
-        if p.is_admin or owner == p.username:
+        if everyone or p.is_admin or owner == p.username:
             out.append({**x, "owner": owner, "owner_name": names.get(owner, "")})
     return out
 
@@ -113,15 +135,26 @@ async def claude_ws(ws: WebSocket):
         return
     resume = ws.query_params.get("resume") or None
     principal = ws.state.principal
-    if resume and not _may_access(principal, resume):
+    project = ws.query_params.get("project") or None
+    # Inside a project the LEVEL decides (members see every conversation); outside, the owner rule.
+    if resume and not project and not _may_access(principal, resume):
         await ws.close(code=4403)   # conversa de outro usuário
         return
     try:
-        cwd = _cwd(ws.query_params.get("project") or None)
+        cwd = _cwd(project, principal, "view")
     except _BadProject:
         await ws.accept()
         await ws.close(code=4404, reason="project_not_found")
         return
+    if project:
+        from services import project_acl  # noqa: PLC0415
+        lvl = project_acl.level_for(principal, project)
+        # "view" = read-only socket: watches the conversation live, cannot send nor answer cards.
+        ws.state.readonly = not project_acl.at_least(lvl, "participate")
+        if ws.state.readonly and not resume:
+            await ws.accept()
+            await ws.close(code=4403, reason="read_only")
+            return
     if resume and not claude_svc.project_session_exists(resume, cwd):
         # Nunca passar um UUID ausente/de outro projeto ou caminho arbitrário ao agente.
         await ws.accept()
@@ -251,11 +284,10 @@ def claude_sessions_search(request: Request, q: str = ""):
 @router.get("/claude/sessions/{sid}/messages")
 def claude_session_messages(sid: str, request: Request, project: str = ""):
     """Histórico de uma sessão, já no formato da transcrição da UI. `project` = pasta do Projeto."""
-    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     try:
-        return {"items": claude_svc.session_items(sid, _cwd(project))}
+        return {"items": claude_svc.session_items(sid, _guard(request, project, "view"))}
     except _BadProject:
         return _bad_project()
 
@@ -263,11 +295,10 @@ def claude_session_messages(sid: str, request: Request, project: str = ""):
 @router.get("/claude/sessions/{sid}")
 def claude_session_info(sid: str, request: Request, project: str = ""):
     """Lookup individual: links antigos funcionam além do limite da lista recente."""
-    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     try:
-        cwd = _cwd(project)
+        cwd = _guard(request, project, "view")
     except _BadProject:
         return _bad_project()
     if not claude_svc.project_session_exists(sid, cwd):
@@ -282,7 +313,6 @@ def claude_session_fork(sid: str, body: dict, request: Request, project: str = "
     body: {uuid?, text?, occurrence?, title?} — uuid vem do histórico; text+occurrence da
     conversa ao vivo. Devolve {id} da nova conversa; a de origem fica intacta.
     """
-    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     try:
@@ -290,7 +320,7 @@ def claude_session_fork(sid: str, body: dict, request: Request, project: str = "
     except (TypeError, ValueError):
         occ = 0
     try:
-        cwd = _cwd(project)
+        cwd = _guard(request, project, "participate")
     except _BadProject:
         return _bad_project()
     try:
@@ -320,7 +350,6 @@ async def claude_session_rewind(sid: str, body: dict, request: Request, project:
     retoma a conversa e envia o texto editado. {first:true} = era o 1º prompt: a conversa foi
     apagada e o front abre uma nova.
     """
-    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     try:
@@ -328,7 +357,7 @@ async def claude_session_rewind(sid: str, body: dict, request: Request, project:
     except (TypeError, ValueError):
         occ = 0
     try:
-        cwd = _cwd(project)
+        cwd = _guard(request, project, "participate")
     except _BadProject:
         return _bad_project()
     try:
@@ -352,11 +381,10 @@ async def claude_session_rewind(sid: str, body: dict, request: Request, project:
 @router.put("/claude/sessions/{sid}/completed")
 def claude_session_completed(sid: str, body: dict, request: Request, project: str = ""):
     """Marca/desmarca a conversa como concluída por completo (checkbox manual do usuário)."""
-    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     try:
-        cwd = _cwd(project)
+        cwd = _guard(request, project, "participate")
     except _BadProject:
         return _bad_project()
     if not claude_svc.project_session_exists(sid, cwd):
@@ -369,14 +397,13 @@ def claude_session_completed(sid: str, body: dict, request: Request, project: st
 @router.put("/claude/sessions/{sid}/title")
 def claude_session_rename(sid: str, body: dict, request: Request, project: str = ""):
     """Renomeia a conversa (grava o custom_title no transcript, via SDK)."""
-    _owner_guard(request)
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     title = " ".join(str(body.get("title") or "").split())[:120]
     if not title:
         return JSONResponse({"error": "empty_title"}, status_code=400)
     try:
-        cwd = _cwd(project)
+        cwd = _guard(request, project, "participate")
     except _BadProject:
         return _bad_project()
     if not claude_svc.project_session_exists(sid, cwd):
@@ -390,20 +417,27 @@ def claude_session_rename(sid: str, body: dict, request: Request, project: str =
 
 @router.delete("/claude/sessions/{sid}", status_code=204)
 def claude_session_delete(sid: str, request: Request, project: str = ""):
-    _owner_guard(request)
+    """Inside a project: the conversation's own author (participate) or manage+ deletes it."""
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     try:
-        cwd = _cwd(project)
+        cwd = _guard(request, project, "participate")
     except _BadProject:
         return _bad_project()
+    if project:
+        from services import authz, project_acl  # noqa: PLC0415
+        pr = authz.request_principal(request)
+        if claude_svc._owner_of(sid) != pr.username and \
+                not project_acl.at_least(project_acl.level_for(pr, project), "manage"):
+            raise authz.Forbidden("claude.use", i18n.t("api_projects.level_needed",
+                                                       level=project_acl.level_label("manage")))
     claude_svc.delete_project_session(sid, cwd)
     from lib import accessdb  # noqa: PLC0415
     accessdb.forget_claude_owner(deps.db_file(), sid)
 
 
 @router.post("/claude/upload")
-async def claude_upload(file: UploadFile, project: str = ""):
+async def claude_upload(file: UploadFile, request: Request, project: str = ""):
     """Recebe um anexo e grava em runs/claude/uploads/; devolve o caminho relativo p/ @referência.
 
     Passa pelo middleware http normal (sessão + Origin + not read-only). Só responde
@@ -412,7 +446,8 @@ async def claude_upload(file: UploadFile, project: str = ""):
     if not deps.STATE.enable_claude:
         return JSONResponse({"error": "claude_disabled"}, status_code=403)
     try:
-        cwd = _cwd(project)
+        from services import authz  # noqa: PLC0415
+        cwd = _cwd(project, authz.request_principal(request), "participate")
     except _BadProject:
         return _bad_project()
     raw = await file.read(_MAX_UPLOAD + 1)

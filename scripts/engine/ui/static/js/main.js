@@ -146,8 +146,9 @@ function Sidebar({ current, hash = "", meta, me, open, onNavigate }) {
       ${openGroups.includes(g) && html`<div class="nav-children">
       ${g === "projects" && html`
         ${projects.map((p) => html`<a key=${p.id} href=${"#projects/" + p.id} title=${p.path + " — " + t("nav.drag_to_reorder")}
-          ...${projDrag.props(p.id)} class=${(projSeg === p.id ? "active" : "") + projDrag.cls(p.id)}>${p.name}</a>`)}
-        <a href="#projects/new" class=${"needs-projects-manage" + (projSeg === "new" ? " active" : "")}>＋ ${t("nav.new_project")}</a>
+          ...${projDrag.props(p.id)} class=${(projSeg === p.id ? "active" : "") + projDrag.cls(p.id)}>${p.name}${p.my_level && p.my_level !== "owner"
+            ? html` <span class="nav-shared" aria-hidden="true">👥</span>` : ""}</a>`)}
+        <a href="#projects/new" class=${"needs-projects-create" + (projSeg === "new" ? " active" : "")}>＋ ${t("nav.new_project")}</a>
         ${nArchived > 0 && html`<a href="#projects?arquivados=1" class="nav-sub">🗄 ${t("nav.archived", { count: nArchived })}</a>`}`}
       ${openGroups.includes(g) && Object.entries(ROUTES).filter(([, r]) => r.group === g).filter(visible).map(([key, r]) => html`
         <a key=${key} href=${"#" + key} class=${current === key ? "active" : ""}>${routeLabel(r)}${r.badge && badges[r.badge] > 0

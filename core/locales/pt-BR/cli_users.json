@@ -24,6 +24,7 @@
   "no_users": "Nenhum usuário — console no modo senha-mestra (o 1º login cria o admin).",
   "password_set": "Senha de {user} definida; sessões encerradas.",
   "passwords_mismatch": "As senhas não conferem.",
+  "project_owner": "Projeto {project}: dono = {user}",
   "prompt_confirm": "Confirme: ",
   "prompt_new_password": "Senha nova: ",
   "prompt_new_password_for": "Senha nova para {user}: ",

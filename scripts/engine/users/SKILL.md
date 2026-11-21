@@ -45,7 +45,11 @@ The full backup (`scripts/tools/backup/full_mirror.sh`) already mirrors `runs/ne
   - The group's `net_perms` ceiling limits what it does on **equipment**. Above the ceiling, not even the on-screen approval allows it.
   - This is protection against mistakes, **not a security boundary**: the agent has a shell on the server.
   - Each conversation has an **owner**. Non-admins only see their own conversations; conversations without an owner (from before multi-user) are admin-only.
-  - The agent receives `NETOPS_USER`.
+  - **Projects** are the exception: a project is private to its owner (admins included) and shared per user/access group with a level
+    (view/participate/manage/owner); every member sees every conversation of the project. See `scripts/engine/ui/SKILL.md` → Projects.
+    `projects.create` (grantable) lets a group create projects in a new folder of the default base.
+  - The agent receives `NETOPS_USER` of **whoever sent the current message** (someone else continuing a conversation relaunches it with
+    their network ceiling and GitHub account).
 - **Frontend buttons:** pages mark buttons with the class `needs-<perm>` (e.g. `needs-hosts-edit`), and the shell hides them when the permission is missing.
   This is only visual: the backend is what blocks (403 `forbidden`).
 
@@ -108,6 +112,7 @@ python3 scripts/engine/users/cli.py disable joao | enable joao | delete joao
 python3 scripts/engine/users/cli.py sessions [--user joao] ; logout joao | logout --all
 python3 scripts/engine/users/cli.py audit --user joao --limit 100
 python3 scripts/engine/users/cli.py snapshot /caminho/netops.db
+python3 scripts/engine/users/cli.py project-owner --project meu-site [--user joao]   # show/set a Project owner (ownerless project)
 ```
 
 The password never goes as an argument. Use `getpass` (interactive terminal) or `--password-stdin`.

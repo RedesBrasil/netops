@@ -2,6 +2,8 @@
   "bad_folder": "Nome de pasta inválido: use letras, números, ponto, hífen ou _ (sem / nem espaço).",
   "bad_order": "Envie a lista de ids na ordem desejada.",
   "bad_path": "Informe o caminho absoluto da pasta (começa com /).",
+  "create_base_only": "Você só pode criar a pasta do projeto dentro de {path}.",
+  "create_new_only": "Você só pode criar projeto numa pasta nova.",
   "deny_contains_netops": "Essa pasta contém o NetOps. Escolha uma pasta que não inclua a instalação do NetOps.",
   "deny_hidden": "Pastas ocultas do usuário do servidor (~/.claude, ~/.ssh...) não podem ser projeto.",
   "deny_home": "A pasta home do usuário do servidor não pode ser projeto. Use uma subpasta.",
@@ -10,10 +12,18 @@
   "duplicate_path": "Essa pasta já é o projeto “{name}”.",
   "empty_name": "Dê um nome ao projeto.",
   "exists": "Já existe algo com esse nome nessa pasta. Use “Pasta existente”.",
+  "level_manage": "Gerenciar",
+  "level_needed": "Seu acesso a este projeto não permite isso (precisa de: {level}).",
+  "level_owner": "Dono",
+  "level_participate": "Participar",
+  "level_view": "Ver",
   "list_failed": "Não foi possível listar essa pasta.",
   "mkdir_failed": "Não foi possível criar a pasta: {error}.",
   "no_access": "O servidor não tem permissão para ler essa pasta.",
   "not_a_dir": "O caminho informado não é uma pasta.",
   "path_not_found": "Essa pasta não existe no servidor.",
-  "too_many": "Limite de projetos atingido."
+  "read_only_session": "Você tem acesso só de visualização neste projeto: acompanha a conversa, mas não envia mensagens.",
+  "sharing_needs_login": "Compartilhar exige o login do console (usuários e grupos de acesso).",
+  "too_many": "Limite de projetos atingido.",
+  "too_many_owned": "Limite de {max} projetos seus atingido."
 }

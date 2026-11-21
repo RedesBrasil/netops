@@ -118,12 +118,22 @@ def users_get(username: str):
     return u
 
 
+def _revalidate_projects() -> None:
+    """Groups/users changed: live project conversations re-check who is still allowed (services/project_acl)."""
+    try:
+        from services import claude_svc  # noqa: PLC0415
+        claude_svc.revalidate_project_access()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @router.patch("/users/{username}")
 def users_patch(username: str, body: UserPatch, request: Request):
     fields = body.model_dump(exclude_none=True)
     u = accessdb.update_user(_db(), username, rev=request.headers.get("if-match"),
                              actor=_actor(request).username, **fields)
     _audit(request, "user_updated", u["username"], ", ".join(sorted(fields)))
+    _revalidate_projects()
     return u
 
 
@@ -142,6 +152,7 @@ def users_delete(username: str, request: Request):
     accessdb.delete_user(_db(), username, actor=_actor(request).username)
     ghid.purge_user(deps.DATA_ROOT, username.lower())   # some o login do GitHub dele também
     _audit(request, "user_deleted", username)
+    _revalidate_projects()
 
 
 @router.get("/users/{username}/sessions")
@@ -186,6 +197,7 @@ def groups_patch(name: str, body: GroupPatch, request: Request):
     g = accessdb.update_group(_db(), name, rev=request.headers.get("if-match"),
                               actor=_actor(request).username, **fields)
     _audit(request, "group_updated", g["name"], ", ".join(sorted(fields)))
+    _revalidate_projects()
     return g
 
 
@@ -193,3 +205,4 @@ def groups_patch(name: str, body: GroupPatch, request: Request):
 def groups_delete(name: str, request: Request):
     accessdb.delete_group(_db(), name)
     _audit(request, "group_deleted", name)
+    _revalidate_projects()

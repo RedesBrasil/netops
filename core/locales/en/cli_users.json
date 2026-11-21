@@ -24,6 +24,7 @@
   "no_users": "No users — console in master-password mode (the 1st login creates the admin).",
   "password_set": "Password of {user} set; sessions ended.",
   "passwords_mismatch": "The passwords do not match.",
+  "project_owner": "Project {project}: owner = {user}",
   "prompt_confirm": "Confirm: ",
   "prompt_new_password": "New password: ",
   "prompt_new_password_for": "New password for {user}: ",

@@ -101,7 +101,31 @@ and "the project's sessions" are the conversations of that folder (Claude Code a
   - **Forbidden folders** (`projects_svc.deny_reason`): `/` and system directories (`/etc`, `/usr`, `/proc`, `/var/lib`…), the base folders
     (`/opt`, `/srv`, `/home`, `/root`, `/tmp`, `/var`…) themselves, NetOps (the folder, inside it or above it), the home and its hidden folders (`~/.claude`, `~/.ssh`).
     Symlinks are resolved first; a registry entry hand-edited to a forbidden folder is not used (`path_of` → None).
-  - **Permissions:** create/rename/remove/trust and browse folders = `projects.manage` (**admin only**); view projects and use the sessions = `claude.use`.
+  - **Permissions:** pick an existing folder, trust and browse folders = `projects.manage` (**admin only**). Creating = `projects.manage`
+    (any allowed folder) or **`projects.create`** (grantable: only a **new** folder right inside the default base). Everything else
+    depends on the **level in the project** (next item) on top of `claude.use`.
+- **Private by default + sharing (`services/project_acl.py`, table `project_shares` in `runs/netops.db`):** the creator is the **owner**;
+  nobody else sees the project (**admins included**) until it is shared with **users and/or access groups**. Levels:
+  **view** (reads conversations live, files read-only) < **participate** (new conversation, continues anyone's conversation, approves cards,
+  uploads, edits files) < **manage** (shares up to manage, renames, deletes any conversation) < **owner** (transfers ownership, removes).
+  Effective level = the highest among the direct share and each group of the user. Not a member = **404** in every route (projects, claude
+  `?project=`, files `src=project:`, WebSocket 4404); member with a lower level = 403 `project_level`.
+  - **API:** `GET /api/projects/<id>/shares` (owner, users, groups, `effective` with `via`, `rev`), `GET …/shares/candidates?q=` (active users
+    without e-mail + groups), `PUT …/shares {rev, users:[{username, level}], groups:[{name, level}]}` (replaces the whole list, stale `rev` = 409),
+    `PUT …/owner {username, keep}` (owner or admin), `POST …/admin-access` (admin override for 60 min, audited).
+    `GET /api/projects?all=1` = admin sees every project with `admin_view` (audited). Each project carries `my_level`, `owner`, `owner_name`, `shared`.
+  - **FK with CASCADE:** deleting a user/group (console or CLI) deletes their shares, so re-creating the same username inherits nothing. Owner
+    deleted = ownerless project, only in "All projects (administration)"; `users/cli.py project-owner --project <id> --user <u>` sets one.
+    Removing a project deletes its shares (re-creating the same slug starts private). One-time migration: projects that existed before sharing
+    got the oldest active admin as owner (`meta.projects_owner_migration`).
+  - **Identity follows the sender (`claude_svc._switch_user`):** when someone else sends in a conversation, the CLI relaunches on the same
+    conversation (`resume`) with THEIR `NETOPS_USER`, network ceiling and GitHub account (UI receives `identity`). Busy turn = their prompt waits in
+    the queue (`user` on the item) and runs as them. `resume-on-restart.json` stores the last `user`.
+  - **Live revocation:** `claude_svc.revalidate_project_access()` (after shares/owner/project delete and user/group changes) closes with 4403
+    (`access_revoked`) the sockets of who lost access and makes "view" sockets read-only; every prompt re-checks the level.
+  - **Console boundary, not OS:** the agent still runs as the server account; a `claude.use` user can ask it to read another folder.
+  - **Audit:** `project_create`, `project_rename`, `project_trust`, `project_delete`, `project_share_add|remove|level`, `project_owner_transfer`,
+    `project_admin_list`, `project_admin_override`.
   - **Network rules apply in the project:** the group ceiling and the 🔐 Network selector (SDK hooks) still apply; `guard-netops.sh` (backup before
     changing equipment), which would not load outside NetOps, runs as a programmatic hook (`_hook_netops_guard`; missing guard = blocks).
   Attachments in a project come back with an absolute path.
@@ -109,16 +133,19 @@ and "the project's sessions" are the conversations of that folder (Claude Code a
 - **Order and archived (per user):** `runs/claude/projects-prefs.json` (`{"<user>": {"order": [...], "archived": [...]}}`).
   `PUT /api/projects/order {ids}` (drag and drop in the list and in the sidebar) and `PUT /api/projects/<id>/archived {archived}`
   = `claude.use` (each person's preference, does not touch the registry). Archived disappears from the sidebar and the list; it stays in `#projects?arquivados=1`.
-  Removing a project removes the id from everyone's order/archived. Rename (✏) and remove (🗑) also directly in the list (`projects.manage`).
+  Removing a project removes the id from everyone's order/archived. Rename (✏, manage) and remove (🗑, owner/admin) also directly in the list.
+  Filters `#projects?filter=mine|shared`, admin view `#projects?all=1`.
 - **Project files:** source `src=project:<id>` of the file manager (`files_svc.ProjectFS`), **confined to the project folder**:
   every path is resolved (symlinks included) and must land inside; content (read/write/chmod/download/copy source) follows the
   link, operations on the entry (create/rename/delete/destination) look at the real parent folder; links to outside do not go into the zip; the project root is not
   deleted/renamed. Permission **`projects.files`** (grantable per group; admin has it). Full page `#projects/<id>/files?path=&open=`
   (📁 Files button on the project page) and **panel beside the project chat**: **closed by default**, opens/closes via the
   📁 Files button in the bar (state and folder per project in `localStorage` `netops_pjfiles_<id>`, the conversation URL does not change).
-- **Front:** `pages/projects.js` (list, new, project page, folder picker) and `claude-sessions.js` (`#projects/<proj>/<id|new>`).
+- **Front:** `pages/projects.js` (list, new, project page, folder picker, **Share** page `#projects/<id>/share[?tab=effective&q=]` with
+  `DataTable` `project-shares` / `project-access-effective`) and `claude-sessions.js` (`#projects/<proj>/<id|new>`; `files`/`share` are pages).
+  "view" level = composer replaced by a read-only notice.
   The chat is the same `ClaudeProvider`; `?project=` on the WebSocket binds the agent to the folder.
-- **Tests:** `tests/test_projects.py` (registry, HTTP, `cwd`, resume, forbidden folders, trust, guard, account) and `tests/projects-routes.test.mjs` (routes).
+- **Tests:** `tests/test_project_sharing.py` (levels, groups, cascade, override, `projects.create`, identity switch, revocation), `tests/test_projects.py` (registry, HTTP, `cwd`, resume, forbidden folders, trust, guard, account) and `tests/projects-routes.test.mjs` (routes).
 
 ## Initial setup (once, with internet)
 

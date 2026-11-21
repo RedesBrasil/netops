@@ -387,6 +387,20 @@ def _register_error_handlers(app: FastAPI) -> None:
     async def _access_error(_request, exc: AccessError):
         return JSONResponse({"error": exc.code, "detail": exc.detail}, status_code=exc.status)
 
+    from services.project_acl import LowLevel, NoAccess, level_label
+
+    @app.exception_handler(NoAccess)
+    async def _project_no_access(_request, _exc: NoAccess):
+        # Not a member = same answer as a project that does not exist (existence is not revealed).
+        return JSONResponse({"error": "project_not_found", "detail": i18n.t("api_common.project_not_found")},
+                            status_code=404)
+
+    @app.exception_handler(LowLevel)
+    async def _project_low_level(_request, exc: LowLevel):
+        return JSONResponse({"error": "project_level", "need": exc.need,
+                             "detail": i18n.t("api_projects.level_needed", level=level_label(exc.need))},
+                            status_code=403)
+
     from lib.github_identity import GitHubError
 
     @app.exception_handler(GitHubError)

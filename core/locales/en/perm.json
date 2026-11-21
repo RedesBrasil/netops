@@ -24,6 +24,7 @@
   "knowledge.edit": "Edit memory, best practices, workflows and agents",
   "knowledge.view": "View memory, best practices, workflows, agents, reports and runs",
   "projects.files": "Project files (view/edit only inside each project's folder)",
+  "projects.create": "Create Projects in a new folder of the default base (the creator becomes the owner)",
   "projects.manage": "Create/remove Projects and choose the server folder where the agent runs",
   "schedules.edit": "Create/edit scheduled tasks (they run as the server account)",
   "schedules.run": "Run an existing scheduled task now",

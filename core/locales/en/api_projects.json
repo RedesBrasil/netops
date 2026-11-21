@@ -2,6 +2,8 @@
   "bad_folder": "Invalid folder name: use letters, numbers, dot, hyphen or _ (no / or space).",
   "bad_order": "Send the list of ids in the desired order.",
   "bad_path": "Enter the absolute folder path (starts with /).",
+  "create_base_only": "You can only create the project folder inside {path}.",
+  "create_new_only": "You can only create a project in a new folder.",
   "deny_contains_netops": "This folder contains NetOps. Choose a folder that does not include the NetOps installation.",
   "deny_hidden": "Hidden folders of the server user (~/.claude, ~/.ssh...) cannot be a project.",
   "deny_home": "The home folder of the server user cannot be a project. Use a subfolder.",
@@ -10,10 +12,18 @@
   "duplicate_path": "This folder is already the project “{name}”.",
   "empty_name": "Give the project a name.",
   "exists": "Something with this name already exists in this folder. Use “Existing folder”.",
+  "level_manage": "Manage",
+  "level_needed": "Your access to this project does not allow this (needs: {level}).",
+  "level_owner": "Owner",
+  "level_participate": "Participate",
+  "level_view": "View",
   "list_failed": "Could not list this folder.",
   "mkdir_failed": "Could not create the folder: {error}.",
   "no_access": "The server is not allowed to read this folder.",
   "not_a_dir": "The path is not a folder.",
   "path_not_found": "This folder does not exist on the server.",
-  "too_many": "Project limit reached."
+  "read_only_session": "You have view-only access to this project: you can follow the conversation but not send messages.",
+  "sharing_needs_login": "Sharing needs the console login (users and access groups).",
+  "too_many": "Project limit reached.",
+  "too_many_owned": "Limit of {max} projects you own reached."
 }

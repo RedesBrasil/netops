@@ -13,7 +13,9 @@ Segurança (modelo do VS Code):
   Pasta nova criada pelo console nasce confiável (está vazia).
 - **Pastas proibidas:** raiz e diretórios do sistema, o NetOps (pasta, dentro ou acima dela) e pastas ocultas do home
   (`~/.claude`, `~/.ssh`...). Ver `check_allowed`.
-- Criar/renomear/remover/confiar e navegar nas pastas = `projects.manage` (só admin); usar = `claude.use`.
+- Escolher pasta existente/confiar e navegar nas pastas = `projects.manage` (só admin); criar pasta nova na base também
+  com `projects.create`. Quem vê e usa cada projeto (privado por padrão, compartilhado com usuários/grupos) =
+  services/project_acl.py; o dono e os compartilhamentos ficam em runs/netops.db (project_shares).
 
 As conversas NÃO são guardadas aqui. O Claude Code já separa os transcripts por pasta
 (~/.claude/projects/<pasta>/), então "sessões do projeto" = as sessões daquela pasta
@@ -166,8 +168,15 @@ def _public(p: dict) -> dict:
     exists = os.path.isdir(p["path"])
     cfg = inspect(p["path"]) if exists else {"exec": [], "info": []}
     return {"id": p["id"], "name": p.get("name") or p["id"], "path": p["path"],
-            "created": p.get("created") or 0, "exists": exists,
+            "created": p.get("created") or 0, "created_by": p.get("created_by") or "", "exists": exists,
             "trusted": bool(p.get("trusted")), "config": cfg}
+
+
+def registry() -> list[dict]:
+    """Raw registry entries {id, name, path} (no disk checks; used by project_acl)."""
+    with _LOCK:
+        items = _load()
+    return [{"id": p["id"], "name": p.get("name") or p["id"], "path": p["path"]} for p in items]
 
 
 def list_projects() -> list[dict]:
@@ -201,14 +210,17 @@ def _user_prefs(d: dict, user: str) -> dict:
     return {"order": ids("order"), "archived": ids("archived")}
 
 
-def list_for(user: str) -> list[dict]:
+def list_for(user: str, levels: dict | None = None) -> list[dict]:
     """Projetos na ordem do usuário (arrastar e soltar) com `archived` dele. Projeto sem posição
-    salva (novo) vai para o fim, em ordem alfabética."""
+    salva (novo) vai para o fim, em ordem alfabética. `levels` ({id: level}, project_acl) = only those
+    projects, each with `my_level`; None = all (internal use)."""
     with _LOCK:
         up = _user_prefs(_prefs_all(), user)
     pos = {pid: i for i, pid in enumerate(up["order"])}
     arch = set(up["archived"])
     items = list_projects()   # já em ordem alfabética: desempate estável
+    if levels is not None:
+        items = [{**p, "my_level": levels[p["id"]]} for p in items if p["id"] in levels]
     items.sort(key=lambda p: pos.get(p["id"], len(pos)))
     return [{**p, "archived": p["id"] in arch} for p in items]
 
@@ -305,12 +317,30 @@ def _new_folder(parent, folder) -> str:
     return str(Path(target).resolve())
 
 
-def create(name, path, *, trust: bool = False, new_folder: str | None = None) -> dict:
+MAX_OWNED = 20   # projects owned by a non-admin creator (projects.create)
+
+
+def create(name, path, *, trust: bool = False, new_folder: str | None = None, owner: str | None = None,
+           restricted: bool = False) -> dict:
     """Projeto numa pasta existente (`path`) ou numa pasta nova `new_folder` dentro de `path`.
 
     Pasta nova = confiável (vazia). Pasta existente sem config executável = confiável. Com config
     executável (.claude/settings*.json, .mcp.json) só fica confiável com `trust=True` (o admin viu a lista)."""
     clean = _clean_name(name)
+    if restricted:
+        # projects.create without projects.manage: only a NEW folder right inside the default base,
+        # never an existing folder nor another parent (choosing where the agent runs is an admin decision).
+        if not new_folder:
+            raise ProjectError("create_new_only", i18n.t("api_projects.create_new_only"), 403)
+        raw = str(path or "").strip()
+        if raw and os.path.normpath(raw) != os.path.normpath(DEFAULT_BASE):
+            raise ProjectError("create_base_only", i18n.t("api_projects.create_base_only", path=DEFAULT_BASE), 403)
+        path, trust = DEFAULT_BASE, False
+        if owner:
+            from lib import accessdb  # noqa: PLC0415
+            owned = sum(1 for u in accessdb.project_owners(deps.db_file()).values() if u == owner)
+            if owned >= MAX_OWNED:
+                raise ProjectError("too_many_owned", i18n.t("api_projects.too_many_owned", max=MAX_OWNED))
     real = None   # pasta nova: validada e criada dentro do lock (_new_folder)
     if not new_folder:
         real = _resolve_dir(path, deny_first=True)
@@ -335,10 +365,24 @@ def create(name, path, *, trust: bool = False, new_folder: str | None = None) ->
         while pid in taken or pid in _RESERVED:
             n += 1
             pid = f"{base[:60]}-{n}"
-        item = {"id": pid, "name": clean, "path": real, "trusted": trusted, "created": int(time.time())}
+        item = {"id": pid, "name": clean, "path": real, "trusted": trusted, "created": int(time.time()),
+                **({"created_by": owner} if owner else {})}
         items.append(item)
         _save(items)
+        _set_creator(pid, owner)
     return _public(item)
+
+
+def _set_creator(pid: str, owner: str | None) -> None:
+    """New project = private: no share inherited from an old project with the same id; creator = owner."""
+    from lib import accessdb  # noqa: PLC0415
+    db = deps.db_file()
+    try:
+        accessdb.forget_project(db, pid)
+        if owner and accessdb.get_user(db, owner):
+            accessdb.set_project_owner(db, pid, owner, actor=owner, keep_previous=None)
+    except Exception:  # noqa: BLE001 - registry already saved; an admin can set the owner later
+        pass
 
 
 def rename(pid: str, name) -> dict:
@@ -372,6 +416,13 @@ def delete(pid: str) -> bool:
         if len(keep) == len(items):
             return False
         _save(keep)
+        try:
+            from lib import accessdb  # noqa: PLC0415
+            from services import project_acl  # noqa: PLC0415
+            accessdb.forget_project(deps.db_file(), pid)
+            project_acl.drop_overrides(pid)
+        except Exception:  # noqa: BLE001
+            pass
         # some da ordem/arquivados de todos (um projeto novo com o mesmo id não herda a posição)
         d = _prefs_all()
         if d:

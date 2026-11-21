@@ -154,6 +154,58 @@ def _stringify(content) -> str:
 # e o diário de fixes. NADA de buffer de conteúdo aqui — o disco é a fonte da verdade.
 # --------------------------------------------------------------------------- #
 _LIVE: dict[str, "ClaudeWebSession"] = {}   # session_id -> sessão viva (só quando persist)
+
+
+def _ws_user(ws) -> str:
+    return getattr(getattr(getattr(ws, "state", None), "principal", None), "username", "") or ""
+
+
+def _readonly(ws) -> bool:
+    return bool(getattr(getattr(ws, "state", None), "readonly", False))
+
+
+def revalidate_project_access(cwd: str | None = None) -> None:
+    """Re-check every socket attached to a live PROJECT conversation (after a share/owner/group change):
+    lost access = `access_revoked` + close 4403; dropped to "view" = read-only. The running turn finishes."""
+    try:
+        from services import project_acl  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return
+    seen = set()
+    for s in list(_LIVE.values()):
+        if id(s) in seen or not s._is_project or (cwd and s._cwd != str(cwd)):
+            continue
+        seen.add(id(s))
+        pid = project_acl.project_for_cwd(s._cwd)
+        for w in list(s._wss):
+            lvl = project_acl.level_for_username(_ws_user(w), pid) if pid else None
+            if lvl is None:
+                if getattr(getattr(w, "state", None), "revoked", False):
+                    continue
+                try:
+                    w.state.revoked = True
+                except Exception:  # noqa: BLE001
+                    pass
+                _run_on(s, s._revoke(w))
+            else:
+                try:
+                    w.state.readonly = not project_acl.at_least(lvl, "participate")
+                except Exception:  # noqa: BLE001
+                    pass
+
+
+def _run_on(s, coro) -> None:
+    loop = getattr(s, "_loop", None)
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if running is not None and (loop is None or loop is running):
+        running.create_task(coro)
+    elif loop is not None and not loop.is_closed():
+        asyncio.run_coroutine_threadsafe(coro, loop)
+    else:
+        coro.close()
 _OWNERS: dict[str, dict] = {}               # token do cookie -> {"login_sid": str, "exp": epoch}
 _OWNER_TTL = 12 * 3600                        # validade do cookie de dono (renovada a cada emissão)
 
@@ -294,7 +346,8 @@ async def resume_after_restart(delay: float = _RESUME_DELAY, snapshot: dict | No
                 if _detached_count() >= deps.STATE.claude_max_sessions:
                     _rlog(f"{sid}: teto de sessões, fica p/ o próximo start")
                     continue           # teto: fica anotada p/ um próximo start, não força
-                s = ClaudeWebSession(persist=True, resume=sid, user=_owner_of(sid), model=e.get("model") or None,
+                # identity = whoever sent the interrupted turn (identity switch), else the conversation owner
+                s = ClaudeWebSession(persist=True, resume=sid, user=e.get("user") or _owner_of(sid), model=e.get("model") or None,
                                      effort=e.get("effort") or None, cwd=e.get("cwd") or None)
                 _LIVE[sid] = s
             await s.start()
@@ -509,7 +562,7 @@ class ClaudeWebSession:
                               "model": self._model, "effort": self._effort,
                               # pasta do projeto: sem ela a retomada pós-restart cairia no NetOps
                               **({"cwd": self._cwd} if self._is_project else {}),
-                              "chain": self._auto_chain, "t": time.time()}
+                              "chain": self._auto_chain, "user": self.user, "t": time.time()}
         elif data.pop(self.sid, None) is None:
             return
         _resume_save(data)
@@ -926,6 +979,10 @@ class ClaudeWebSession:
         """(Re)anexa um socket. Cancela os timers de carência/pergunta e reemite os cards de
         permissão pendentes (o envio original foi DESCARTADO enquanto desanexado)."""
         # MULTI-ANEXO: abas/dispositivos adicionais convivem; nenhum derruba o outro.
+        try:
+            self._loop = asyncio.get_running_loop()   # revalidate_project_access runs from worker threads
+        except RuntimeError:
+            pass
         if ws not in self._wss:
             self._wss.append(ws)
         self._cancel_grace()
@@ -934,6 +991,17 @@ class ClaudeWebSession:
             asyncio.create_task(self._send(payload, only=ws))
         if self._vault_waiting and self._vault_locked():   # agente parado esperando a senha do cofre
             asyncio.create_task(self._send({"type": "vault_request"}, only=ws))
+
+    async def _revoke(self, ws) -> None:
+        try:
+            await self._send({"type": "access_revoked"}, only=ws)
+        except Exception:  # noqa: BLE001
+            pass
+        self.detach(ws)
+        try:
+            await ws.close(code=4403)
+        except Exception:  # noqa: BLE001
+            pass
 
     def detach(self, ws=None) -> None:
         """Solta um socket (ou todos, sem argumento) SEM matar o agente. Só arma a carência e o
@@ -1124,16 +1192,41 @@ class ClaudeWebSession:
             if not isinstance(raw, dict):
                 continue
             kind = raw.get("type")
+            if kind == "bye":
+                return True
+            if _readonly(ws):
+                # "view" level in the project: watches live, never sends, approves or changes the session.
+                if kind == "prompt":
+                    await self._send({"type": "error", "detail": "read_only",
+                                      "message": i18n.t("api_projects.read_only_session")}, only=ws)
+                continue
             if kind == "prompt":
                 text = (raw.get("text") or "").strip()
                 if text:
-                    self._auto_chain = 0     # humano no comando: a cadeia anti-loop recomeça
                     who = getattr(getattr(getattr(ws, "state", None), "principal", None), "username", "") or self.user
+                    if not self._may_send(who):
+                        try:
+                            ws.state.readonly = True
+                        except Exception:  # noqa: BLE001
+                            pass
+                        await self._send({"type": "error", "detail": "read_only",
+                                          "message": i18n.t("api_projects.read_only_session")}, only=ws)
+                        continue
+                    self._auto_chain = 0     # humano no comando: a cadeia anti-loop recomeça
+                    if who != self.user and self._busy:
+                        # Another person while a turn runs: it can't join a turn running with someone else's
+                        # identity (network ceiling / GitHub), so it waits in the queue and runs as them.
+                        # (no user_echo: the other tabs see it when the queue dispatches it)
+                        self._record_author(who, text)
+                        await self._enqueue(text, user=who)
+                        continue
+                    if who != self.user:
+                        await self._switch_user(who)
                     self._record_author(who, text)
                     if len(self._wss) > 1:   # outras abas da sessão veem a pergunta
                         await self._send({"type": "user_echo", "text": text, "author": self._first_name(who)}, skip=ws)
                     if raw.get("queue") and self._busy:
-                        await self._enqueue(text)
+                        await self._enqueue(text, user=who)
                     elif raw.get("queue"):
                         # Pediu fila mas o turno acabou no caminho: roda já e avisa a UI (que,
                         # por ter escolhido "fila", ainda não desenhou a bolha).
@@ -1147,21 +1240,22 @@ class ClaudeWebSession:
                 if self._pop_queued(raw.get("id")) is not None:
                     await self._send_queue()
             elif kind == "queue_add":
-                await self._add_to_queue(raw.get("texts"))
+                await self._add_to_queue(raw.get("texts"), user=_ws_user(ws) or self.user)
             elif kind == "queue_move":
                 if self._move_queued(raw.get("id"), raw.get("to")):
                     await self._send_queue()
             elif kind == "queue_send_now":
                 item = self._pop_queued(raw.get("id"))
+                if item is not None and self._busy and (item.get("user") or self.user) != self.user:
+                    self._queue.insert(0, item)   # someone else's identity: runs right after this turn
+                    await self._send_queue()
+                    continue
                 if item is not None:
                     self._auto_chain = 0
+                    await self._switch_user(item.get("user"))
                     await self._send_queue()
                     await self._send({"type": "queue_dispatched", **item})
                     await self._query(item["text"])
-            elif kind == "bye":
-                # Fechamento DELIBERADO (encerrar / trocar de sessão): serve() só encerra se ociosa e sozinha.
-                # Um drop por standby NÃO manda "bye" — por isso lá a gente só desanexa.
-                return True
             elif kind == "set_mode":
                 mode = raw.get("mode")
                 if mode in VALID_MODES:
@@ -1201,6 +1295,53 @@ class ClaudeWebSession:
                 if fut and not fut.done():
                     fut.set_result(raw)
 
+    # ------------------------------------------------------------- identity
+    def _project_id(self) -> str | None:
+        if not self._is_project:
+            return None
+        from services import project_acl  # noqa: PLC0415
+        return project_acl.project_for_cwd(self._cwd)
+
+    def _may_send(self, who: str) -> bool:
+        """Project conversation: the sender needs "participate" NOW (access may have been removed)."""
+        if not self._is_project or not who:
+            return True
+        try:
+            from services import project_acl  # noqa: PLC0415
+            pid = self._project_id()
+            return bool(pid) and project_acl.at_least(project_acl.level_for_username(who, pid), "participate")
+        except Exception:  # noqa: BLE001
+            return False
+
+    async def _switch_user(self, who: str | None) -> None:
+        """The agent always runs as WHOEVER SENT the current prompt: NETOPS_USER, network ceiling of their
+        group and their GitHub account. A different sender relaunches the CLI on the same conversation
+        (resume), so continuing someone else's conversation never inherits their permissions."""
+        if not who or who == self.user:
+            return
+        from services import authz  # noqa: PLC0415
+        self.user = who
+        try:
+            self._netcap = authz.net_perms_cap(who)
+        except Exception:  # noqa: BLE001
+            self._netcap = []
+        self._netperms = self._capped(self._netperms)
+        self._netperms_told = None
+        self._github_told = False
+        if self._started and self.client is not None:
+            if self._sdk_task is not None:
+                self._sdk_task.cancel()
+            try:
+                await self.client.disconnect()
+            except Exception:  # noqa: BLE001
+                pass
+            self.client = None
+            self._started = False
+            self._resume = self.sid or self._resume
+            await self.start()
+        await self._send({"type": "identity", "user": who, "name": self._first_name(who)})
+        await self._send({"type": "netperms_changed", "perms": self._netperms, "max": self._netcap})
+
     # ------------------------------------------------------------------ fila
     async def _query(self, text: str) -> None:
         # Novo pedido numa sessão marcada como "concluída" => ela volta a estar em aberto
@@ -1222,7 +1363,7 @@ class ClaudeWebSession:
         self._track()
         await self._send(ev, only=only)
 
-    async def _add_to_queue(self, texts) -> None:
+    async def _add_to_queue(self, texts, user: str = "") -> None:
         """Re-enfileira o cache da aba SEM despachar (nem com o agente ocioso): o turno que as
         esperava morreu junto com a fila do servidor — o humano decide (⚡) ou o próximo turno leva."""
         if not isinstance(texts, list):
@@ -1235,15 +1376,15 @@ class ClaudeWebSession:
                 await self._send({"type": "error", "detail": i18n.t("api_claude.queue_full", max=MAX_QUEUE)})
                 break
             self._queue_seq += 1
-            self._queue.append({"id": f"q{self._queue_seq}", "text": t})
+            self._queue.append({"id": f"q{self._queue_seq}", "text": t, **({"user": user} if user else {})})
         await self._send_queue()
 
-    async def _enqueue(self, text: str) -> None:
+    async def _enqueue(self, text: str, user: str = "") -> None:
         if len(self._queue) >= MAX_QUEUE:
             await self._send({"type": "error", "detail": i18n.t("api_claude.queue_full", max=MAX_QUEUE)})
             return
         self._queue_seq += 1
-        self._queue.append({"id": f"q{self._queue_seq}", "text": text})
+        self._queue.append({"id": f"q{self._queue_seq}", "text": text, **({"user": user} if user else {})})
         await self._send_queue()
 
     def _pop_queued(self, qid) -> dict | None:
@@ -1280,6 +1421,7 @@ class ClaudeWebSession:
         item = self._queue.pop(0)
         await self._send_queue()
         await self._send({"type": "queue_dispatched", **item})
+        await self._switch_user(item.get("user"))
         await self._query(item["text"])
 
     async def _sdk_pump(self) -> None:

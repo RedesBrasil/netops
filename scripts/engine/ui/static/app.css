@@ -1297,3 +1297,24 @@ span.vault-icon { cursor: default; border-radius: var(--radius); height: 28px; }
 .vault-topbar { flex-wrap: wrap; align-items: center; gap: 8px; }
 .vault-updated { font-size: 12px; }
 @media (max-width: 600px) { .vault-head-row { grid-template-columns: 1fr; } }
+
+/* Project sharing (pages/projects.js: ShareBadge, ProjectSharePage, SharePicker) */
+.pj-filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 8px; }
+.pj-share-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
+.pj-admin-banner { border-color: var(--danger, #c62828); background: rgba(198,40,40,.08); font-weight: 600; }
+.pj-share-state { display: grid; gap: 4px; }
+.pj-share-add { display: grid; gap: 8px; overflow: visible; }
+.pj-share-add-row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.pj-share-search { position: relative; flex: 1 1 320px; min-width: 220px; }
+.pj-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; border: 1px solid var(--border, #ccc); border-radius: 6px; padding: 4px; background: var(--bg, transparent); }
+.pj-chips input { flex: 1 1 160px; border: 0; outline: none; min-width: 120px; background: transparent; }
+.pj-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: 12px; background: var(--accent-soft, rgba(80,120,255,.15)); font-size: 13px; }
+.pj-chip button { padding: 0 4px; line-height: 1.2; }
+.pj-share-menu { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 4px); max-height: 300px; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.18); padding: 4px; }
+.pj-share-opt { display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left; border: 0; background: transparent; padding: 6px; border-radius: 4px; }
+.pj-share-opt:hover, .pj-share-opt:focus { background: var(--surface-2); }
+.pj-share-opt small { opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-share-tabs { display: flex; gap: 6px; margin: 10px 0 6px; }
+.nav-shared { font-size: 11px; opacity: .7; }
+.cc-notice { align-self: center; margin: 8px auto; max-width: min(760px, 92%); padding: 6px 14px; border-radius: 10px; font-size: 13px; background: rgba(80,120,255,.12); border: 1px solid rgba(80,120,255,.35); }
+.cc-readonly { padding: 10px 14px; border: 1px dashed var(--border, #bbb); border-radius: 8px; text-align: center; opacity: .85; }

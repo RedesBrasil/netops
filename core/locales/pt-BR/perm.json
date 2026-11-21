@@ -24,6 +24,7 @@
   "knowledge.edit": "Editar memória, boas práticas, workflows e agentes",
   "knowledge.view": "Ver memória, boas práticas, workflows, agentes, relatórios e execuções",
   "projects.files": "Arquivos dos Projetos (ver/editar só dentro da pasta de cada projeto)",
+  "projects.create": "Criar Projetos numa pasta nova da base padrão (quem cria vira dono)",
   "projects.manage": "Criar/remover Projetos e escolher a pasta do servidor onde o agente roda",
   "schedules.edit": "Criar/editar tarefas agendadas (rodam com a conta do servidor)",
   "schedules.run": "Rodar agora uma tarefa agendada existente",

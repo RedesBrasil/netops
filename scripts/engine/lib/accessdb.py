@@ -80,6 +80,7 @@ PERMISSIONS: list[dict] = [
     {"key": "host.web", "label": "Abrir a web do host com login automático", "area": "Acesso a equipamento"},
     {"key": "claude.use", "label": "Usar a aba Claude Code (limitada pelas permissões de rede do grupo)", "area": "IA"},
     {"key": "projects.files", "label": "Arquivos dos Projetos (ver/editar só dentro da pasta de cada projeto)", "area": "IA"},
+    {"key": "projects.create", "label": "Criar Projetos numa pasta nova da base padrão (quem cria vira dono)", "area": "IA"},
     {"key": "projects.manage", "label": "Criar/remover Projetos e escolher a pasta do servidor onde o agente roda", "area": "Administração", "admin_only": True},
     {"key": "server.terminal", "label": "Terminal do servidor NetOps", "area": "Administração", "admin_only": True},
     {"key": "server.files", "label": "Arquivos do servidor NetOps", "area": "Administração", "admin_only": True},
@@ -253,6 +254,23 @@ _ADDITIVE = (
   ts REAL NOT NULL
 )""",
     "CREATE INDEX IF NOT EXISTS claude_msg_authors_sid ON claude_msg_authors(session_id, id)",
+    # Project sharing (owner + users/groups with a level). FK with CASCADE: deleting a user/group (also via the
+    # CLI) removes its access, so re-creating the same username never inherits old access.
+    """CREATE TABLE IF NOT EXISTS project_shares(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL,
+  username TEXT REFERENCES users(username) ON DELETE CASCADE,
+  group_name TEXT REFERENCES access_groups(name) ON DELETE CASCADE,
+  level TEXT NOT NULL CHECK(level IN ('view','participate','manage','owner')),
+  granted_by TEXT NOT NULL DEFAULT '',
+  granted_at REAL NOT NULL,
+  CHECK ((username IS NULL) <> (group_name IS NULL)),
+  CHECK (level <> 'owner' OR username IS NOT NULL)
+)""",
+    "CREATE UNIQUE INDEX IF NOT EXISTS project_shares_user ON project_shares(project_id, username) WHERE username IS NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS project_shares_group ON project_shares(project_id, group_name) WHERE group_name IS NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS project_shares_owner ON project_shares(project_id) WHERE level = 'owner'",
+    "CREATE TABLE IF NOT EXISTS project_meta(project_id TEXT PRIMARY KEY, rev INTEGER NOT NULL DEFAULT 1)",
 )
 
 _init_lock = threading.Lock()
@@ -1047,6 +1065,177 @@ def first_names(db, usernames) -> dict[str, str]:
                 parts = u.split("@")[0].replace(".", " ").replace("_", " ").replace("-", " ").split()
                 out[u] = (parts[0] if parts else u).capitalize()
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Project sharing (the project registry itself stays in runs/claude/projects.json)
+# --------------------------------------------------------------------------- #
+PROJECT_LEVELS = ("view", "participate", "manage", "owner")
+
+
+def project_owner(db, pid: str) -> str | None:
+    with connect(db) as c:
+        r = c.execute("SELECT username FROM project_shares WHERE project_id=? AND level='owner'", (pid,)).fetchone()
+        return r[0] if r else None
+
+
+def project_owners(db) -> dict[str, str]:
+    with connect(db) as c:
+        return {r[0]: r[1] for r in c.execute("SELECT project_id, username FROM project_shares WHERE level='owner'")}
+
+
+def project_rev(db, pid: str) -> int:
+    with connect(db) as c:
+        r = c.execute("SELECT rev FROM project_meta WHERE project_id=?", (pid,)).fetchone()
+        return int(r[0]) if r else 1
+
+
+def _bump_project_rev(c, pid: str) -> None:
+    c.execute("INSERT INTO project_meta(project_id, rev) VALUES(?, 2) "
+              "ON CONFLICT(project_id) DO UPDATE SET rev = rev + 1", (pid,))
+
+
+def project_shares(db, pid: str) -> dict:
+    """{owner, users: [{username, level, granted_by, granted_at}], groups: [{name, level, ...}], rev}"""
+    with connect(db) as c:
+        rows = c.execute("SELECT * FROM project_shares WHERE project_id=? ORDER BY id", (pid,)).fetchall()
+        r = c.execute("SELECT rev FROM project_meta WHERE project_id=?", (pid,)).fetchone()
+    owner, users, groups = None, [], []
+    for x in rows:
+        if x["level"] == "owner":
+            owner = x["username"]
+        elif x["username"]:
+            users.append({"username": x["username"], "level": x["level"], "granted_by": x["granted_by"],
+                          "granted_at": x["granted_at"]})
+        else:
+            groups.append({"name": x["group_name"], "level": x["level"], "granted_by": x["granted_by"],
+                           "granted_at": x["granted_at"]})
+    return {"owner": owner, "users": users, "groups": groups, "rev": int(r[0]) if r else 1}
+
+
+def set_project_owner(db, pid: str, username: str, *, actor: str = "", keep_previous: str | None = "manage") -> None:
+    """Set the owner (transfer). The previous owner becomes `keep_previous` (None = leaves the project)."""
+    username = (username or "").strip().lower()
+    with connect(db, write=True) as c:
+        if not _user_row(c, username):
+            raise NotFound(i18n.t("lib_accessdb.user_not_found", username=username))
+        now = time.time()
+        prev = c.execute("SELECT username FROM project_shares WHERE project_id=? AND level='owner'", (pid,)).fetchone()
+        c.execute("DELETE FROM project_shares WHERE project_id=? AND level='owner'", (pid,))
+        c.execute("DELETE FROM project_shares WHERE project_id=? AND username=?", (pid, username))
+        c.execute("INSERT INTO project_shares(project_id, username, level, granted_by, granted_at) VALUES(?,?,?,?,?)",
+                  (pid, username, "owner", actor, now))
+        if prev and prev[0] != username and keep_previous in ("view", "participate", "manage"):
+            c.execute("INSERT INTO project_shares(project_id, username, level, granted_by, granted_at) VALUES(?,?,?,?,?)",
+                      (pid, prev[0], keep_previous, actor, now))
+        _bump_project_rev(c, pid)
+
+
+def replace_project_shares(db, pid: str, users, groups, *, actor: str = "", rev: int | None = None,
+                           max_level: str = "manage") -> dict:
+    """Replace the WHOLE share list (except the owner) in one transaction. A stale `rev` = conflict (409).
+    users = [{username, level}], groups = [{name, level}]. Returns {added, removed, changed, rev} for the audit."""
+    allowed = PROJECT_LEVELS[:PROJECT_LEVELS.index(max_level) + 1]
+    allowed = tuple(x for x in allowed if x != "owner")
+    want_u: dict[str, str] = {}
+    want_g: dict[str, str] = {}
+    for kind, items, dest in (("user", users, want_u), ("group", groups, want_g)):
+        for it in items or []:
+            if not isinstance(it, dict):
+                raise AccessError("bad_share", i18n.t("lib_accessdb.bad_share"), 422)
+            key = str(it.get("username" if kind == "user" else "name") or "").strip().lower()
+            lvl = it.get("level")
+            if not key or lvl not in allowed:
+                raise AccessError("bad_share", i18n.t("lib_accessdb.bad_share"), 422)
+            if key in dest:
+                raise AccessError("duplicate_share", i18n.t("lib_accessdb.duplicate_share", name=key), 422)
+            dest[key] = lvl
+    with connect(db, write=True) as c:
+        r = c.execute("SELECT rev FROM project_meta WHERE project_id=?", (pid,)).fetchone()
+        cur_rev = int(r[0]) if r else 1
+        if rev is not None and int(rev) != cur_rev:
+            raise Conflict(i18n.t("lib_accessdb.share_conflict"))
+        owner = c.execute("SELECT username FROM project_shares WHERE project_id=? AND level='owner'", (pid,)).fetchone()
+        owner = owner[0] if owner else None
+        if owner and owner in want_u:
+            raise AccessError("owner_share", i18n.t("lib_accessdb.owner_share"), 422)
+        for u in want_u:
+            if not _user_row(c, u):
+                raise NotFound(i18n.t("lib_accessdb.user_not_found", username=u))
+        for g in want_g:
+            if not c.execute("SELECT 1 FROM access_groups WHERE name=?", (g,)).fetchone():
+                raise NotFound(i18n.t("lib_accessdb.group_not_found", name=g))
+        old = {("user", x["username"]) if x["username"] else ("group", x["group_name"]): x["level"]
+               for x in c.execute("SELECT * FROM project_shares WHERE project_id=? AND level<>'owner'", (pid,))}
+        new = {**{("user", k): v for k, v in want_u.items()}, **{("group", k): v for k, v in want_g.items()}}
+        if old == new:
+            return {"added": [], "removed": [], "changed": [], "rev": cur_rev}
+        now = time.time()
+        added = [(k, v) for k, v in new.items() if k not in old]
+        removed = [(k, old[k]) for k in old if k not in new]
+        changed = [(k, old[k], v) for k, v in new.items() if k in old and old[k] != v]
+        for (kind, name), _lvl in removed:
+            col = "username" if kind == "user" else "group_name"
+            c.execute(f"DELETE FROM project_shares WHERE project_id=? AND {col}=? AND level<>'owner'", (pid, name))
+        for (kind, name), _o, lvl in changed:
+            col = "username" if kind == "user" else "group_name"
+            c.execute(f"UPDATE project_shares SET level=?, granted_by=?, granted_at=? WHERE project_id=? AND {col}=?",
+                      (lvl, actor, now, pid, name))
+        for (kind, name), lvl in added:
+            col = "username" if kind == "user" else "group_name"
+            c.execute(f"INSERT INTO project_shares(project_id, {col}, level, granted_by, granted_at) VALUES(?,?,?,?,?)",
+                      (pid, name, lvl, actor, now))
+        _bump_project_rev(c, pid)
+        r = c.execute("SELECT rev FROM project_meta WHERE project_id=?", (pid,)).fetchone()
+    return {"added": added, "removed": removed, "changed": changed, "rev": int(r[0])}
+
+
+def project_levels_for(db, username: str, groups) -> dict[str, str]:
+    """{project_id: highest level} of the user (direct or through any of their groups)."""
+    groups = [g for g in (groups or []) if g]
+    rank = {x: i for i, x in enumerate(PROJECT_LEVELS)}
+    out: dict[str, str] = {}
+    q = "SELECT project_id, level FROM project_shares WHERE username=?"
+    args: list = [username or ""]
+    if groups:
+        q += " OR group_name IN (%s)" % ",".join("?" * len(groups))
+        args += groups
+    with connect(db) as c:
+        for pid, lvl in c.execute(q, args):
+            if pid not in out or rank[lvl] > rank[out[pid]]:
+                out[pid] = lvl
+    return out
+
+
+def forget_project(db, pid: str) -> None:
+    with connect(db, write=True) as c:
+        c.execute("DELETE FROM project_shares WHERE project_id=?", (pid,))
+        c.execute("DELETE FROM project_meta WHERE project_id=?", (pid,))
+
+
+def share_candidates(db, q: str = "", limit: int = 50) -> dict:
+    """ACTIVE users (no e-mail) and groups for the share picker."""
+    like = f"%{(q or '').strip().lower()}%"
+    with connect(db) as c:
+        users = [{"username": r["username"], "display_name": r["display_name"] or r["username"],
+                  "groups": _groups_of(c, r["username"])}
+                 for r in c.execute("SELECT username, display_name FROM users WHERE disabled=0 AND "
+                                    "(lower(username) LIKE ? OR lower(display_name) LIKE ?) ORDER BY lower(display_name), "
+                                    "username LIMIT ?", (like, like, limit))]
+        groups = [{"name": r["name"], "description": r["description"],
+                   "permissions": _j(r["permissions"], []),
+                   "members": c.execute("SELECT COUNT(*) FROM user_groups WHERE group_name=?", (r["name"],)).fetchone()[0]}
+                  for r in c.execute("SELECT * FROM access_groups WHERE lower(name) LIKE ? OR lower(description) LIKE ? "
+                                     "ORDER BY name LIMIT ?", (like, like, limit))]
+    return {"users": users, "groups": groups}
+
+
+def oldest_admin(db) -> str | None:
+    with connect(db) as c:
+        r = c.execute("SELECT u.username FROM users u JOIN user_groups ug ON ug.username=u.username "
+                      "WHERE ug.group_name=? AND u.disabled=0 ORDER BY u.created_at, u.username LIMIT 1",
+                      (ADMIN_GROUP,)).fetchone()
+        return r[0] if r else None
 
 
 # --------------------------------------------------------------------------- #

@@ -164,6 +164,7 @@ function useClaudeSession() {
   const [sessionId, setSessionId] = useState("");
   const [project, setProject] = useState("");            // Projeto da conversa ("" = aba Claude Code)
   const projectRef = useRef("");
+  const [projectLevel, setProjectLevel] = useState("");  // my level in the project (view = read-only conversation)
   const [slash, setSlash] = useState([]);             // nomes de slash commands (do init)
   const [input, setInput] = useState("");
   const [uploading, setUploading] = useState(0);          // uploads em andamento (colar/📎): bloqueia envio até terminar
@@ -482,6 +483,13 @@ function useClaudeSession() {
         if (!currentSocket()) return;
         if (manualCloseRef.current) return;           // fechamento deliberado (encerrar / troca de sessão)
         setWorking(false);
+        if (event.code === 4403 && projectRef.current) {   // project access removed / view-only (no new conversation)
+          noReconnectRef.current = true;
+          setStatus("desconectado");
+          setItems((prev) => [...closeOpen(prev), { type: "error", detail: event.reason === "read_only"
+            ? t("claude.read_only_project") : t("claude.access_revoked") }]);
+          return;
+        }
         if (event.code === 4409 || event.code === 4404) {
           noReconnectRef.current = true;
           setStatus("desconectado");
@@ -572,6 +580,13 @@ function useClaudeSession() {
             if (Array.isArray(ev.perms)) setNetperms(ev.perms);
             setNetpermsMax(Array.isArray(ev.max) ? ev.max : null);   // teto do grupo do usuário (null = sem teto)
             break;
+          case "identity":   // someone else sent: the agent now runs with THEIR network ceiling and GitHub
+            setItems((prev) => [...closeOpen(prev), { type: "notice", text: t("claude.identity_switched", { name: ev.name || ev.user }) }]);
+            break;
+          case "access_revoked":
+            noReconnectRef.current = true;
+            setItems((prev) => [...closeOpen(prev), { type: "error", detail: t("claude.access_revoked") }]);
+            break;
           case "reattached":
             setWorking(!!ev.busy);   // re-anexou a uma sessão viva: reflete se há turno rodando
             break;
@@ -628,6 +643,11 @@ function useClaudeSession() {
             });
             break;
           case "error":
+            if (ev.detail === "read_only") {   // view level in the project (or the access was just reduced)
+              setProjectLevel("view");
+              setItems((prev) => [...closeOpen(prev), { type: "error", detail: ev.message || t("claude.read_only_project") }]);
+              break;
+            }
             setWorking(false);
             if (ev.detail === "too_many_sessions") {   // teto estático do servidor: não martela reconectando
               noReconnectRef.current = true;
@@ -888,6 +908,14 @@ function useClaudeSession() {
     finally { setUploading((n) => Math.max(0, n - 1)); }
   }
 
+  useEffect(() => {
+    setProjectLevel("");
+    if (!project) return;
+    let alive = true;
+    api.get(`/projects/${encodeURIComponent(project)}`).then((p) => { if (alive) setProjectLevel(p.my_level || ""); }).catch(() => {});
+    return () => { alive = false; };
+  }, [project]);
+  const readOnly = !!project && projectLevel === "view";
   const badge = { pronto: "ok", conectando: "", reconectando: "warn", desconectado: "warn", desabilitado: "danger", erro: "danger" }[status] || "";
   const disabled = status !== "pronto";
   // "Conversa viva" = ligada e com algo acontecendo (turno rodando ou já há mensagens).
@@ -897,7 +925,7 @@ function useClaudeSession() {
   return {
     effort, changeEffort, ctxUse, lastUsage,
     queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove,
-    project, status, items, working, mode, netperms, netpermsMax, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments, uploading,
+    project, readOnly, status, items, working, mode, netperms, netpermsMax, changeNetperms, model, modelSel, models, sessionId, slash, input, setInput, attachments, setAttachments, uploading,
     showSessions, setShowSessions, badge, disabled, hasSession, fileRef,
     prefs, savePrefs, showPrefs, setShowPrefs,
     send, submit, stop, newSession, resumeSession, forkFrom, editFrom, answerPermission, changeMode, changeModel, uploadFile, uploadFiles,
@@ -1251,7 +1279,7 @@ function loadMentionCatalog(force) {
 // com Modo, meta, anexar e enviar/parar. Menu de slash aparece logo acima.
 function Composer() {
   const { effort, changeEffort, ctxUse, lastUsage, input, setInput, submit, stop, working, disabled, mode, changeMode, netperms, netpermsMax, changeNetperms, modelSel, models, changeModel, uploadFile, uploadFiles, slash, fileRef, attachments, setAttachments, uploading,
-    queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove, sessionId } = useClaude();
+    queue, pendingSend, choosePending, cancelPending, queueRemove, queueSendNow, queueMove, sessionId, readOnly } = useClaude();
   const taRef = useRef(null);
   // Menções "#host:…" / "#group:…": menu junto ao cursor, ↑↓ navega, Enter/Tab escolhe, Esc fecha.
   const [caret, setCaret] = useState(0);
@@ -1336,6 +1364,7 @@ function Composer() {
   const isLocal = LOCAL_SLASH_RE.test(input.trim());
   const cantSend = (disabled && !isLocal) || uploading > 0 || (!input.trim() && !attachments.length);
 
+  if (readOnly) return html`<div class="cc-composer-wrap"><div class="cc-readonly" role="status">👁 ${t("claude.read_only_project")}</div></div>`;
   return html`<div class="cc-composer-wrap">
     ${queue.length > 0 && html`<${QueueList} queue=${queue} working=${working} disabled=${disabled}
       onRemove=${queueRemove} onSendNow=${queueSendNow} onMove=${queueMove} />`}
@@ -2230,6 +2259,9 @@ function Item({ it, onPermission, onFork, onEdit }) {
     return html`<div class="cc-result ${it.isError ? "err" : ""}">
       ${it.cancelled ? t("claude.result_cancelled") : it.isError ? t("claude.result_error") : t("claude.result_done")}${typeof it.cost === "number" ? ` · ~$${it.cost.toFixed(4)}` : ""}
     </div>`;
+
+  if (it.type === "notice")
+    return html`<div class="cc-notice" role="status">ℹ ${it.text}</div>`;
 
   if (it.type === "error")
     return html`<div class="cc-error">${it.detail}

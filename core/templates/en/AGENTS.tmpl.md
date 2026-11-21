@@ -66,7 +66,7 @@ When the user makes a request, you act as the **coordinator** agent. Follow:
 | Console file manager (**Files** menu + SFTP panel next to the host terminal) | `scripts/engine/ui/` (`routers/files.py`, `static/js/file-browser.js`; see `SKILL.md`) |
 | Users, access groups, console audit (SQLite `runs/netops.db`) | `scripts/engine/users/` (`SKILL.md`; console: **Users / Access groups / Audit**) |
 | Each user's GitHub (own account in the agent; **My account → GitHub**) | `scripts/engine/lib/github_identity.py` (see `scripts/engine/users/SKILL.md`, "GitHub per user") |
-| Console projects (name + folder; Claude Code sessions per folder; **Projects** menu) | `scripts/engine/ui/` (`routers/projects.py`, `services/projects_svc.py`, `static/js/pages/projects.js`; see `SKILL.md`) |
+| Console projects (name + folder; Claude Code sessions per folder; **private by default, shared with users/groups** at `#projects/<id>/share`; **Projects** menu) | `scripts/engine/ui/` (`routers/projects.py`, `services/projects_svc.py`, `services/project_acl.py`, `static/js/pages/projects.js`; see `SKILL.md`) |
 | Scheduled tasks (script / AI agent / script + agent) | `scripts/engine/scheduler/` (`SKILL.md`; console: **Scheduled tasks** menu) |
 | **Notification center**: alerts, notices and approval requests (🔔 bell at the top + **Output → Notification center** menu) | `scripts/engine/inbox/` (`SKILL.md`; `inbox/cli.py add`) |
 | Discover the CTs/VMs of a Proxmox, register them and organize them on the map | `scripts/tools/inventory/` (`SKILL.md`; `map_place.py register` / `place`) |
@@ -97,7 +97,7 @@ When the user makes a request, you act as the **coordinator** agent. Follow:
 
 - **Multi-user (Claude tab):** each person signs in with their own login; what they can do comes from their group.
   - **In the Claude tab:** `NETOPS_USER` identifies who asked. Their group's network ceiling applies and **cannot be bypassed**.
-  - **GitHub per user:** in the Claude tab and in Projects, git/gh use the GitHub account **of whoever opened the conversation**.
+  - **GitHub per user:** in the Claude tab and in Projects, git/gh use the GitHub account **of whoever sent the message** (someone else continuing the conversation = the agent relaunches with their account, network ceiling and `NETOPS_USER`).
     Without a connected account, push, PR and `gh` fail: ask them to connect in **My account → GitHub** (`#account/github`) and
     reopen the conversation. Never use the server account nor change `GH_CONFIG_DIR`, `GH_TOKEN` or the git identity.
 - **Standardize:** every new file follows the `_TEMPLATE` of its folder. See `core/rules/standard.md`.
