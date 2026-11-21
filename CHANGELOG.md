@@ -1,5 +1,33 @@
 # Changelog do NetOps
 
+## [2.6.2] - 2026-11-21
+
+### Correções
+
+- **Tela quebrava ao exibir qualquer aviso.** Na 2.6.1, o aviso (toast) do console dava "t is not a function" e quebrava
+  a página. Acontecia, por exemplo, logo depois de criar um projeto numa instalação nova. Um teste novo reprova qualquer
+  código que esconda o tradutor `t()`. Ele achou o mesmo defeito no assistente de primeiro acesso, quando a etapa root
+  não responde, e esse também foi corrigido.
+- **Projetos: "criar pasta nova" funciona sem root.** A pasta padrão passa de `/opt/projetos` para `~/projects` da conta
+  do console (`/var/lib/netops/projects`). O próprio console cria a pasta, mesmo em instalação migrada ou atualizada.
+  Sem permissão na pasta escolhida, aparece um erro claro.
+- **Apagar conversa da aba Claude dava erro em instalação atualizada.** A tabela com o autor de cada mensagem só era
+  criada em banco novo. Agora ela é criada em qualquer banco, e o nome de quem enviou volta a ser registrado.
+
+### Melhorias
+
+- **Aba Claude:** mostra o primeiro nome de quem abriu a conversa e de quem enviou cada mensagem, no rodapé da mensagem.
+  O envio fica bloqueado enquanto um anexo (imagem colada) ainda está subindo.
+- **Cofre de senhas:** layout mais compacto do item.
+- **Barra lateral:** o botão não fica mais por cima das janelas.
+
+### Compatibilidade e dados
+
+- Projetos já cadastrados em `/opt/projetos` continuam funcionando. Só a sugestão de pasta para projeto novo mudou.
+- Sem migração destrutiva. O banco de acesso continua na versão 2: a tabela nova só é acrescentada, então voltar para a
+  2.6.1 continua possível.
+- Pacote validado numa instalação do zero (Debian 13) com a conta `netops`.
+
 ## [2.6.1] - 2026-11-20
 
 ### Melhorias

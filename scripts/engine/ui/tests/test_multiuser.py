@@ -459,3 +459,24 @@ def test_schema_v1_db_migrates_emails_to_lowercase_unique(env):
     assert conn.execute("PRAGMA user_version").fetchone()[0] == accessdb.SCHEMA_VERSION
     assert conn.execute("SELECT name FROM sqlite_master WHERE name='users_email'").fetchone()
     conn.close()
+
+
+def test_banco_existente_sem_claude_msg_authors_ganha_a_tabela(tmp_path):
+    """Bug 2.6.1→2.6.2: a tabela entrou só no _SCHEMA_V1; banco já em v2 nunca a recebia e apagar
+    conversa dava 'no such table'. Agora é tabela aditiva, criada em todo banco sem subir o user_version."""
+    import sqlite3
+    from lib import accessdb
+    db = tmp_path / "netops.db"
+    with accessdb.connect(db) as c:              # cria o banco atual (v2)
+        c.execute("SELECT 1")
+    raw = sqlite3.connect(db)
+    raw.execute("DROP TABLE claude_msg_authors")  # = instalação criada antes da tabela
+    raw.commit(); raw.close()
+    accessdb._initialized.clear()                 # novo processo (o console reiniciado)
+    accessdb.set_claude_owner(db, "s1", "ana")
+    accessdb.record_claude_msg_author(db, "s1", "ana", "oi")
+    assert accessdb.claude_msg_authors(db, "s1") == [("oi", "ana")]
+    accessdb.forget_claude_owner(db, "s1")        # apagar conversa: não pode dar 'no such table'
+    assert accessdb.claude_msg_authors(db, "s1") == []
+    with sqlite3.connect(db) as raw:
+        assert raw.execute("PRAGMA user_version").fetchone()[0] == accessdb.SCHEMA_VERSION

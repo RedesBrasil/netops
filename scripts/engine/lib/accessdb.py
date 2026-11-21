@@ -240,6 +240,21 @@ CREATE INDEX IF NOT EXISTS claude_msg_authors_sid ON claude_msg_authors(session_
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
 
+# Tabelas ADITIVAS (só acrescentam; versão antiga do NetOps as ignora): criadas em TODO banco, qualquer que seja o
+# user_version. Entrar só no _SCHEMA_V1 não basta: banco já em v1/v2 nunca roda o V1 de novo (bug 2.6.1→: a tabela
+# claude_msg_authors faltava em instalação existente e apagar conversa dava "no such table"). Não sobe o
+# SCHEMA_VERSION de propósito: subir faria a versão anterior recusar o banco (db_too_new) num downgrade.
+_ADDITIVE = (
+    """CREATE TABLE IF NOT EXISTS claude_msg_authors(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  username TEXT NOT NULL,
+  text TEXT NOT NULL,
+  ts REAL NOT NULL
+)""",
+    "CREATE INDEX IF NOT EXISTS claude_msg_authors_sid ON claude_msg_authors(session_id, id)",
+)
+
 _init_lock = threading.Lock()
 _initialized: set[tuple] = set()
 
@@ -312,6 +327,8 @@ def _ensure(path: Path) -> None:
                     raise
             elif ver > SCHEMA_VERSION:
                 raise AccessError("db_too_new", i18n.t("lib_accessdb.db_too_new", ver=ver, current=SCHEMA_VERSION), 500)
+            for stmt in _ADDITIVE:
+                conn.execute(stmt)
         finally:
             conn.close()
         _initialized.add(_ident(path))
