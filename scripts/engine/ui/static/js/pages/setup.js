@@ -29,7 +29,7 @@ export function SetupScreen({ onDone }) {
 
   useEffect(() => { api.get("/setup/status").then(setInfo).catch(() => setInfo({})); }, []);
   useEffect(() => {
-    const h = () => { const t = setupTokenFromHash(); if (t) setToken(t); };
+    const h = () => { const tok = setupTokenFromHash(); if (tok) setToken(tok); };
     addEventListener("hashchange", h);
     return () => removeEventListener("hashchange", h);
   }, []);
@@ -38,13 +38,13 @@ export function SetupScreen({ onDone }) {
   useEffect(() => {
     if (!finish || !["pending"].includes(finish.state)) return;
     let n = 0;
-    const t = setInterval(async () => {
+    const timer = setInterval(async () => {
       n += 1;
-      try { const s = await api.get("/setup/finish"); setFinish(s); if (s.state !== "pending") clearInterval(t); }
+      try { const s = await api.get("/setup/finish"); setFinish(s); if (s.state !== "pending") clearInterval(timer); }
       catch { /* segue tentando */ }
-      if (n > 30) { clearInterval(t); setFinish((f) => ({ ...f, state: "failed", detail: f?.detail || t("setup.root_no_answer") })); }
+      if (n > 30) { clearInterval(timer); setFinish((f) => ({ ...f, state: "failed", detail: f?.detail || t("setup.root_no_answer") })); }
     }, 2000);
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   }, [finish && finish.state]);
 
   const min = info?.password_min || 8;

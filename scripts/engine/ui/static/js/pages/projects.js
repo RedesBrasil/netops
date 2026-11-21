@@ -18,6 +18,7 @@ const changed = () => window.dispatchEvent(new Event("netops:projects"));   // a
 
 // Lista de projetos para a sidebar (recarrega quando algo muda ou a janela volta ao foco).
 let accountWarning = false;   // conta do agente só nos settings do NetOps (ver claude_models.account_only_in_netops)
+let defaultBase = "";         // base de "criar pasta nova" vinda do servidor (~/projects da conta do console)
 export function useProjects(enabled) {
   const [list, setList] = useState([]);
   useEffect(() => {
@@ -25,6 +26,7 @@ export function useProjects(enabled) {
     let alive = true;
     const load = () => api.get("/projects").then((d) => {
       accountWarning = !!d.account_warning;
+      if (d.default_base) defaultBase = d.default_base;
       if (alive) setList(d.projects || []);
     }).catch(() => {});
     load();
@@ -84,13 +86,24 @@ function ConfigList({ config }) {
   </div>`;
 }
 
-const DEFAULT_BASE = "/opt/projetos";
+// Base padrão: o servidor manda em GET /projects (default_base). Abrir #projects/new direto (sem a lista
+// carregada) busca de novo; enquanto isso o campo fica vazio e o botão Criar desabilitado.
+function useDefaultBase() {
+  const [base, setBase] = useState(defaultBase);
+  useEffect(() => {
+    if (base) return;
+    api.get("/projects").then((d) => { if (d.default_base) { defaultBase = d.default_base; setBase(d.default_base); } }).catch(() => {});
+  }, []);
+  return base;
+}
 
 function NewProject() {
   const [name, setName] = useState("");
   const [mode, setMode] = useState("new");          // "new" = criar pasta nova (como o VS Code) | "existing"
   const [path, setPath] = useState("");
-  const [parent, setParent] = useState(DEFAULT_BASE);
+  const base = useDefaultBase();
+  const [parent, setParent] = useState(defaultBase);
+  useEffect(() => { if (base && !parent) setParent(base); }, [base]);
   const [folder, setFolder] = useState("");
   const [info, setInfo] = useState(null);           // browse da pasta existente: allowed/reason/config
   const [trust, setTrust] = useState(false);
@@ -138,7 +151,7 @@ function NewProject() {
       <label><input type="radio" name="pj-mode" checked=${mode === "existing"} onChange=${() => setMode("existing")} /> ${t("projects.mode_existing")}</label>
     </div>
     ${mode === "new" ? html`
-      <${Field} label=${t("projects.create_inside")} htmlFor="pj-parent" hint=${t("projects.create_inside_hint", { path: DEFAULT_BASE })}>
+      <${Field} label=${t("projects.create_inside")} htmlFor="pj-parent" hint=${t("projects.create_inside_hint", { path: base || "~/projects" })}>
         <div class="pj-pick-path">
           <input id="pj-parent" class="mono" value=${parent} onInput=${(e) => setParent(e.target.value)} />
           <button type="button" onClick=${() => setPick(true)}>${t("projects.choose")}</button>

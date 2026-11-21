@@ -82,8 +82,10 @@ and "the project's sessions" are the conversations of that folder (Claude Code a
 
 - **Registry:** `runs/claude/projects.json` (`services/projects_svc.py`). `id` = slug of the name, immutable on rename. Rejects a
   nonexistent folder, a duplicate folder (two projects would share the same conversations) and a forbidden folder (see Security).
-  Removing only deletes the registry entry; never the folder nor the conversations. **Create new folder** (`new_folder`, default inside `/opt/projetos`)
-  or **open existing folder**, as in VS Code.
+  Removing only deletes the registry entry; never the folder nor the conversations. **Create new folder** (`new_folder`, default inside `~/projects` of the console account = `/var/lib/netops/projects` in
+  layout 2; created by the console itself, no root needed; `GET /api/projects` returns it as `default_base`) or **open existing
+  folder**, as in VS Code. Visible subfolders of that HOME are allowed even though `/var/lib` is a system tree; hidden ones
+  (`~/.claude`, `~/.ssh`) and the HOME itself are not. Projects already registered elsewhere (e.g. old `/opt/projetos`) keep working.
 - **API:** `GET/POST /api/projects` (`{name, path, trust?, new_folder?}`), `PATCH /api/projects/<id>` (`{name?}` / `{trusted}`),
   `DELETE /api/projects/<id>`, `GET /api/projects/browse?path=` (subfolders only; returns `allowed`/`reason`/`config`),
   `GET /api/projects/<id>/sessions[/search?q=]`. The routes `/api/claude/sessions/<sid>/…` and `/api/claude/upload` accept `?project=<id>`;

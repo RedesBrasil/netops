@@ -36,7 +36,7 @@ let _tid = 0;
 export function toast(kind, message) {
   const id = ++_tid;
   toastStore.set((l) => [...l, { id, kind, message }]);
-  setTimeout(() => toastStore.set((l) => l.filter((t) => t.id !== id)), 4200);
+  setTimeout(() => toastStore.set((l) => l.filter((it) => it.id !== id)), 4200);
 }
 toast.ok = (m) => toast("ok", m);
 toast.err = (m) => toast("err", m);

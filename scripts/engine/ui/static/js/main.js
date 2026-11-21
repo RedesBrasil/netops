@@ -92,9 +92,9 @@ function useScheduleBadge(enabled) {
     let alive = true;
     const load = () => api.get("/schedules/notifications").then((d) => alive && setN(d.unread || 0)).catch(() => {});
     load();
-    const t = setInterval(load, 30000);
+    const timer = setInterval(load, 30000);
     addEventListener("netops:schedules", load); addEventListener("focus", load);
-    return () => { alive = false; clearInterval(t); removeEventListener("netops:schedules", load); removeEventListener("focus", load); };
+    return () => { alive = false; clearInterval(timer); removeEventListener("netops:schedules", load); removeEventListener("focus", load); };
   }, [enabled]);
   return n;
 }

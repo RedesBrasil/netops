@@ -48,7 +48,9 @@ def projects_list(request: Request):
         return _off()
     return {"projects": projects_svc.list_for(_user(request)),
             # conta do agente só nos settings do NetOps = sessões de projeto não a acham (ver claude_models)
-            "account_warning": claude_models.account_only_in_netops()}
+            "account_warning": claude_models.account_only_in_netops(),
+            # base sugerida p/ "criar pasta nova" (~/projects da conta do console); a UI não a fixa no código
+            "default_base": projects_svc.DEFAULT_BASE}
 
 
 @router.post("/projects")

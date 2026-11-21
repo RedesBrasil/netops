@@ -70,7 +70,7 @@ No new dependencies. The `vault.use` permission applies to whoever asks through 
 # Cloudflare Workers (Wrangler reads CLOUDFLARE_API_TOKEN/CLOUDFLARE_ACCOUNT_ID from the environment)
 # project .env:     CLOUDFLARE_API_TOKEN=nvault://4/api-key
 #                   CLOUDFLARE_ACCOUNT_ID=nvault://4/account-id
-cd /opt/projetos/meu-worker && nvault run -- npx wrangler deploy
+cd ~/projects/my-worker && nvault run -- npx wrangler deploy
 
 # The Worker's own secret (the value is stored at Cloudflare)
 nvault run --set V=4/webhook-secret -- sh -c 'printf %s "$V" | npx wrangler secret put WEBHOOK_SECRET'

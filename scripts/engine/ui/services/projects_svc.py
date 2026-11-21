@@ -43,7 +43,10 @@ _MAX_NAME = 80
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _RESERVED = {"new"}   # #projects/new é o formulário de criação
 _FOLDER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-DEFAULT_BASE = "/opt/projetos"   # sugestão do formulário "criar pasta nova" (criada sob demanda)
+# Base padrão de "criar pasta nova" = ~/projects da CONTA DO CONSOLE (layout 2: /var/lib/netops/projects).
+# No HOME a conta sempre consegue criar a pasta sozinha, sem root e sem passo do instalador; /opt/<x> exigia
+# root e quebrava em instalação migrada/atualizada. Projetos já cadastrados em outra pasta continuam valendo.
+DEFAULT_BASE = os.path.join(os.path.expanduser("~"), "projects")
 
 # Diretórios do sistema: nunca são projeto (nem eles, nem nada dentro deles).
 _DENY_TREE = ("/proc", "/sys", "/dev", "/run", "/boot", "/etc", "/usr", "/bin", "/sbin", "/lib", "/lib32",
@@ -132,15 +135,18 @@ def deny_reason(real: str) -> str | None:
         return i18n.t("api_projects.deny_netops")
     if _inside(netops, real):
         return i18n.t("api_projects.deny_contains_netops")
-    if real in _DENY_EXACT or any(_inside(real, d) for d in _DENY_TREE):
-        return i18n.t("api_projects.deny_system", example=DEFAULT_BASE + "/meu-projeto")
     home = str(Path(os.path.expanduser("~")).resolve())
-    if home != "/" and _inside(real, home) and real != home:
+    if real == home:
+        return i18n.t("api_projects.deny_home")
+    if home != "/" and _inside(real, home):
         first = real[len(home):].lstrip("/").split("/", 1)[0]
         if first.startswith("."):
             return i18n.t("api_projects.deny_hidden")
-    if real == home:
-        return i18n.t("api_projects.deny_home")
+        # Subpasta visível do HOME da conta do console: pode, mesmo com o HOME dentro de /var/lib
+        # (layout 2: /var/lib/netops). É onde fica a base padrão (DEFAULT_BASE).
+        return None
+    if real in _DENY_EXACT or any(_inside(real, d) for d in _DENY_TREE):
+        return i18n.t("api_projects.deny_system", example=os.path.join(DEFAULT_BASE, "my-project"))
     return None
 
 
@@ -281,9 +287,12 @@ def _new_folder(parent, folder) -> str:
         raise ProjectError("bad_folder", i18n.t("api_projects.bad_folder"))
     raw_parent = str(parent or "").strip() or DEFAULT_BASE
     if os.path.isabs(raw_parent):
-        raw_parent = os.path.normpath(raw_parent)   # "/opt/projetos/" == "/opt/projetos"
-    if raw_parent == DEFAULT_BASE and not os.path.isdir(DEFAULT_BASE):
-        os.makedirs(DEFAULT_BASE, mode=0o755, exist_ok=True)
+        raw_parent = os.path.normpath(raw_parent)   # "~/projects/" == "~/projects"
+    if raw_parent == os.path.normpath(DEFAULT_BASE) and not os.path.isdir(DEFAULT_BASE):
+        try:
+            os.makedirs(DEFAULT_BASE, mode=0o750, exist_ok=True)
+        except OSError as e:
+            raise ProjectError("mkdir_failed", i18n.t("api_projects.mkdir_failed", error=e.strerror or e), 403)
     base = _resolve_dir(raw_parent)
     target = os.path.join(base, name)
     check_allowed(target)

@@ -638,7 +638,9 @@ set_instance_language() {
 }
 
 setup_projects_base() {
-  local base=/opt/projetos
+  # Base de "criar pasta nova" dos Projetos = ~/projects da conta operacional (o console a cria sozinho se faltar;
+  # aqui só adiantamos). Fica no HOME para nunca depender de root (antes: /opt/projetos, root na migração/update).
+  local base="$OP_HOME/projects"
   if [ ! -e "$base" ]; then install -d -m 750 -o "$OP_USER" -g "$OP_USER" "$base"; ok "base de projetos $base (de $OP_USER)"
   elif [ "$(stat -c %U "$base")" = "$OP_USER" ]; then ok "base de projetos $base"
   else warn "$base existe e não pertence a $OP_USER: projetos novos ali vão falhar por permissão (não alterei nada)"; fi

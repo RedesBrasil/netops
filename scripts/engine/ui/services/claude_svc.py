@@ -1128,7 +1128,7 @@ class ClaudeWebSession:
                 text = (raw.get("text") or "").strip()
                 if text:
                     self._auto_chain = 0     # humano no comando: a cadeia anti-loop recomeça
-                    who = getattr(getattr(ws.state, "principal", None), "username", "") or self.user
+                    who = getattr(getattr(getattr(ws, "state", None), "principal", None), "username", "") or self.user
                     self._record_author(who, text)
                     if len(self._wss) > 1:   # outras abas da sessão veem a pergunta
                         await self._send({"type": "user_echo", "text": text, "author": self._first_name(who)}, skip=ws)

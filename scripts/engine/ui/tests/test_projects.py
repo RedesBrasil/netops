@@ -196,7 +196,7 @@ def test_http_sessoes_do_projeto_usam_a_pasta_dele(api, pasta, monkeypatch):
     seen = []
     monkeypatch.setattr(claude_svc, "list_project_sessions",
                         lambda limit=60, cwd=None: seen.append(cwd) or [{"id": "s1"}])
-    assert api.get("/api/projects/site/sessions").json() == {"sessions": [{"id": "s1", "owner": ""}]}
+    assert api.get("/api/projects/site/sessions").json() == {"sessions": [{"id": "s1", "owner": "", "owner_name": ""}]}
     assert seen == [str(pasta.resolve())]
     assert api.get("/api/projects/nao-existe/sessions").status_code == 404
 
@@ -567,3 +567,57 @@ def test_http_arquivos_do_projeto(api, pasta, monkeypatch):
     assert "a.txt" in [e["name"] for e in r.json()["entries"]]
     assert api.get("/api/files/list", params={"src": "project:site", "path": "/etc"}).status_code == 403
     assert api.get("/api/files/read", params={"src": "project:site", "path": "/etc/hostname"}).status_code == 403
+
+
+# ------------------------------------------------------------------ base padrão no HOME da conta (layout 2)
+# Bug 21/11 (instalação do zero): a base era /opt/projetos. A conta `netops` não escreve em /opt, então
+# instalação migrada/atualizada sem esse passo de root quebrava em "criar pasta nova". Agora a base é
+# ~/projects da conta do console, que fica em /var/lib/netops (um _DENY_TREE): subpasta visível do HOME pode.
+def test_home_da_conta_em_var_lib_libera_subpasta_visivel(monkeypatch):
+    monkeypatch.setenv("HOME", "/var/lib/netops")
+    assert P.deny_reason("/var/lib/netops/projects") is None
+    assert P.deny_reason("/var/lib/netops/projects/meu-site") is None
+    assert P.deny_reason("/var/lib/netops/.claude") is not None          # oculta do HOME: nunca
+    assert P.deny_reason("/var/lib/netops/.claude/projects") is not None
+    assert P.deny_reason("/var/lib/netops") is not None                   # o próprio HOME: não
+    assert P.deny_reason("/var/lib/mysql") is not None                    # resto de /var/lib continua proibido
+    assert P.deny_reason("/var/lib") is not None
+    assert P.deny_reason("/etc/netops") is not None
+
+
+def test_base_padrao_e_criada_sozinha_no_home_sem_root(tmp_path_factory, monkeypatch):
+    """Simula a conta netops: HOME próprio, base ~/projects ainda não existe; o console cria (750) e o projeto."""
+    home = tmp_path_factory.mktemp("var-lib") / "netops"
+    home.mkdir(mode=0o700)
+    monkeypatch.setenv("HOME", str(home))
+    base = home / "projects"
+    monkeypatch.setattr(P, "DEFAULT_BASE", str(base))
+    p = P.create("Meu Site", str(base), new_folder="meu-site")
+    assert p["path"] == str((base / "meu-site").resolve()) and p["trusted"] is True
+    assert (base.stat().st_mode & 0o777) == 0o750
+    assert P.path_of(p["id"]) == p["path"]                                # o agente pode rodar nela
+
+
+def test_base_padrao_sem_permissao_da_erro_claro(tmp_path_factory, monkeypatch):
+    """Base num pai sem escrita (ex.: /opt para a conta netops) = erro mkdir_failed, nunca exceção crua."""
+    import os
+    if os.geteuid() == 0:
+        pytest.skip("root escreve em qualquer pasta")
+    pai = tmp_path_factory.mktemp("opt")
+    pai.chmod(0o555)
+    try:
+        monkeypatch.setattr(P, "DEFAULT_BASE", str(pai / "projetos"))
+        with pytest.raises(P.ProjectError) as e:
+            P.create("x", str(pai / "projetos"), new_folder="x")
+        assert e.value.code == "mkdir_failed"
+    finally:
+        pai.chmod(0o755)
+
+
+def test_http_lista_informa_a_base_padrao(api, monkeypatch):
+    monkeypatch.setattr(P, "DEFAULT_BASE", "/var/lib/netops/projects")
+    assert api.get("/api/projects").json()["default_base"] == "/var/lib/netops/projects"
+
+
+def test_base_padrao_nao_fica_mais_em_opt():
+    assert not P.DEFAULT_BASE.startswith("/opt/") and P.DEFAULT_BASE.endswith("/projects")
